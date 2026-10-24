@@ -213,8 +213,8 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] identity middleware, ownership dependency, rate limiter (2026-10-24)
 - [ ] `storage.py` folder layout, locks, byte accounting
 - [x] `ingest/` sniff, import, `_row_id`, sample loader (2026-10-24)
-- [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional)
-- [ ] `cleaning/detectors/*` (16 detectors)
+- [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional): all but embeddings done 2026-10-24 (the catalog has no NVIDIA embedding model); the typing step is D2.8
+- [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
 - [ ] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
 - [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells

@@ -260,6 +260,10 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 - **`GET /datasets`** lists the user's datasets that aren't deleted, most recently opened first, then newest.
 - **`GET /datasets/{id}`** sets `last_opened_at`.
 - **Status for now.** Datasets stay in `profiling` until the profile job exists (D2.2, D2.5).
+- **`GET /datasets/{id}/datacard`** (2026-10-24, D2.2):
+  - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
+  - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
+  - **Later.** The profile job (D2.5) will build the card right after import, so the first request is already cached.
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
@@ -442,6 +446,24 @@ Events are written to `job_events` (for jobs) and published on an in-process bus
 
 Types: `int | float | bool | date | datetime | category | text | id | empty`. Roles: `measure | dimension | time | id | target_like | free_text | empty`. A column with no non-null values gets type and role `empty`: it is flagged, kept unchanged, and excluded from widgets, targets and features. Role inference, first match wins, in this order: empty → empty; unique ratio > 0.95 and name matches id patterns or is text → id; date-typed → time; binary or low-cardinality with name in a target-ish list (`target, label, outcome, survived, churn, converted, default, y`) or last column → target_like; integer columns with ≤ 12 distinct values → dimension; numeric non-id → measure; ≤ 50 distinct or ≤ 5% unique → dimension/category; mean text length > 40 → free_text.
 
+DataCard as implemented (2026-10-24, `sherlock/profile/datacard.py`):
+- **Top level.** The card adds `quarantined`: rows with a `_quarantine_reason`, which are left out of the card, so `row_count` counts the usable rows. `column_count` counts user columns, not `_row_id` or `_quarantine_reason`.
+- **Per column:**
+  - `missing_pct` is a percentage (0–100, two decimals).
+  - `stats`:
+    - numbers: `{min, max, mean, median, p05, p95}`
+    - dates: `{min, max, format}`
+    - text, ID and category: `{min_length, max_length, mean_length}`
+    - bool and empty: `null`
+  - `top_values` is `[{value, count}]` (up to 10) for categories, bools and low-cardinality numbers that aren't measures.
+  - `histogram` is 20 equal-width bins (`bins` holds the 21 edges) for numeric columns.
+  - `sample_values` holds up to 3 distinct values, numbers as numbers.
+  - `unit` is set when at least 99% of a text column's values carry the same unit.
+  - `semantic` is `null` until a model names columns.
+  - `flags` holds `empty` for an empty column.
+- **Issues.** Each issue is `{id, detector, column, count, severity, proposal, examples, details}`. `examples` holds up to 5 offending values, or `_row_id`s for row-level detectors. `details` is detector-specific: missing columns go missing together; pairs, units, determinant and agreement; leakage holds target, score, rule and reason.
+- **`leakage_candidates`** is `[{column, target, reason}]`.
+
 ### 6.2 Step
 
 ```json
@@ -582,6 +604,55 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 - **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`.
 - **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
+
+Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleaning/detectors/`). The step 3b typing step is Implementation Plan D2.8 and not built yet.
+- **Inference input.** It runs in pandas on the version's usable rows. Values are stripped, and the sentinel strings are left out before inference.
+- **Type rules.** First match wins, and a type needs ≥ 99% of the remaining values:
+  1. `bool`: true/false/yes/no/t/f/y/n
+  2. `int`: `[+-]?\d+`
+  3. `float`: `pd.to_numeric`
+  4. `date` or `datetime`: ISO 8601, then the format set (`%d/%m/%Y`, `%m/%d/%Y`, `%d.%m.%Y`, `%Y/%m/%d`, `%d-%m-%Y`, `%m-%d-%Y`, named months, two-digit years); `datetime` if any value has a time
+  5. `id`: text with > 95% unique values and at least 20 values
+  6. `category`: ≤ 50 distinct or ≤ 5% unique
+  7. otherwise `text`
+
+  Typed columns (version 2 on) take their type from the Parquet schema.
+  - `dateparser` isn't used yet; the format set covers the common forms.
+  - pandas can't represent dates before 1677 or after 2262, so such values don't parse; they surface through `mixed_types`.
+- **Role rules.** They follow §6.1 in order, with these reading choices:
+  - "low-cardinality" means ≤ 10 distinct values
+  - the id rule needs at least 20 values
+  - a text column that matches no rule is a `dimension`
+- **Detectors.** 16 modules, one per detector, each with unit tests on synthetic columns. All are generic: name-based rules use word lists, never dataset names. Severity = min(count / rows, 1) × the weight above.
+  - `missing`: per column. Columns whose missing masks overlap ≥ 90% (Jaccard) are listed as `missing_with`.
+  - `mixed_types`: 50–99% of values numeric (formatted numbers count as numeric), counting the rest. It skips columns whose odd values mostly contain digits, since those are alphanumeric codes. The same test applies for dates.
+  - `sentinels`: the sentinel strings (blank included), plus -99999, -9999, -999, -99, 999, 9999 and 99999 when the value repeats and lies beyond 3 × IQR of the other values.
+  - `whitespace_case`: stray or doubled spaces, and spellings that differ only by case or spacing (the minority spellings).
+  - `near_duplicate_categories`: dimension columns with 3–200 distinct values. Pairs of values (≥ 4 characters) with rapidfuzz ratio ≥ 85; the rarer one counts.
+  - `duplicates`: exact rows, and rows equal after trimming and case-folding.
+  - `impossible_values`:
+    - negatives where the name says quantity (age, price, fare, amount, count, weight, salary, duration, …)
+    - ages over 120
+    - percentages outside 0–100
+    - dates in the future or before 1800
+  - `numbers_as_text`: currency symbols and codes, thousands separators (`,` or `.` or space in groups of three), comma decimals, `%`, `(300)` and trailing-minus negatives.
+  - `ambiguous_dates`: d/m/y-shaped values where no part exceeds 12 (ambiguous), or where both orders appear (mixed).
+  - `mojibake`: ftfy's `is_bad` where `fix_text` changes the value.
+  - `unit_mixes`: ≥ 50% of values are number + unit, with two or more units.
+  - `cross_column`: name pairs start/end, begin/end, from/to, min/max, open/close, created/updated, birth/death, departure/arrival, check_in/check_out, where the later value is smaller.
+  - `functional_dependency`: between up to 12 categorical columns. A → B holds for 95–99.9% of rows in repeated A groups, at least 20 points above B's majority share, with A at least as distinct as B.
+  - `id_candidates`: role id, or ≥ 98% unique and ≥ 95% present.
+  - `outliers`: measures only. Robust z (MAD) > 5, or 3 × IQR when MAD is 0. Skewed non-negative columns (skew > 2) are scored on `log1p`.
+  - `leakage`: for each target-like column, a column leaks when either rule holds:
+    - Value rule: its values (missing as a value, ≤ 50% unique) predict the target at ≥ 95% accuracy and ≥ 20 points above the majority class.
+    - Presence rule: its filled rows (5–95% of rows) are ≥ 98% one class, and that class is ≥ 20 points rarer among the empty rows.
+- **Value index.** It covers dimension and target-like columns of the current version: up to 10,000 most frequent values per column with counts, and no embeddings (`MODEL_EMBED` is empty).
+- **Titanic check.** On the sample:
+  - The card builds in about 0.7 s, against the 3 s budget.
+  - It finds 263 missing ages and 1,014 missing cabins.
+  - It marks `survived` as target-like and `name` as the ID.
+  - It flags `boat` (value rule, 0.98) and `body` (presence rule, 1.00) as leakage.
+  - In a 512 MB container the app peaks at about 110 MB.
 
 ### 7.2 Cleaner (headless)
 

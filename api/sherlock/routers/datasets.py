@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
 from pydantic import BaseModel, ValidationError
 
 from sherlock.db import datasets as datasets_repo
@@ -16,6 +16,7 @@ from sherlock.identity import current_user
 from sherlock.ingest.importer import import_csv
 from sherlock.ingest.options import ImportOptions
 from sherlock.ownership import owned_dataset
+from sherlock.profile import service as profile_service
 
 router = APIRouter(tags=["datasets"])
 
@@ -109,6 +110,17 @@ def sample_dataset(
         )
     response.status_code = status.HTTP_201_CREATED
     return to_dataset(row)
+
+
+@router.get("/datasets/{dataset_id}/datacard")
+def get_datacard(
+    request: Request,
+    version: int | None = Query(default=None, ge=1),
+    row: sqlite3.Row = Depends(owned_dataset),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict:
+    """The version's DataCard (TRD §6.1), built on first request and cached per version."""
+    return profile_service.get_or_build(request.app.state.settings, db, request.app.state.duckdb, row, version)
 
 
 @router.get("/datasets/{dataset_id}", response_model=Dataset)
