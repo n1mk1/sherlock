@@ -60,7 +60,22 @@ cd web && pnpm install && pnpm dev
 
 ## Deploy
 
-_The Nebius Serverless Endpoint commands, recorded in `scripts/deploy.sh` after the first deploy._
+Sherlock runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`) with a Nebius shared filesystem mounted at `/data`. The Token Factory key is stored in a Nebius secret (SecretStash) instead of plain endpoint settings.
+
+Requirements: bash, Docker, `jq`, `curl` and the [Nebius CLI](https://docs.nebius.com/cli/install) with a profile for the project. On Windows, use WSL (Ubuntu) with Docker Desktop's WSL integration.
+
+```bash
+./scripts/deploy.sh setup   # once: registry, /data filesystem, secret, image, endpoint
+./scripts/deploy.sh         # redeploy: build, push the same tag, restart (the URL stays the same)
+./scripts/deploy.sh check   # restart and confirm /data and the cookie user survive it
+```
+
+Build and run the image locally:
+
+```bash
+docker build -f api/Dockerfile -t sherlock .
+docker run -p 8080:8080 --env-file .env -e DATA_DIR=/data -e DATABASE_URL=sqlite:////data/sherlock.db -v sherlock-data:/data sherlock
+```
 
 ## Tests and evals
 

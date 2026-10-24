@@ -30,3 +30,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Nebius deploy state (registry path, filesystem id)
+scripts/.deploy-state

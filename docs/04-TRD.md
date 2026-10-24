@@ -808,6 +808,15 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   `/healthz` reports this as `storage: { data_dir, writable, boots, first_boot_at, sqlite_lock[, error] }`, and `ok` requires the DB, `writable` and `sqlite_lock`. The check passes when `boots` grows after a restart, `first_boot_at` is unchanged, `sqlite_lock` is `true`, and a cookie user created before the restart is still returned by `GET /me`. All of this was verified locally with a named Docker volume on 2026-10-24.
 - **Local dev**: `docker compose up` (api + web with hot reload), `DATA_DIR=./data`.
 - **Deploy script**: `scripts/deploy.sh` builds, pushes, and updates the endpoint via the Nebius CLI; exact commands recorded in the README after the Oct 20 hello-world deploy.
+  - **Subcommands** (written 2026-10-24 from docs.nebius.com):
+    - `setup` creates the Container Registry, a `network_ssd` shared filesystem (default 50 GiB), and a SecretStash secret `sherlock-llm` holding `LLM_API_KEY` from `.env`. It then builds and pushes `cr.<region>.nebius.cloud/<registry>/sherlock:prod` and creates the endpoint, with `--platform cpu-d3 --preset 4vcpu-16gb --disk-size 40Gi --container-port 8080 --volume <fs>:/data:rw --env-secret LLM_API_KEY=sherlock-llm` plus `--env` for `LLM_BASE_URL`, the `MODEL_*` roles, `NVIDIA_EMBED_MODELS` and `LLM_TOOLS_MODE`.
+    - The default subcommand rebuilds, pushes the same tag and runs `nebius ai endpoint restart`.
+    - `check` runs the `/data` exit check against the public URL.
+    - `url` prints the endpoint's URL.
+  - **Immutable settings.** Endpoint settings can't change after creation. Changing env vars, the preset or the volume means deleting and recreating the endpoint, which gets a new URL, so the variables passed at creation are kept stable.
+  - **Replicas.** An endpoint is a single VM running one container, which satisfies "one replica".
+  - **State.** The registry path and filesystem ID are kept in the git-ignored `scripts/.deploy-state`.
+  - **Not yet run against Nebius.** The Nebius CLI supports only Linux and macOS, so on the Windows dev machine it runs under WSL.
 
 ---
 
