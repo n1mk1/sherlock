@@ -162,6 +162,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - `/data` is a persistent volume mounted into the container; a filesystem with local locking semantics is required for SQLite and the Parquet files. On Render it is the service's persistent disk (§11), which is a block device local to the instance. Whether a Nebius Serverless Endpoint provides this on a single replica is unverified and is the Day 1 deploy's exit check; if it fails, the same image runs on one Nebius AI Cloud VM with an attached disk.
 - Layout per dataset in [Schema §4](05-BACKEND-SCHEMA.md).
 - SQLite in WAL mode, one connection per request, `busy_timeout=5000`.
+- DuckDB implementation (`sherlock/storage.py`): `VersionConnections` keeps at most 4 connections, opens a version's connection on first use, and closes the dataset's older versions when a newer one opens. Each connection has `memory_limit = DUCKDB_MEMORY_MB` and 2 threads, and is used by one request at a time (a lock per connection). The cap is per connection, not 1 GB in total, so a small host can set it low (Render Starter: 256 MB).
 - DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections or 1 GB and evicted when a newer version exists. Commits write Parquet and SQLite only.
 
 ### 3.3 Job runner
@@ -241,6 +242,24 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 | GET | `/datasets/{id}/suggestions` | — | `{ questions: string[3] }` |
 
 `NotebookOptions`: `{ include_data: bool, include_cards: bool, include_notes: bool, include_runs: bool, order: "steps_dashboard"|"flow_path", up_to_step?: number }`. Defaults `{ true, true, false, true, "steps_dashboard" }`; remembered in `users.settings_json.notebook`.
+
+Implementation (2026-10-24, Implementation Plan D2.1):
+- **`POST /datasets`** answers `201` with the `Dataset`. The `options` form field is a JSON `ImportOptions` (`sherlock/ingest/options.py`): `{ delimiter?: one character, encoding?: "utf-8"|"utf-8-sig"|"latin-1"|"windows-1252"|"utf-16"|<any Python codec>, header_row?: 0–100, skip_rows?: 0–1000 }`.
+  - A missing field is auto-detected.
+  - `header_row` is the 1-based line (after `skip_rows`) holding the column names, and 0 means no header. Lines before it are skipped too.
+  - The resolved values are stored in `datasets.import_options_json`.
+  - **Refusals create nothing** (no row, no folder):
+    - a file over `MAX_UPLOAD_MB` → `413 too_large` "This file is 73 MB. The limit is 50 MB." (one decimal under 10 MB)
+    - binary → `422 invalid` with App Flow §3.2's copy
+    - no data rows, including a file of only blank lines → `422 invalid` "This file has no data rows."
+    - over `MAX_ROWS` or `MAX_COLUMNS` → `413 too_large`
+    - over the user's `USER_STORAGE_MB` → `413 too_large`
+    - an unparseable CSV → `422 invalid` "Couldn't read this file as CSV: …"
+    - bad options → `422 invalid`
+- **`POST /datasets/sample`** imports the bundled `api/samples/titanic3.csv` as "titanic3.csv (sample)" with `is_sample = 1` and answers `201`. If the user already has a sample, it answers `200` with that one. The cached, pre-built sample (Implementation Plan D9.1) replaces the import later.
+- **`GET /datasets`** lists the user's datasets that aren't deleted, most recently opened first, then newest.
+- **`GET /datasets/{id}`** sets `last_opened_at`.
+- **Status for now.** Datasets stay in `profiling` until the profile job exists (D2.2, D2.5).
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
@@ -549,6 +568,21 @@ Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[d
 5. Build the value index: for every dimension column, distinct values with counts; embed values of columns with ≤ 5,000 distinct values (`embed` role) into `value_index`.
 6. Set status `offer` (or start cleaning / build per settings) and emit `dataset.status`.
 
+Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
+- **Order.** The upload streams to `raw.csv` (kept byte-for-byte). Then the NUL check on the first 64 KB, which allows UTF-16 by BOM or by alternating NULs. Then encoding:
+  1. a UTF-8 BOM gives `utf-8-sig`
+  2. UTF-16
+  3. strict UTF-8 on the first MB
+  4. charset-normalizer, with two generic corrections:
+     - among candidates tied with the best one, Windows-1252 wins
+     - a multi-byte pick whose decode puts most CJK characters between two ASCII letters ("K荂e") is overruled to Windows-1252, because short Western files fool the detector into CJK
+
+  If an auto-detected encoding fails later in the file, detection reruns on the whole file. If an encoding the user chose fails, that's `invalid`.
+- **Read.** A temporary UTF-8 copy (`.ingest.utf8.csv`) is read by DuckDB's `read_csv(..., all_varchar=true, null_padding=true)`, with the delimiter, header and skip resolved from `sniff_csv` (delimiter, `SkipRows`, `HasHeader`). It's checked against `csv.Sniffer`, and DuckDB wins on disagreement. Empty cells read as NULL.
+- **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`.
+- **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
+- **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
+
 ### 7.2 Cleaner (headless)
 
 ```
@@ -771,6 +805,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `JOB_BACKEND` | `local` | `nebius` to dispatch |
 | `JOB_WORKERS` | `4` | |
 | `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | |
+| `DUCKDB_MEMORY_MB` | `1024` | memory cap of each DuckDB connection (ingest and the per-version cache, §3.2); `render.yaml` sets 256 for the Starter plan |
 | `MAX_UPLOAD_MB` / `MAX_COLUMNS` / `MAX_ROWS` | `50` / `1000` / `2000000` | bytes enforced while streaming; rows and columns after parse |
 | `USER_STORAGE_MB` | `500` | |
 | `DATASET_TTL_DAYS` | `7` | |

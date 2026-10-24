@@ -24,6 +24,7 @@ WORKDIR /app/api
 COPY api/pyproject.toml api/uv.lock api/.python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY api/sherlock ./sherlock
+COPY api/samples ./samples
 RUN uv sync --frozen --no-dev
 
 COPY --from=web /web/dist /app/web

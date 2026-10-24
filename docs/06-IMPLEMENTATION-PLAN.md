@@ -212,7 +212,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `db/` migrations 001, repositories (users, datasets, versions, steps, lineage, widgets, cards, canvases, runs, jobs, messages, proposals, selections, value_index, llm_calls)
 - [x] identity middleware, ownership dependency, rate limiter (2026-10-24)
 - [ ] `storage.py` folder layout, locks, byte accounting
-- [ ] `ingest/` sniff, import, `_row_id`, sample loader
+- [x] `ingest/` sniff, import, `_row_id`, sample loader (2026-10-24)
 - [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional)
 - [ ] `cleaning/detectors/*` (16 detectors)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
@@ -297,7 +297,7 @@ Never cut: headless cleaning with a report, the auto-dashboard, grounded story c
 
 | File | Purpose | Source |
 |---|---|---|
-| `samples/titanic3.csv` | the sample and eval baseline | OpenML 40945 (fetched by `scripts/fetch_sample.py` if not bundled) |
+| `samples/titanic3.csv` | the sample and eval baseline | OpenML 40945 (fetched by `scripts/fetch_sample.py` if not bundled). Bundled as `api/samples/titanic3.csv` (2026-10-24): 1,309 rows, 14 columns, ARFF `?` written as empty cells |
 | `samples/titanic_blanks.csv` | prediction demo (50 `survived` values blanked) | derived |
 | `samples/sales_dated.csv` | time-series path (synthetic, 5k rows, monthly) | generated |
 | `samples/wide_messy.csv` | 60 columns, mixed formats, sentinels (synthetic) | generated |

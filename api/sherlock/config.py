@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     sandbox_cpu_s: int = 30
     sandbox_mem_mb: int = 2048
 
+    # Memory cap of each DuckDB connection (ingest and the per-version query cache).
+    duckdb_memory_mb: int = 1024
+
     max_upload_mb: int = 50
     max_columns: int = 1000
     max_rows: int = 2_000_000

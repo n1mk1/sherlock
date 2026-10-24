@@ -532,6 +532,7 @@ Queries from widgets and answerers run on that in-memory connection after extern
   users/<user_id>/
     datasets/<dataset_id>/
       raw.csv                       the upload, never modified
+      .ingest.utf8.csv, .tmp/       transient during ingest (UTF-8 copy, DuckDB spill); deleted when it ends
       versions/
         v1.parquet … vN.parquet     immutable snapshots
       runs/<run_id>/

@@ -1,0 +1,118 @@
+"""Datasets (TRD §4.2): upload, sample, list, get."""
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile, status
+from pydantic import BaseModel, ValidationError
+
+from sherlock.db import datasets as datasets_repo
+from sherlock.db.connection import get_db
+from sherlock.db.users import User
+from sherlock.errors import ApiError
+from sherlock.identity import current_user
+from sherlock.ingest.importer import import_csv
+from sherlock.ingest.options import ImportOptions
+from sherlock.ownership import owned_dataset
+
+router = APIRouter(tags=["datasets"])
+
+SAMPLE_CSV = Path(__file__).resolve().parents[2] / "samples" / "titanic3.csv"
+SAMPLE_NAME = "titanic3.csv (sample)"
+
+
+class CleaningProgress(BaseModel):
+    step: int
+    of: int
+    pct: float
+
+
+class Dataset(BaseModel):
+    id: str
+    name: str
+    status: Literal["profiling", "offer", "cleaning", "building", "ready", "failed"]
+    current_version: int
+    row_count: int | None
+    column_count: int | None
+    created_at: str
+    last_opened_at: str | None
+    last_tab: Literal["csv", "dashboard", "flow"] | None
+    cleaning_progress: CleaningProgress | None = None
+    error: str | None = None
+
+
+def to_dataset(row: sqlite3.Row) -> Dataset:
+    return Dataset(
+        id=row["id"],
+        name=row["name"],
+        status=row["status"],
+        current_version=row["current_version"],
+        row_count=row["row_count"],
+        column_count=row["column_count"],
+        created_at=row["created_at"],
+        last_opened_at=row["last_opened_at"],
+        last_tab=row["last_tab"],
+        error=row["error"],
+    )
+
+
+def _parse_options(raw: str | None) -> ImportOptions:
+    if not raw:
+        return ImportOptions()
+    try:
+        return ImportOptions.model_validate(json.loads(raw))
+    except (json.JSONDecodeError, ValidationError) as exc:
+        message = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else "not valid JSON"
+        raise ApiError(422, "invalid", f"options: {message}") from None
+
+
+@router.get("/datasets", response_model=list[Dataset])
+def list_datasets(user: User = Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    return [to_dataset(row) for row in datasets_repo.list_for_user(db, user.id)]
+
+
+@router.post("/datasets", response_model=Dataset, status_code=status.HTTP_201_CREATED)
+def upload_dataset(
+    request: Request,
+    file: UploadFile = File(...),
+    options: str | None = Form(None),
+    user: User = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    settings = request.app.state.settings
+    limit = settings.max_upload_mb
+    if file.size is not None and file.size > limit * 1024 * 1024:
+        size_mb = file.size / (1024 * 1024)
+        shown = f"{size_mb:.1f}" if size_mb < 10 else f"{size_mb:.0f}"
+        raise ApiError(413, "too_large", f"This file is {shown} MB. The limit is {limit} MB.")
+    row = import_csv(settings, db, user.id, file.file, file.filename or "upload.csv", _parse_options(options))
+    return to_dataset(row)
+
+
+@router.post("/datasets/sample", response_model=Dataset)
+def sample_dataset(
+    request: Request,
+    response: Response,
+    user: User = Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The bundled Titanic file; returns the user's existing sample instead of a duplicate."""
+    existing = datasets_repo.find_sample(db, user.id)
+    if existing is not None:
+        return to_dataset(existing)
+    with SAMPLE_CSV.open("rb") as fh:
+        row = import_csv(
+            request.app.state.settings, db, user.id, fh, SAMPLE_CSV.name, ImportOptions(),
+            name=SAMPLE_NAME, is_sample=True,
+        )
+    response.status_code = status.HTTP_201_CREATED
+    return to_dataset(row)
+
+
+@router.get("/datasets/{dataset_id}", response_model=Dataset)
+def get_dataset(row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)):
+    """Opening a dataset records `last_opened_at`, which orders the library."""
+    datasets_repo.mark_opened(db, row["id"])
+    return to_dataset(datasets_repo.get(db, row["user_id"], row["id"]))

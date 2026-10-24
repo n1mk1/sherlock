@@ -27,6 +27,9 @@ services:
       # The image listens on 8080; Render routes public traffic to $PORT.
       - key: PORT
         value: "8080"
+      # Starter has 512 MB; keep each DuckDB connection well under it (TRD §10).
+      - key: DUCKDB_MEMORY_MB
+        value: "256"
       # Set in the Render dashboard when the Blueprint is created; never in the repo.
       - key: LLM_API_KEY
         sync: false

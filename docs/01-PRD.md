@@ -384,7 +384,7 @@ Go when all are true:
 | Which Nemotron models does Token Factory serve, with which features? | Model assignments (TRD §3.5) | Use the largest available Nemotron model for reasoning roles |
 | Does Glide Data Grid cover range select, range paste and fill handle? | CSV tab library | Keep Glide; if it lacks them, cut fill handle and range paste to P1 (AG Grid Community has no range selection, clipboard or fill handle) |
 | Does Bklit expose custom tooltips and shared hover state? | Hover linking | Edit the copied source |
-| Sample file license | Bundling | Fetch at setup |
+| Sample file license | Bundling | Resolved 2026-10-24: OpenML 40945 lists the Titanic data's licence as "Public" (Harrell and Cason, Vanderbilt Biostatistics), so `api/samples/titanic3.csv` is bundled; `scripts/fetch_sample.py` rebuilds it from OpenML |
 | Solo or two people? | Timeline | Solo; apply the cut order early |
 
 ---
