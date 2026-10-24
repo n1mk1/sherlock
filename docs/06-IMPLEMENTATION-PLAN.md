@@ -208,7 +208,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 - [ ] `config.py`, `main.py` lifespan (migrations, job runner), `/healthz`, `/metrics`
 - [ ] `db/` migrations 001, repositories (users, datasets, versions, steps, lineage, widgets, cards, canvases, runs, jobs, messages, proposals, selections, value_index, llm_calls)
-- [ ] identity middleware, ownership dependency, rate limiter
+- [x] identity middleware, ownership dependency, rate limiter (2026-10-24)
 - [ ] `storage.py` folder layout, locks, byte accounting
 - [ ] `ingest/` sniff, import, `_row_id`, sample loader
 - [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional)

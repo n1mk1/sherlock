@@ -140,6 +140,22 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Ownership checked on every route: bare ids (`/widgets/{wid}`, `/cards/{cid}`, `/runs/{rid}`, `/exports/{export_id}`, `/jobs/{jid}`, `/proposals/{id}`, `/messages/{mid}`, `/fact-sheets/{fsid}`) are first resolved to their dataset (404 if not owned).
 - Request IDs in every log line and error response.
 - OpenAPI schema is the contract; the web client is generated from it (`openapi-typescript`).
+- Implementation (2026-10-24):
+  - **Middleware.** Two pure-ASGI middlewares, so they also work for streaming (SSE) responses:
+    - `RequestIdMiddleware` (`sherlock/errors.py`) gives every request a `req_<ulid>` and returns it as `X-Request-ID`.
+    - `IdentityMiddleware` (`sherlock/identity.py`) runs only on `/api/` paths, so `/healthz` and static files never create users.
+  - **Identity cookie.**
+    - A missing or unknown cookie creates a new user and a new token, from `secrets.token_urlsafe(32)`.
+    - The cookie is `HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`, plus `Secure` when the request is HTTPS directly or through `X-Forwarded-Proto`.
+    - `users.last_seen_at` is refreshed at most once a minute.
+  - **Router-wide dependencies.** The `/api/v1` router depends on `current_user` and `rate_limit` (§15).
+  - **Ownership.** `sherlock/ownership.py` provides:
+    - `owned_dataset` for `/datasets/{dataset_id}/…` routes
+    - `owned(kind)` for bare-ID routes, which resolves through the table's `dataset_id`, except jobs, which carry `user_id`
+
+    A soft-deleted dataset hides itself and its children. Not-owned and missing look the same: `404 not_found`.
+  - **Error envelope.** FastAPI's own errors are mapped onto it: validation errors → `422 invalid`, unknown routes → `404 not_found`, unhandled exceptions → `500 internal`.
+  - **Database.** Routes get one SQLite connection per request through `get_db` (`sherlock/db/connection.py`). The identity middleware uses its own short-lived connection, in a worker thread. Migrations run in the lifespan, after the model-role check.
 
 ### 3.2 Storage
 
@@ -198,6 +214,8 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 | GET | `/me` | — | `{ user_id, created_at, settings }` |
 | PUT | `/me/settings` | `Settings` | `Settings` |
 | GET | `/events` | — | user-level SSE stream: `dataset.status` and `job.progress` for all of the user's datasets (§5) |
+
+`GET /me` returns `settings` with every field filled: stored values over the PRD §7.10 defaults, and a stored value that is no longer allowed falls back to its default. `PUT /me/settings` accepts a full or partial `Settings` (unknown keys → `422 invalid`), merges it over the stored values, and returns the full result.
 
 `Settings`: `{ theme: "dark"|"light"|"system", accent: "verdigris"|"arcane"|"ember"|"aether"|"brass", chatbar: "pinned"|"autohide"|"hidden", after_upload: "ask"|"always"|"never", cleaning_mode: "auto"|"stepwise", story_updates: "auto"|"ask", spotlight: "off"|"subtle"|"full", reduce_motion: "system"|"on"|"off", default_tab: "csv"|"dashboard"|"flow" }`
 
@@ -770,7 +788,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 ## 11. Deployment
 
 - **Image**: `api/Dockerfile`, multi-stage: build `web/` with pnpm, then python:3.12-slim with uv install, the built web app copied in, an entrypoint that starts as root, launches `sherlock-sandboxd` (the only process that keeps root, and only to spawn workers as the `sandbox` user, §3.4), then drops the API to the `app` user with `setpriv`, and `uvicorn sherlock.main:app --host 0.0.0.0 --port 8080 --workers 1`. The same image runs jobs with a different command, which also starts `sherlock-sandboxd` first so cleaning jobs can launch workers.
-- **Nebius Serverless Endpoint**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs).
+- **Nebius Serverless Endpoint**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` follows the DB).
 - **Availability through judging**: the deployment, its Token Factory key and enough Nebius credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.
 - **Frontend**: `web/` built with Vite to static files and served by the API container under `/`. This is the only supported hosting: one origin keeps the `SameSite=Lax` identity cookie working and keeps everything on Nebius.
@@ -823,5 +841,8 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - SQL only via sqlglot-validated `SELECT` on cached in-memory connections with external access disabled (§3.2); no user-supplied SQL endpoint.
 - Upload validation (size, decodability, row/column caps); file stored outside any served path.
 - Cookie identity; ownership checks on every route (§3.1); per-user rate limits of 600 read requests/min, 60 mutating requests/min and 10 LLM-bearing requests/min, answered with `429 rate_limited`.
+  - Implemented in `sherlock/ratelimit.py` as in-memory sliding 60-second windows, which is correct because the API is one process (§3.1). The response carries `Retry-After`.
+  - Reads are `GET`, `HEAD` and `OPTIONS`; any other method is a mutation.
+  - Routes that call the model also add the `llm_rate_limit` dependency, so they count against both their method's bucket and the LLM bucket.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).
 - Dependencies pinned; licenses recorded in `THIRD_PARTY.md`.

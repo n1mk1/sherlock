@@ -1,6 +1,6 @@
 # Sherlock · Backend Schema
 
-Version 1.0 · 2026-10-19 · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
+Version 1.1 · 2026-10-24 (migration 001 and the doc-sync test, §1) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
 
 ---
 
@@ -12,6 +12,10 @@ Version 1.0 · 2026-10-19 · Every table, column, file and index. SQLite holds a
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
+  - `001_initial.sql` creates every table and index in §2 verbatim. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - Each migration runs in one transaction.
+  - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
+- ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
 
 ---
 
