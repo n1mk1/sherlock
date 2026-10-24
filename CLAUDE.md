@@ -18,7 +18,7 @@ The tech stack is planned in `docs/04-TRD.md` §2. Pinned versions are in TRD §
 - **`web/`:** Vite, React 18, TypeScript and pnpm.
   - UI: Tailwind and shadcn/ui, Bklit charts (visx, plus custom visx charts), react-grid-layout, Glide Data Grid, React Flow, TipTap, Motion, sonner, lucide-react.
   - Data and state: TanStack Query, Zustand, Papa Parse, and an API client generated from OpenAPI.
-- **Deploy:** one Docker image serves the API and the built web app from one origin. It runs on a Nebius Serverless Endpoint with `/data` mounted, and a Nebius AI Cloud VM is the fallback.
+- **Deploy:** one Docker image serves the API and the built web app from one origin. It runs on Render as a web service with a persistent disk at `/data` (`render.yaml`). A Nebius Serverless Endpoint or AI Cloud VM is the documented alternative (`scripts/deploy.sh`).
 - **CI:** GitHub Actions.
 
 ## How

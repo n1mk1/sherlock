@@ -104,7 +104,27 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 
 ## Nebius hosting (Serverless Endpoint / AI Cloud VM)
 
-_No entries yet (the first deploy is on Oct 25)._
+**What we used it for:** the planned host was one CPU-only Serverless Endpoint with a shared filesystem at `/data` (`scripts/deploy.sh`). We moved hosting to Render on 2026-10-24 because of the problems below. Inference stays on Token Factory.
+
+**Problem 1: Token Factory access doesn't carry over to AI Cloud, and a new AI Cloud tenant starts suspended.**
+- **Steps:**
+  1. Have a working Token Factory account and API key, signed in with GitHub.
+  2. Install the Nebius CLI and run `nebius profile create` with the same GitHub login.
+  3. Run `nebius iam tenant list` and `nebius iam project list`. A tenant created at that moment, with `suspension_state: SUSPENDED`, has three default projects (eu-west2, us-north1 and one more), all suspended.
+- **Effect:**
+  - Nothing can be created: no registry, filesystem or endpoint. The hello-world deploy (Implementation Plan D1.3) was blocked on deadline week.
+  - Nothing in the CLI said why the tenant was suspended or what would lift it.
+  - The hackathon materials we found mention Builder Program credits for Token Factory, not for AI Cloud.
+- **Suggestion:**
+  - Make `nebius iam tenant list` (and the console) say why a tenant is suspended and link to the fix (billing, a promo code, verification).
+  - Let hackathon credits, or a Token Factory account in good standing, activate a small AI Cloud allowance.
+
+  This helps every hackathon team that wants to host on Nebius, since the rules encourage Serverless but most entrants start on Token Factory.
+
+**Problem 2: the CLI has no Windows build.**
+- **Steps:** the install docs cover Ubuntu and macOS only.
+- **Effect:** on a Windows dev machine we had to install Ubuntu under WSL, enable Docker Desktop's WSL integration, and run the CLI there. The browser login callback to `127.0.0.1` worked through WSL's localhost forwarding.
+- **Suggestion:** ship a Windows binary, or document the WSL route (including `--no-browser`) on the install page.
 
 ## Tooling notes from the build
 

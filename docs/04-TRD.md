@@ -15,7 +15,7 @@ Version 1.1 · 2026-10-24 (all model roles NVIDIA, availability through judging)
 └───────────────┬─────────────────────────────┬───────────────────┘
                 │ HTTPS /api/v1               │ SSE /api/v1/datasets/{id}/events
 ┌───────────────▼─────────────────────────────▼───────────────────┐
-│ API: FastAPI (uvicorn) on a Nebius Serverless Endpoint          │
+│ API: FastAPI (uvicorn) on Render (alt: Nebius Serverless)       │
 │  routers · services · job runner (asyncio workers)              │
 │  pipelines: Cleaner · DashboardBuilder · Storyteller · MLRunner │
 │  chat agent: router → answerers → compose → verify              │
@@ -135,7 +135,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 
 ### 3.1 API server
 
-- FastAPI with uvicorn, exactly 1 worker process in the Serverless Endpoint container (CPU-bound work happens in subprocesses or job workers). One process is required because the job runner and the SSE event bus live in it, and the endpoint is pinned to one replica.
+- FastAPI with uvicorn, exactly 1 worker process in the container (on Render, or on the Nebius Serverless Endpoint alternative) (CPU-bound work happens in subprocesses or job workers). One process is required because the job runner and the SSE event bus live in it, and the endpoint is pinned to one replica.
 - Identity middleware: reads `sherlock_uid`; creates it (a random 256-bit token, stored hashed per Schema §2.1) and a `users` row on first request. Every router depends on `current_user`.
 - Ownership checked on every route: bare ids (`/widgets/{wid}`, `/cards/{cid}`, `/runs/{rid}`, `/exports/{export_id}`, `/jobs/{jid}`, `/proposals/{id}`, `/messages/{mid}`, `/fact-sheets/{fsid}`) are first resolved to their dataset (404 if not owned).
 - Request IDs in every log line and error response.
@@ -159,7 +159,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 
 ### 3.2 Storage
 
-- `/data` is a persistent volume mounted into the container; a filesystem with local locking semantics is required for SQLite and the Parquet files. Whether a Nebius Serverless Endpoint provides this on a single replica is unverified and is the Day 1 deploy's exit check; if it fails, the same image runs on one Nebius AI Cloud VM with an attached disk.
+- `/data` is a persistent volume mounted into the container; a filesystem with local locking semantics is required for SQLite and the Parquet files. On Render it is the service's persistent disk (§11), which is a block device local to the instance. Whether a Nebius Serverless Endpoint provides this on a single replica is unverified and is the Day 1 deploy's exit check; if it fails, the same image runs on one Nebius AI Cloud VM with an attached disk.
 - Layout per dataset in [Schema §4](05-BACKEND-SCHEMA.md).
 - SQLite in WAL mode, one connection per request, `busy_timeout=5000`.
 - DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections or 1 GB and evicted when a newer version exists. Commits write Parquet and SQLite only.
@@ -789,10 +789,17 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 ## 11. Deployment
 
 - **Image**: `api/Dockerfile`, multi-stage: build `web/` with pnpm, then python:3.12-slim with uv install, the built web app copied in, an entrypoint that starts as root, launches `sherlock-sandboxd` (the only process that keeps root, and only to spawn workers as the `sandbox` user, §3.4), then drops the API to the `app` user with `setpriv`, and `uvicorn sherlock.main:app --host 0.0.0.0 --port 8080 --workers 1`. The same image runs jobs with a different command, which also starts `sherlock-sandboxd` first so cleaning jobs can launch workers.
-- **Nebius Serverless Endpoint**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
-- **Availability through judging**: the deployment, its Token Factory key and enough Nebius credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
+- **Render (the host, decided 2026-10-24; PRD §9)**: `render.yaml` is a Blueprint for one web service.
+  - **Service.** `runtime: docker` from `api/Dockerfile` with the repo root as the build context, in the `frankfurt` region on the `starter` plan (0.5 CPU, 512 MB). The plan moves up when the sandbox and ML land (Implementation Plan D2.4, D7), because `SANDBOX_MEM_MB` defaults to 2048.
+  - **Disk.** A 5 GB persistent disk is mounted at `/data`. A service with a disk is single-instance and has no zero-downtime deploys, which the one-process design requires anyway. The disk can grow but never shrink.
+  - **Port and health.** `PORT=8080` makes Render route to the image's port. The health check is `/healthz`. TLS ends at Render's edge, and `X-Forwarded-Proto: https` gives the identity cookie its `Secure` flag (§3.1).
+  - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint.
+  - **Deploys.** `autoDeployTrigger: checksPass` with a `buildFilter` on `api/**`, `web/**` and `render.yaml`, so a push to `main` redeploys only after CI passes, and only when the app changed.
+  - **Exit check.** The `/data` check below runs the same way on Render: a redeploy restarts the container on the same disk.
+- **Nebius Serverless Endpoint (alternative)**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
+- **Availability through judging**: the deployment, its paid Render plan, its Token Factory key and enough Token Factory credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.
-- **Frontend**: `web/` built with Vite to static files and served by the API container under `/`. This is the only supported hosting: one origin keeps the `SameSite=Lax` identity cookie working and keeps everything on Nebius.
+- **Frontend**: `web/` built with Vite to static files and served by the API container under `/`. This is the only supported hosting: one origin keeps the `SameSite=Lax` identity cookie working, on Render or on the Nebius alternative.
 - **Image as built (2026-10-24):**
   - **Build.** `docker build -f api/Dockerfile -t sherlock .` from the repo root:
     - Stage 1 is `node:24-bookworm-slim`, running `pnpm build`.
@@ -807,7 +814,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 
   `/healthz` reports this as `storage: { data_dir, writable, boots, first_boot_at, sqlite_lock[, error] }`, and `ok` requires the DB, `writable` and `sqlite_lock`. The check passes when `boots` grows after a restart, `first_boot_at` is unchanged, `sqlite_lock` is `true`, and a cookie user created before the restart is still returned by `GET /me`. All of this was verified locally with a named Docker volume on 2026-10-24.
 - **Local dev**: `docker compose up` (api + web with hot reload), `DATA_DIR=./data`.
-- **Deploy script**: `scripts/deploy.sh` builds, pushes, and updates the endpoint via the Nebius CLI; exact commands recorded in the README after the Oct 20 hello-world deploy.
+- **Deploy script (Nebius alternative)**: `scripts/deploy.sh` builds, pushes, and updates the endpoint via the Nebius CLI; exact commands recorded in the README after the Oct 20 hello-world deploy.
   - **Subcommands** (written 2026-10-24 from docs.nebius.com):
     - `setup` creates the Container Registry, a `network_ssd` shared filesystem (default 50 GiB), and a SecretStash secret `sherlock-llm` holding `LLM_API_KEY` from `.env`. It then builds and pushes `cr.<region>.nebius.cloud/<registry>/sherlock:prod` and creates the endpoint, with `--platform cpu-d3 --preset 4vcpu-16gb --disk-size 40Gi --container-port 8080 --volume <fs>:/data:rw --env-secret LLM_API_KEY=sherlock-llm` plus `--env` for `LLM_BASE_URL`, the `MODEL_*` roles, `NVIDIA_EMBED_MODELS` and `LLM_TOOLS_MODE`.
     - The default subcommand rebuilds, pushes the same tag and runs `nebius ai endpoint restart`.
@@ -816,7 +823,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   - **Immutable settings.** Endpoint settings can't change after creation. Changing env vars, the preset or the volume means deleting and recreating the endpoint, which gets a new URL, so the variables passed at creation are kept stable.
   - **Replicas.** An endpoint is a single VM running one container, which satisfies "one replica".
   - **State.** The registry path and filesystem ID are kept in the git-ignored `scripts/.deploy-state`.
-  - **Not yet run against Nebius.** The Nebius CLI supports only Linux and macOS, so on the Windows dev machine it runs under WSL.
+  - **Not yet run against Nebius.** The Nebius CLI supports only Linux and macOS, so on the Windows dev machine it runs under WSL. It was installed and logged in on 2026-10-24, but the account's AI Cloud tenant was suspended (no billing or credits), so no Nebius resources exist.
 
 ---
 

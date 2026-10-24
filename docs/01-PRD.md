@@ -1,6 +1,6 @@
 # Sherlock · Product Requirements Document (PRD)
 
-Version 1.1 · 2026-10-24 (submission requirements and judging criteria, §12) · Owner: As Wasti · Status: final for the Nebius x NVIDIA Global AI Hackathon
+Version 1.2 · 2026-10-24 (hosting moves to Render, §9; v1.1 added the submission requirements and judging criteria, §12) · Owner: As Wasti · Status: final for the Nebius x NVIDIA Global AI Hackathon
 
 Companion documents: [App Flow](02-APP-FLOW.md) · [UI/UX Design Brief](03-UIUX-BRIEF.md) · [TRD](04-TRD.md) · [Backend Schema](05-BACKEND-SCHEMA.md) · [Implementation Plan](06-IMPLEMENTATION-PLAN.md)
 
@@ -14,7 +14,7 @@ Companion documents: [App Flow](02-APP-FLOW.md) · [UI/UX Design Brief](03-UIUX-
 
 **The product.** A web app where every number comes from executed code, every change to the data is a recorded and reversible step, and the AI's job is to translate, orchestrate and narrate rather than to compute. The user interacts through a dashboard, a spreadsheet view of the data, a story canvas, and a chat bar that can answer any question about any of them.
 
-**Hackathon framing.** Built for the Best Apps and Agents track. Runs on Nebius (Token Factory for Nemotron inference, Serverless for hosting, with an AI Cloud VM as the fallback). Every model call Sherlock makes goes to an NVIDIA model on Token Factory (§9). Submitted by 2026-10-30 13:00 EDT. How each submission requirement and judging criterion is met is in §12.
+**Hackathon framing.** Built for the Best Apps and Agents track. Runs on Nebius Token Factory for all Nemotron inference and is hosted on Render (one Docker web service with a persistent disk), with a Nebius Serverless Endpoint or AI Cloud VM as the documented alternative (§9). Every model call Sherlock makes goes to an NVIDIA model on Token Factory (§9). Submitted by 2026-10-30 13:00 EDT. How each submission requirement and judging criterion is met is in §12.
 
 ---
 
@@ -106,7 +106,7 @@ Priority definitions: **P0** ships by 2026-10-29, except items removed by the Im
 | P0-08 | Flow | Canvas per CSV; cards, notes, labeled connections; "make sense of this", "take the story toward X", "rewrite this card". |
 | P0-09 | Ask anything | Natural-language questions across every area in §7.9; sourced answers; follow-ups; clarification with buttons; "Pin to dashboard" and "Add to Flow". |
 | P0-10 | Quality of life | Suggested questions; toasts with Undo; `/` summons chat; `?` shows shortcuts. |
-| P0-11 | Ship | Deployed on Nebius (a Serverless Endpoint, or the AI Cloud VM fallback in §9); cached sample run; public URL. |
+| P0-11 | Ship | Deployed with a public URL on Render (a web service with a persistent disk at `/data`), or on the Nebius alternative in §9 (a Serverless Endpoint or an AI Cloud VM); cached sample run. |
 | P0-12 | Notebook export | From any tab, at any time, "Export notebook" downloads a runnable `.ipynb` that reproduces the current state from the raw CSV: load, every step, every widget's query and chart, every ML run, every story card as Markdown. Table outputs are embedded so it reads without running. (§7.12) |
 
 ### 5.2 P1 (in order)
@@ -342,7 +342,7 @@ Toasts with Undo (10 s) after deleting a widget, rows, a card or a dataset · `/
 | **Performance** | Titanic-sized file: profile ≤ 3 s; widget query ≤ 300 ms; dashboard first paint ≤ 2 s after build; cascade after a save ≤ 5 s to all widgets re-rendered. 50 MB file: profile ≤ 60 s; grid scroll stays at 60 fps with paging; headless clean ≤ 5 min (budget). |
 | **Reliability** | Jobs are checkpointed per step and resumable after a server restart. The UI never shows a raw exception. |
 | **Security** | Generated code runs in a sandbox with no network, CPU/memory/time limits, per-dataset isolation, only the dataframe in scope. Cell values enter prompts only as delimited data blocks. Per-user caps: 50 MB per file, 500 MB per user, 7-day expiry, rate limits, token budget. |
-| **Privacy** | Data is stored on the Nebius-hosted backend only. No third-party analytics. Retention claims are made only after checking Nebius terms. |
+| **Privacy** | Data is stored only on Sherlock's own backend (the Render service's persistent disk; on the Nebius alternative, its mounted volume), and cell values leave it only inside prompts to Nebius Token Factory. No third-party analytics. Retention claims are made only after checking the terms of the host and of Token Factory. |
 | **Accessibility** | Keyboard operable throughout; visible focus; text contrast ≥ 4.5:1; color never the only signal; `prefers-reduced-motion` respected. |
 | **Browser support** | Latest Chrome, Edge, Firefox, Safari on desktop. |
 | **Observability** | Every LLM call logged with model, tokens, latency, purpose and outcome; every job with timings; errors with request IDs. |
@@ -352,8 +352,9 @@ Toasts with Undo (10 s) after deleting a widget, rows, a card or a dataset · `/
 ## 9. Constraints and assumptions
 
 - Inference: NVIDIA models via Nebius Token Factory for every role, following the track's guidance (Ultra for demanding reasoning, Super or Nano for fast everyday calls): large = Nemotron 3 Ultra (cleaning diagnosis and proposals), medium = Nemotron 3 Super (critic, curation, SQL, plans, overview, synthesis), small = Nemotron 3 Nano (routing, narration, answer composition), embed = an NVIDIA embedding model from the Token Factory catalog. The hackathon rule needs at least one NVIDIA open-source model; Sherlock uses no other provider, and the app refuses to start if a configured chat model is not Nemotron (TRD §3.5). If the catalog has no NVIDIA embedding model, embeddings are switched off and value resolution uses exact and fuzzy matching only. Model IDs, context lengths and feature support (tool calling, JSON-schema output) are confirmed on day 1 and recorded in `FEEDBACK.md`; the architecture does not depend on any single capability.
-- Hosting: backend on a Nebius Serverless Endpoint; heavy jobs on Serverless Jobs with a local worker-pool fallback. Persistent storage on the endpoint is verified on Day 1; if it fails, the same image runs on one Nebius AI Cloud VM with a disk. The rules require running on Token Factory or AI Cloud, which inference on Token Factory already satisfies; Nebius hosting is a choice, not a rule. The submission names only the Nebius services the deployed app actually uses (Serverless Jobs only if `JOB_BACKEND=nebius` runs in production).
-- Availability: the public URL, the Token Factory key and enough Nebius credit to serve judges stay live through the hackathon's judging period and winner announcement, not only until the submission deadline.
+- Hosting (decided 2026-10-24): the backend runs on **Render** as one Docker web service built from `api/Dockerfile`, with a persistent disk mounted at `/data`. A service with a disk is single-instance, which matches the one-process design (TRD §3.1). Jobs run in-process (`JOB_BACKEND=local`). Why: the Nebius AI Cloud tenant for this account was new and suspended (it has no credits or billing, separate from the Token Factory credits), and the rules don't require Nebius hosting. The Nebius route below stays documented and scripted (`scripts/deploy.sh`) as the alternative, and moving to it is one deploy plus a URL change.
+- Hosting, Nebius alternative: backend on a Nebius Serverless Endpoint; heavy jobs on Serverless Jobs with a local worker-pool fallback. Persistent storage on the endpoint is verified on Day 1; if it fails, the same image runs on one Nebius AI Cloud VM with a disk. The rules require running on Token Factory or AI Cloud, which inference on Token Factory already satisfies; Nebius hosting is a choice, not a rule. The submission names only the Nebius services the deployed app actually uses (Serverless Jobs only if `JOB_BACKEND=nebius` runs in production).
+- Availability: the public URL (and its paid Render plan), the Token Factory key and enough Token Factory credit to serve judges stay live through the hackathon's judging period and winner announcement, not only until the submission deadline.
 - Charts: Bklit UI (MIT). Its Studio is proprietary and excluded.
 - Sample data: titanic3 (1,309 rows) if its license allows bundling; otherwise fetched at setup, or Kaggle's `train.csv` after a license check.
 - Team: one or two people. The implementation plan has a cut order if it stays one.
@@ -379,7 +380,7 @@ Go when all are true:
 
 | Question | Blocks | Default if unresolved |
 |---|---|---|
-| Must the app be hosted on Nebius? | Hosting plan | Resolved from the official rules: no. Running on Token Factory or AI Cloud is the requirement, and Token Factory inference meets it. Sherlock still hosts on Nebius (§9). |
+| Must the app be hosted on Nebius? | Hosting plan | Resolved from the official rules: no. Running on Token Factory or AI Cloud is the requirement, and Token Factory inference meets it. Sherlock hosts on Render, with Nebius hosting as the documented alternative (§9). |
 | Which Nemotron models does Token Factory serve, with which features? | Model assignments (TRD §3.5) | Use the largest available Nemotron model for reasoning roles |
 | Does Glide Data Grid cover range select, range paste and fill handle? | CSV tab library | Keep Glide; if it lacks them, cut fill handle and range paste to P1 (AG Grid Community has no range selection, clipboard or fill handle) |
 | Does Bklit expose custom tooltips and shared hover state? | Hover linking | Edit the copied source |
@@ -396,7 +397,7 @@ Sources: [official_page.md](official_page.md) (the Devpost rules, which control)
 
 | Requirement | How Sherlock meets it | Artifact |
 |---|---|---|
-| Runs on Nebius Token Factory or Nebius AI Cloud | All inference on Token Factory; hosted on a Nebius Serverless Endpoint or AI Cloud VM (§9) | Deployed app; README "Nebius services" section |
+| Runs on Nebius Token Factory or Nebius AI Cloud | All inference on Token Factory (the Nebius service the app uses); hosted on Render (§9) | Deployed app; README "NVIDIA models and Nebius" section |
 | Uses at least one NVIDIA open-source model | Every role is an NVIDIA model; startup check (TRD §3.5) | `llm_calls` log; README model table |
 | Fits the chosen track (Best Apps and Agents: a practical app or agent people would actually use, with Nemotron on Token Factory) | A working analyst agent on the user's own CSV, end to end | Hosted URL; video |
 | A working project, not a concept | Every P0 not removed by the cut order passes its acceptance criteria (§10) | Hosted URL; end-to-end set |
@@ -412,7 +413,7 @@ Sources: [official_page.md](official_page.md) (the Devpost rules, which control)
 | Public repository | GitHub, readable without a login | `github.com/n1mk1/sherlock` |
 | Open-source license | MIT, `LICENSE` at the repo root so it shows at the top of the repo page | `LICENSE` |
 | README | Setup and run commands, the NVIDIA models and what each does, Nebius Token Factory and the other Nebius services used | `README.md` (Implementation Plan §7) |
-| Technology feedback | Feedback on Token Factory, Nebius hosting and the Nemotron models | `FEEDBACK.md` (Implementation Plan §7) |
+| Technology feedback | Feedback on Token Factory, the Nemotron models, and Nebius AI Cloud as far as it was tried (the suspended new tenant and the separate billing) | `FEEDBACK.md` (Implementation Plan §7) |
 | Pre-existing project disclosure | Not applicable: the project was started inside the submission period | — |
 | Builders & Brews city | Only if an IRL event was attended (Toronto is a listed city) | — |
 

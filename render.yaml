@@ -1,0 +1,46 @@
+# Render Blueprint: Sherlock's host (PRD §9, TRD §11).
+# One Docker web service built from api/Dockerfile, serving the API and the web app from one
+# origin, with a persistent disk at /data. A service with a disk is single-instance, which the
+# app requires (one process holds the job runner and the SSE bus, TRD §3.1).
+# The Nebius alternative is scripts/deploy.sh.
+services:
+  - type: web
+    name: sherlock
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    # Deploy main only after CI passes, and only when the app itself changed.
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - api/**
+        - web/**
+        - render.yaml
+    disk:
+      name: sherlock-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      # The image listens on 8080; Render routes public traffic to $PORT.
+      - key: PORT
+        value: "8080"
+      # Set in the Render dashboard when the Blueprint is created; never in the repo.
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.tokenfactory.nebius.com/v1/
+      - key: MODEL_LARGE
+        value: nvidia/Nemotron-3-Ultra-550b-a55b
+      - key: MODEL_MEDIUM
+        value: nvidia/nemotron-3-super-120b-a12b
+      - key: MODEL_SMALL
+        value: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
+      - key: MODEL_EMBED
+        value: ""
+      - key: NVIDIA_EMBED_MODELS
+        value: ""
+      - key: LLM_TOOLS_MODE
+        value: native

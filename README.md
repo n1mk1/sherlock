@@ -60,7 +60,17 @@ cd web && pnpm install && pnpm dev
 
 ## Deploy
 
-Sherlock runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`) with a Nebius shared filesystem mounted at `/data`. The Token Factory key is stored in a Nebius secret (SecretStash) instead of plain endpoint settings.
+Sherlock is hosted on **Render**: one Docker web service built from `api/Dockerfile` with a persistent disk at `/data`, defined in [`render.yaml`](render.yaml). Every model call still goes to Nemotron on Nebius Token Factory.
+
+1. In the Render dashboard, choose **New → Blueprint** and pick this repository.
+2. When asked, enter `LLM_API_KEY`. It's `sync: false`, so it never lives in the repo.
+3. Apply. Render builds the image, attaches the disk and deploys.
+
+Later pushes to `main` that touch `api/`, `web/` or `render.yaml` redeploy once CI passes.
+
+### Nebius alternative
+
+The same image runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`) with a Nebius shared filesystem mounted at `/data`. There, the Token Factory key is stored in a Nebius secret (SecretStash) instead of plain endpoint settings. This needs an active Nebius AI Cloud tenant with billing or credits.
 
 Requirements: bash, Docker, `jq`, `curl` and the [Nebius CLI](https://docs.nebius.com/cli/install) with a profile for the project. On Windows, use WSL (Ubuntu) with Docker Desktop's WSL integration.
 

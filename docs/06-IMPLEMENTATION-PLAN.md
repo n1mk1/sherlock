@@ -53,6 +53,8 @@ What each cut removes from the days below:
 | 8 | D4.7: brushing and the brush → selection chip (no spike ran, so brushing is the safe cut) | click-to-filter; ML scope comes from a filter or the whole dataset; §9 moment 6 filters instead of brushing |
 | 9 | D4.3: the suggested-questions endpoint and UI; D4.4 and D8.3: the `?` shortcuts sheet | chat; the `/` shortcut |
 
+**Hosting change (2026-10-24, owner's decision):** D1.3 deploys to Render (`render.yaml`, PRD §9) instead of a Nebius Serverless Endpoint. The account's Nebius AI Cloud tenant was suspended, and the rules don't require Nebius hosting. The exit check is unchanged. The Nebius steps in D1.3 and D9.2 stay valid as the alternative (`scripts/deploy.sh`).
+
 If a Must from this table slips, §5 has nothing left to cut, so any further drop needs a PRD change by the owner.
 
 ### Day 0 · Oct 19 (evening): decisions locked
@@ -265,7 +267,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Deploy | `./scripts/deploy.sh` (build → push → update endpoint) |
 | Generate the API client | `pnpm openapi` (reads `/openapi.json`) |
 
-Environments: `local` (compose, `DATA_DIR=./data`, mocked LLM optional via `LLM_MOCK=1`), `prod` (Nebius Serverless Endpoint, real Token Factory).
+Environments: `local` (compose, `DATA_DIR=./data`, mocked LLM optional via `LLM_MOCK=1`), `prod` (Render web service with a disk, real Token Factory; the Nebius Serverless Endpoint is the alternative).
 
 ---
 
@@ -315,7 +317,7 @@ What each artifact must contain is set by PRD §12 (the official rules and the j
 - Repo: `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), `docs/USER-TESTS.md`, architecture diagram (`docs/architecture.png`), screenshots, `docs/examples/titanic3-v7.ipynb` (the sample's exported notebook, viewable on GitHub). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). Owner: As Wasti. LICENSE on Day 0, README and THIRD_PARTY.md on Day 9, FEEDBACK.md kept from Day 1 and finalized on Day 10.
 - README sections, in order: what Sherlock is in two sentences and the hosted URL · a screenshot · try it (sample, then your own CSV) · **NVIDIA models and Nebius** (a table per role: model ID, what it does, median latency, tokens and cost per sample run; the Nebius services the deployed app actually uses; the request/data-flow diagram) · how trust works (sources, chips, verifiers, quarantine) · results (cleaning benchmark, ML planted-truth tests, grounding test, ask-anything eval, user test and baseline comparison) · **known limitations** (failed eval questions, cleaning cases the benchmark misses, files that fail, anonymous identity with no recovery, 7-day expiry, anything not shipped from P0) · accessibility · local setup and run (`.env.example`, a Token Factory key, `docker compose up`) · deploy · tests and evals · license and third-party notices.
 - `docs/USER-TESTS.md`: for each tester (at least 3, none who has seen Sherlock before): who they are, the CSV, the task, time to first sourced answer, where they hesitated, what they said, what was changed because of it; plus the baseline comparison (the same 3 questions on the same file by hand versus with Sherlock: time, steps, and how many answers could be traced to their source).
-- Public URL on Nebius, live through the judging period and winner announcement (PRD §9, TRD §11). Owner: As Wasti. First deploy on Day 1, final on Day 9.
+- Public URL on Render (or the Nebius alternative), live through the judging period and winner announcement (PRD §9, TRD §11). Owner: As Wasti. First deploy on Day 1, final on Day 9.
 - YouTube video ≤ 3:00, public, from the §9 script. Owner: As Wasti. Day 10.
 - Devpost description, in this order: the problem and who has it (PRD §3.1) · what Sherlock does, in one line · the demonstrated result (benchmark, eval and user-test numbers) · how it works (architecture, which NVIDIA model does what and why that size, what runs on Nebius) · how it differs from existing tools (PRD §3.2) · limitations · what comes next (P1 and P2 highlights). Owner: As Wasti. Day 10.
 - `FEEDBACK.md`, written for the Most Valuable Feedback criteria (completeness, viability, potential impact): for each of Token Factory, the Nemotron models (per model), and Nebius hosting: what we used it for, what worked, each problem with steps to reproduce and its effect on the build, and a concrete, buildable suggestion with who it would help.
@@ -341,4 +343,4 @@ The hero moments the PRD's video metric refers to, in recording order. Every mom
 6. 1:45 to 2:10. Brush a range (with cut 8 applied: click a bar to filter), run "What drives this?", and read the model card against its baselines, with the leakage column excluded.
 7. 2:10 to 2:30. On the Flow canvas, select three cards and run "Make sense of this": a synthesis card with chips appears.
 8. 2:30 to 2:50. Export the notebook and run it in Jupyter: it rebuilds the current version.
-9. 2:50 to 3:00. Close on the architecture: which Nemotron model does what on Nebius Token Factory, hosting on Nebius, and one result against its baseline.
+9. 2:50 to 3:00. Close on the architecture: which Nemotron model does what on Nebius Token Factory, hosting on Render, and one result against its baseline.
