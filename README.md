@@ -40,7 +40,10 @@ Requirements: [uv](https://docs.astral.sh/uv/) (Python 3.12 is pinned in `api/.p
 
 ```bash
 cp .env.example .env        # then set LLM_BASE_URL and LLM_API_KEY
+uv run --project api python scripts/smoke_llm.py   # tests the Nemotron models, prints the MODEL_* lines
 ```
+
+The API refuses to start until `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` are Nemotron IDs. Copy the lines the smoke test prints into `.env`.
 
 With Docker:
 

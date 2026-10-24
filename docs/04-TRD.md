@@ -124,7 +124,7 @@ sherlock/
 
 Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm-lock.yaml`):
 
-- **API:** Python 3.12 (`api/.python-version`), uv, hatchling build. Tests use pytest with FastAPI's `TestClient`, which needs `httpx2`.
+- **API:** Python 3.12 (`api/.python-version`), uv, hatchling build. Tests use pytest with FastAPI's `TestClient`, which needs `httpx2`. `pandas` and `numpy` are pinned to the same versions as `NOTEBOOK_PINS` (§10); later dependencies on that list follow the same rule.
 - **Web:** Node 24, with pnpm 12 pinned through `packageManager` and run through Corepack. Vite 8 with `@vitejs/plugin-react`, React 18.3, TypeScript 7, and Tailwind CSS 4 through `@tailwindcss/vite`, so there's no `tailwind.config`. shadcn/ui is configured in `components.json` (new-york style, lucide icons, the `@/` alias for `src/`). Tests use Vitest with jsdom and Testing Library.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
@@ -167,7 +167,11 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 ### 3.5 LLM client
 
 - One `LLMClient` with `complete(role, messages, schema=None, tools=None, temperature, max_tokens)`; `role` ∈ `{large, medium, small, embed}` maps to model IDs from config (`MODEL_LARGE`, `MODEL_MEDIUM`, `MODEL_SMALL`, `MODEL_EMBED`), filled on day 1 from Token Factory's catalog. Every role is an NVIDIA model (the hackathon rule needs at least one; Sherlock uses only NVIDIA models): startup fails unless `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` all contain `nemotron`, and `MODEL_EMBED` is either empty (embeddings off; resolution uses exact and fuzzy matching only) or an NVIDIA model ID from the catalog (listed in `NVIDIA_EMBED_MODELS`). `/healthz` reports the four configured IDs.
-- Transport: OpenAI-compatible chat completions (`LLM_BASE_URL`, `LLM_API_KEY`). If Token Factory's API differs, only this adapter changes.
+- Transport: OpenAI-compatible chat completions (`LLM_BASE_URL`, `LLM_API_KEY`) through the `openai` Python SDK. If Token Factory's API differs, only this adapter changes.
+- Startup check and health (implemented in `sherlock/llm/models.py`):
+  - The role check runs in the app's lifespan, so a misconfigured deployment refuses to start.
+  - `/healthz` reports `llm.reachable` from a `GET /models` probe with a 5 s timeout, cached for 60 s so an uptime monitor doesn't hit Token Factory on every check.
+  - Reasoning traces (`<think>…</think>`, or a lone closing tag) are stripped before JSON is parsed (`sherlock/llm/text.py`).
 - Structured output: pass `response_format` with a JSON schema when supported; otherwise instruct JSON in the prompt. Every structured response is validated with pydantic; on failure, one **repair call** sends the error and asks for corrected JSON; on second failure the caller gets `StructuredOutputError` and applies its fallback.
 - Tool calling: used by the chat loop when the model supports it; otherwise emulated with a JSON schema `{ "tool": ..., "arguments": ... }`. Decided per model on day 1 (`LLM_TOOLS_MODE=native|json`).
 - Fallbacks after `StructuredOutputError`: Cleaner diagnose, propose and critic calls skip the issue as "model output invalid"; dashboard curation uses the top 8 by score with templated titles; narration uses the fact-sheet bullets; the chat router treats the message as a single `ask_data` question; the planner runs one step; compose returns the raw results table with sources (App Flow §18).

@@ -260,7 +260,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` |
 | Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute) |
 | Export a notebook from the CLI | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |
-| Smoke the model | `uv run python scripts/smoke_llm.py` |
+| Smoke the model | `uv run python scripts/smoke_llm.py` (from the repo root: `uv run --project api python scripts/smoke_llm.py`; options `--models a,b`, `--out report.json`, `--no-thinking`) |
 | Seed the sample | `uv run python scripts/seed_sample.py` |
 | Deploy | `./scripts/deploy.sh` (build → push → update endpoint) |
 | Generate the API client | `pnpm openapi` (reads `/openapi.json`) |
