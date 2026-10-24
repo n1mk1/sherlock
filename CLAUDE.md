@@ -1,62 +1,59 @@
 # Sherlock
 
-Sherlock is an AI data analyst, ML engineer and storyteller in one. You drop in a CSV, and it cleans the data, builds a dashboard, runs honest models and writes grounded story cards. It shows its work at every step and exports everything as a runnable Jupyter notebook. It is the entry for the **Nebius x NVIDIA Global AI Hackathon**, in the **Best Apps and Agents** track. Submissions close **2026-10-30, 10:00 PT / 13:00 ET**.
+## Why
 
-## Where things are
+Sherlock is an AI data analyst for people who own a messy CSV and need answers they can defend. It cleans the data, builds a dashboard, runs honest models and writes story cards. Every number comes from executed code and can be traced to its source, and the whole analysis exports as a runnable Jupyter notebook. It is our entry for the Nebius x NVIDIA Global AI Hackathon (Best Apps and Agents track), so the hackathon rules are hard constraints.
 
-| Read this | For |
+## What
+
+The tech stack is planned in `docs/04-TRD.md` §2. Pinned versions are in TRD §10 `NOTEBOOK_PINS`.
+
+- **LLM:** NVIDIA Nemotron only, through Nebius Token Factory's OpenAI-compatible API. The four roles are `large` (Nemotron 3 Ultra), `medium` (Nemotron 3 Super), `small` (Nemotron 3 Nano) and `embed` (an NVIDIA embedding model, or empty).
+- **`api/`:** Python 3.12 managed with uv.
+  - App: FastAPI with one uvicorn worker and pydantic-settings.
+  - State and data: SQLite in WAL mode for app state; Parquet files queried through in-memory DuckDB; sqlglot to validate SQL.
+  - Cleaning: pandas in a sandboxed subprocess, with rapidfuzz, dateparser, ftfy and pandera.
+  - ML: scikit-learn, statsmodels and SHAP.
+  - Notebooks: nbformat and matplotlib.
+- **`web/`:** Vite, React 18, TypeScript and pnpm.
+  - UI: Tailwind and shadcn/ui, Bklit charts (visx, plus custom visx charts), react-grid-layout, Glide Data Grid, React Flow, TipTap, Motion, sonner, lucide-react.
+  - Data and state: TanStack Query, Zustand, Papa Parse, and an API client generated from OpenAPI.
+- **Deploy:** one Docker image serves the API and the built web app from one origin. It runs on a Nebius Serverless Endpoint with `/data` mounted, and a Nebius AI Cloud VM is the fallback.
+- **CI:** GitHub Actions.
+
+## How
+
+Read the doc for the area you're touching before you change it:
+
+| Doc | Read it for |
 |---|---|
-| `docs/01-PRD.md` | What must be true: requirement IDs (LOAD-1, CLEAN-3, NB-4…), P0/P1/P2, metrics, release criteria, §12 submission map |
-| `docs/02-APP-FLOW.md` | Every screen, state, transition and edge case |
-| `docs/03-UIUX-BRIEF.md` | Tokens, components, copy rules, accessibility |
-| `docs/04-TRD.md` | Architecture, API contract, data formats, pipelines, config, deployment |
-| `docs/05-BACKEND-SCHEMA.md` | SQLite tables, Parquet and file layout, retention |
+| `docs/01-PRD.md` | Requirements, with IDs, acceptance criteria and P0/P1/P2; §12 maps the submission rules and judging criteria |
+| `docs/02-APP-FLOW.md` | Screens, states, transitions, edge cases |
+| `docs/03-UIUX-BRIEF.md` | Design tokens, components, copy, accessibility |
+| `docs/04-TRD.md` | Architecture, API contract, data formats, pipelines, config, deployment, testing |
+| `docs/05-BACKEND-SCHEMA.md` | SQLite tables, file layout, retention |
 | `docs/06-IMPLEMENTATION-PLAN.md` | Build order, cut order (§5), test data (§6), submission artifacts (§7), video script (§9) |
-| `docs/official_page.md`, `docs/judges_rubric.md` | Hackathon rules and judging summary; the live rules at https://nebiusglobalaihackathon.devpost.com/rules win on any conflict |
-| `REVIEW.md` | The Oct 20 adversarial review (its line numbers refer to the Oct 19 docs) |
+| `docs/official_page.md`, `docs/judges_rubric.md` | Hackathon rules and judging; the live rules at https://nebiusglobalaihackathon.devpost.com/rules win any conflict |
 
-When docs disagree, the PRD decides *what*, the TRD and schema decide *how*, and the official rules beat both. If you change one doc, update the others that restate the same fact in the same edit.
+When docs disagree, the PRD decides *what* and the TRD and schema decide *how*.
 
-## Non-negotiables
-
-- **Only NVIDIA models, all through Nebius Token Factory.** Roles: `large` = Nemotron 3 Ultra, `medium` = Nemotron 3 Super, `small` = Nemotron 3 Nano, `embed` = an NVIDIA embedding model or empty. The app refuses to start otherwise (TRD §3.5). Never add another LLM provider.
-- **The model never computes numbers.** Every number comes from executed code (SQL, a recipe run or a step). Generated text puts numbers only in chips bound to fact sheets, and the no-digits rule is enforced.
-- **Never mutate data in place.** Every change is a step that creates a new version, with lineage and undo. Auto-cleaning never deletes rows; it quarantines them.
-- **Stay generic.** Any CSV must work, or fail with a clear message. No dataset-specific code, tuning or prep for Titanic; it is only the "Try with sample" file.
-- **Notebook export is never cut.** Every step stores `notebook_code`, and every run writes `repro.py`.
-- **Secrets never reach the repo or a notebook.** `.env` stays local, and `.env.example` lists every variable.
-
-## Hackathon rules to respect
-
-- Public GitHub repo with an MIT `LICENSE` at the root, so it shows in the About section. The README has setup and run instructions and says how Nemotron and Token Factory are used, including where Token Factory accelerated the workflow.
-- The hosted demo is free to use with no login, and stays up and funded through the judging period (Dec 1–15, 2026) and the winner announcement.
-- The video is public on YouTube and **under** 3:00. No copyrighted music, and no third-party trademarks without permission.
-- Feedback on Token Factory, AI Cloud and the NVIDIA models goes in `FEEDBACK.md`. Log surprises there as they happen.
-- Name only the Nebius services the deployed app actually uses. For example, claim Serverless Jobs only if production runs `JOB_BACKEND=nebius`. Claim Tavily only if a runtime call to it ships.
-
-## Working rules
-
-- Build in vertical slices. Commit each verified slice to `main` and push right away.
-- Definition of done: it runs on the sample locally, its test passes, it is reachable from the UI, and it is committed.
-- Mock the LLM while building the UI and pipelines (`LLM_MOCK=1`, fixtures in `api/tests/fixtures/llm/`).
-- **Doc edits:** fix gaps by adding requirements and content. Don't add timelines or schedules, and don't trim or re-scope features. The only way a P0 may drop is the cut order in plan §5.
-- Doc style: plain, direct sentences; requirements get an ID and acceptance criteria.
-
-## Stack (planned; see TRD §2 for the full layout)
-
-- `api/`: Python 3.12, uv, FastAPI (one uvicorn worker), SQLite (WAL) for app state, Parquet plus in-memory DuckDB for data, a pandas sandbox subprocess, scikit-learn and statsmodels, nbformat.
-- `web/`: Vite, React 18, TypeScript, Tailwind, shadcn, Bklit charts, Glide Data Grid, react-grid-layout, React Flow, TanStack Query, Zustand.
-- Deployment: one image that serves the API and the built web app from one origin, on a Nebius Serverless Endpoint with `/data` mounted. The fallback is a Nebius AI Cloud VM.
-
-## Commands (planned; plan §4)
+Verify your work (planned commands, plan §4):
 
 ```bash
-cd api && uv sync                      # install backend
-cd web && pnpm install                 # install frontend
-docker compose up                      # run locally
-uv run pytest                          # backend tests
-pnpm test                              # frontend tests
-uv run sherlock eval corruption        # also: ml, grounding, ask, notebook
-uv run python scripts/smoke_llm.py     # check Token Factory models
-./scripts/deploy.sh                    # build, push, update the endpoint
+uv run pytest            # in api/
+pnpm test                # in web/
+pnpm playwright test     # in web/, the end-to-end flow
+uv run sherlock eval ask # also: corruption, ml, grounding, notebook
 ```
+
+## Rules
+
+1. **Documentation and implementation match at all times.**
+   - Any change to behaviour, the API, the schema, config, UI or dependencies updates the doc that specifies it, in the same commit.
+   - If code has to differ from a doc, change the doc first or ask.
+   - Never leave a doc describing something the code doesn't do, or code doing something no doc describes.
+2. **No model outside NVIDIA on Token Factory.** The model never computes a number. Numbers come from code, and generated text shows them only as chips bound to fact sheets.
+3. **Data is never changed in place.** Every change is a step that creates a new version and can be undone. Cleaning quarantines rows; it never deletes them.
+4. **Keep it generic.** No code, tuning or prep that is specific to one dataset. Titanic is only the sample file.
+5. **When editing docs, add, don't cut.** Fix gaps by adding requirements. Don't add timelines or trim scope; a P0 drops only through the cut order in plan §5.
+6. **Commit each verified slice to `main` and push.** Secrets stay in `.env`, never in the repo or an exported notebook.
