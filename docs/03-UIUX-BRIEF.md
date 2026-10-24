@@ -423,6 +423,15 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
 - Bklit charts, Glide Data Grid (via a theme object built from the CSS variables at runtime and rebuilt on theme change), React Flow (node styles from tokens) and Shiki (two themes: a custom grey dark theme and GitHub Light) all switch with it.
 - Fonts are loaded once; both modes use the same families and weights.
 - Screenshots and "Copy as image" render with the active theme.
+- Implementation (2026-10-24):
+  - **Where the tokens live.** Every token in §2 is in `web/src/app/theme.css` and is exposed to Tailwind in `web/src/index.css`, for example `bg-card`, `text-info` and `bg-accent-soft`.
+  - **Derived tokens.** `--accent-soft`, `--spotlight`, `--unsaved` and `--info-soft` are computed with `color-mix()` from the active `--accent` or `--info`, so they follow every accent and mode without extra hex values. Under Aether, `--info-soft` follows the brass `--info`.
+  - **Two more `<html>` attributes**, set from the settings:
+    - `data-spotlight="off"|"subtle"|"full"` picks the spotlight shadow (`--spotlight-shadow`, default subtle).
+    - `data-reduce-motion="on"|"off"` overrides the OS preference. With motion reduced, every `--duration-*` is 0 and the spotlight is the 1px ring.
+  - **Tokens the brief doesn't name.** `--popover-foreground` and `--secondary-foreground` equal `--foreground` (shadcn needs them). The radii are named `--radius-chip`, `--radius-number-chip`, `--radius-control` and `--radius-surface`, and the overlay shadow is `--shadow-overlay`.
+  - **Fonts** are self-hosted from `@fontsource-variable` (Inter, Source Serif 4, Geist Mono), so they're served from the app's own origin.
+  - **Test.** `web/src/app/theme.test.ts` checks the base and accent values against §2.1 and the §8 contrast rules: accents and muted text at 4.5:1, chart greys at 3:1.
 
 ---
 

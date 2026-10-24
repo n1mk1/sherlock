@@ -125,7 +125,7 @@ sherlock/
 Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm-lock.yaml`):
 
 - **API:** Python 3.12 (`api/.python-version`), uv, hatchling build. Tests use pytest with FastAPI's `TestClient`, which needs `httpx2`. `pandas` and `numpy` are pinned to the same versions as `NOTEBOOK_PINS` (§10); later dependencies on that list follow the same rule.
-- **Web:** Node 24, with pnpm 12 pinned through `packageManager` and run through Corepack. Vite 8 with `@vitejs/plugin-react`, React 18.3, TypeScript 7, and Tailwind CSS 4 through `@tailwindcss/vite`, so there's no `tailwind.config`. shadcn/ui is configured in `components.json` (new-york style, lucide icons, the `@/` alias for `src/`). Tests use Vitest with jsdom and Testing Library.
+- **Web:** Node 24, with pnpm 12 pinned through `packageManager` and run through Corepack. Vite 8 with `@vitejs/plugin-react`, React 18.3, TypeScript 7, and Tailwind CSS 4 through `@tailwindcss/vite`, so there's no `tailwind.config`. shadcn/ui is configured in `components.json` (new-york style, lucide icons, the `@/` alias for `src/`). Tests use Vitest with jsdom and Testing Library. Test files type-check under `tsconfig.test.json`, which adds Node types; app code under `tsconfig.app.json` has none. The design tokens are in `src/app/theme.css` (UI/UX brief §9), and the fonts come from `@fontsource-variable`.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
 
