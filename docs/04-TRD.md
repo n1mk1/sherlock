@@ -779,6 +779,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `TAVILY_API_KEY` | — | P1 |
 | `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; kept equal to the API's own pins (check on day 1) |
 | `CORS_ORIGINS` | empty | local dev only; production serves the web app from the API origin |
+| `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
 | `LOG_LEVEL` | `info` | |
 
 Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all.
@@ -788,10 +789,23 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 ## 11. Deployment
 
 - **Image**: `api/Dockerfile`, multi-stage: build `web/` with pnpm, then python:3.12-slim with uv install, the built web app copied in, an entrypoint that starts as root, launches `sherlock-sandboxd` (the only process that keeps root, and only to spawn workers as the `sandbox` user, §3.4), then drops the API to the `app` user with `setpriv`, and `uvicorn sherlock.main:app --host 0.0.0.0 --port 8080 --workers 1`. The same image runs jobs with a different command, which also starts `sherlock-sandboxd` first so cleaning jobs can launch workers.
-- **Nebius Serverless Endpoint**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` follows the DB).
+- **Nebius Serverless Endpoint**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
 - **Availability through judging**: the deployment, its Token Factory key and enough Nebius credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.
 - **Frontend**: `web/` built with Vite to static files and served by the API container under `/`. This is the only supported hosting: one origin keeps the `SameSite=Lax` identity cookie working and keeps everything on Nebius.
+- **Image as built (2026-10-24):**
+  - **Build.** `docker build -f api/Dockerfile -t sherlock .` from the repo root:
+    - Stage 1 is `node:24-bookworm-slim`, running `pnpm build`.
+    - Stage 2 is `python:3.12-slim-bookworm` with uv 0.11.28 and a frozen, no-dev `uv sync` into `/opt/venv`.
+    - `.dockerignore` keeps `.env`, `.git`, `node_modules`, `.venv` and `docs` out of the build context.
+  - **Users.** It creates the `app` (uid 10001) and `sandbox` (uid 10002) users.
+  - **Entrypoint.** `api/docker/entrypoint.sh` creates and chowns `$DATA_DIR` (tolerating a filesystem that refuses `chown`), then `exec setpriv --reuid=app --regid=app --init-groups --inh-caps=-all` into uvicorn. Starting `sherlock-sandboxd` before the drop is added with the sandbox (Implementation Plan D2.4).
+  - **Defaults.** `DATA_DIR=/data`, `DATABASE_URL=sqlite:////data/sherlock.db`, `WEB_DIST_DIR=/app/web`.
+- **`/data` exit check (Implementation Plan D1.3).** At startup, `sherlock/storage_check.py` does two things:
+  - It appends the boot time to `$DATA_DIR/.boots`.
+  - It checks on `$DATA_DIR/.lockcheck.db` that a second SQLite connection is refused while the first holds `BEGIN IMMEDIATE`.
+
+  `/healthz` reports this as `storage: { data_dir, writable, boots, first_boot_at, sqlite_lock[, error] }`, and `ok` requires the DB, `writable` and `sqlite_lock`. The check passes when `boots` grows after a restart, `first_boot_at` is unchanged, `sqlite_lock` is `true`, and a cookie user created before the restart is still returned by `GET /me`. All of this was verified locally with a named Docker volume on 2026-10-24.
 - **Local dev**: `docker compose up` (api + web with hot reload), `DATA_DIR=./data`.
 - **Deploy script**: `scripts/deploy.sh` builds, pushes, and updates the endpoint via the Nebius CLI; exact commands recorded in the README after the Oct 20 hello-world deploy.
 

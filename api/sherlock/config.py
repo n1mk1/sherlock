@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     )
     cors_origins: str = ""
     log_level: str = "info"
+    # The built web app, served under / from the API origin (TRD §11). Empty in local dev (Vite serves it).
+    web_dist_dir: Path | None = None
 
     @property
     def models(self) -> dict[str, str]:

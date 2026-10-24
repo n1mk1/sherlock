@@ -1,0 +1,16 @@
+# Secrets never enter the image (CLAUDE.md rule 6); env vars come from the endpoint.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.claude
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+data
+api/data
+web/dist
+docs
