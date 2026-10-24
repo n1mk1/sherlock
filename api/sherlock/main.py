@@ -15,7 +15,7 @@ from sherlock.errors import RequestIdMiddleware, install_error_handlers, not_fou
 from sherlock.identity import IdentityMiddleware, current_user
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import datasets, me
+from sherlock.routers import datasets, me, steps
 from sherlock.storage import VersionConnections
 from sherlock.storage_check import check_storage
 
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     api = APIRouter(prefix="/api/v1", dependencies=[Depends(current_user), Depends(rate_limit)])
     api.include_router(me.router)
     api.include_router(datasets.router)
+    api.include_router(steps.router)
     app.include_router(api)
     if settings.web_dist_dir and settings.web_dist_dir.is_dir():
         _serve_web(app, settings.web_dist_dir)

@@ -11,7 +11,7 @@ from sherlock.config import Settings
 from sherlock.db.util import now_iso
 from sherlock.errors import not_found
 from sherlock.profile.datacard import build_datacard
-from sherlock.storage import VersionConnections, dataset_dir, version_path
+from sherlock.storage import VersionConnections, dataset_dir
 
 VALUE_INDEX_ROLES = ("dimension", "target_like")
 MAX_INDEXED_VALUES = 10_000
@@ -36,8 +36,9 @@ def get_or_build(
     if stored is not None:
         return json.loads(stored[0])
 
+    # An undo version points at an earlier version's file, so the path comes from the row.
     folder = dataset_dir(settings, dataset["user_id"], dataset["id"])
-    with cache.connection(dataset["id"], version, version_path(folder, version)) as conn:
+    with cache.connection(dataset["id"], version, folder / row["parquet_path"]) as conn:
         card, frame = build_datacard(conn, version)
     _store(db, dataset["id"], version, card, frame, is_current=version == dataset["current_version"])
     return card

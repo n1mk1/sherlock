@@ -217,7 +217,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
 - [ ] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
-- [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells
+- [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; replay (D5.5) and lineage queries (D2.6) remain
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain
 - [ ] `dashboard/` candidates, scoring, curation, validation, layout, job

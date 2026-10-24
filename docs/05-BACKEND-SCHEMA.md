@@ -70,7 +70,7 @@ CREATE INDEX datasets_expiry ON datasets(expires_at);
 CREATE TABLE versions (
   dataset_id   TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
   version      INTEGER NOT NULL,               -- 1 = raw import
-  parquet_path TEXT NOT NULL,                  -- relative to the dataset folder
+  parquet_path TEXT NOT NULL,                  -- relative to the dataset folder; an undo version points at an earlier version's file (TRD §7.8)
   row_count    INTEGER NOT NULL,
   column_count INTEGER NOT NULL,
   columns_json TEXT NOT NULL,                  -- [{name, type}] in order, after the step

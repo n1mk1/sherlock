@@ -206,7 +206,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 
 ## 4. API contract
 
-Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }` with codes `not_found`, `invalid`, `too_large`, `budget_exceeded`, `conflict`, `llm_unavailable`, `rate_limited`, `internal`.
+Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }` (some carry extra fields inside `error`, e.g. a `409`'s `current_version`) with codes `not_found`, `invalid`, `too_large`, `budget_exceeded`, `conflict`, `llm_unavailable`, `rate_limited`, `internal`.
 
 ### 4.1 Identity and settings
 
@@ -292,6 +292,17 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 | POST | `/datasets/{id}/steps/{step_id}/undo` | `{ confirm: bool, base_version: number }` | `{ step, version }`; when `confirm` is false and the undo needs confirmation (later steps to replay, or the step is the automatic typing step), `200 { confirm_required: true, replay_needed: [step_no], warning?: "typing" }`; `409 { failed_step_id, reason }` when a replay fails |
 | POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits; `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
+
+Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/routers/steps.py`):
+- **Step list.** `GET /datasets/{id}/steps` returns every step newest first (by `no`), each in the §6.2 shape plus `active`. `active` is whether the step is in the current version's effective chain: undone steps and undo steps are not.
+- **One step.** `GET /datasets/{id}/steps/{step_id}` returns one step with `active`. An unknown step is `404`.
+- **Undo.** `POST …/undo` takes `{ confirm?: bool = false, base_version: int ≥ 1 }`.
+  - A stale `base_version` is `409 conflict` with `current_version`.
+  - A step that isn't in the effective chain, including an undo step or an already-undone step, is `409`.
+  - The typing step (kind `clean`, created by `system`) with `confirm: false` answers `200 { confirm_required: true, replay_needed: [], warning: "typing" }`.
+  - Undo of an earlier step with `confirm: false` answers `confirm_required` with the step numbers to replay. Once confirmed, it's `409` with `replay_needed`, because replay is Implementation Plan D5.5.
+  - Otherwise it answers `{ step, version }`.
+- **Error extras.** Extra fields of a `409` (`current_version`, `replay_needed`, and later `failed_step_id`, `reason`) go inside the `error` object of the envelope (§4).
 
 ### 4.5 Widgets and layout
 
@@ -480,6 +491,13 @@ DataCard as implemented (2026-10-24, `sherlock/profile/datacard.py`):
   "created_by": "system"|"cleaner"|"user"|"chat", "job_id": "...", "created_at": "..."
 }
 ```
+
+As implemented, a step also carries:
+- `notebook_code`
+- `undone_step_id`, for undo steps
+- `replayed_step_ids`, for undo with replay
+
+`impact` also has `rows_added` and `rows_deleted`, and `before_after` holds up to 20 changed cells (values as text). The API adds `active` (§4.4).
 
 ### 6.3 WidgetSpec
 
@@ -802,6 +820,28 @@ Rules:
 Undo applies only to steps in the current version's effective chain E; `undo` steps are never in E and have no Undo button (redo is P1). Undo of the last step in E: the new current version is the latest version whose effective chain equals E without that step (a new version row pointing at that version's Parquet, step kind `undo`); if no such version exists, it is rebuilt from v1 by replaying that chain. Undo of an earlier step k in E: confirm with the client; start from the latest version whose effective chain equals the part of E before k (rebuild from v1 if none exists), then re-apply the steps that follow k in E, in order (re-running their code or re-applying their edit lists by `_row_id`), so steps undone earlier never come back; if any re-application fails or its verifiers fail, abort and return `409` with the failing step; on success, write one `undo` step whose `to_version` is the replayed result and record `replayed_step_ids`. Every new version stores `effective_step_ids`: the parent's list plus the new step, or, for an undo of step k, the list without k. Replayed steps write fresh lineage rows under their own step ids for the new version. Lineage marks and cell history are read for the current version through its effective chain, using for each step only its rows with the greatest `version` not above the current version, so undone changes drop out and replays do not duplicate, and `user_edited_cells` rows whose step is undone are deleted.
 
 Every commit (edit batch, cleaner step, approved proposal, undo) passes `base_version`, and `commit_step` returns 409 when it differs from `current_version`. `commit_step` also re-profiles the new version (PROF-3), writes `user_edited_cells` for edit batches, and bumps `datasets.state_rev`.
+
+Implementation (2026-10-24, Implementation Plan D2.3, `sherlock/steps/`):
+- **Interface.** `commit_step(ctx, dataset_id, base_version, StepSpec, produce)` takes a function that writes the new version's Parquet from the current one. The typing step and edit batches will write it with DuckDB, and the Cleaner from the sandbox's output.
+- **Lock.** It runs under `dataset_lock`: a per-dataset thread lock plus an OS lock on `<dataset>/.lock` (`fcntl`, or `msvcrt` on Windows).
+- **Refusals.** It refuses, and writes nothing, when:
+  - `base_version` is stale (`409` with `current_version`)
+  - `notebook_code` is empty, or a clean or computed-column step's doesn't end with `df = result`
+  - the new file lacks `_row_id` or `_quarantine_reason`, or `_row_id` isn't unique and non-null
+  - a clean, ML-column or computed-column step adds or removes rows
+  - a new row takes an id below `next_row_id`, so ids are never reused after a deletion
+- **Lineage** is the diff of the two versions by `_row_id` (`sherlock/steps/diff.py`):
+  - A cell is changed only if its value changed. When a column's type changed, the old value is cast to the new type first, so `'22'` → `22` is not a change but a failed cast is.
+  - Row events go under `column = '_row'`: quarantined (flag `quarantined`), restored, added, deleted.
+- **One transaction.** It writes the step (`no` = max + 1), the version (effective chain = the parent's plus the step), the lineage, and `user_edited_cells` for edit steps. It updates `current_version`, `row_count`, `column_count`, `next_row_id` (never lowered), `state_rev + 1`, `folder_bytes` and `users.storage_bytes`.
+- **Re-profile.** The new version's DataCard is then built and stored.
+- **Undo of the latest step** writes a version row that points at the Parquet of the latest version whose effective chain equals the chain without that step, so no data is rewritten. It also writes a `kind = 'undo'` step (`created_by = 'user'`, the comment `notebook_code`, `undone_step_id`), deletes the step's `user_edited_cells`, bumps `state_rev`, and re-profiles.
+- **Not yet.** Rebuilding from v1 and replaying later steps are Implementation Plan D5.5.
+- **Edit batches.** `render_edit_batch` (`sherlock/steps/notebook.py`) renders an edit batch's `notebook_code` as the pandas in §6.7: `.loc` assignments grouped by column, quarantine restores, `pd.concat` for new rows, and `~isin` for deletions. Values are typed to the column's DuckDB type, and a test runs the rendered code on a DataFrame.
+
+### 7.9 Lineage reads
+
+Lineage marks and cell history are not read yet (the rows API, Implementation Plan D2.6).
 
 ---
 

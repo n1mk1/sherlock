@@ -21,13 +21,14 @@ _STATUS_CODES = {404: "not_found", 409: "conflict", 413: "too_large", 429: "rate
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str, headers: dict | None = None):
+    def __init__(self, status: int, code: str, message: str, headers: dict | None = None, extra: dict | None = None):
         assert code in ERROR_CODES, code
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
         self.headers = headers or {}
+        self.extra = extra or {}  # more fields inside "error", e.g. current_version on a 409
 
 
 def not_found(what: str = "Not found") -> ApiError:
@@ -59,15 +60,15 @@ def request_id_of(request: Request) -> str:
     return getattr(request.state, "request_id", "")
 
 
-def error_response(request: Request, status: int, code: str, message: str, headers=None):
-    body = {"error": {"code": code, "message": message, "request_id": request_id_of(request)}}
+def error_response(request: Request, status: int, code: str, message: str, headers=None, extra=None):
+    body = {"error": {"code": code, "message": message, "request_id": request_id_of(request), **(extra or {})}}
     return JSONResponse(body, status_code=status, headers=headers)
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(request: Request, exc: ApiError):
-        return error_response(request, exc.status, exc.code, exc.message, exc.headers)
+        return error_response(request, exc.status, exc.code, exc.message, exc.headers, exc.extra)
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException):

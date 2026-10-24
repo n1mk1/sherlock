@@ -5,8 +5,10 @@ version) gets one in-memory DuckDB connection that loads the Parquet as table `t
 turns off external access, so validated SQL can only read `t`.
 """
 
+import os
 import shutil
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -42,6 +44,62 @@ def folder_bytes(folder: Path) -> int:
 
 def remove_folder(folder: Path) -> None:
     shutil.rmtree(folder, ignore_errors=True)
+
+
+_thread_locks: dict[str, threading.Lock] = {}
+_thread_locks_guard = threading.Lock()
+
+
+@contextmanager
+def dataset_lock(folder: Path, timeout_s: float = 30.0) -> Iterator[None]:
+    """Serialize commits per dataset (Schema §7): a thread lock inside this process plus an OS
+    file lock on `<dataset>/.lock` for any other process (a job runner)."""
+    key = str(folder.resolve())
+    with _thread_locks_guard:
+        thread_lock = _thread_locks.setdefault(key, threading.Lock())
+    if not thread_lock.acquire(timeout=timeout_s):
+        raise TimeoutError(f"dataset is busy: {folder.name}")
+    try:
+        with (folder / ".lock").open("a+b") as fh:
+            _os_lock(fh, timeout_s)
+            try:
+                yield
+            finally:
+                _os_unlock(fh)
+    finally:
+        thread_lock.release()
+
+
+def _os_lock(fh, timeout_s: float) -> None:
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except OSError:
+            if time.monotonic() > deadline:
+                raise TimeoutError("dataset is locked by another process") from None
+            time.sleep(0.05)
+
+
+def _os_unlock(fh) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def new_duckdb(settings: Settings, temp_dir: Path | None = None) -> duckdb.DuckDBPyConnection:
