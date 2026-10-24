@@ -180,6 +180,43 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Protocol: the parent writes the input Parquet path and the code to stdin as JSON; the worker loads `df`, executes the code, which must leave a DataFrame in `result`, writes it to an output Parquet path, and returns `{ok, rows_in, rows_out, columns_added, columns_removed, error, traceback_tail}`.
 - Static checks before execution: reject `import os`, `subprocess`, `open(`, `__import__`, `eval(`, `exec(`, `socket`, `requests`, `urllib`, dunder attribute access, any attribute call starting with `read_` or `to_` (except `to_datetime`, `to_numeric`, `to_timedelta`), and any import outside the allowlist (`pandas`, `numpy`, `re`, `math`, `datetime`, `rapidfuzz`, `dateparser`, `ftfy`).
 - Every execution is logged with a hash of the code and timings.
+- Implementation (2026-10-24, Implementation Plan D2.4, `sherlock/sandbox/`):
+  - **Static check (`static_check.py`).** It works on the syntax tree, not the text, and rejects:
+    - imports outside the allowlist, and relative imports
+    - the names `__import__`, `eval`, `exec`, `open`, `compile`, `globals`, `locals`, `vars`, `getattr`, `setattr`, `delattr`, `breakpoint`, `input`, `exit`, `quit`, `memoryview`, and the module names `os`, `sys`, `subprocess`, `socket`, `requests`, `urllib`, `importlib`, `builtins`, `shutil`, `pathlib`, `ctypes`, `pickle`, `marshal`, `io`
+    - any name or attribute starting `__`
+    - any `read_*` or `to_*` attribute except `to_datetime`, `to_numeric`, `to_timedelta`
+    - attributes that reach the OS or files through a library: `os`, `system`, `popen`, `load`, `save`, `fromfile`, `tofile`, `memmap`, `lib`, `open`, `urlopen`, `get_handle`, …
+    - `global`, `nonlocal` and syntax errors
+
+    A violation is reported and no worker starts.
+  - **Worker (`worker.py`).** Each run is one process: `python -I -m sherlock.sandbox.worker`, with a JSON request on stdin and one JSON line on stdout. It:
+    - sets `RLIMIT_CPU = SANDBOX_CPU_S`
+    - reads the input Parquet with DuckDB
+    - replaces `socket.socket` and `create_connection` with ones that raise, and points the proxies at `127.0.0.1:9`
+    - runs the code with a builtins table that has no `open`, `eval`, `exec`, `compile`, `type`, `object`, `getattr` or `globals`, and with an `__import__` that allows only the allowlist
+    - writes `result` with DuckDB
+  - **Memory limit.** It applies only around the generated code: the soft `RLIMIT_AS` = the process's current address space + `SANDBOX_MEM_MB`, lifted afterwards. DuckDB can't run under an address-space limit (it reserves large virtual memory for its threads), so a whole-process limit would break the worker's own reads and writes.
+  - **Worker output.** User `print` output is captured (`stdout_tail`). A `MemoryError` is reported as such.
+  - **Runner (`runner.py`).**
+    - It copies the input into a fresh `SANDBOX_TMP/<uuid>/`, outside `DATA_DIR`.
+    - It runs the worker through `sherlock-sandboxd` when `SANDBOXD_SOCKET` is set, else as a direct subprocess (dev and tests).
+    - The wall-clock timeout is CPU × 2 + 5 s.
+    - It copies `output.parquet` back on success, deletes the temp directory, and writes a `sandbox_runs` row (code SHA-256, rows, wall time, ok, error).
+  - **Worker environment.** It's built from scratch: `PATH`, `LANG`, the proxies, and on Windows only the variables Python needs to start. So `LLM_API_KEY` and every other API variable never reach generated code.
+  - **`sherlock-sandboxd` (`sandboxd.py`).** It runs as root and listens on `SANDBOXD_SOCKET` (mode 0660, group `app`). For each connection it:
+    1. accepts one JSON line, and only for a workdir directly under `SANDBOX_TMP`
+    2. hands the directory to `sandbox`
+    3. starts the worker as `sandbox` (`setgroups([])`, `setgid`, `setuid`; under `unshare -n` only when the container allows it, else the socket block and proxies are the network barrier)
+    4. kills it at the timeout
+    5. gives the directory back to the caller's uid (`SO_PEERCRED`)
+  - **Image checks (2026-10-24).**
+    - uvicorn runs as `app`, and `sandboxd` is the only root process.
+    - `/data` is `700 app:app`.
+    - A worker that bypasses the static check gets `PermissionError` reading a dataset in `/data`.
+    - Allocating 8 GB gives `MemoryError`.
+    - The `sandbox` user can't read `/proc/1/environ`.
+  - **Tests.** The protocol tests (happy path, timeout, memory, forbidden imports, the worker's own defences, the daemon) run on Linux in CI. The root-only isolation test runs where tests run as root (README, "Tests and evals").
 
 ### 3.5 LLM client
 
@@ -915,7 +952,9 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `LLM_TOOLS_MODE` | `json` | `native` once verified |
 | `JOB_BACKEND` | `local` | `nebius` to dispatch |
 | `JOB_WORKERS` | `4` | |
-| `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | |
+| `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | CPU seconds for the worker process; memory the generated code may add on top of the worker's own (§3.4). `render.yaml` sets 256 while the service is on the 512 MB Starter plan |
+| `SANDBOXD_SOCKET` | empty (image: `/run/sherlock/sandboxd.sock`) | Unix socket of `sherlock-sandboxd`; empty starts workers directly (dev, tests) |
+| `SANDBOX_TMP` | empty (image: `/tmp/sherlock-sandbox`) | where worker temp directories go, outside `DATA_DIR`; empty uses `<system temp>/sherlock-sandbox` |
 | `DUCKDB_MEMORY_MB` | `1024` | memory cap of each DuckDB connection (ingest and the per-version cache, §3.2); `render.yaml` sets 256 for the Starter plan |
 | `MAX_UPLOAD_MB` / `MAX_COLUMNS` / `MAX_ROWS` | `50` / `1000` / `2000000` | bytes enforced while streaming; rows and columns after parse |
 | `USER_STORAGE_MB` | `500` | |
@@ -958,8 +997,11 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
     - Stage 2 is `python:3.12-slim-bookworm` with uv 0.11.28 and a frozen, no-dev `uv sync` into `/opt/venv`.
     - `.dockerignore` keeps `.env`, `.git`, `node_modules`, `.venv` and `docs` out of the build context.
   - **Users.** It creates the `app` (uid 10001) and `sandbox` (uid 10002) users.
-  - **Entrypoint.** `api/docker/entrypoint.sh` creates and chowns `$DATA_DIR` (tolerating a filesystem that refuses `chown`), then `exec setpriv --reuid=app --regid=app --init-groups --inh-caps=-all` into uvicorn. Starting `sherlock-sandboxd` before the drop is added with the sandbox (Implementation Plan D2.4).
-  - **Defaults.** `DATA_DIR=/data`, `DATABASE_URL=sqlite:////data/sherlock.db`, `WEB_DIST_DIR=/app/web`.
+  - **Entrypoint.** `api/docker/entrypoint.sh`, as root:
+    1. creates `$DATA_DIR`, chowns it to `app` and sets mode `700`, tolerating a filesystem that refuses either
+    2. when `SANDBOXD_SOCKET` is set, starts `python -m sherlock.sandbox.sandboxd` in the background and waits up to 5 s for its socket
+    3. `exec setpriv --reuid=app --regid=app --init-groups --inh-caps=-all` into uvicorn
+  - **Defaults.** `DATA_DIR=/data`, `DATABASE_URL=sqlite:////data/sherlock.db`, `WEB_DIST_DIR=/app/web`, `SANDBOXD_SOCKET=/run/sherlock/sandboxd.sock`, `SANDBOX_TMP=/tmp/sherlock-sandbox`.
 - **`/data` exit check (Implementation Plan D1.3).** At startup, `sherlock/storage_check.py` does two things:
   - It appends the boot time to `$DATA_DIR/.boots`.
   - It checks on `$DATA_DIR/.lockcheck.db` that a second SQLite connection is refused while the first holds `BEGIN IMMEDIATE`.

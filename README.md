@@ -94,6 +94,12 @@ cd api && uv run pytest
 cd web && pnpm test
 ```
 
+The sandbox's OS-isolation test (workers run as the `sandbox` user and can't read protected files) needs root, so CI skips it. Run the whole API suite as root on Linux with:
+
+```bash
+docker run --rm -v "$PWD:/src:ro" -e UV_PROJECT_ENVIRONMENT=/venv ghcr.io/astral-sh/uv:python3.12-bookworm-slim sh -c 'useradd --system sandbox && cp -r /src /work && cd /work/api && rm -rf .venv && uv sync --frozen -q && chmod -R a+rX /venv /work && uv run pytest -q'
+```
+
 ## License and third-party notices
 
 MIT, see [LICENSE](LICENSE). Third-party licenses go in `THIRD_PARTY.md`.

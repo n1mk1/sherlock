@@ -39,7 +39,9 @@ RUN chmod 0755 /entrypoint.sh
 ENV PATH=/opt/venv/bin:$PATH \
     DATA_DIR=/data \
     DATABASE_URL=sqlite:////data/sherlock.db \
-    WEB_DIST_DIR=/app/web
+    WEB_DIST_DIR=/app/web \
+    SANDBOXD_SOCKET=/run/sherlock/sandboxd.sock \
+    SANDBOX_TMP=/tmp/sherlock-sandbox
 
 EXPOSE 8080
 ENTRYPOINT ["/entrypoint.sh"]

@@ -30,6 +30,10 @@ services:
       # Starter has 512 MB; keep each DuckDB connection well under it (TRD §10).
       - key: DUCKDB_MEMORY_MB
         value: "256"
+      # The sandbox's extra memory per step. 2048 (the default) needs the Standard plan;
+      # raise it, and DUCKDB_MEMORY_MB, when the plan moves (before the Cleaner runs here).
+      - key: SANDBOX_MEM_MB
+        value: "256"
       # Set in the Render dashboard when the Blueprint is created; never in the repo.
       - key: LLM_API_KEY
         sync: false

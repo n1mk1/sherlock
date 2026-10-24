@@ -216,7 +216,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional): all but embeddings done 2026-10-24 (the catalog has no NVIDIA embedding model); the typing step is D2.8
 - [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
-- [ ] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
+- [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
 - [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; replay (D5.5) and lineage queries (D2.6) remain
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain

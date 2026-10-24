@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     job_workers: int = 4
     sandbox_cpu_s: int = 30
     sandbox_mem_mb: int = 2048
+    # Unix socket of sherlock-sandboxd (the image sets it); empty: workers start directly (dev, tests).
+    sandboxd_socket: str = ""
+    # Where workers' temp directories go, outside DATA_DIR; empty: <system temp>/sherlock-sandbox.
+    sandbox_tmp: str = ""
 
     # Memory cap of each DuckDB connection (ingest and the per-version query cache).
     duckdb_memory_mb: int = 1024
