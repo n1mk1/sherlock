@@ -119,7 +119,15 @@ sherlock/
       lib/                     formatting, keyboard, theme tokens
   docs/                        these documents
   scripts/                     deploy, seed sample, run evals
+  .github/workflows/ci.yml     pytest (api) and pnpm test + build (web) on push
 ```
+
+Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm-lock.yaml`):
+
+- **API:** Python 3.12 (`api/.python-version`), uv, hatchling build. Tests use pytest with FastAPI's `TestClient`, which needs `httpx2`.
+- **Web:** Node 24, with pnpm 12 pinned through `packageManager` and run through Corepack. Vite 8 with `@vitejs/plugin-react`, React 18.3, TypeScript 7, and Tailwind CSS 4 through `@tailwindcss/vite`, so there's no `tailwind.config`. shadcn/ui is configured in `components.json` (new-york style, lucide icons, the `@/` alias for `src/`). Tests use Vitest with jsdom and Testing Library.
+- **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
+- **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
 
 ---
 
@@ -794,6 +802,7 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **Notebook execution**: for the sample (and each file in the end-to-end set, on demand), export the notebook, run it with `jupyter nbconvert --execute` in a fresh virtualenv built from the requirements cell, and assert (a) no cell errors, (b) the rebuilt DataFrame equals the current version by `_row_id`, (c) each widget cell's table equals the app's widget data, (d) each run's metrics are within 0.5 pp of the model card. Runs in CI on the sample (mocked-LLM artifacts, real execution).
 - **Integration**: ingest → profile → clean → build → stories on the five-file set, with the LLM mocked by recorded responses (`tests/fixtures/llm/*.json`) and a "live" marker for real calls.
 - **Benchmarks (`sherlock eval`)**: corruption benchmark (recovery, harm, row loss), planted-truth ML tests, grounding test, ask-anything eval (≈ 50 questions with expected values and tolerance), all runnable from the CLI and reported as a markdown table for the README.
+- **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.
 

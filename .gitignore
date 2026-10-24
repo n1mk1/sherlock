@@ -1,0 +1,32 @@
+# Secrets: never commit (CLAUDE.md rule 6)
+.env
+.env.*
+!.env.example
+
+# Local data (DATA_DIR=./data in local dev)
+/data/
+api/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+web/dist/
+web/coverage/
+web/playwright-report/
+web/test-results/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json
