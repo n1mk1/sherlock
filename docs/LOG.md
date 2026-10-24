@@ -29,7 +29,7 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Ubuntu WSL with the Nebius CLI. The Nebius AI Cloud tenant turned out to be new and suspended, so on the owner's decision hosting moved to Render (`render.yaml`, PRD §9).
   - D1.3 on Render: https://sherlock-anw3.onrender.com is live, and the `/data` exit check passed (boots 1 → 2, SQLite lock works, cookie user persists).
 - **Not done:**
-  - The Nebius credit balance (there's no active AI Cloud tenant).
+  - The Nebius AI Cloud credit balance: there's no active AI Cloud tenant. Token Factory, which serves all inference, shows 0.94 of the 1.00 starter credit left plus a $25 top-up (recorded in `FEEDBACK.md`).
   - The Nebius alternative is scripted but has never run.
 - **Decision for tomorrow:**
   - Start the D2.1–D2.8 backend directly; the deploy is no longer first.

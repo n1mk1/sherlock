@@ -43,6 +43,11 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 - `chat_template_kwargs.enable_thinking=false` was accepted by all five and cut completion tokens by roughly 7–10×.
 - The models list answered fast enough to back a cached health probe.
 
+**Credit:**
+- On 2026-10-24 the console showed **0.94 of the 1.00 starter credit** left, plus a **$25 top-up** (as reported by the owner).
+- That works out to about 0.06 for everything so far: three smoke-test runs across five Nemotron models, and one Story rerun on the three role models.
+- Per-call costs will come from the `llm_calls` log once the client exists (Implementation Plan D2.7).
+
 **Problem 1: no NVIDIA embedding model in the catalog.**
 - **Steps:** call `GET /v1/models` and filter for `embed`. The only result is `Qwen/Qwen3-Embedding-8B`.
 - **Effect:** our rules allow only NVIDIA models, so embeddings are off. Name and value resolution in chat falls back to exact and fuzzy matching, so semantic matches like "ticket price" → `fare` are lost.
