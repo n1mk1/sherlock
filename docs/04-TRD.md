@@ -172,6 +172,11 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - The role check runs in the app's lifespan, so a misconfigured deployment refuses to start.
   - `/healthz` reports `llm.reachable` from a `GET /models` probe with a 5 s timeout, cached for 60 s so an uptime monitor doesn't hit Token Factory on every check.
   - Reasoning traces (`<think>…</think>`, or a lone closing tag) are stripped before JSON is parsed (`sherlock/llm/text.py`).
+- Day 1 results (`scripts/smoke_llm.py`, 2026-10-24; details in `FEEDBACK.md`):
+  - **Roles:** `large` = `nvidia/Nemotron-3-Ultra-550b-a55b`, `medium` = `nvidia/nemotron-3-super-120b-a12b`, `small` = `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`. `embed` is empty: the catalog has no NVIDIA embedding model, so resolution uses exact and fuzzy matching only.
+  - **Tools and schemas:** `LLM_TOOLS_MODE=native`, since all three roles make valid native tool calls. `response_format` with a strict JSON schema is accepted by every Nemotron model.
+  - **Reasoning** stays on by default; `chat_template_kwargs.enable_thinking` is not sent. With it off, Nano typed digits into Story prose, and Super's tool choice was inconsistent between runs. A call may turn reasoning off only for a purpose whose schema passed the smoke test that way (Route passed on all three roles). Which purposes do so is decided with the client (Implementation Plan D2.7).
+  - **Story schema:** each `headline`/`body` run is a union of `{text}`, `{chip}` and `{label}` objects (pydantic emits `anyOf`), each with one required key and `additionalProperties: false`, so strict decoding enforces one kind per run. With the union, Super passes Story even with reasoning off; an earlier version with three optional keys let it mix kinds in one run. The no-digits check stays a validator.
 - Structured output: pass `response_format` with a JSON schema when supported; otherwise instruct JSON in the prompt. Every structured response is validated with pydantic; on failure, one **repair call** sends the error and asks for corrected JSON; on second failure the caller gets `StructuredOutputError` and applies its fallback.
 - Tool calling: used by the chat loop when the model supports it; otherwise emulated with a JSON schema `{ "tool": ..., "arguments": ... }`. Decided per model on day 1 (`LLM_TOOLS_MODE=native|json`).
 - Fallbacks after `StructuredOutputError`: Cleaner diagnose, propose and critic calls skip the issue as "model output invalid"; dashboard curation uses the top 8 by score with templated titles; narration uses the fact-sheet bullets; the chat router treats the message as a single `ask_data` question; the planner runs one step; compose returns the raw results table with sources (App Flow §18).
@@ -742,7 +747,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `DATABASE_URL` | `sqlite:////data/sherlock.db` | app state |
 | `LLM_BASE_URL` | — | Token Factory endpoint |
 | `LLM_API_KEY` | — | |
-| `MODEL_LARGE` / `MODEL_MEDIUM` / `MODEL_SMALL` / `MODEL_EMBED` | — | filled on day 1; LARGE, MEDIUM and SMALL must be Nemotron IDs (Ultra, Super, Nano); EMBED is empty or one of `NVIDIA_EMBED_MODELS` |
+| `MODEL_LARGE` / `MODEL_MEDIUM` / `MODEL_SMALL` / `MODEL_EMBED` | — | filled on day 1; LARGE, MEDIUM and SMALL must be Nemotron IDs (Ultra, Super, Nano); EMBED is empty or one of `NVIDIA_EMBED_MODELS`. The values found on 2026-10-24 are in §3.5 and `.env.example` |
 | `NVIDIA_EMBED_MODELS` | — | the NVIDIA embedding model IDs found in the Token Factory catalog (comma-separated), used by the startup check |
 | `LLM_TOOLS_MODE` | `json` | `native` once verified |
 | `JOB_BACKEND` | `local` | `nebius` to dispatch |

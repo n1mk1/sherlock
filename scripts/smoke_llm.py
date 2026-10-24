@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from openai import OpenAI
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sherlock.config import get_settings
 from sherlock.llm.models import is_nemotron_chat, is_nvidia_embed, pick_roles
@@ -58,18 +58,29 @@ class Route(BaseModel):
     entities: list[Entity]
 
 
-class Run(BaseModel):
-    text: str | None = None
-    chip: str | None = None
-    label: str | None = None
+class TextRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
 
     @model_validator(mode="after")
-    def exactly_one(self) -> Run:
-        if sum(v is not None for v in (self.text, self.chip, self.label)) != 1:
-            raise ValueError("each run has exactly one of text, chip, label")
-        if self.text is not None and has_digits(self.text):
+    def no_digits(self) -> TextRun:
+        if has_digits(self.text):
             raise ValueError(f"digits in a text run: {self.text!r}")
         return self
+
+
+class ChipRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chip: str
+
+
+class LabelRun(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    label: str
+
+
+# A oneOf union, so strict decoding enforces one kind per run (TRD §3.5).
+Run = TextRun | ChipRun | LabelRun
 
 
 class Story(BaseModel):
@@ -243,11 +254,17 @@ def check_schema(client, model, report, name, no_thinking) -> Check:
         parsed = schema_model.model_validate(extract_json(content))
         note = ""
         if isinstance(parsed, Story):
-            unknown = {r.chip for r in parsed.headline + parsed.body if r.chip} - set(STORY_FACTS)
+            chips = {r.chip for r in parsed.headline + parsed.body if isinstance(r, ChipRun)}
+            unknown = chips - set(STORY_FACTS)
             if unknown:
                 return Check(f"schema:{name}", False, lat, pt, ct, mode, f"unknown chips {unknown}")
         return Check(f"schema:{name}", True, lat, pt, ct, mode, note)
-    except (ValueError, ValidationError) as exc:
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        where = ".".join(str(p) for p in first["loc"])
+        note = f"{exc.error_count()} errors; first at {where}: {first['msg']}"
+        return Check(f"schema:{name}", False, lat, pt, ct, mode, note[:160])
+    except ValueError as exc:
         return Check(f"schema:{name}", False, lat, pt, ct, mode, str(exc).splitlines()[0][:120])
 
 
@@ -255,7 +272,8 @@ def check_tools(client, model, report, no_thinking) -> Check:
     try:
         resp, lat, pt, ct = call(
             client, model,
-            [{"role": "system", "content": "You operate a data-analysis app. Use a tool."},
+            [{"role": "system", "content": "You operate a data-analysis app. Use a tool. The "
+              "dataset's columns are pclass, fare, survived, age and embarked (embarkation port)."},
              {"role": "user", "content": "Add a bar chart of average fare by embarkation port."}],
             no_thinking=no_thinking, tools=TOOLS, tool_choice="auto",
         )
