@@ -1,6 +1,6 @@
 # Sherlock · Implementation Plan
 
-Version 1.1 · 2026-10-24 (submission artifact contents, §7) · Day-by-day build order from an empty folder to a submitted project. Deadline 2026-10-30 13:00 EDT; internal deadline 2026-10-29.
+Version 1.2 · 2026-10-24 (replan after a five-day slip with all nine cuts applied, §2.0; v1.1 added the submission artifact contents, §7) · Day-by-day build order from an empty folder to a submitted project. Deadline 2026-10-30 13:00 EDT; internal deadline 2026-10-29.
 
 ---
 
@@ -18,6 +18,42 @@ Two-person split, if available: **Backend** owns `api/` (pipelines, agent, ML, d
 ---
 
 ## 2. Day-by-day
+
+### 2.0 Replan · 2026-10-24 (in force)
+
+Nothing was built Oct 20–23, so the build started on Oct 24, five days late. The team is solo. Approved by As Wasti on 2026-10-24:
+
+- **Cuts applied:** all nine rows of the cut order in §5, from today. The detail is below. The never-cut list in §5 is unchanged.
+- **Dates:** the schedule below replaces the dates of Days 1–9. The original days stay as the reference for each item (for example "D2.3" is Day 2, Must item 3). Each item keeps its definition of done (§1), and an item narrowed by a cut is done when what remains is done.
+- **Process changes (no scope dropped):**
+  - The frontend builds against the real API, not an OpenAPI mock server (this replaces D2.9's mock handler). Recorded LLM fixtures (§1) are still used.
+  - The three Day 1 spikes become 1-hour checks at the start of the work that uses them: Bklit before the dashboard (D4.7), Glide before the CSV tab (D5.1) and react-grid-layout with the dashboard grid. Their pass rules and fallbacks are unchanged, and the results go in `FEEDBACK.md`.
+
+| Date | Work (original day.item) |
+|---|---|
+| Fri Oct 24 | D1.1 scaffold · D1.2 Nemotron smoke test · D1.4 migrations, identity, ownership, rate limiter, `/me` |
+| Sat Oct 25 | D1.3 hello-world deploy first (timeboxed to 3 h; the VM fallback is taken the same day if the `/data` exit check fails) · D2.1–D2.8 backend |
+| Sun Oct 26 | D3.1–D3.5 the Cleaner · D4.1–D4.3 widgets, dashboard builder, agent v1 · D2.9–D2.10 shell and Library |
+| Mon Oct 27 | D3.6 cleaning screens · D4.4–D4.8 frontend · D5 (within cut 5) · D6.1–D6.6 (within cut 6) |
+| Tue Oct 28 | D7 (within cuts 4 and 7) · D8.1–D8.6 (within cuts 2, 3 and 9) · **feature freeze at 12:00** · D9.1–D9.5 ship |
+| Wed Oct 29 | Day 10 unchanged: video, Devpost, `FEEDBACK.md`, submit |
+| Thu Oct 30 | Morning buffer only, as before |
+
+What each cut removes from the days below:
+
+| Cut | Removed | Stays |
+|---|---|---|
+| 1 | D4.4: the settings dialog beyond four settings | mode, accent, chatbar, after-upload |
+| 2 | D8.1 and D8.2: `propose_card_edit` and "rewrite" proposals | |
+| 3 | D8.1 and D8.2: the "take it toward X" path, direction nodes and the building-state checklist | canvas, card/note/synthesis nodes, labeled edges, "make sense" |
+| 4 | D7.2, D7.4 and D7.5: the `linear_regression` and `logistic_regression` methods, the method control, the coefficients and residuals views, and Compare with Auto | Auto; `repro.py` for Auto |
+| 5 | D5.1–D5.3 and D5.7: range selection, TSV copy/paste, fill down, duplicate row, buffer undo/redo, the Review changes drawer, find and replace, the filter row, quick views, the cell provenance tooltip, status-bar stats, right-click menus, jump to row and Ctrl+arrow | the paged grid, cell edits, add/delete row, sort, find, Save (conflict handling, Discard), the Changes panel with Undo; also kept because other P0s need them: Clean with AI (P0-02), the Download/Export notebook entry (P0-12) and Restore for quarantined rows (Rule 3) |
+| 6 | D6.2: the material hash and the material-change check | every affected card is re-narrated |
+| 7 | D7.2, D7.4 and D7.5: the `predict` recipe, the predictions table, predicted cells and explain-row; `samples/titanic_blanks.csv` is not needed | `driver_analysis` |
+| 8 | D4.7: brushing and the brush → selection chip (no spike ran, so brushing is the safe cut) | click-to-filter; ML scope comes from a filter or the whole dataset; §9 moment 6 filters instead of brushing |
+| 9 | D4.3: the suggested-questions endpoint and UI; D4.4 and D8.3: the `?` shortcuts sheet | chat; the `/` shortcut |
+
+If a Must from this table slips, §5 has nothing left to cut, so any further drop needs a PRD change by the owner.
 
 ### Day 0 · Oct 19 (evening): decisions locked
 
@@ -237,6 +273,8 @@ Environments: `local` (compose, `DATA_DIR=./data`, mocked LLM optional via `LLM_
 
 If the team is solo on Oct 20, cuts 1, 2, 3, 4 and 7 apply from Day 1. This table is the only way a P0 item may be dropped (PRD §5).
 
+**Applied 2026-10-24: all nine cuts** (the replan in §2.0 lists what each one removes).
+
 | Order | Cut | What remains |
 |---|---|---|
 | 1 | Settings dialog beyond mode + accent + chatbar + after-upload | Those four settings |
@@ -300,7 +338,7 @@ The hero moments the PRD's video metric refers to, in recording order. Every mom
 3. 0:40 to 1:00. Hover a widget to light up its story card, then click a number chip: "How do you know?" shows the SQL.
 4. 1:00 to 1:25. Ask a question in chat and get a sourced answer; pin it to the dashboard.
 5. 1:25 to 1:45. Edit a cell in the CSV tab and save: only the dependent cards update. Undo the step.
-6. 1:45 to 2:10. Brush a range, run "What drives this?", and read the model card against its baselines, with the leakage column excluded.
+6. 1:45 to 2:10. Brush a range (with cut 8 applied: click a bar to filter), run "What drives this?", and read the model card against its baselines, with the leakage column excluded.
 7. 2:10 to 2:30. On the Flow canvas, select three cards and run "Make sense of this": a synthesis card with chips appears.
 8. 2:30 to 2:50. Export the notebook and run it in Jupyter: it rebuilds the current version.
 9. 2:50 to 3:00. Close on the architecture: which Nemotron model does what on Nebius Token Factory, hosting on Nebius, and one result against its baseline.

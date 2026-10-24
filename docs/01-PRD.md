@@ -92,6 +92,8 @@ Priority definitions: **P0** ships by 2026-10-29, except items removed by the Im
 
 ### 5.1 P0
 
+**Cuts applied on 2026-10-24:** all nine rows of the Implementation Plan's cut order (§5). The plan's §2.0 lists exactly what each cut removes from the items below: P0-03 settings, P0-05 CSV tab extras, P0-06 method chooser, `predict` and brush scope, P0-04 brushing, P0-07 the material-change check, P0-08 "rewrite" and "take the story toward X", and P0-10 suggested questions and `?`. The release criteria (§10) apply to what remains.
+
 | ID | Area | Requirement |
 |---|---|---|
 | P0-01 | Load | Drag-and-drop anywhere, Upload button, "Try with sample" (Titanic). Import preview. Clear errors for bad files. |
