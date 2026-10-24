@@ -56,4 +56,4 @@ uv run sherlock eval ask # also: corruption, ml, grounding, notebook
 3. **Data is never changed in place.** Every change is a step that creates a new version and can be undone. Cleaning quarantines rows; it never deletes them.
 4. **Keep it generic.** No code, tuning or prep that is specific to one dataset. Titanic is only the sample file.
 5. **When editing docs, add, don't cut.** Fix gaps by adding requirements. Don't add timelines or trim scope; a P0 drops only through the cut order in plan §5.
-6. **Commit each verified slice to `main` and push.** Secrets stay in `.env`, never in the repo or an exported notebook.
+6. **Commit each verified slice to `main` and push as much as possible** Secrets stay in `.env`, never in the repo or an exported notebook.
