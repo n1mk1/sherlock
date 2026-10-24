@@ -796,6 +796,12 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint.
   - **Deploys.** `autoDeployTrigger: checksPass` with a `buildFilter` on `api/**`, `web/**` and `render.yaml`, so a push to `main` redeploys only after CI passes, and only when the app changed.
   - **Exit check.** The `/data` check below runs the same way on Render: a redeploy restarts the container on the same disk.
+    - **Passed on 2026-10-24** for service `sherlock` (`srv-dbeiuafb9u1s739sfht0`, https://sherlock-anw3.onrender.com):
+      - `boots` went 1 → 2 after a redeploy, and `first_boot_at` stayed `2026-10-24T22:21:47.990Z`.
+      - `sqlite_lock` was `true`.
+      - A cookie user and its saved `accent` survived, and no new cookie was issued.
+      - The cookie carries `Secure` behind Render's HTTPS.
+    - The first deploy came up about 80 s after the build started. A request during the cutover got one Render `502` page, as expected with no zero-downtime deploys when a disk is attached.
 - **Nebius Serverless Endpoint (alternative)**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
 - **Availability through judging**: the deployment, its paid Render plan, its Token Factory key and enough Token Factory credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.

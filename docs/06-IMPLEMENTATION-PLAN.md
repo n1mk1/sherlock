@@ -53,7 +53,7 @@ What each cut removes from the days below:
 | 8 | D4.7: brushing and the brush → selection chip (no spike ran, so brushing is the safe cut) | click-to-filter; ML scope comes from a filter or the whole dataset; §9 moment 6 filters instead of brushing |
 | 9 | D4.3: the suggested-questions endpoint and UI; D4.4 and D8.3: the `?` shortcuts sheet | chat; the `/` shortcut |
 
-**Hosting change (2026-10-24, owner's decision):** D1.3 deploys to Render (`render.yaml`, PRD §9) instead of a Nebius Serverless Endpoint. The account's Nebius AI Cloud tenant was suspended, and the rules don't require Nebius hosting. The exit check is unchanged. The Nebius steps in D1.3 and D9.2 stay valid as the alternative (`scripts/deploy.sh`).
+**Hosting change (2026-10-24, owner's decision):** D1.3 deploys to Render (`render.yaml`, PRD §9) instead of a Nebius Serverless Endpoint. The account's Nebius AI Cloud tenant was suspended, and the rules don't require Nebius hosting. The exit check is unchanged. The Nebius steps in D1.3 and D9.2 stay valid as the alternative (`scripts/deploy.sh`). D1.3 was done on 2026-10-24: https://sherlock-anw3.onrender.com serves `/healthz` and the web shell, and the `/data` exit check passed (TRD §11).
 
 If a Must from this table slips, §5 has nothing left to cut, so any further drop needs a PRD change by the owner.
 

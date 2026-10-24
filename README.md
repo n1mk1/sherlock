@@ -2,7 +2,7 @@
 
 Sherlock is an AI data analyst for people who own a messy CSV and need answers they can defend. It cleans the data, builds a dashboard, runs honest models and writes story cards; every number comes from executed code, and the whole analysis exports as a runnable Jupyter notebook.
 
-**Hosted URL:** _not deployed yet (first deploy: Oct 25)._
+**Hosted URL:** https://sherlock-anw3.onrender.com (Render, Frankfurt; currently the scaffold, with `/healthz` live)
 
 > This README is a skeleton. Its sections follow Implementation Plan §7 and are filled in on Oct 28.
 

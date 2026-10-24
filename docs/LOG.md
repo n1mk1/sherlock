@@ -19,3 +19,18 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Open with the hello-world deploy: the image with the API and web build, a registry, and the Serverless Endpoint with `/data`. It's timeboxed to 3 h, and the AI Cloud VM fallback is taken the same day if `/data` persistence or SQLite locking fails.
   - Then D2.1–D2.8 backend: ingest, profile, steps, sandbox, jobs/SSE, rows API, the `llm/` client, the typing step.
   - Prerequisites from the owner: Docker Desktop running, the Nebius CLI installed and logged in, and a registry Nebius can pull from.
+
+### 2026-10-24 (evening update)
+
+- **Done:**
+  - Theme tokens (the Day 1 stretch).
+  - The production image (verified locally).
+  - The `CLAUDE.md` rule 6 edit, committed.
+  - Ubuntu WSL with the Nebius CLI. The Nebius AI Cloud tenant turned out to be new and suspended, so on the owner's decision hosting moved to Render (`render.yaml`, PRD §9).
+  - D1.3 on Render: https://sherlock-anw3.onrender.com is live, and the `/data` exit check passed (boots 1 → 2, SQLite lock works, cookie user persists).
+- **Not done:**
+  - The Nebius credit balance (there's no active AI Cloud tenant).
+  - The Nebius alternative is scripted but has never run.
+- **Decision for tomorrow:**
+  - Start the D2.1–D2.8 backend directly; the deploy is no longer first.
+  - Move the Render plan from Starter to Standard before the sandbox lands (D2.4 needs about 2 GB).
