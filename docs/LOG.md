@@ -224,6 +224,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - **Day 7, ML within cuts 4 and 7** (`f0e13bc`; details in the entry above). `driver_analysis` with Auto, the runs API, the analysis UI, the model card and `repro.py`, and runs in the notebook.
   - **Final `uv run sherlock eval ask`** (live Token Factory, 2026-10-25 after `f0e13bc`): **34 of 35**, up from 32 on Day 4, with 0 unsourced answers and a median of 11.8 s per answer.
     - The one miss: "How many orders are there?" on `sales_dated.csv` answered "This file has no column that answers that.", although the file has `order_id`.
+    - **Re-run after `cfb4b08`** (the ML answerers and per-tab intents; on `2a06f8b`): **33 of 35**, with 0 unsourced answers and a median of 11.7 s. "How many orders are there?" now passes.
+      - The two misses are "Revenue by region" and "Revenue by product" on `sales_dated.csv`. In both, the generated SQL put the measure first (`revenue, region`). The eval keys each table on its first column, so the right values were keyed by revenue and didn't match.
+      - The answers themselves were right (Central 104,063.01, East 198,168.56, …). On the first run, the same two questions passed with the category first.
+      - So this is SQL column order varying between runs, plus a scorer that assumes the key comes first; it isn't a regression from `cfb4b08`.
+  - **`broken_latin1.txt` in the fresh-venv notebook eval** (2026-10-25, later). `sherlock/eval/notebook.py` now passes per-file import options, as the import preview would (`IMPORT_OPTIONS`: `{"header_row": 3}` for this file). `all` is now the plan's five-file set.
+    - `uv run sherlock eval notebook --sets broken_latin1.txt` (Latin-1, `;`, header on row 3): 2 steps and 6 widgets. It ran top to bottom in a fresh venv and rebuilt its version after the undo with replay (86 s). No fix was needed (TRD §14).
   - **Follow-up: the rest of Day 7** (`cfb4b08`, the same morning, within cuts 4 and 7).
     - **D7.3, the answerers.**
       - `ask_stats`: the test is chosen by the column types (Welch's t and Mann-Whitney, Kruskal-Wallis, chi-square, Pearson and Spearman), with effect sizes.
@@ -239,7 +245,8 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
     - **Tests and fixtures.** The new model calls were recorded live into `chat_titanic.json`. 310 API tests pass, as do 47 web tests and the build.
   - **Live site:** `/healthz` ok (database, `/data` writable, SQLite lock, LLM reachable). Render deploy `dep-dbf0r8ivcj2c73eeiml0` of `f0e13bc` is live, and the served `assets/index-BAuGThCo.js` is the same file a fresh local `pnpm build` of `main` produces.
 - **Not done:**
-  - The "How many orders" miss above: counting rows when the user names an ID column.
+  - The "How many orders" miss above: counting rows when the user names an ID column. It passed on the re-run, so it may be model variance rather than a fixed bug.
+  - The ask eval's group-by check keys each table on its first column, so a right answer whose SQL lists the measure first fails (two misses on the re-run). The fix is to match on whichever column holds the expected keys; it hasn't been made.
   - Answer time: the median is still 11.8 s against the ≤ 4 s target to the first block (TRD §13).
   - **Day 5:** the export dialog's Save and export button (the dialog says to save first) and the Flow palette's Export entry (D8). The grid's range paste wasn't verified (TSV paste is cut 5).
   - **Day 6:** relations don't yet weigh correlation between measures or ML dependencies (TRD §7.4). Gauges render as a KPI tile.
@@ -248,6 +255,7 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
     - Still cut: `predict`, the predictions table, predicted cells and explain-row (cut 7), and the method chooser, coefficients, residuals and Compare with Auto (cut 4). `ask_model` says so when asked about one row.
     - `sherlock eval ask` wasn't re-run after the route prompt began listing intents per tab. Its routing fixtures and the chat tests pass.
     - The follow-up's live use was about 15k prompt and 20k completion tokens on Super, plus 10 Nano routes: about $0.03, which brings the night to about $0.28.
+    - The eval re-run after it used about the same as the first eval, roughly $0.08 (its throwaway database is deleted when it finishes, so this is an estimate). That brings the night to about $0.36. The latin1 notebook eval makes no model calls.
   - Still open from earlier days: checkpoints for re-queued jobs (D8.6), error boundaries (D8 quality of life), and header detection for a preamble that uses the data's delimiter.
 - **Decisions made while you were offline:**
   - **Glide passed its 1-hour check, so there's no fallback.** Editing, range selection, theming from the CSS variables and 500,000 paged rows all worked (`FEEDBACK.md`). Range paste wasn't verified, but cut 5 removes it.

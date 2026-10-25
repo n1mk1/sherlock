@@ -20,7 +20,9 @@ from pathlib import Path
 
 SAMPLES = Path(__file__).resolve().parents[2] / "samples"
 DEFAULT = ["titanic3.csv"]
-END_TO_END = ["titanic3.csv", "sales_dated.csv", "wide_messy.csv", "reviews_text.csv"]
+END_TO_END = ["titanic3.csv", "sales_dated.csv", "wide_messy.csv", "reviews_text.csv", "broken_latin1.txt"]
+# Import options the import preview would send for a file auto-detection gets wrong (App Flow §18).
+IMPORT_OPTIONS = {"broken_latin1.txt": {"header_row": 3}}
 RUNNER = r'''
 import json, pickle, sys
 import nbformat
@@ -55,7 +57,8 @@ def _one(name: str, root: Path) -> dict:
     get_settings.cache_clear()
     with TestClient(create_app()) as client:
         with (SAMPLES / name).open("rb") as fh:
-            ds = client.post(f"{api}/datasets", files={"file": (name, fh, "text/csv")}).json()
+            form = {"options": json.dumps(IMPORT_OPTIONS[name])} if name in IMPORT_OPTIONS else None
+            ds = client.post(f"{api}/datasets", files={"file": (name, fh, "text/csv")}, data=form).json()
         wait = lambda *s: _wait(lambda: (d := client.get(f"{api}/datasets/{ds['id']}").json())["status"] in s and d)  # noqa: E731
         wait("offer", "failed")
         client.post(f"{api}/datasets/{ds['id']}/use-as-is")
