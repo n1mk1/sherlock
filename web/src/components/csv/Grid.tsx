@@ -183,36 +183,17 @@ export const Grid = forwardRef<GridHandle, {
     const name = gridCols[col]?.id as string;
     if (name === ROW_COL) {
       const struck = at.kind === "row" && (at.row.quarantined && !restored.has(at.row._row_id) || deleted.has(at.row._row_id));
-      if (struck) line(ctx, rect.x + 12, rect.y + rect.height / 2, rect.x + rect.width - 8, rect.y + rect.height / 2, t.muted, 1);
+      if (struck) drawMarks(ctx, rect, "struck", false, t);
       return;
     }
     if (at.kind === "new") {
       const v = at.cells[name];
-      if (v !== undefined && !fitsType(types[name] ?? "VARCHAR", v)) underline(ctx, rect, t.destructive);
+      if (v !== undefined && !fitsType(types[name] ?? "VARCHAR", v)) drawMarks(ctx, rect, "invalid", false, t);
       return;
     }
     const pending = buffer?.edits[editKey(at.row._row_id, name)];
-    if (pending) {
-      // Unsaved: an accent outline and a dot in the top-left corner, so it differs from a selection by shape.
-      ctx.strokeStyle = t.accent;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.width - 1, rect.height - 1);
-      ctx.fillStyle = t.accent;
-      ctx.beginPath();
-      ctx.arc(rect.x + 5, rect.y + 5, 2, 0, Math.PI * 2);
-      ctx.fill();
-      if (!fitsType(types[name] ?? "VARCHAR", pending.value)) underline(ctx, rect, t.destructive);
-      return;
-    }
-    const mark = at.row.marks[name];
-    if (mark === "changed") line(ctx, rect.x, rect.y + 1, rect.x + rect.width, rect.y + 1, t.info, 2);
-    else if (mark === "flagged") {
-      ctx.save();
-      ctx.setLineDash([3, 2]);
-      ctx.strokeStyle = t.warning;
-      ctx.strokeRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 3);
-      ctx.restore();
-    } else if (mark === "invalid") underline(ctx, rect, t.destructive);
+    drawMarks(ctx, rect, pending ? "unsaved" : at.row.marks[name],
+      !!pending && !fitsType(types[name] ?? "VARCHAR", pending.value), t);
   }, [rowAt, gridCols, types, buffer, deleted, restored, t]);
 
   const byName = useMemo(() => Object.fromEntries(card.map((c) => [c.name, c])), [card]);
@@ -342,6 +323,41 @@ export const Grid = forwardRef<GridHandle, {
     </div>
   );
 });
+
+/** Draw a cell's mark over its content: a server mark, "unsaved" for a pending edit (`invalid` when it
+ * doesn't fit the type), or "struck" for a row number. Glide reuses the context for the next cell and
+ * caches the styles it set, so this leaves the context as it found it; before, a column's later cells
+ * drew their text in the accent colour after a pending edit's dot. */
+export function drawMarks(ctx: CanvasRenderingContext2D, rect: Rectangle, mark: string | undefined, invalid: boolean,
+                          t: Record<"accent" | "info" | "warning" | "destructive" | "muted", string>) {
+  ctx.save();
+  try {
+    paintMark(ctx, rect, mark, invalid, t);
+  } finally {
+    ctx.restore();
+  }
+}
+
+function paintMark(ctx: CanvasRenderingContext2D, rect: Rectangle, mark: string | undefined, invalid: boolean,
+                   t: Record<"accent" | "info" | "warning" | "destructive" | "muted", string>) {
+  if (mark === "struck") line(ctx, rect.x + 12, rect.y + rect.height / 2, rect.x + rect.width - 8, rect.y + rect.height / 2, t.muted, 1);
+  else if (mark === "unsaved") {
+    // Unsaved: an accent outline and a dot in the top-left corner, so it differs from a selection by shape.
+    ctx.strokeStyle = t.accent;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.width - 1, rect.height - 1);
+    ctx.fillStyle = t.accent;
+    ctx.beginPath();
+    ctx.arc(rect.x + 5, rect.y + 5, 2, 0, Math.PI * 2);
+    ctx.fill();
+    if (invalid) underline(ctx, rect, t.destructive);
+  } else if (mark === "changed") line(ctx, rect.x, rect.y + 1, rect.x + rect.width, rect.y + 1, t.info, 2);
+  else if (mark === "flagged") {
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = t.warning;
+    ctx.strokeRect(rect.x + 1.5, rect.y + 1.5, rect.width - 3, rect.height - 3);
+  } else if (mark === "invalid") underline(ctx, rect, t.destructive);
+}
 
 function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, width: number) {
   ctx.strokeStyle = color;
