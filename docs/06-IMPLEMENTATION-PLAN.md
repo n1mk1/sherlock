@@ -223,13 +223,13 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the driver widget is D7.2 and the custom-chart candidates are D6.5
 - [ ] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto
-- [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions
+- [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [ ] `canvas/` model, persistence, pruning
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test
-- [ ] `chat/` threads, messages, proposals
+- [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
-- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything
+- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`)
 - [ ] `scripts/` smoke_llm, seed_sample, deploy
 - [ ] tests: unit, integration (mocked LLM), fixtures
 

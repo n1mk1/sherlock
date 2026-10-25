@@ -20,7 +20,7 @@ from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import cleaning, datasets, jobs, me, rows, steps, streams, widgets
+from sherlock.routers import chat, cleaning, datasets, jobs, me, rows, steps, streams, widgets
 from sherlock.storage import VersionConnections
 from sherlock.storage_check import check_storage
 
@@ -98,6 +98,7 @@ def create_app() -> FastAPI:
     api.include_router(jobs.router)
     api.include_router(streams.router)
     api.include_router(widgets.router)
+    api.include_router(chat.router)
     app.include_router(api)
     if settings.web_dist_dir and settings.web_dist_dir.is_dir():
         _serve_web(app, settings.web_dist_dir)

@@ -1,0 +1,88 @@
+# The ask-anything eval, v0 (Implementation Plan D4.3, §6): questions with expected answers and a
+# tolerance, run by `uv run sherlock eval ask`. Each file is imported, built with "Use as is" (so
+# the data is the typed version 2, not a cleaned one), and its questions are asked in order in one
+# thread, so a follow-up sees the question before it.
+#
+# Expectations (all computed from the CSV with DuckDB, not from Sherlock):
+#   value: a number the answer must show (a number block, or a one-cell table); rates are fractions,
+#          and a percentage of the same value also passes
+#   rows:  {key: value} pairs a table or chart in the answer must contain (keys compared as text)
+#   total: the number of rows a find-rows answer reports
+#   intent: the answer must come from this kind of answer (rows, widget)
+# tol is relative (default 0.005, i.e. 0.5%).
+
+titanic3.csv:
+  - q: How many passengers are there?
+    expect: {value: 1309}
+  - q: How many passengers survived?
+    expect: {value: 500}
+  - q: What is the overall survival rate?
+    expect: {value: 0.38197}
+  - q: What is the average fare?
+    expect: {value: 33.2955}
+  - q: What is the average age?
+    expect: {value: 29.8811}
+  - q: Average fare by class
+    expect: {rows: {"1": 87.5090, "2": 21.1792, "3": 13.3029}}
+  - q: and for women only?
+    follow_up: true
+    expect: {rows: {"1": 109.4124, "2": 23.2348, "3": 15.3242}}
+  - q: Survival rate by sex
+    expect: {rows: {"female": 0.72747, "male": 0.19098}}
+  - q: Survival rate by passenger class
+    expect: {rows: {"1": 0.61920, "2": 0.42960, "3": 0.25529}}
+  - q: How many passengers embarked at each port?
+    expect: {rows: {"S": 914, "C": 270, "Q": 123}}
+  - q: What is the highest fare anyone paid?
+    expect: {value: 512.3292}
+  - q: How many passengers were in third class?
+    expect: {value: 709}
+  - q: What share of women in first class survived?
+    expect: {value: 0.96528}
+  - q: What is the average age of the survivors?
+    expect: {value: 28.9182}
+  - q: How many passengers were under 18?
+    expect: {value: 154}
+  - q: What was the survival rate of passengers under 18?
+    expect: {value: 0.52597}
+  - q: Which passengers paid more than 500?
+    expect: {total: 4, intent: rows}
+  - q: How many passengers have no recorded age?
+    expect: {value: 263}
+  - q: Median fare by class
+    expect: {rows: {"1": 60.0, "2": 15.0458, "3": 8.05}}
+  - q: How many men were in second class?
+    expect: {value: 171}
+
+sales_dated.csv:
+  - q: What is the total revenue?
+    expect: {value: 1025982.16}
+  - q: How many orders are there?
+    expect: {value: 5000}
+  - q: What is the return rate?
+    expect: {value: 0.0732}
+  - q: Revenue by region
+    expect: {rows: {"Central": 104063.01, "East": 198168.56, "North": 328577.99, "South": 242621.71, "West": 152550.89}}
+  - q: Revenue by product
+    expect: {rows: {"Doohickey": 68847.5, "Gadget": 284694.0, "Gizmo": 530574.0, "Sprocket": 30404.16, "Widget": 111462.5}}
+  - q: What is the average unit price?
+    expect: {value: 21.4076}
+  - q: Units sold by product
+    expect: {rows: {"Gizmo": 9870, "Doohickey": 9777, "Gadget": 9746, "Sprocket": 9184, "Widget": 9138}}
+  - q: How many units were sold in total?
+    expect: {value: 47715}
+  - q: What was the revenue in 2023?
+    expect: {value: 334488.68}
+  - q: Return rate by region
+    expect: {rows: {"Central": 0.05383, "East": 0.06693, "North": 0.07605, "South": 0.07744, "West": 0.08141}}
+  - q: What is the average revenue per order?
+    expect: {value: 205.1964}
+  - q: How many orders were returned?
+    expect: {value: 366}
+  - q: What was the revenue from Gizmo in the North region?
+    expect: {value: 173409.5}
+  - q: Average units per order by product
+    expect: {rows: {"Doohickey": 9.6230, "Gadget": 9.5362, "Gizmo": 9.6293, "Sprocket": 9.4098, "Widget": 9.5088}}
+  - q: and the revenue for the East region only?
+    follow_up: true
+    expect: {value: 198168.56}

@@ -322,6 +322,7 @@ class LLMClient:
         value, error = parse(c.content, schema, validate)
         if value is not None:
             return Structured(value, c)
+        log.info("llm %s/%s needs a repair: %s", role, purpose, str(error)[:300])
         repair = repair_messages(messages, c.text, error)
         c2 = self.complete(role, repair, purpose=purpose, scope=scope, schema=schema,
                            temperature=temperature, max_tokens=max_tokens, reasoning=reasoning, repaired=True)

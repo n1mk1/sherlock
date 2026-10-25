@@ -12,6 +12,7 @@ from sherlock.errors import ApiError, not_found
 from sherlock.identity import current_user
 from sherlock.jobs.events import emit
 from sherlock.ownership import Owned, check_dataset, owned, owned_dataset
+from sherlock.ratelimit import llm_rate_limit
 from sherlock.widgets import compile as wc
 from sherlock.widgets import layout as wl
 from sherlock.widgets import service as ws
@@ -49,6 +50,22 @@ def _place(db: sqlite3.Connection, dataset_id: str, row: sqlite3.Row) -> None:
         wl.save(db, dataset_id, wl.append(saved, row["id"], json.loads(row["spec_json"])["view"]["type"]))
 
 
+def _from_prompt(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row, prompt, user: User) -> sqlite3.Row:
+    """The chat agent's `create_widget` action (TRD §8.2). Counts against the LLM rate limit."""
+    from sherlock.agent.answerers import CantAnswer
+    from sherlock.agent.loop import Agent
+    from sherlock.llm.client import LLMClient
+
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ApiError(422, "invalid", "prompt: describe the widget in words")
+    llm_rate_limit(request, user)
+    agent = Agent(_env(request, db), LLMClient(request.app.state.settings), dataset, lambda *_: None)
+    try:
+        return agent.create_widget(prompt.strip()[:2000])
+    except CantAnswer as exc:
+        raise ApiError(422, "invalid", str(exc)) from None
+
+
 @router.get("/datasets/{dataset_id}/widgets")
 def list_widgets(dataset: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)) -> dict:
     rows = _live(db, dataset["id"])
@@ -60,15 +77,18 @@ def create_widget(
     request: Request,
     body: dict = Body(...),
     dataset: sqlite3.Row = Depends(owned_dataset),
+    user: User = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """A `WidgetSpec` (optionally with a `title`). The query runs first; a failure is `422`."""
-    if "prompt" in body:
-        raise ApiError(422, "invalid", "Describing a widget in words needs chat, which isn't built yet.")
-    spec = {k: v for k, v in body.items() if k != "title"}
+    """A `WidgetSpec` (optionally with a `title`), or `{ prompt }` for the model to design one. The
+    query runs first; a failure is `422`."""
     count = ws.live_count(db, dataset["id"])
-    row = ws.create(_env(request, db), dataset, spec, title=body.get("title"), created_by="user")
-    _place(db, dataset["id"], row)
+    if "prompt" in body:
+        row = _from_prompt(request, db, dataset, body["prompt"], user)
+    else:
+        spec = {k: v for k, v in body.items() if k != "title"}
+        row = ws.create(_env(request, db), dataset, spec, title=body.get("title"), created_by="user")
+        _place(db, dataset["id"], row)
     out = {"widget": ws.to_widget(row)}
     if count >= ws.SOFT_CAP:
         out["warning"] = ws.CAP_WARNING

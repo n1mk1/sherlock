@@ -558,6 +558,22 @@ JSON Canvas nodes: `{ id, type: "text"|"file"|"link"|"group", x, y, width, heigh
 
 `Source`: `{ kind: "sql"|"run"|"step"|"card"|"help", sql?, run_id?, step_id?, card_id?, label }`
 
+Chat API as implemented (2026-10-25, Implementation Plan D4.3, `sherlock/routers/chat.py`, `sherlock/agent/`):
+- **`GET /chat`** returns the thread oldest first: the last `limit` (1–200, default 50) messages before `before`, a message ID. An unknown `before` is `404`.
+- **`POST /chat`.**
+  - It counts against the LLM rate limit.
+  - It's refused with `409` while the dataset is `profiling` or `failed` (there's no data card to answer from). In every other status it answers from the current version.
+  - `context` takes the `ChatContext` fields. `global_filter` is the rows API's filter JSON, and unknown keys are ignored.
+  - With `clarification_of`, the question becomes the original question plus "(Clarified: <choice>)", and the router isn't asked to clarify again.
+- **`Message`.** Each message also carries `clarification_of`. `actions` are stored in the message's saved focus.
+- **`AnswerBlock` as built:**
+  - `number` adds `formatted` (the display text, made by code), `format` (`pct`, `int`, `num` or `text`), `result` and `cell`.
+  - `table` adds `result`.
+  - `chart` adds `result`, or `widget_id` when the chart is a widget chat just made.
+  - In a `text` block's `CardBody`, chip runs carry the cell reference as `key` (`r1:0:2`, or `r1:total`), the formatted `value` and the `raw` value. Label runs carry the `text` code rendered for their `ref`; refs can also be `widget:<id>` and `step:<id>`.
+- **`POST /messages/{mid}/pin`.** With `target: "dashboard"`, a chart block becomes a widget from its spec, and a table block from the answer's query as a table. Either is made by `chat`, titled with the question, and placed under the layout. It answers `201` with the `Widget`. `target: "flow"` is `422` until Flow (D8).
+- **`POST /widgets` with `{ prompt }`** (the Add widget drawer's "Describe it") runs the agent's `create_widget` action without a thread message, made by `user`, and counts against the LLM rate limit. Failing twice is `422` with the reason.
+
 ### 4.10 Jobs
 
 | Method | Path | Response |
@@ -632,6 +648,12 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`,
 ### 5.3 Chat stream events
 
 `POST /datasets/{id}/chat` responds as SSE, read with `fetch` streaming rather than `EventSource`. The server runs the loop to completion and saves the message even if the client disconnects; after a reload the client reads it from `GET /chat`. Events: `status` (`{ text }`), `plan` (`{ steps }`), `plan.step` (`{ index, status }`), `block` (an `AnswerBlock`, streamed as they're ready), `text.delta` (`{ delta }` for prose), `clarification`, `proposal`, `sources`, `message` (the final `Message`), `error`.
+
+As built (D4.3):
+- **How it runs.** The loop runs in a worker thread with its own SQLite connection, and the stream reads its events from a queue.
+- **Events sent.** `status`, `block`, `clarification`, `sources`, `message` and `error`. `plan`, `plan.step` and `proposal` come with multi-step plans and proposals (D8.5), and prose isn't streamed as `text.delta`.
+- **Order.** Each query's results go out as a `table` block as soon as the query has run, before the prose is written. Then come the final blocks that weren't already sent, then `sources`. The final `message` holds the answer's blocks in their order, which the client renders in place of what streamed.
+- **Ending.** The stream always ends with `message`. When the model is unavailable or over budget it is preceded by `error` (`{ code, message }`), and the message says so. An unexpected failure ends with `error` alone.
 
 ---
 
@@ -1231,11 +1253,61 @@ Implemented 2026-10-24 (Implementation Plan D2.6, `sherlock/steps/lineage.py`):
 3. **Resolve**: entities → columns (exact, then case/underscore-insensitive, then embedding similarity ≥ 0.8), values (value index: exact, then rapidfuzz ≥ 90, then embedding ≥ 0.85), widgets and cards (title similarity). Unresolved column references become a clarification if critical.
 4. **Plan**: single intent → one answerer with arguments from the route + resolution. `multi_step` → `LLM(medium, tools=answerers for the intents)` produces 2 to 5 steps; emit `plan`.
 5. **Execute** each step; on an answerer error, retry once with the error appended; emit `plan.step` and `block` events as results arrive.
-6. **Compose**: `LLM(small, schema=Answer)` arranges results into `AnswerBlock`s that reference values by id (`{ "result": id, "cell": [r, c] }`, fact keys, model-card fields) and writes chip-based prose; code fills every value from the referenced results, so the model never types a number. Attach `sources` and actions (`pin`, `add_to_flow`, `open_rows`, `open_widget`, `open_export`).
+6. **Compose**: `LLM(medium, schema=Answer)` (changed from `small` on 2026-10-25 after the live check below) arranges results into `AnswerBlock`s that reference values by id (`{ "result": id, "cell": [r, c] }`, fact keys, model-card fields) and writes chip-based prose; code fills every value from the referenced results, so the model never types a number. Attach `sources` and actions (`pin`, `add_to_flow`, `open_rows`, `open_widget`, `open_export`).
 7. **Verify**: on the final blocks, every number must map to a result cell, fact, or model-card field (`verify.trace`), and prose must pass the no-digits rule; on failure the prose is dropped and the table is shown with its sources.
 8. **Focus**: save `{ intents, scope, columns, result_ids, filters, selection_id }` on the message.
 
 Budgets: 8 answerer and action calls, 40k tokens, 90 s wall-clock per message; on exceeding, compose what exists with a note.
+
+As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
+- **Context.** The DataCard summary lists each column's name, type, role, missing share, range and up to five example values, inside a data block. Past about 16,000 characters (~4k tokens) the remaining columns are listed by name and type only; until the builder's column ranking is reused here, that is in file order.
+  - The rows in scope are described in words ("all usable rows", or the selection and the filter).
+  - The widget the user is looking at is named.
+  - The previous assistant message's focus gives the previous question and its SQL, so "and for women only?" works.
+  - The last six messages are listed.
+  - There is no running summary of older messages yet (D8.5).
+- **Route.** `small` with reasoning off, the one purpose that may turn it off (§3.5). The prompt makes `ask_data` the default. `create_widget` is only for requests to add something to the dashboard ("as a chart" stays `ask_data`). A route that fails twice is treated as a single `ask_data`, and duplicate intents run once.
+- **Clarification.** An ambiguous route with a clarification is saved as a message with `clarification` and no blocks, and the thread waits for the choice.
+- **Resolution (`resolve.py`).**
+  - Columns: exact, then ignoring case, spaces, dots and underscores, then whole-string fuzzy (`rapidfuzz` ratio ≥ 85). It's whole-string because partial matching read "average fare" as `age`.
+  - Values: the value index, exact (ignoring case) then `token_sort_ratio` ≥ 90.
+  - Widgets: by title, `token_set_ratio` ≥ 75.
+
+  Resolved names go into the context. Unresolved names don't stop the answer yet: the SQL step reports an unanswerable question instead.
+- **The intents run in v1:**
+  - **`ask_data`.** `medium`, schema `SqlDraft`: `reading` (how the words map to columns), `sql`, `answerable`, `closest`.
+    - The prompt says to match words to columns by their example values, not just their names. Live, that turned "fare by port" into `embarked` instead of `home.dest`.
+    - The SQL must use `{{rows}}`, which here is the quarantine exclusion, the context's selection and its global filter. It's validated and run like widget SQL (§6.3).
+    - A failure gets one repair with the error, then "I couldn't build a working query for that…".
+    - `answerable: false` answers "This file has no column that answers that. The closest I can answer: …".
+    - The `reading` is shown in the source's label.
+  - **`find_rows`.** `medium`, schema `PredicateDraft` (`predicate`, `label`).
+    - The predicate is validated like a selection's. The answer is the row count and the first 20 rows (`_row_id` and up to 12 columns).
+    - It saves a selection of the predicate ANDed with the context's scope, and offers `open_rows`.
+    - Its prose is written in code ("4 rows match."), not by the model.
+  - **`create_widget`.** `medium`, schema `WidgetDraft` (`reading`, `title`, `sql`, `view`, `x`, `y`). It's validated by creating the widget (created by `chat`), with one repair on failure. It's placed under the layout, and the answer shows it with `open_widget`.
+  - **`explain_widget`** names the focused or resolved widget and returns its SQL as the source.
+  - **`ask_history`** finds steps by shared words in their summary, columns and decisions, or else the latest five, and lists them with their reasons. The sources are the steps.
+  - **Not built yet:** `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, `ask_story` and `update_widget` get one honest sentence each. When nothing else was answered, a suggestion built from the file's own columns follows ("the rate of survived by pclass"), as ASK-8 asks.
+- **Compose (`compose.py`).**
+  - It uses `medium`, not `small`. Live, Nano strung chips together with no words between them and left sentences unfinished.
+  - The `Answer` schema has `prose` (text, chip and label runs, at least one), `shape`, `number` (a chip), `label` and `chart`. Chips name result cells.
+    - `prose` comes first because, with it last, Super often returned an empty list.
+    - The prompt gets each result's query, columns and up to 30 rows, plus a worked example of the run shape written with placeholders, not data.
+  - The validator rejects:
+    - a chip or label that names nothing
+    - two chips in a row
+    - prose with no words
+    - empty prose
+    - a number shape without its chip, or with digits in its label
+    - a chart with fewer than two rows
+  - Code adds a missing space between sentences, and a full stop when the prose doesn't end with `.`, `!`, `?` or `:`.
+  - The previous question is offered to every answerer, but only for a message that doesn't stand on its own. Without that rule, "Survival rate by sex" after "and for women only?" was judged unanswerable.
+  - A `number` shows the cell. A `chart` shows the first column against the first numeric one, as a pinnable spec over the query with `{{rows}}`. A `table` or `text` shows the result table, so the rows behind the prose stay visible.
+  - The fallback after one repair is the raw results: a single cell as a number, otherwise a table.
+- **Verify.** Every value in a block or chip is read from a result cell by code, and text runs can't contain digits (schema validator). So the check in step 7 holds by construction, and the eval counts unsourced answers.
+- **Not yet:** the multi-step planner (step 4), the thread summary, and `update_widget`, `edit_cells` and `clean_selection` proposals (D8.5). Suggested questions are cut (Implementation Plan §2.0, cut 9).
+- **Live (2026-10-25, Nemotron 3 Nano for routing, Super for SQL and compose).** A routed question takes about 1 s, SQL 2–5 s and compose 2–6 s, so the first block arrives in about 4–6 s and the answer in 5–15 s.
 
 ### 8.2 Answerer contracts
 

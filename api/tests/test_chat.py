@@ -1,0 +1,181 @@
+"""The chat agent v1 (TRD §8, §4.9, §5.3) on the sample, with recorded model replies."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from sherlock.agent import compose as comp
+from sherlock.agent.answerers import Result
+from sherlock.agent.resolve import column
+from sherlock.config import get_settings
+from sherlock.eval import ask as ask_eval
+from tests.test_jobs import db_rows, wait_status
+
+API = "/api/v1"
+FIXTURE = Path(__file__).parent / "fixtures" / "llm" / "chat_titanic.json"
+pytestmark = pytest.mark.usefixtures("run_jobs")
+
+
+@pytest.fixture(autouse=True)
+def mocked(monkeypatch):
+    """Before the app is made, so its settings carry the fixture file."""
+    monkeypatch.setenv("LLM_MOCK", str(FIXTURE))
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def ready(client):
+    ds = client.post(f"{API}/datasets/sample").json()
+    wait_status(client, ds["id"], "offer")
+    client.post(f"{API}/datasets/{ds['id']}/use-as-is")
+    wait_status(client, ds["id"], "ready")
+    return ds
+
+
+def send(client, ds_id, text, **extra):
+    """(events, final message) from the chat stream."""
+    events, event = [], None
+    with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}, **extra}) as r:
+        assert r.status_code == 200, r.read()
+        assert r.headers["content-type"].startswith("text/event-stream")
+        for line in r.iter_lines():
+            if line.startswith("event: "):
+                event = line[7:]
+            elif line.startswith("data: "):
+                events.append((event, json.loads(line[6:])))
+    message = next(d for e, d in events if e == "message")
+    return events, message
+
+
+def blocks_of(message, kind):
+    return [b for b in message["blocks"] if b["type"] == kind]
+
+
+def test_ask_data_streams_a_table_then_a_grounded_answer(client, ready):
+    events, msg = send(client, ready["id"], "average fare by class")
+    kinds = [e for e, _ in events]
+    assert kinds[0] == "status" and kinds.index("block") < kinds.index("message") and kinds[-1] == "message"
+    table = blocks_of(msg, "table")[0]
+    assert [c["name"] for c in table["columns"]] == ["pclass", "avg_fare"] and table["total"] == 3
+    text = blocks_of(msg, "text")[0]["body"]["blocks"][0]["runs"]
+    chip = next(r for r in text if r["type"] == "chip")
+    assert chip["key"] == "r1:0:1" and chip["value"] == "87.51" and chip["raw"] == pytest.approx(87.509, rel=1e-4)
+    assert msg["text"] == "First class paid the most on average, 87.51."
+    sql = msg["sources"][0]["sql"]
+    assert "_quarantine_reason IS NULL" in sql and sql.endswith("LIMIT 2000")
+    assert "reading class → pclass" in msg["sources"][0]["label"]
+
+    # The follow-up sees the previous question and its query (the fixture only matches if it does).
+    _, follow = send(client, ready["id"], "and for women only?")
+    chart = blocks_of(follow, "chart")[0]
+    assert chart["spec"]["view"]["type"] == "bar" and chart["spec"]["op"]["sql"].count("{{rows}}") == 1
+    assert {"kind": "pin", "block_index": follow["blocks"].index(chart)} in follow["actions"]
+
+    thread = client.get(f"{API}/datasets/{ready['id']}/chat").json()
+    assert [m["role"] for m in thread] == ["user", "assistant", "user", "assistant"]
+    assert thread[1]["blocks"] == msg["blocks"]
+    older = client.get(f"{API}/datasets/{ready['id']}/chat", params={"before": thread[2]["id"]}).json()
+    assert [m["id"] for m in older] == [thread[0]["id"], thread[1]["id"]]
+    calls = db_rows("SELECT purpose, role FROM llm_calls WHERE dataset_id = ? AND message_id IS NOT NULL", ready["id"])
+    assert [(c["purpose"], c["role"]) for c in calls][:3] == [("route", "small"), ("sql", "medium"), ("compose", "medium")]
+
+
+def test_number_answer_and_compose_fallback(client, ready):
+    _, msg = send(client, ready["id"], "how many passengers survived?")
+    number = blocks_of(msg, "number")[0]
+    assert number["value"] == 500 and number["formatted"] == "500" and number["label"] == "passengers who survived"
+    assert msg["text"] == "500 passengers survived."  # the full stop is added
+
+    # Digits in a text run fail validation twice: the raw result is shown with its source.
+    _, msg = send(client, ready["id"], "how many children?")
+    assert msg["blocks"] == [{**blocks_of(msg, "number")[0]}]
+    assert msg["blocks"][0]["value"] == 154 and msg["sources"][0]["sql"]
+
+
+def test_find_rows_saves_a_selection(client, ready):
+    _, msg = send(client, ready["id"], "which passengers paid more than 500?")
+    table = blocks_of(msg, "table")[0]
+    assert table["total"] == 4 and table["selection_id"] and len(table["rows"]) == 4
+    assert msg["text"] == "4 rows match."
+    assert {"kind": "open_rows", "selection_id": table["selection_id"]} in msg["actions"]
+    rows = client.get(f"{API}/datasets/{ready['id']}/rows", params={"selection": table["selection_id"]}).json()
+    assert rows["total"] == 4 and all(r["cells"]["fare"] > 500 for r in rows["rows"])
+
+
+def test_create_widget_from_chat_and_from_the_add_drawer(client, ready):
+    before = len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"])
+    _, msg = send(client, ready["id"], "add a chart of fare by port to the dashboard")
+    action = next(a for a in msg["actions"] if a["kind"] == "open_widget")
+    widgets = client.get(f"{API}/datasets/{ready['id']}/widgets").json()
+    assert len(widgets["widgets"]) == before + 1
+    made = next(w for w in widgets["widgets"] if w["id"] == action["widget_id"])
+    assert made["created_by"] == "chat" and made["title"] == "Average fare by port"
+    assert widgets["layout"]["lg"][-1]["i"] == made["id"]
+    assert "reading port → embarked" in msg["sources"][0]["label"]
+
+    r = client.post(f"{API}/datasets/{ready['id']}/widgets", json={"prompt": "a KPI of the average age"})
+    assert r.status_code == 201, r.text
+    assert r.json()["widget"]["spec"]["view"]["type"] == "kpi" and r.json()["widget"]["created_by"] == "user"
+
+
+def test_clarification_then_the_choice(client, ready):
+    _, ask = send(client, ready["id"], "compare the groups")
+    assert ask["clarification"] == {"question": "Which groups?", "options": ["men and women", "the three classes"]}
+    assert ask["blocks"] == []
+    _, msg = send(client, ready["id"], "men and women", clarification_of=ask["id"], choice="men and women")
+    assert msg["text"].startswith("Women survived at 72.7%") and "men at 19.1%" in msg["text"]
+
+
+def test_honest_limits(client, ready):
+    _, msg = send(client, ready["id"], "what drives survival?")
+    assert "isn't built yet" in msg["text"] and "“the rate of survived by" in msg["text"]
+    _, msg = send(client, ready["id"], "nationality breakdown")
+    assert msg["text"].startswith("This file has no column that answers that.")
+    assert "passengers by home destination" in msg["text"]
+    _, msg = send(client, ready["id"], "what did cleaning change?")
+    assert "Step 1: Typed" in msg["text"] and msg["sources"][0]["kind"] == "step"
+
+
+def test_pin_a_chart_answer(client, ready):
+    send(client, ready["id"], "average fare by class")
+    _, msg = send(client, ready["id"], "and for women only?")
+    index = next(a["block_index"] for a in msg["actions"] if a["kind"] == "pin")
+    r = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "dashboard", "block_index": index})
+    assert r.status_code == 201, r.text
+    w = r.json()
+    assert w["created_by"] == "chat" and w["title"] == "and for women only?"
+    data = client.get(f"{API}/widgets/{w['id']}/data").json()
+    assert data["rows"][0][1] == pytest.approx(109.41, rel=1e-3)
+    assert client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": index}).status_code == 422
+
+
+def test_model_unavailable_and_not_ready(client):
+    ds = client.post(f"{API}/datasets/sample").json()
+    assert client.post(f"{API}/datasets/{ds['id']}/chat", json={"text": "hi"}).status_code == 409  # profiling
+    wait_status(client, ds["id"], "offer")
+    events, msg = send(client, ds["id"], "a question with no recorded reply")  # the model call fails
+    assert msg["text"].startswith("The model service is unavailable")
+    assert ("error", {"code": "llm_unavailable", "message": "The model service is unavailable. Try again in a minute."}) in events
+
+
+def test_resolution_and_formatting():
+    cols = ["pclass", "age", "fare", "home.dest"]
+    assert column("average fare", cols) is None  # whole-string match: not "age"
+    assert column("Home Dest", cols) == "home.dest" and column("PClass", cols) == "pclass"
+    assert comp.fmt(0.7274, comp.fmt_kind(0.7274, "survival_rate")) == "72.7%"
+    assert comp.fmt(1025982.16, "num") == "1,025,982" and comp.fmt(87.509, "num") == "87.51"
+    res = Result("r1", "sql", "tpl", [{"name": "n", "type": "BIGINT"}], [[5]], 1)
+    with pytest.raises(ValueError):
+        comp.resolve_chip("r1:3:0", {"r1": res})
+    assert comp.resolve_chip("r1:total", {"r1": res})[0] == 1
+
+
+def test_eval_checks():
+    msg = {"blocks": [{"type": "table", "columns": [], "rows": [[1, 87.5], [2, 21.18]], "total": 2}], "sources": [{"sql": "x"}]}
+    assert ask_eval.check(msg, {"rows": {"1": 87.509, "2": 21.179}})[0]
+    assert ask_eval.check({"blocks": [{"type": "number", "value": 38.2}]}, {"value": 0.38197, "tol": 0.01})[0]
+    assert not ask_eval.check({"blocks": [{"type": "number", "value": 12}]}, {"value": 13})[0]
+    assert ask_eval.unsourced({"blocks": [{"type": "number", "value": 1}], "sources": []})
+    questions = ask_eval.load()
+    assert len(questions["titanic3.csv"]) == 20 and len(questions["sales_dated.csv"]) == 15

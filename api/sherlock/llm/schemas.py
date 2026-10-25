@@ -110,3 +110,37 @@ Run = TextRun | ChipRun | LabelRun  # a union, so strict decoding enforces one k
 class Story(Strict):
     headline: list[Run] = Field(min_length=1)
     body: list[Run] = Field(min_length=1)
+
+
+# --- Chat answerers and compose (TRD §8.1–§8.2) ---------------------------------------------
+
+
+class SqlDraft(Strict):
+    reading: str = Field(description="how you read the question's words as columns and values, e.g. 'class → pclass'")
+    sql: str = Field(description="one DuckDB SELECT over table t that filters its rows with WHERE {{rows}}")
+    answerable: bool = Field(description="false when no column in this file can answer the question")
+    closest: str | None = Field(description="when not answerable: the closest question this file can answer, else null")
+
+
+class PredicateDraft(Strict):
+    predicate: str = Field(description="a DuckDB boolean condition over the columns of t, without WHERE")
+    label: str = Field(description="what the rows are, in a few plain words")
+
+
+class WidgetDraft(Strict):
+    reading: str = Field(description="how you read the request's words as columns, e.g. 'port → embarked'")
+    title: str = Field(description="plain-words title, at most eight words")
+    sql: str = Field(description="one DuckDB SELECT over table t that filters its rows with WHERE {{rows}}")
+    view: Literal["bar", "line", "area", "pie", "ring", "kpi", "table"]
+    x: str | None = Field(description="the result column for categories or time, null for kpi and table")
+    y: str | None = Field(description="the result column for the value, null for table")
+
+
+class Answer(Strict):
+    # The prose comes first: with it last, Super often closed the object with an empty list.
+    prose: list[Run] = Field(min_length=1, max_length=40,
+                             description="required: one to three sentences answering the question; every number is a chip")
+    shape: Literal["number", "table", "chart", "text"]
+    number: str | None = Field(description="for shape number: the chip of the headline value, else null")
+    label: str | None = Field(description="for shape number: what the value is, in words with no digits, else null")
+    chart: Literal["bar", "line", "area", "pie"] | None = Field(description="for shape chart: the chart type, else null")
