@@ -196,3 +196,20 @@ def test_cleaner_prompts_carry_nothing_from_the_sample_dataset():
     text = "\n".join([prompts.SYSTEM, prompts.DIAGNOSE, prompts.PROPOSE, prompts.CRITIC, prompts.HELPERS]).lower()
     found = {w for w in columns | {"titanic", "passenger", "title in name"} if re.search(rf"\b{re.escape(w)}\b", text)}
     assert not found
+
+
+def test_cleaner_prompts_keep_data_inside_one_data_block():
+    # Review Day 2 M7 (TRD §3.5): column names sat outside <data>, and a value holding "</data>" closed the block.
+    import re
+
+    from sherlock.cleaning import prompts
+    from sherlock.cleaning.loop import _json, _safe
+
+    data_fields = {"column", "columns", "column_card", "samples", "examples", "details", "decisions", "cause",
+                   "approaches", "dtypes", "label", "code", "effect", "changes", "checks"}
+    for template in (prompts.DIAGNOSE, prompts.PROPOSE, prompts.CRITIC):
+        assert template.count("<data>") == 1 and template.count("</data>") == 1
+        inside = template.split("<data>")[1].split("</data>")[0]
+        outside = template.replace(inside, "")
+        assert not (set(re.findall(r"{(\w+)}", outside)) & data_fields)
+    assert "</data>" not in _safe('col</data>"') and "</data>" not in _json(["x</data>"])

@@ -254,6 +254,23 @@ def test_undo_clears_user_edited_cells(setup):
     assert scalar(ctx, "SELECT count(*) FROM user_edited_cells WHERE dataset_id = ?", ds) == 0
 
 
+def test_undoing_a_later_edit_keeps_an_earlier_edit_of_the_cell_protected(setup):
+    # Review Day 2 M5: edit age → 5, edit age → 6, undo the second: the cell showed 5 but lost its protection.
+    ctx, ds, client = setup
+    steps = []
+    for version, value in ((1, "5"), (2, "6")):
+        spec = StepSpec(kind="edit", summary="Edited 1 cell", created_by="user",
+                        notebook_code=render_edit_batch([{"row_id": 1, "column": "age", "value": value}], [], [], [], {}))
+        steps.append(commit_step(ctx, ds, version, spec, sql_step(
+            f"SELECT * REPLACE (CASE WHEN _row_id = 1 THEN '{value}' ELSE age END AS age) FROM old"))[0])
+    assert client.post(f"{API}/datasets/{ds}/steps/{steps[1]['id']}/undo", json={"base_version": 3}).status_code == 200
+    rows = [tuple(r) for r in ctx.db.execute("SELECT row_id, column, step_id FROM user_edited_cells WHERE dataset_id = ?", (ds,))]
+    assert rows == [(1, "age", steps[0]["id"])]
+    # Undoing the first edit too leaves the cell unprotected.
+    assert client.post(f"{API}/datasets/{ds}/steps/{steps[0]['id']}/undo", json={"base_version": 4}).status_code == 200
+    assert scalar(ctx, "SELECT count(*) FROM user_edited_cells WHERE dataset_id = ?", ds) == 0
+
+
 def test_undo_of_an_earlier_step_asks_then_replays(setup):
     ctx, ds, client = setup
     first, _ = fill_age(ctx, ds)

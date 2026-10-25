@@ -18,7 +18,7 @@ import { ModelCardDrawer } from "@/components/ml/ModelCardDrawer";
 import { Button } from "@/components/ui/button";
 import { MenuCheck, MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuTrigger, SubMenu } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
-import { useFilters, useGlobalFilter } from "@/state/filters";
+import { appliedFilter, useFilters, useGlobalFilter } from "@/state/filters";
 import { useUi } from "@/state/ui";
 
 const VIEW_LABELS: Record<string, string> = {
@@ -52,14 +52,10 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
   const editLayout = useUi((s) => s.editLayout);
   const setFocused = useUi((s) => s.setFocusedWidget);
   const link = useLinking(widget);
-  const inherits = widget.spec.scope.rows.inherit_global_filters !== false;
   // The column a click filters on: the spec's category column (the result's first column is
   // checked once the data is in).
   const specSource = columns.includes(String(widget.spec.scope.columns.x)) ? String(widget.spec.scope.columns.x) : undefined;
-  // A chart doesn't filter itself by its own category: its clicked bar keeps the accent and the
-  // others fade (UI/UX brief §4.4).
-  const ownFilter = !!filter && filter.col === specSource;
-  const applied = inherits && !ownFilter ? filter : null;
+  const applied = appliedFilter(widget, filter);
   const isMl = widget.spec.op.type === "ml";
   const query = useWidgetData(widget, filterParam(applied), version, !isMl);
   const actions = useWidgetActions(widget.dataset_id);

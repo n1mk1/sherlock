@@ -42,6 +42,8 @@ def sample_frame(conn: duckdb.DuckDBPyConnection, columns: list[str], n: int = S
 
 def _indicator(df: pd.DataFrame, target: Target, card: dict) -> pd.Series:
     col = df[target.name]
+    if target.value is not None:
+        return pd.to_numeric(col, errors="coerce").eq(target.value).astype(float).where(col.notna())
     if pd.api.types.is_bool_dtype(col) or pd.api.types.is_numeric_dtype(col):
         return pd.to_numeric(col, errors="coerce").astype(float)
     pos = target.positive.split(" = ", 1)[-1]

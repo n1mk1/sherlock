@@ -116,6 +116,8 @@ class _Entry:
     def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
         self.conn = conn
         self.lock = threading.Lock()
+        self.users = 0  # requests holding or waiting for the connection (guarded by the cache's lock)
+        self.retired = False  # evicted: closed when the last user lets go
 
 
 class VersionConnections:
@@ -123,6 +125,8 @@ class VersionConnections:
 
     Opening a version evicts the dataset's older versions. A connection is used by one
     request at a time (DuckDB connections aren't safe to share across threads mid-query).
+    An evicted connection that a request still holds or waits for stays open until the last of
+    them lets go, so a query on an older version never meets a closed connection.
     """
 
     def __init__(self, settings: Settings, max_size: int = MAX_CACHED_CONNECTIONS) -> None:
@@ -143,31 +147,49 @@ class VersionConnections:
             entry = self._entries.get(key)
             if entry is not None:
                 self._entries.move_to_end(key)
+                entry.users += 1
                 return entry
             for old in [k for k in self._entries if k[0] == dataset_id and k[1] < version]:
-                self._entries.pop(old).conn.close()
+                self._retire(self._entries.pop(old))
             entry = self._open(parquet)
             self._entries[key] = entry
             while len(self._entries) > self.max_size:
                 _, evicted = self._entries.popitem(last=False)
-                evicted.conn.close()
+                self._retire(evicted)
+            entry.users += 1
             return entry
+
+    @staticmethod
+    def _retire(entry: _Entry) -> None:
+        """Close an evicted entry now if nobody uses it, else when its last user lets go. Under `_lock`."""
+        entry.retired = True
+        if entry.users == 0:
+            entry.conn.close()
+
+    def _release(self, entry: _Entry) -> None:
+        with self._lock:
+            entry.users -= 1
+            if entry.retired and entry.users == 0:
+                entry.conn.close()
 
     @contextmanager
     def connection(self, dataset_id: str, version: int, parquet: Path) -> Iterator[duckdb.DuckDBPyConnection]:
         entry = self._entry(dataset_id, version, parquet)
-        with entry.lock:
-            yield entry.conn
+        try:
+            with entry.lock:
+                yield entry.conn
+        finally:
+            self._release(entry)
 
     def drop(self, dataset_id: str) -> None:
         with self._lock:
             for key in [k for k in self._entries if k[0] == dataset_id]:
-                self._entries.pop(key).conn.close()
+                self._retire(self._entries.pop(key))
 
     def close(self) -> None:
         with self._lock:
             for entry in self._entries.values():
-                entry.conn.close()
+                self._retire(entry)
             self._entries.clear()
 
     def __len__(self) -> int:

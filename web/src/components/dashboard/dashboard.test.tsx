@@ -4,10 +4,12 @@ import type { Job, Widget } from "@/api/types";
 import { initials } from "@/components/library/LibraryPanel";
 import { JobTray, visibleJobs } from "@/components/shell/JobTray";
 import { formatCell, formatNumber, isPctColumn } from "@/lib/format";
-import { useFilters } from "@/state/filters";
+import { useLocation } from "react-router-dom";
+import { appliedFilter, useFilters } from "@/state/filters";
+import { useUi } from "@/state/ui";
 import { mockApi, renderAt } from "@/test/render";
 import { templateSpec } from "./AddWidgetDrawer";
-import { derive, toStored } from "./Dashboard";
+import { derive, toStored, useWidgetParam } from "./Dashboard";
 import { compatibleViews, WidgetShell } from "./WidgetShell";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -126,5 +128,33 @@ describe("widget shell", () => {
     expect(await screen.findByText(/no mock for GET/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show query" }));
     await waitFor(() => expect(explain).toHaveBeenCalled());
+  });
+});
+
+describe("review fixes", () => {
+  const BAR: Widget = { ...KPI, id: "wdg_2", spec: { ...KPI.spec, scope: { ...KPI.spec.scope, columns: { x: "sex", y: "rate" } } } };
+
+  it("shows in How do you know? the filter the widget applies", () => {
+    // Review F3: a chart doesn't filter itself by its own category, but the drawer added the filter anyway.
+    const onSex = { col: "sex", op: "eq", value: "female" } as const;
+    expect(appliedFilter(BAR, onSex)).toBeNull();
+    expect(appliedFilter(KPI, onSex)).toEqual(onSex);
+    const optedOut = { ...KPI, spec: { ...KPI.spec, scope: { ...KPI.spec.scope, rows: { inherit_global_filters: false } } } };
+    expect(appliedFilter(optedOut, onSex)).toBeNull();
+    expect(appliedFilter(KPI, null)).toBeNull();
+  });
+
+  it("flashes the widget named by ?widget= and drops the parameter", async () => {
+    // Review F12: chat's "Open the widget" linked to ?widget=:id, which nothing read.
+    let search = "";
+    function Probe({ widgets }: { widgets?: Widget[] }) {
+      useWidgetParam(widgets);
+      search = useLocation().search;
+      return null;
+    }
+    useUi.setState({ flashWidget: null });
+    renderAt(<Probe widgets={[KPI, BAR]} />, "/d/ds_1/dashboard?widget=wdg_2");
+    await waitFor(() => expect(useUi.getState().flashWidget).toBe("wdg_2"));
+    await waitFor(() => expect(search).toBe(""));
   });
 });

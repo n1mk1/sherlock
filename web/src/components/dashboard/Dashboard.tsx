@@ -3,8 +3,9 @@
 // sm: 4). Widgets move by their handle (the whole header in Edit layout, which also adds resize
 // corners); the layout saves on drop or resize and never starts the cascade.
 import "react-grid-layout/css/styles.css";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Responsive, type Layout as GridLayout, type Layouts } from "react-grid-layout";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useDatacard, useWidgetActions, useWidgets } from "@/api/queries";
 import type { Dataset, Layout, LayoutItem, Widget, WidgetData } from "@/api/types";
@@ -18,6 +19,19 @@ const BREAKPOINTS = { lg: 640, md: 480, sm: 0 };
 const COLS = { lg: 12, md: 8, sm: 4 };
 type Bp = keyof typeof COLS;
 
+/** `?widget=:id` (App Flow §1, chat's "Open the widget"): once the widgets load, scroll to that one and
+ * flash it, as a card click does, then drop the parameter so a reload doesn't flash it again. */
+export function useWidgetParam(widgets: Widget[] | undefined) {
+  const [params, setParams] = useSearchParams();
+  const setFlashWidget = useUi((s) => s.setFlashWidget);
+  const target = params.get("widget");
+  useEffect(() => {
+    if (!target || !widgets) return;
+    if (widgets.some((w) => w.id === target)) setFlashWidget(target);
+    setParams((p) => { const next = new URLSearchParams(p); next.delete("widget"); return next; }, { replace: true });
+  }, [target, widgets, setFlashWidget, setParams]);
+}
+
 export function Dashboard({ dataset }: { dataset: Dataset }) {
   const { data, isLoading, error } = useWidgets(dataset.id);
   const card = useDatacard(dataset.id);
@@ -25,6 +39,7 @@ export function Dashboard({ dataset }: { dataset: Dataset }) {
   const editLayout = useUi((s) => s.editLayout);
   const setAddOpen = useUi((s) => s.setAddWidgetOpen);
   const [explain, setExplain] = useState<{ widget: Widget; data?: WidgetData } | null>(null);
+  useWidgetParam(data?.widgets);
   const latest = useRef<Layouts | null>(null);
   const [measure, width] = useContainerWidth();
   const columns = useMemo(() => (card.data?.columns ?? []).map((c) => c.name), [card.data]);

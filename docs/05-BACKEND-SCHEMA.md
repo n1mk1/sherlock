@@ -159,6 +159,8 @@ Flags as written (2026-10-24, TRD §7.9): `quarantined` on a cell that lost its 
 
 Tracks cells the user edited by hand so "Clean with AI" can skip them. Written by `commit_step` for edit batches; rows whose step is undone are deleted.
 
+As built (2026-10-25, from the Day 2 review): when an undo deletes a cell's row, the cell stays protected if an edit batch still in the new version's effective chain also edited it. Its row then points at the latest such batch, found from that batch's lineage. Example: edit `age` → 5, edit `age` → 6, undo the second. The cell shows 5 and stays protected, now under the first batch.
+
 ```sql
 CREATE TABLE user_edited_cells (
   dataset_id TEXT NOT NULL,

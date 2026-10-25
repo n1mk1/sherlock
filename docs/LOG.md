@@ -297,3 +297,28 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
     - eval ask grown to about 50 questions, with the grounding eval;
     - and D7.3 and the remaining D7.4 views if you keep them P0.
   - Then the feature freeze. Day 9 ships.
+
+### 2026-10-25 (afternoon): fixes from the Day 1-4 reviews
+
+- **Done** (on the owner's instruction: the findings that needed no product decision; each has a test and its doc note):
+  - **A rate above 100%** (Day 4 F1, Rule 4). A two-valued number not coded 0/1 (1/2, say) was averaged as it was, so its "rate" was 140%. Now it counts its positive value (TRD §7.3).
+  - **`contains` widget filters** (Day 4 F15). `%` and `_` matched as wildcards, so `contains "%"` matched every row. They're now escaped as in the rows API (TRD §6.3).
+  - **"How do you know?"** (Day 4 F3). It showed the global filter even on the chart filtered by its own category, whose data doesn't apply it. The widget and the drawer now share `appliedFilter` (TRD §6.3, App Flow §7.3).
+  - **`?widget=:id`** (Day 4 F12). The dashboard now scrolls to the widget, flashes it and drops the parameter, so chat's "Open the widget" works (App Flow §1).
+  - **The DuckDB connection cache** (Day 2 M4). Evicting an older version closed its connection under a running query. An evicted connection now stays open until its last user lets go (TRD §3.2).
+  - **Undo and hand-edit protection** (Day 2 M5). Undoing a later edit of a cell removed the protection an earlier edit had given it. The cell is now protected again under the earlier edit (Schema §2.7, TRD §7.8).
+  - **Cleaner prompt hygiene** (Day 2 M7, TRD §3.5). Column names, earlier decisions, the diagnosis, the fix's code and the effect now sit inside each template's one `<data>` block, with `</data>` defused (TRD §7.2).
+  - **The typing step** (Day 2 M2).
+    - It no longer casts a float with more than 15 significant digits, a non-UTC offset, or fractions finer than a microsecond. Before, those silently lost information.
+    - Its verifiers are computed from the written output instead of being fixed `pass` strings (TRD §7.1).
+    - A first version of the check ran the statement a second time and made `wide_messy.csv` time out in the sample test. It now reads the Parquet the commit already wrote (7.5 s for that file).
+  - **The OpenAPI client** (Day 2 M3). It was 24 routes behind (exports, cards, runs and more) and has been regenerated. `api/tests/test_openapi.py` now fails when it drifts (TRD §3.1).
+  - **Checked in the browser** (local API on :8001 with its own data, the sample dashboard, no model calls).
+    - With `sex = female` set, "Survival by Sex" asked for its SQL with no filter, and the Survival Rate KPI's SQL had `("sex" = 'female')`, matching its 466 rows.
+    - `?widget=` scrolled to "Survival by Sex" and highlighted it.
+- **Still open from the reviews, waiting on the owner's decisions:**
+  - per-user budgets reset by dropping the cookie (Day 1 #1);
+  - ragged CSVs importing as one column (Day 2 H1);
+  - the Cleaner committing a step that quarantines most rows, or that its critic rejects (Day 3 H1, H2);
+  - `export.csv` formula escaping, and the `nvidia/` prefix rule.
+- **Not done:** keyboard access to click-to-filter and the widgets, the slide-over focus trap, reduced motion for charts, the 20-widget warning outside the drawer, wide-file candidate capping, compose repairs, and the smaller review items (`reviews/day-*.md`).

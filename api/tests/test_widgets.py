@@ -56,6 +56,20 @@ def test_compile_requires_rows_and_renders_literal_filters():
         wc.filter_sql([{"col": "nope", "op": "eq", "value": 1}], types)
 
 
+def test_contains_filter_is_a_plain_substring():
+    # Review F15: `contains "%"` matched every row because `%` and `_` were wildcards.
+    import duckdb
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t AS SELECT * FROM (VALUES ('50% off'), ('half'), ('a_b'), ('ab'), ('c\\d')) v(s)")
+    def hits(value):
+        where = wc.filter_sql([{"col": "s", "op": "contains", "value": value}], {"s": "VARCHAR"})
+        return [r[0] for r in conn.execute(f"SELECT s FROM t WHERE {where} ORDER BY s").fetchall()]
+    assert hits("%") == ["50% off"]
+    assert hits("_") == ["a_b"]
+    assert hits("\\") == ["c\\d"]
+    assert hits("HAL") == ["half"]
+
+
 def test_predicate_validation():
     assert wc.validate_predicate("pclass = 3 AND sex = 'female'", ["pclass", "sex"]) == "pclass = 3 AND sex = 'female'"
     with pytest.raises(wc.SqlError, match="Unknown column"):

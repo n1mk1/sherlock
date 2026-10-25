@@ -8,12 +8,11 @@ import { filterParam, useExplain } from "@/api/queries";
 import type { Widget, WidgetData } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
-import { useGlobalFilter } from "@/state/filters";
+import { appliedFilter, useGlobalFilter } from "@/state/filters";
 
 export function ExplainDrawer({ widget, data, onClose }: { widget: Widget | null; data?: WidgetData; onClose: () => void }) {
   const filter = useGlobalFilter(widget?.dataset_id ?? "");
-  const inherits = widget?.spec.scope.rows.inherit_global_filters !== false;
-  const explain = useExplain(widget?.id ?? null, filterParam(inherits ? filter : null));
+  const explain = useExplain(widget?.id ?? null, filterParam(widget ? appliedFilter(widget, filter) : null));
   const isMl = widget?.spec.op.type === "ml";
   const code = useRunCode(isMl ? widget?.run_id ?? null : null, isMl);
   const [copied, setCopied] = useState(false);

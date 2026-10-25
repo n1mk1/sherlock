@@ -39,6 +39,8 @@ Routes (client-side):
 | `?settings=1` | Settings overlay on top of any route |
 | `?widget=:id` | Dashboard tab with that widget highlighted and scrolled into view |
 | `?rows=:selectionId` | CSV tab filtered to a saved row selection (used by "open these rows") |
+
+As built (2026-10-25, from the Day 4 review): `?widget=:id` works the way clicking a card does. Once the widgets load, the dashboard scrolls to that widget and flashes it, then drops the parameter, so a reload doesn't flash it again. An ID that's no longer on the dashboard just opens the dashboard. Chat's "Open the widget" uses it.
 | `?export=notebook` | The Export notebook dialog on top of any dataset route |
 
 The left panel and the chat bar exist on every dataset route.
@@ -192,7 +194,7 @@ Menu (⋯): Change view (list of compatible views) · Duplicate · Collapse · P
 | Drag the handle (⠿) | Moves the widget (react-grid-layout). Layout saves on drop. |
 | Drag the corner | Resizes. Charts re-measure. |
 | Edit layout toggle | Adds resize corners and makes the whole header a drag handle on all widgets; off by default so brushing isn't accidentally a drag. |
-| How do you know? | Opens a drawer: for SQL widgets, the SQL with a "Copy" button and the row count; for ML widgets, the recipe, scope, params and the model card. |
+| How do you know? | Opens a drawer: for SQL widgets, the SQL with a "Copy" button and the row count; for ML widgets, the recipe, scope, params and the model card. As built (2026-10-25): the SQL includes the global filter only when the widget applies it, so a chart filtered on its own category shows its query without that clause (TRD §6.3). |
 | Analysis dropdown | See §9. |
 | Add widget | Opens a drawer with: "Describe it" (text to chat), and quick templates by column (bar of X by Y, histogram of X, KPI of X, table). |
 | Delete | Removes the widget and its card; toast with Undo for 10 s. |

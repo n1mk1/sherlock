@@ -111,6 +111,8 @@ def undo_step(ctx: Context, dataset_id: str, step_id: str, base_version: int, co
                 (dataset_id, new_version, parquet, row_count, column_count, columns_json, undo_id,
                  json.dumps(remaining), now),
             )
+            dropped = db.execute("SELECT row_id, column FROM user_edited_cells WHERE dataset_id = ? AND step_id = ?",
+                                 (dataset_id, step_id)).fetchall()
             db.execute("DELETE FROM user_edited_cells WHERE dataset_id = ? AND step_id = ?", (dataset_id, step_id))
             for r in replayed:
                 db.executemany(
@@ -122,6 +124,7 @@ def undo_step(ctx: Context, dataset_id: str, step_id: str, base_version: int, co
                     "INSERT OR REPLACE INTO user_edited_cells (dataset_id, row_id, column, step_id) VALUES (?, ?, ?, ?)",
                     [(dataset_id, rid, col, r.step_id) for rid, col in r.edited_cells],
                 )
+            _reprotect(db, dataset_id, dropped, remaining)
             size = folder_bytes(folder)
             db.execute(
                 "UPDATE datasets SET current_version = ?, row_count = ?, column_count = ?, state_rev = state_rev + 1, "
@@ -141,6 +144,26 @@ def undo_step(ctx: Context, dataset_id: str, step_id: str, base_version: int, co
     step = load_step(db, undo_id)
     emit_version_created(ctx, dataset, step, new_version)
     return {"step": step, "version": new_version}
+
+
+def _reprotect(db: sqlite3.Connection, dataset_id: str, cells: list, chain: list[str]) -> None:
+    """A cell the undone step had edited stays protected if an edit batch still in the chain edited it
+    too: its row points at the latest such batch (Schema §2.7)."""
+    if not cells or not chain:
+        return
+    marks = ", ".join("?" * len(chain))
+    edits = [r[0] for r in db.execute(
+        f"SELECT id FROM steps WHERE dataset_id = ? AND kind = 'edit' AND id IN ({marks})", (dataset_id, *chain))]
+    if not edits:
+        return
+    marks = ", ".join("?" * len(edits))
+    for row_id, column in cells:
+        latest = db.execute(
+            f"SELECT step_id FROM lineage WHERE dataset_id = ? AND row_id = ? AND column = ? AND step_id IN ({marks}) "
+            "ORDER BY version DESC LIMIT 1", (dataset_id, row_id, column, *edits)).fetchone()
+        if latest:
+            db.execute("INSERT OR IGNORE INTO user_edited_cells (dataset_id, row_id, column, step_id) VALUES (?, ?, ?, ?)",
+                       (dataset_id, row_id, column, latest[0]))
 
 
 def _shape(path) -> tuple[int, str]:

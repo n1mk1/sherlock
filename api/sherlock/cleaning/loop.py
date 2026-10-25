@@ -98,7 +98,12 @@ def short_line(issue: dict) -> str:
 
 def _json(value, limit: int = 1500) -> str:
     text = json.dumps(value, default=str, ensure_ascii=False)
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    return _safe(text if len(text) <= limit else text[: limit - 1] + "…")
+
+
+def _safe(text) -> str:
+    """Text that goes inside a prompt's <data> block can't close it (TRD §3.5, as `data_block` does)."""
+    return str(text).replace("</data>", "</ data>")
 
 
 class Cleaner:
@@ -420,8 +425,8 @@ class Cleaner:
         cc = self._column_context(issue, card, df)
         columns = ", ".join(f"{c['name']} ({c['type']})" for c in card["columns"])
         user = prompts.DIAGNOSE.format(
-            issue_line=issue_line(issue), detector=issue["detector"], column=issue["column"] or "(rows)",
-            rows=card["row_count"], columns=columns, column_card=_json(cc["entry"]), samples=_json(cc["samples"]),
+            issue_line=issue_line(issue), detector=issue["detector"], column=_safe(issue["column"] or "(rows)"),
+            rows=card["row_count"], columns=_safe(columns), column_card=_json(cc["entry"]), samples=_json(cc["samples"]),
             examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
             decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet",
         )
@@ -449,8 +454,8 @@ class Cleaner:
             approaches.insert(0, approaches.pop(diagnosis.preferred_option))
         samples = cap_values(df[column].dropna().astype(str).drop_duplicates().head(20)) if column in df else []
         user = prompts.PROPOSE.format(
-            issue_line=issue_line(issue), column=column or "(rows)", cause=diagnosis.cause,
-            approaches="; ".join(approaches), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
+            issue_line=issue_line(issue), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
+            approaches=_safe("; ".join(approaches)), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
             samples=_json(samples), examples=_json(cap_values(issue["examples"], 10)), helpers=prompts.HELPERS,
         )
         out = self.llm.structured("large", self._messages(user), Candidates, purpose="propose", scope=self.scope,
@@ -468,8 +473,8 @@ class Cleaner:
                 changes.append(f"{b[rid]!r} → {a[rid]!r}")
         effect = (f"{report.cells_changed} cells changed, {report.unrelated_changed} outside {column}, "
                   f"{report.quarantined} rows quarantined; the issue went from {report.issue_before} to {report.issue_after}")
-        user = prompts.CRITIC.format(issue_line=issue_line(issue), column=column or "(rows)", label=best.label,
-                                     code=best.code, effect=effect, changes=_json(changes), checks=_json(report.hard))
+        user = prompts.CRITIC.format(issue_line=issue_line(issue), column=_safe(column or "(rows)"), label=_safe(best.label),
+                                     code=_safe(best.code), effect=_safe(effect), changes=_json(changes), checks=_json(report.hard))
         out = self.llm.structured("medium", self._messages(user), Critique, purpose="critic", scope=self.scope)
         self._track(out.completion)
         return out.value

@@ -49,6 +49,32 @@ def test_plan_casts_only_lossless_columns():
     assert result["price"].dtype == "float64" and len(result) == len(df) == n
 
 
+def test_casts_that_would_lose_information_are_refused():
+    # Review Day 2 M2: 20-digit floats were rounded, and offsets and nanoseconds were dropped, with no quarantine.
+    n = 200
+    conn = frame_conn({
+        "x": [f"{i}.25" for i in range(n - 1)] + ["0.12345678901234567890"],
+        "big": ["1e300", "123456789012345", "-0.000001500"] * (n // 4) + ["1.0"] * (n - 3 * (n // 4)),
+        "ns": [f"2024-01-15 10:{i % 60:02d}:00" for i in range(n - 2)] + ["2024-01-15 10:00:00.123456789", None],
+        "india": [f"2024-01-15 10:{i % 60:02d}:00+05:30" for i in range(n)],  # TIMESTAMP would drop the offset
+        "utc": [f"2024-01-15T10:{i % 60:02d}:00Z" for i in range(n)],          # Z is UTC: nothing is lost
+    })
+    casts = typing_step.plan(conn)
+    assert set(casts) == {"x", "big", "ns", "utc"}
+    sql = typing_step.statement(["x", "big", "ns", "india", "utc"], casts)
+    conn.execute("CREATE VIEW df AS SELECT * FROM t")
+    out = conn.execute(f"SELECT * FROM ({sql}) ORDER BY _row_id").df()
+    assert out.loc[n - 1, "_quarantine_reason"] == "type: x" and pd.isna(out.loc[n - 1, "x"])
+    assert out["big"].notna().all()  # 15 significant digits or fewer cast exactly
+    assert out.loc[n - 2, "_quarantine_reason"] == "type: ns" and pd.isna(out.loc[n - 2, "ns"])  # nanoseconds
+    assert out.loc[0, "utc"] == pd.Timestamp("2024-01-15 10:00:00") and out["india"].dtype == object
+    assert typing_step.verify(conn, f"({sql})", casts) == {"row_ledger": "pass", "lossless": "pass"}
+    # The checks catch a value lost without its row quarantined, and a dropped row.
+    unquarantined = f"(SELECT * REPLACE (NULL::VARCHAR AS _quarantine_reason) FROM ({sql}))"
+    assert typing_step.verify(conn, unquarantined, casts)["lossless"] == "fail"
+    assert typing_step.verify(conn, f"(SELECT * FROM ({sql}) WHERE _row_id > 1)", casts)["row_ledger"] == "fail"
+
+
 def test_upload_commits_the_typing_step_as_step_one(client):
     csv = "id,age,score,joined\n" + "".join(f"{i},{20 + i % 50},{i}.25,2024-02-{(i % 28) + 1:02d}\n" for i in range(150))
     csv += "150,abc,1.0,2024-01-01\n"  # one age that isn't a number: quarantined

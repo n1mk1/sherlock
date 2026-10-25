@@ -103,7 +103,9 @@ def filter_sql(clauses: list[dict], types: dict[str, str]) -> str | None:
         elif op == "notempty":
             parts.append(f"({q} IS NOT NULL AND trim({text}) != '')")
         elif op == "contains":
-            parts.append(f"{text} ILIKE {literal('%' + str(value) + '%')}")
+            # A plain substring, as in the rows API: `%`, `_` and `\` in the value match themselves.
+            needle = str(value).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            parts.append(f"{text} ILIKE {literal('%' + needle + '%')} ESCAPE '\\'")
         elif op == "in":
             if not isinstance(value, list) or not value:
                 raise SqlError("filters: `in` needs a non-empty list")

@@ -53,6 +53,22 @@ def test_binary_text_target_counts_its_positive_value():
     assert t.positive == "churn = yes" and "= 'yes'" in t.indicator
 
 
+def test_numeric_target_not_coded_0_1_gives_a_rate_up_to_100_percent():
+    # Review F1: a 1/2 target was averaged as it was, so its "rate" was 1.4 (140%).
+    card = {**CARD, "target_candidates": ["outcome"], "columns": [
+        col("outcome", "int", "target_like", 2, stats={"min": 1, "max": 2})]}
+    t = candidates.binary_target(card)
+    assert t.positive == "outcome = 1" and t.value == 1.0
+    conn = duckdb.connect()
+    conn.execute("CREATE TABLE t AS SELECT * FROM (VALUES (1), (2), (2), (NULL::INTEGER), (2)) v(outcome)")
+    assert conn.execute(f"SELECT AVG({t.indicator}) FROM t").fetchone()[0] == 0.25
+    df = conn.execute("SELECT * FROM t").df()
+    assert scoring._indicator(df, t, card).tolist()[:3] == [1.0, 0.0, 0.0]
+    # A 0/1 number and a bool are still averaged as they are.
+    for c in (col("outcome", "int", "target_like", 2, stats={"min": 0, "max": 1}), col("outcome", "bool", "target_like", 2)):
+        assert candidates.binary_target({**card, "columns": [c]}).indicator == 'CAST("outcome" AS DOUBLE)'
+
+
 def test_scoring_runs_queries_and_ranks():
     conn = duckdb.connect()
     conn.execute("""CREATE TABLE t AS SELECT * FROM (VALUES

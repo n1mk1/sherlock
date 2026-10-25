@@ -51,17 +51,27 @@ class Target:
     name: str
     indicator: str  # SQL for 1.0 / 0.0 per row
     positive: str   # what the rate counts, for titles
+    value: float | None = None  # the positive value of a numeric target not coded 0/1
 
 
 def binary_target(card: dict) -> Target | None:
-    """The first target-like column with exactly two values, and how to count its positive value."""
+    """The first target-like column with exactly two values, and how to count its positive value.
+    Only a bool or a 0/1 number is averaged as it is; a number coded otherwise (1/2, say) counts its
+    positive value like a text target, so a rate never passes 100%."""
     for name in card.get("target_candidates") or []:
         col = next((c for c in card["columns"] if c["name"] == name), None)
         if col is None or col["distinct"] != 2:
             continue
         q = ident(name)
-        if col["type"] in ("int", "float", "bool"):
+        if col["type"] == "bool":
             return Target(name, f"CAST({q} AS DOUBLE)", name)
+        if col["type"] in ("int", "float"):
+            lo, hi = (col.get("stats") or {}).get("min"), (col.get("stats") or {}).get("max")
+            if lo is None or hi is None or (lo, hi) == (0, 1):
+                return Target(name, f"CAST({q} AS DOUBLE)", name)
+            pos = next((v for v in (lo, hi) if str(v) in POSITIVE), hi)
+            return Target(name, f"CASE WHEN {q} IS NULL THEN NULL WHEN {q} = {pos} THEN 1.0 ELSE 0.0 END",
+                          f"{name} = {pos}", float(pos))
         values = [str(v["value"]) for v in (col.get("top_values") or [])]
         if len(values) == 2:
             pos = next((v for v in values if v.strip().lower() in POSITIVE), min(values, key=lambda v: _count(col, v)))

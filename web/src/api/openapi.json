@@ -26,6 +26,37 @@
     "title": "Body_upload_dataset_api_v1_datasets_post",
     "type": "object"
    },
+   "CardEdit": {
+    "additionalProperties": false,
+    "properties": {
+     "body": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Body"
+     },
+     "headline": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Headline"
+     }
+    },
+    "title": "CardEdit",
+    "type": "object"
+   },
    "CellEdit": {
     "additionalProperties": false,
     "properties": {
@@ -652,6 +683,52 @@
     "title": "NewRow",
     "type": "object"
    },
+   "NotebookOptions": {
+    "additionalProperties": false,
+    "description": "TRD \u00a74.2. Defaults `{ true, true, false, true, \"steps_dashboard\" }`.",
+    "properties": {
+     "include_cards": {
+      "default": true,
+      "title": "Include Cards",
+      "type": "boolean"
+     },
+     "include_data": {
+      "default": true,
+      "title": "Include Data",
+      "type": "boolean"
+     },
+     "include_notes": {
+      "default": false,
+      "title": "Include Notes",
+      "type": "boolean"
+     },
+     "include_runs": {
+      "default": true,
+      "title": "Include Runs",
+      "type": "boolean"
+     },
+     "order": {
+      "default": "steps_dashboard",
+      "pattern": "^(steps_dashboard|flow_path)$",
+      "title": "Order",
+      "type": "string"
+     },
+     "up_to_step": {
+      "anyOf": [
+       {
+        "minimum": 1.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Up To Step"
+     }
+    },
+    "title": "NotebookOptions",
+    "type": "object"
+   },
    "Settings": {
     "additionalProperties": false,
     "description": "User settings with the PRD \u00a77.10 defaults. Unknown keys are rejected.",
@@ -818,6 +895,410 @@
  },
  "openapi": "3.1.0",
  "paths": {
+  "/api/v1/cards/{cid}": {
+   "delete": {
+    "operationId": "delete_card_api_v1_cards__cid__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Card",
+    "tags": [
+     "cards"
+    ]
+   },
+   "get": {
+    "operationId": "get_card_api_v1_cards__cid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Card Api V1 Cards  Cid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Card",
+    "tags": [
+     "cards"
+    ]
+   },
+   "patch": {
+    "description": "The user's own text. Numbers typed by hand become unverified chips; the card is never\nnarrated over again, only offered suggestions (PRD STORY-7).",
+    "operationId": "edit_card_api_v1_cards__cid__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CardEdit"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Edit Card Api V1 Cards  Cid  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Edit Card",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/accept-suggestion": {
+   "post": {
+    "operationId": "accept_suggestion_api_v1_cards__cid__accept_suggestion_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Accept Suggestion Api V1 Cards  Cid  Accept Suggestion Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Accept Suggestion",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/dismiss-badge": {
+   "post": {
+    "operationId": "dismiss_badge_api_v1_cards__cid__dismiss_badge_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Dismiss Badge Api V1 Cards  Cid  Dismiss Badge Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dismiss Badge",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/dismiss-suggestion": {
+   "post": {
+    "operationId": "dismiss_suggestion_api_v1_cards__cid__dismiss_suggestion_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Dismiss Suggestion Api V1 Cards  Cid  Dismiss Suggestion Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dismiss Suggestion",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/evidence/{chip_id}": {
+   "get": {
+    "description": "What a chip stands on: the fact's query (or how it was derived), its value and version.",
+    "operationId": "evidence_api_v1_cards__cid__evidence__chip_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "chip_id",
+      "required": true,
+      "schema": {
+       "title": "Chip Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Evidence Api V1 Cards  Cid  Evidence  Chip Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Evidence",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/refresh": {
+   "post": {
+    "operationId": "refresh_card_api_v1_cards__cid__refresh_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Refresh Card Api V1 Cards  Cid  Refresh Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Refresh Card",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
+  "/api/v1/cards/{cid}/restore": {
+   "post": {
+    "operationId": "restore_card_api_v1_cards__cid__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "cid",
+      "required": true,
+      "schema": {
+       "title": "Cid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Restore Card Api V1 Cards  Cid  Restore Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Card",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
   "/api/v1/datasets": {
    "get": {
     "operationId": "list_datasets_api_v1_datasets_get",
@@ -1029,6 +1510,54 @@
     "summary": "Patch Dataset",
     "tags": [
      "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/cards": {
+   "get": {
+    "description": "The overview first, then the widget cards in dashboard order.",
+    "operationId": "list_cards_api_v1_datasets__dataset_id__cards_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Cards Api V1 Datasets  Dataset Id  Cards Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Cards",
+    "tags": [
+     "cards"
     ]
    }
   },
@@ -1598,6 +2127,202 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/exports/notebook": {
+   "post": {
+    "operationId": "start_export_api_v1_datasets__dataset_id__exports_notebook_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NotebookOptions"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Start Export Api V1 Datasets  Dataset Id  Exports Notebook Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Start Export",
+    "tags": [
+     "exports"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/exports/notebook/preview": {
+   "get": {
+    "description": "The dialog's sentence and notes; options not given come from the user's remembered ones,\nwhich the answer repeats as `options`.",
+    "operationId": "export_preview_api_v1_datasets__dataset_id__exports_notebook_preview_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "include_data",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Include Data"
+      }
+     },
+     {
+      "in": "query",
+      "name": "include_cards",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Include Cards"
+      }
+     },
+     {
+      "in": "query",
+      "name": "include_notes",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Include Notes"
+      }
+     },
+     {
+      "in": "query",
+      "name": "include_runs",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Include Runs"
+      }
+     },
+     {
+      "in": "query",
+      "name": "order",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Order"
+      }
+     },
+     {
+      "in": "query",
+      "name": "up_to_step",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Up To Step"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Export Preview Api V1 Datasets  Dataset Id  Exports Notebook Preview Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Preview",
+    "tags": [
+     "exports"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/find": {
    "get": {
     "description": "Matches on the cells' text (case-insensitive), in row order.",
@@ -1799,6 +2524,50 @@
     "summary": "Raw Csv",
     "tags": [
      "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/relations": {
+   "get": {
+    "operationId": "get_relations_api_v1_datasets__dataset_id__relations_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Relations Api V1 Datasets  Dataset Id  Relations Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Relations",
+    "tags": [
+     "cards"
     ]
    }
   },
@@ -2045,6 +2814,120 @@
     "summary": "Get Rows",
     "tags": [
      "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/runs": {
+   "post": {
+    "description": "Start a run, or return the cached one (`status: done` at once). With `widget_id` the widget\nbecomes the analysis (its chart is kept for Undo / \"Plain chart\").",
+    "operationId": "create_run_api_v1_datasets__dataset_id__runs_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Run Api V1 Datasets  Dataset Id  Runs Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Run",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/runs/preview": {
+   "post": {
+    "description": "What the setup form shows: task, columns with exclusion reasons, baselines, estimate.",
+    "operationId": "preview_run_api_v1_datasets__dataset_id__runs_preview_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Preview Run Api V1 Datasets  Dataset Id  Runs Preview Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Preview Run",
+    "tags": [
+     "ml"
     ]
    }
   },
@@ -2461,6 +3344,134 @@
     ]
    }
   },
+  "/api/v1/exports/{export_id}": {
+   "get": {
+    "operationId": "get_export_api_v1_exports__export_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "export_id",
+      "required": true,
+      "schema": {
+       "title": "Export Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Export Api V1 Exports  Export Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Export",
+    "tags": [
+     "exports"
+    ]
+   }
+  },
+  "/api/v1/exports/{export_id}/download": {
+   "get": {
+    "operationId": "download_export_api_v1_exports__export_id__download_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "export_id",
+      "required": true,
+      "schema": {
+       "title": "Export Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Download Export",
+    "tags": [
+     "exports"
+    ]
+   }
+  },
+  "/api/v1/fact-sheets/{fsid}": {
+   "get": {
+    "operationId": "get_fact_sheet_api_v1_fact_sheets__fsid__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "fsid",
+      "required": true,
+      "schema": {
+       "title": "Fsid",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Fact Sheet Api V1 Fact Sheets  Fsid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Fact Sheet",
+    "tags": [
+     "cards"
+    ]
+   }
+  },
   "/api/v1/jobs": {
    "get": {
     "description": "Newest first: one dataset's jobs, or all of the user's (jobs of deleted datasets left out).",
@@ -2711,6 +3722,239 @@
     ]
    }
   },
+  "/api/v1/recipes": {
+   "get": {
+    "description": "Every recipe's manifest with `compatible` and, when not, the `reason` (PRD ML-1). Rows are\ncounted in the scope (quarantine excluded).",
+    "operationId": "recipes_api_v1_recipes_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "scope",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Scope"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response Recipes Api V1 Recipes Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Recipes",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}": {
+   "get": {
+    "operationId": "get_run_api_v1_runs__rid__get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Run Api V1 Runs  Rid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Run",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}/cancel": {
+   "post": {
+    "operationId": "cancel_run_api_v1_runs__rid__cancel_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Cancel Run",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}/code": {
+   "get": {
+    "description": "The run's `repro.py` (TRD \u00a76.7), written when it finished.",
+    "operationId": "run_code_api_v1_runs__rid__code_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Run Code Api V1 Runs  Rid  Code Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Run Code",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}/model-card": {
+   "get": {
+    "operationId": "model_card_api_v1_runs__rid__model_card_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Model Card Api V1 Runs  Rid  Model Card Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Model Card",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}/results": {
+   "get": {
+    "operationId": "run_results_api_v1_runs__rid__results_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "view",
+      "required": false,
+      "schema": {
+       "default": "importance",
+       "title": "View",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "feature",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Feature"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Run Results Api V1 Runs  Rid  Results Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Run Results",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
+  "/api/v1/runs/{rid}/wrong-rows": {
+   "post": {
+    "description": "\"Who did it get wrong?\": a selection of the misclassified rows (out of fold), opened in the CSV\ntab with `?rows=<selection_id>`.",
+    "operationId": "run_wrong_rows_api_v1_runs__rid__wrong_rows_post",
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Run Wrong Rows Api V1 Runs  Rid  Wrong Rows Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Run Wrong Rows",
+    "tags": [
+     "ml"
+    ]
+   }
+  },
   "/api/v1/widgets/{wid}": {
    "delete": {
     "operationId": "delete_widget_api_v1_widgets__wid__delete",
@@ -2908,6 +4152,30 @@
     "summary": "Widget Explain",
     "tags": [
      "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/rerun": {
+   "post": {
+    "description": "Re-run an analysis widget on the current version (its \"Outdated\" footer, App Flow \u00a79 step 6).",
+    "operationId": "rerun_widget_api_v1_widgets__wid__rerun_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Rerun Widget Api V1 Widgets  Wid  Rerun Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Rerun Widget",
+    "tags": [
+     "ml"
     ]
    }
   },

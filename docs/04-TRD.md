@@ -170,6 +170,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Request IDs in every log line and error response.
 - OpenAPI schema is the contract; the web client is generated from it (`openapi-typescript`).
   - As built (2026-10-24, Implementation Plan D2.9): `scripts/dump_openapi.py` writes the app's schema to `web/src/api/openapi.json` without starting a server. `pnpm openapi` turns it into `web/src/api/schema.d.ts`, and `web/src/api/client.ts` wraps it with `openapi-fetch`. Both generated files are committed.
+  - **Kept in step** (2026-10-25, from the Day 2 review). The committed files had fallen 24 routes behind (exports, cards, relations, fact sheets, runs, recipes, rerun) and were regenerated. `api/tests/test_openapi.py` now fails whenever `app.openapi()` differs from the committed `openapi.json`, and its message says how to regenerate.
   - openapi-typescript needs the TypeScript 5 compiler API, which TypeScript 7 (the native port the web app builds with) doesn't ship. So `pnpm openapi` runs it through `npx` with `typescript@5.9.3` and `openapi-typescript@7.13.0` in their own environment, not as project dependencies.
   - Routes that answer a plain `dict` have no response type in the schema. `web/src/api/types.ts` types them by hand from §4 and §6 (`Job`, `DataCard`, `Step`, `CleaningReport`, the event payloads), and `request()` calls them.
 - Implementation (2026-10-24):
@@ -197,6 +198,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Layout per dataset in [Schema §4](05-BACKEND-SCHEMA.md).
 - SQLite in WAL mode, one connection per request, `busy_timeout=5000`.
 - DuckDB implementation (`sherlock/storage.py`): `VersionConnections` keeps at most 4 connections, opens a version's connection on first use, and closes the dataset's older versions when a newer one opens. Each connection has `memory_limit = DUCKDB_MEMORY_MB` and 2 threads, and is used by one request at a time (a lock per connection). The cap is per connection, not 1 GB in total, so a small host can set it low (Render Starter: 256 MB; Render Standard, from 2026-10-25: 512 MB).
+  - **Eviction waits for users** (2026-10-25, from the Day 2 review). An evicted connection is retired, not closed. Each entry counts the requests holding or waiting for it, and the last one to let go closes it. Before, opening version 2 could close version 1's connection under a running query ("Connection already closed!").
 - DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections or 1 GB and evicted when a newer version exists. Commits write Parquet and SQLite only.
 
 ### 3.3 Job runner
@@ -871,6 +873,8 @@ As implemented (2026-10-24, `sherlock/widgets/compile.py`, `execute.py`):
 - **`{{rows}}` is required.** A widget's SQL without it is refused, so the quarantine exclusion is always in what runs.
 - **The selection.** A `scope.rows.selection_id` is ANDed in after the predicate, as the selection's stored predicate or `_row_id IN (…)`. The global filter comes last.
 - **Literal SQL.** The global filter is rendered as literal SQL, never as bound parameters, so the SQL shown is the SQL that ran.
+  - A `contains` clause is a plain substring here too: `%`, `_` and `\` are escaped, with `ESCAPE '\'`, as in the rows API. Before 2026-10-25 (Day 4 review), `contains "%"` matched every row.
+  - The filter "How do you know?" sends is the one the widget applies (`appliedFilter` in `web/src/state/filters.ts`): none when the widget opts out, or when the filter is on the widget's own category. Before the Day 4 review, the drawer always added the global filter, so a chart's shown SQL had a clause its data didn't.
   - Column names are checked against the version and quoted.
   - Values become literals of the column's type: `"pclass" = 3`, `"sex" = 'female'`, `TRUE`, or `TRY_CAST('x' AS BIGINT)` for a value that isn't a number.
   - An `eq` with a null value is `IS NULL`.
@@ -1058,6 +1062,12 @@ Implementation of step 3b, the typing step (2026-10-24, Implementation Plan D2.8
   - `float`: `DOUBLE`, unless the value starts with a leading zero (`0` followed by a digit).
   - `bool`: true/t/yes/y and false/f/no/n.
   - `date` and `datetime`: the detected format through `TRY_STRPTIME`, or a plain `TRY_CAST` for ISO 8601.
+  - **Added 2026-10-25, from the Day 2 review.** These used to cast with a silent loss, and now don't cast:
+    - a float with more than 15 significant digits (`DOUBLE` would round it);
+    - a time with a UTC offset other than `Z` or `±00:00` (`TIMESTAMP` keeps no offset);
+    - a time with fractions finer than a microsecond.
+
+    Such a value becomes NULL with its row quarantined, as for any failed cast. A column where every value has, say, `+05:30` therefore stays text.
 
   Category, text, ID and empty columns are never cast, so a file with nothing to type gets no step and stays at version 1.
 - **The statement.** One DuckDB `SELECT` over `df`:
@@ -1069,6 +1079,11 @@ Implementation of step 3b, the typing step (2026-10-24, Implementation Plan D2.8
   - The summary reads "Typed 7 columns from text: pclass, survived, age, …".
   - It has one decision ("Which columns hold numbers, true/false values or dates?").
   - In the app, `commit_step` runs the same statement with the parent's Parquet exposed as the view `df`.
+- **Verifiers** (2026-10-25, from the Day 2 review; they used to be stored as fixed `pass` strings). While committing, `typing.produce` writes the typed Parquet. `typing.verify` then reads that output against version 1, so the statement doesn't run twice: on the 60-column sample, running it a second time made profiling time out. It computes:
+  - `row_ledger`: the same row count in and out;
+  - `lossless`: no non-sentinel value of a usable row became NULL without its row being quarantined.
+
+  A failure stops the step (the profile job fails with the reason) rather than committing it.
 - **Lineage.** A sentinel that became NULL is a changed cell. A failed value is a cell with flag `quarantined`, its text kept in `old_value` (§7.9), plus a `_row` quarantine event.
 - **Titanic.** It types `pclass`, `survived`, `age`, `sibsp`, `parch`, `fare` and `body` in about 0.1 s and quarantines no rows, so the sample's current version after profiling is 2.
 - **Notebook dtypes.** pandas has no NULL for `int64`, so in the notebook a `BIGINT` column with NULLs comes back from `.df()` as `float64` (Titanic's `body`). The notebook's assertion cell (D5.6) has to compare such columns as numbers.
@@ -1197,6 +1212,7 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
   A whole-dataset clean that ends any of these ways, Stop included, sets the dataset to `building` and queues `build_dashboard`, since committed steps stay. If the model is unavailable before any step committed, the job fails and the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>" (App Flow §5).
 - **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys, `skipped` and `hand_edited_skipped`, written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
 - **Prompts** live in `sherlock/cleaning/prompts/*.txt`: one system message (the rules) and the diagnose, propose and critic templates. Values sit inside `<data>` blocks, and samples are capped at 20 values of 200 characters. The prompts name nothing from the sample dataset (CLAUDE.md Rule 4), and a test checks them against `titanic3.csv`'s columns: the propose prompt's example label was "Median by title in name" until the Day 3 review (2026-10-25), and live runs proposed exactly that label. It's now "Median by <group column>".
+  - **One data block per template** (2026-10-25, from the Day 2 review). Everything that comes from the file or from an earlier model reply sits inside the template's one `<data>` block. That covers column names, the column list and dtypes, earlier decisions, the diagnosis, approaches, the fix's label and code, and the effect. Every such value has `</data>` defused (`_safe` in `cleaning/loop.py`, as `data_block` does), so a value can't close the block. A test checks each template's placeholders.
 - **Tests** use recorded replies (`api/tests/fixtures/llm/cleaner_messy.json`) through `LLM_MOCK`.
 
 Helpers available in the sandbox (`sherlock.cleaning.helpers`): `parse_dates_smart(s, order_hint=None)`, `parse_numbers(s, locale_hint=None)`, `strip_sentinels(s, extra=[])`, `normalize_whitespace_case(s, mode="title"|"lower"|"upper"|"keep")`, `canonicalize_categories(s, mapping=None)` (rapidfuzz clustering; mapping from the LLM when provided), `extract_pattern(s, regex, group)`, `fill_by_group(df, col, by, stat="median")`, `flag_rows(df, mask, reason)`, `quarantine_rows(df, mask, reason)`, `fix_encoding(s)`.
@@ -1264,6 +1280,7 @@ As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
     - The target is never its own category.
     - Rows with an empty category are left out of that chart.
     - A target "rate" needs exactly two values: a numeric or yes/no target is averaged, and a text one counts its "yes"-like value or else its rarer value.
+      - **Corrected 2026-10-25, from the Day 4 review.** Only a bool or a number coded 0/1 (its profile's min and max) is averaged as it is. A number coded otherwise, such as 1/2, counts its positive value: the one that reads as "yes" (`1`), else the larger one. That's `CASE WHEN x = <value> THEN 1.0 ELSE 0.0 END`, with NULL kept NULL, and the title reads "Rate of outcome = 1". Before this, a 1/2 target's rate came out at 140%.
 - **Scoring (`scoring.py`).**
   - Each candidate's query runs on the full version, which validates it (step 4). Candidates that fail or return no rows are dropped.
   - The statistics run on a reservoir sample of up to 200,000 usable rows (seed 42).
@@ -1536,7 +1553,7 @@ Implementation (2026-10-24, Implementation Plan D2.3, `sherlock/steps/`):
   - The new chain is the current one without the step. If a version has exactly that chain, the undo points at its Parquet as before. Otherwise it starts from the latest version whose chain is the longest prefix of the new chain (version 1 at worst) and replays the rest into `versions/v<new>.parquet`.
   - **Re-applying a step.** An edit batch re-applies its stored edit list by `_row_id`, typed to the columns as they are then; an edit to a row or column that no longer exists fails, and deleting a row that's already gone is skipped. The typing step re-runs its DuckDB statement. A cleaning step re-runs its notebook code (its code and, for a scoped clean, its scope) in the sandbox.
   - **Checks.** Each replayed step must run, keep `_row_id` unique and non-null, and (cleaning steps) keep every row; else the replay stops with the step and the reason, and the undo is `409` with nothing written.
-  - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). The impact is the diff between the old current version and the new one.
+  - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). A deleted cell that an edit batch still in the chain also edited is protected again, under the latest such batch (Schema §2.7). This applies to every undo, not just a replay. The impact is the diff between the old current version and the new one.
 - **Edit batches.** `render_edit_batch` (`sherlock/steps/notebook.py`) renders an edit batch's `notebook_code` as the pandas in §6.7: `.loc` assignments grouped by column, quarantine restores, `pd.concat` for new rows, and `~isin` for deletions. Values are typed to the column's DuckDB type, and a test runs the rendered code on a DataFrame.
 
 ### 7.9 Lineage reads

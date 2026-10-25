@@ -293,3 +293,32 @@ def test_version_cache_evicts_old_versions_and_lru(tmp_path):
         pass
     assert len(cache) == 2  # LRU cap
     cache.close()
+
+
+def test_version_cache_keeps_an_evicted_connection_open_while_in_use(tmp_path):
+    # Review Day 2 M4: opening v2 closed v1's connection under a running query.
+    import threading
+    cache = VersionConnections(get_settings(), max_size=4)
+    parquet = tmp_path / "v.parquet"
+    duckdb.connect().execute(f"COPY (SELECT 1 AS x) TO '{parquet.as_posix()}' (FORMAT PARQUET)")
+    holding, opened = threading.Event(), threading.Event()
+    result = {}
+
+    def old_version_query():
+        with cache.connection("ds_a", 1, parquet) as conn:
+            holding.set()
+            opened.wait(5)
+            result["x"] = conn.execute("SELECT x FROM t").fetchone()
+
+    worker = threading.Thread(target=old_version_query)
+    worker.start()
+    holding.wait(5)
+    with cache.connection("ds_a", 2, parquet):  # evicts v1 while the worker holds it
+        opened.set()
+    worker.join(5)
+    assert result["x"] == (1,)
+    assert len(cache) == 1
+    entry = cache._entries[("ds_a", 2)]
+    cache.close()
+    with pytest.raises(duckdb.ConnectionException):
+        entry.conn.execute("SELECT 1")  # closed once nobody holds it
