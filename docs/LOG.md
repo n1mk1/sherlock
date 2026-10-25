@@ -281,8 +281,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - **Total: about $0.25**, well under the $5 cap. Token Factory's console has the exact figure.
 - **What needs you:**
   - **The stray API on :8000.** Another session's API (older code, same `api/data`) is still running and claims job kinds it doesn't know: it claimed and failed a cascade job tonight. Stop it, or point it at its own `DATA_DIR`. Until then, local runs use :8001 with their own data directory.
+    - **Done later the same day, on the owner's instruction:** the uvicorn on :8000 (`sherlock.main:app --port 8000` from `api/.venv`) was stopped while no job was queued or running. Port 8000 is free.
   - **CI is blocked by GitHub billing.** No overnight commit ran in GitHub Actions; tests ran locally and Render was deployed by hand. Fix the billing, or keep deploying by hand.
-  - **PRD-level question from Day 7: resolved by the follow-up (`cfb4b08`).** Everything below is now built, so no PRD change is needed. The P0 items that the cuts don't remove and that are still open are D7.3 (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`) and D7.4's confusion and ROC views and "Who did it get wrong?". The confusion views need out-of-fold predictions, which came with `predict` (cut 7). Decide whether they're built on Day 8. If not, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
+    - Still yours: billing is an account setting only you can change.
+  - **PRD-level question from Day 7: resolved by the follow-up (`cfb4b08`).** Everything below is now built, so no PRD change is needed.
+    - As first asked: the P0 items the cuts don't remove that were still open were D7.3 (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`) and D7.4's confusion and ROC views and "Who did it get wrong?". The confusion views needed out-of-fold predictions, which had come with `predict` (cut 7).
+    - The choice was to build them on Day 8, or to drop them through a PRD change by you (plan §2.0: nothing is left to cut). They were built, so there's nothing to decide.
   - Review the overnight `docs/` additions: the as-built notes in TRD §7.3, §7.4 and §7.7, App Flow §7.4, §8, §9, §11 and §16, UI/UX brief §4.4–§4.7 and §5.6–§5.9, and Schema §2.5 and §2.13.
 - **Decision for tomorrow:**
   - Day 8 within cuts 2, 3 and 9:
