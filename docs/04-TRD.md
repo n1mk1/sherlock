@@ -1424,6 +1424,7 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
   - `registry.py`: the manifests.
   - `runner.py`: requests, the cache, the `ml_run` job, artifacts, the fact sheet, reads and outdating.
 - **Step 1.** `SELECT * FROM t WHERE <quarantine excluded, predicate, selection> ORDER BY _row_id`. Rows without the target are dropped. More than 50,000 rows are sampled with seed 42.
+  - (Day 7 review, 2026-10-25) The sample is `core.sample`, which `repro.py` carries too: for a category target it is stratified by the target (`train_test_split` with `stratify`), so each value keeps its share and the model card's `sample.stratify_column` is true; for a number it is a plain random sample. Before, both were plain random samples although the card named the target as the stratify column. The model card drawer says "stratified by <target>".
 - **Step 2.** As specified: AUC for two classes, MAE for regression.
 - **Step 3, leakage.** These are excluded with their reason:
   - empty columns, IDs, free text and dates (dates aren't features yet);

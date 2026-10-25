@@ -49,7 +49,7 @@ def analyze(df: pd.DataFrame, card: dict, rows_sql: str, target: str, *, feature
     plan = make_plan(data, card, rows_sql, target, features, forced, n_folds)
     data = data[data[target].notna()]
     if plan.sample:
-        data = data.sample(n=plan.sample["n"], random_state=core_seed()).sort_values("_row_id")
+        data = core.sample(data, plan.target, plan.task, plan.sample["n"], core_seed())
     X, y = core.prepare(data, plan.target, plan.numeric, plan.categorical, plan.high_card)
     splits = core.folds(X, y, plan.task, core_seed(), n_folds)
     check_cancel()

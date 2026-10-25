@@ -11,7 +11,8 @@ import pytest
 
 from sherlock.errors import ApiError
 from sherlock.eval import planted
-from sherlock.ml import repro
+from sherlock.ml import core, repro
+from sherlock.ml import plan as plan_module
 from sherlock.ml.analysis import analyze, verdict
 from sherlock.ml.plan import make_plan
 from tests.test_jobs import wait_for, wait_status
@@ -115,6 +116,18 @@ def test_a_forced_column_is_used_with_a_warning_and_turned_off_columns_are_liste
     assert any(w["code"] == "forced_in" and "leak" in w["text"] for w in a.card["warnings"])
     excluded = {e["column"]: e["reason"] for e in a.card["excluded"]}
     assert excluded["noise"] == "turned off in the setup" and "ID" in excluded["code"]
+
+
+def test_a_large_scope_is_sampled_stratified_in_the_app_and_its_reproduction(monkeypatch):
+    df = planted.as_version(planted.drivers(n=1000))
+    df["outcome"] = (np.arange(1000) % 10 == 0).astype(int)  # one row in ten
+    got = core.sample(df, "outcome", "classification", 200, 42)
+    assert len(got) == 200 and got["outcome"].sum() == 20 and got["_row_id"].is_monotonic_increasing
+    assert len(core.sample(df, "strong", "regression", 200, 42)) == 200 and len(core.sample(df, "outcome", "classification", 2000, 42)) == 1000
+    monkeypatch.setattr(plan_module, "SAMPLE_ROWS", 300)
+    a = _analyze(planted.drivers(n=600), "outcome")
+    assert a.card["sample"] == {"seed": 42, "stratify_column": "outcome", "n": 300} and a.result["rows"] == 300
+    assert "stratified by outcome, seed 42" in a.code and "data = sample(data, 'outcome', 'classification', 300, seed)" in a.code
 
 
 def test_the_reproduction_code_gives_the_model_cards_numbers():

@@ -12,7 +12,7 @@ import inspect
 from sherlock.ml import core
 from sherlock.ml.plan import Plan
 
-CORE_FUNCTIONS = ("prepare", "preprocessor", "make_model", "folds", "metric_name", "score", "pipeline", "evaluate",
+CORE_FUNCTIONS = ("sample", "prepare", "preprocessor", "make_model", "folds", "metric_name", "score", "pipeline", "evaluate",
                   "baselines", "importance", "run", "out_of_fold")
 
 
@@ -38,8 +38,9 @@ def render(plan: Plan, model: str, alternatives: list[dict], run_id: str, versio
         or "none"
     sample = ""
     if plan.sample:
-        sample = (f"    # The scope had more than {plan.sample['n']:,} rows, so the run used a random sample of them (seed {plan.sample['seed']}).\n"
-                  f"    data = data.sample(n={plan.sample['n']}, random_state=seed).sort_values(\"_row_id\")\n")
+        how = f"stratified by {plan.sample['stratify_column']}, " if plan.sample.get("stratify_column") else ""
+        sample = (f"    # The scope had more than {plan.sample['n']:,} rows, so the run used a random sample of them ({how}seed {plan.sample['seed']}).\n"
+                  f"    data = sample(data, {plan.target!r}, {plan.task!r}, {plan.sample['n']}, seed)\n")
     sql = f"SELECT * FROM t WHERE {plan.rows_sql} ORDER BY _row_id"
     return f'''# Reproduces Sherlock run {run_id} (driver analysis on version {version}).
 # Auto tried: {others}. The winner, {core.MODEL_LABELS.get(model, model)}, is reproduced here.
