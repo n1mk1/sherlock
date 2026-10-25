@@ -27,6 +27,9 @@ def test_env(monkeypatch, tmp_path):
     # Each test gets its own data dir and SQLite file.
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'data' / 'sherlock.db').as_posix()}")
+    # ... and its own sandbox temp root: the default, <system temp>/sherlock-sandbox, is shared with every
+    # other Sherlock process on the machine, so "temp dirs removed" checks would see their workers.
+    monkeypatch.setenv("SANDBOX_TMP", str(tmp_path / "sandbox"))
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
