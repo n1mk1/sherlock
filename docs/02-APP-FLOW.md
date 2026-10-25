@@ -91,13 +91,15 @@ Rules:
 - Files over 50 MB are refused before upload with "This file is 73 MB. The limit is 50 MB."
 - Files that look binary (NUL bytes in the first 64 KB, outside UTF-16) show "Couldn't read this as text. Is it a spreadsheet or a zip? Export it as CSV first."
 
-Import uploads the raw file (with a progress bar for files > 2 MB), creates the dataset, and navigates to `/d/:id/dashboard` (or the default tab) in the **profiling** state. Until the status is **ready**, the centre panel of every tab route shows the profiling, offer, cleaning or build screen, except that during cleaning the CSV tab shows the read-only grid (§5).
+Import uploads the raw file (with a progress bar for files > 2 MB), creates the dataset, and navigates to `/d/:id/dashboard` (or the default tab) in the **profiling** state. As built (2026-10-24), the Import button shows a spinner while the upload runs; the byte-level progress bar for large files isn't built yet. Only the settings the user changed from what the preview detected are sent as import options; the server detects the rest itself. Until the status is **ready**, the centre panel of every tab route shows the profiling, offer, cleaning or build screen, except that during cleaning the CSV tab shows the read-only grid (§5).
 
 ### 3.3 Profiling state
 
 Centre: a spinner with "Reading titanic3.csv…" then "Profiling 14 columns…". Left panel row shows status "profiling". Chat bar enabled with the placeholder "Ask about this CSV (profiling in progress)"; questions queue until profiling ends. The right panel shows the three placeholder cards.
 
-Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed".
+Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed". (The Delete button arrives with library delete, Implementation Plan D4.5.)
+
+Until the Glide grid lands (Implementation Plan D5.1), the CSV tab shows a read-only table of the current version, 100 rows a page, with the changed, flagged and invalid marks and quarantined rows struck through. It's available once the dataset leaves profiling.
 
 ---
 

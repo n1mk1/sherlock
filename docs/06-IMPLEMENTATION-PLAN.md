@@ -236,10 +236,10 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 ### Frontend
 
 - [ ] theme tokens (light and dark, five accents), fonts, ThemeProvider with mode and accent, reduce-motion
-- [ ] API client (generated), SSE hook with resume, TanStack Query setup, error boundaries
-- [ ] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings
-- [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts
-- [ ] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete
+- [ ] API client (generated), SSE hook with resume, TanStack Query setup, error boundaries: all but error boundaries done 2026-10-24 (D2.9)
+- [ ] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings: the ui store (panels, the import file, live progress) done 2026-10-24 (D2.9); settings live in the `me` query
+- [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the rail, resizing, job tray and settings dialog are D4.4
+- [ ] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10)
 - [ ] cleaning: offer, in-progress (log, so-far, checks), report view
 - [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile
 - [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary
@@ -265,7 +265,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Smoke the model | `uv run python scripts/smoke_llm.py` (from the repo root: `uv run --project api python scripts/smoke_llm.py`; options `--models a,b`, `--out report.json`, `--no-thinking`) |
 | Seed the sample | `uv run python scripts/seed_sample.py` |
 | Deploy | `./scripts/deploy.sh` (build → push → update endpoint) |
-| Generate the API client | `pnpm openapi` (reads `/openapi.json`) |
+| Generate the API client | `uv run --project api python scripts/dump_openapi.py`, then `pnpm openapi` in `web/` (reads `web/src/api/openapi.json`, TRD §3.1) |
 
 Environments: `local` (compose, `DATA_DIR=./data`, mocked LLM optional via `LLM_MOCK=1`), `prod` (Render web service with a disk, real Token Factory; the Nebius Serverless Endpoint is the alternative).
 

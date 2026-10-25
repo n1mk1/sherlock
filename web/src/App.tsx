@@ -1,25 +1,22 @@
-import { useEffect, useState } from "react";
+// Routes (App Flow §1). Every route sits inside the three-panel shell.
+import { Route, Routes } from "react-router-dom";
+import { ThemeSync } from "@/app/ThemeSync";
+import { DatasetPage, DatasetRedirect } from "@/components/dataset/DatasetPage";
+import { Home } from "@/components/library/Home";
+import { AppShell } from "@/components/shell/AppShell";
 
-type Health = { ok: boolean; version: string };
-
-// Scaffold placeholder: the three-panel shell replaces this (Implementation Plan D2.9).
 export function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    fetch("/healthz")
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then(setHealth)
-      .catch(() => setFailed(true));
-  }, []);
-
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-2 p-6">
-      <h1 className="text-2xl font-semibold">Sherlock</h1>
-      <p className="text-muted-foreground" role="status">
-        {health ? `API ${health.version} is up` : failed ? "API unreachable" : "Checking the API…"}
-      </p>
-    </main>
+    <>
+      <ThemeSync />
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route index element={<Home />} />
+          <Route path="d/:datasetId" element={<DatasetRedirect />} />
+          <Route path="d/:datasetId/:tab" element={<DatasetPage />} />
+          <Route path="*" element={<Home />} />
+        </Route>
+      </Routes>
+    </>
   );
 }

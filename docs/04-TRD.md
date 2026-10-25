@@ -127,6 +127,14 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 
 - **API:** Python 3.12 (`api/.python-version`), uv, hatchling build. Tests use pytest with FastAPI's `TestClient`, which needs `httpx2`. `pandas` and `numpy` are pinned to the same versions as `NOTEBOOK_PINS` (§10); later dependencies on that list follow the same rule.
 - **Web:** Node 24, with pnpm 12 pinned through `packageManager` and run through Corepack. Vite 8 with `@vitejs/plugin-react`, React 18.3, TypeScript 7, and Tailwind CSS 4 through `@tailwindcss/vite`, so there's no `tailwind.config`. shadcn/ui is configured in `components.json` (new-york style, lucide icons, the `@/` alias for `src/`). Tests use Vitest with jsdom and Testing Library. Test files type-check under `tsconfig.test.json`, which adds Node types; app code under `tsconfig.app.json` has none. The design tokens are in `src/app/theme.css` (UI/UX brief §9), and the fonts come from `@fontsource-variable`.
+- **Web app structure (2026-10-24, Implementation Plan D2.9–D2.10):**
+  - **Libraries.** TanStack Query for server state, Zustand for UI state (`src/state/ui.ts`), React Router (`react-router-dom`) for the App Flow §1 routes, sonner for toasts, Papa Parse for the import preview, and Radix primitives (dialog, dropdown menu, tooltip, slot) under the shadcn-style components in `src/components/ui/`.
+  - **`src/api/`.**
+    - `client.ts` makes absolute same-origin requests, so the identity cookie goes along. It throws the §4 error envelope as an `ApiError`, and a network failure as code `offline`.
+    - `queries.ts` holds the query hooks and the user-level stream, which patches the dataset list and the open dataset on `dataset.status` and keeps `job.progress` per dataset.
+    - `sse.ts` is the stream hook. It skips events at or below the last ID it saw, and when the browser gives up on a stream it reopens with `?last_event_id=`, backing off from 1 s to 30 s.
+  - **After an upload.** The dataset is read again after the upload's response, because a short profile job can finish, and emit its `dataset.status`, before the response arrives.
+  - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
 
@@ -141,6 +149,9 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Ownership checked on every route: bare ids (`/widgets/{wid}`, `/cards/{cid}`, `/runs/{rid}`, `/exports/{export_id}`, `/jobs/{jid}`, `/proposals/{id}`, `/messages/{mid}`, `/fact-sheets/{fsid}`) are first resolved to their dataset (404 if not owned).
 - Request IDs in every log line and error response.
 - OpenAPI schema is the contract; the web client is generated from it (`openapi-typescript`).
+  - As built (2026-10-24, Implementation Plan D2.9): `scripts/dump_openapi.py` writes the app's schema to `web/src/api/openapi.json` without starting a server. `pnpm openapi` turns it into `web/src/api/schema.d.ts`, and `web/src/api/client.ts` wraps it with `openapi-fetch`. Both generated files are committed.
+  - openapi-typescript needs the TypeScript 5 compiler API, which TypeScript 7 (the native port the web app builds with) doesn't ship. So `pnpm openapi` runs it through `npx` with `typescript@5.9.3` and `openapi-typescript@7.13.0` in their own environment, not as project dependencies.
+  - Routes that answer a plain `dict` have no response type in the schema. `web/src/api/types.ts` types them by hand from §4 and §6 (`Job`, `DataCard`, `Step`, `CleaningReport`, the event payloads), and `request()` calls them.
 - Implementation (2026-10-24):
   - **Middleware.** Two pure-ASGI middlewares, so they also work for streaming (SSE) responses:
     - `RequestIdMiddleware` (`sherlock/errors.py`) gives every request a `req_<ulid>` and returns it as `X-Request-ID`.

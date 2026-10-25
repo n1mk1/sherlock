@@ -1,0 +1,1708 @@
+{
+ "components": {
+  "schemas": {
+   "Body_upload_dataset_api_v1_datasets_post": {
+    "properties": {
+     "file": {
+      "contentMediaType": "application/octet-stream",
+      "title": "File",
+      "type": "string"
+     },
+     "options": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Options"
+     }
+    },
+    "required": [
+     "file"
+    ],
+    "title": "Body_upload_dataset_api_v1_datasets_post",
+    "type": "object"
+   },
+   "CellEdit": {
+    "additionalProperties": false,
+    "properties": {
+     "column": {
+      "title": "Column",
+      "type": "string"
+     },
+     "row_id": {
+      "title": "Row Id",
+      "type": "integer"
+     },
+     "value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Value"
+     }
+    },
+    "required": [
+     "row_id",
+     "column"
+    ],
+    "title": "CellEdit",
+    "type": "object"
+   },
+   "CleaningProgress": {
+    "properties": {
+     "of": {
+      "title": "Of",
+      "type": "integer"
+     },
+     "pct": {
+      "title": "Pct",
+      "type": "number"
+     },
+     "step": {
+      "title": "Step",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "step",
+     "of",
+     "pct"
+    ],
+    "title": "CleaningProgress",
+    "type": "object"
+   },
+   "Dataset": {
+    "properties": {
+     "cleaning_progress": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CleaningProgress"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "column_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column Count"
+     },
+     "created_at": {
+      "title": "Created At",
+      "type": "string"
+     },
+     "current_version": {
+      "title": "Current Version",
+      "type": "integer"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "last_opened_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Opened At"
+     },
+     "last_tab": {
+      "anyOf": [
+       {
+        "enum": [
+         "csv",
+         "dashboard",
+         "flow"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Tab"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "row_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Count"
+     },
+     "status": {
+      "enum": [
+       "profiling",
+       "offer",
+       "cleaning",
+       "building",
+       "ready",
+       "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "name",
+     "status",
+     "current_version",
+     "row_count",
+     "column_count",
+     "created_at",
+     "last_opened_at",
+     "last_tab"
+    ],
+    "title": "Dataset",
+    "type": "object"
+   },
+   "EditBatch": {
+    "additionalProperties": false,
+    "properties": {
+     "base_version": {
+      "minimum": 1.0,
+      "title": "Base Version",
+      "type": "integer"
+     },
+     "deleted_row_ids": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Deleted Row Ids",
+      "type": "array"
+     },
+     "edits": {
+      "items": {
+       "$ref": "#/components/schemas/CellEdit"
+      },
+      "maxItems": 100000,
+      "title": "Edits",
+      "type": "array"
+     },
+     "new_rows": {
+      "items": {
+       "$ref": "#/components/schemas/NewRow"
+      },
+      "maxItems": 100000,
+      "title": "New Rows",
+      "type": "array"
+     },
+     "restore_row_ids": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Restore Row Ids",
+      "type": "array"
+     },
+     "run_cleaning_on_new_rows": {
+      "default": false,
+      "title": "Run Cleaning On New Rows",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "base_version"
+    ],
+    "title": "EditBatch",
+    "type": "object"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "title": "Detail",
+      "type": "array"
+     }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "Me": {
+    "properties": {
+     "created_at": {
+      "title": "Created At",
+      "type": "string"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/Settings"
+     },
+     "user_id": {
+      "title": "User Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "user_id",
+     "created_at",
+     "settings"
+    ],
+    "title": "Me",
+    "type": "object"
+   },
+   "NewRow": {
+    "additionalProperties": false,
+    "properties": {
+     "cells": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        },
+        {
+         "type": "number"
+        },
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "title": "Cells",
+      "type": "object"
+     },
+     "temp_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ],
+      "title": "Temp Id"
+     }
+    },
+    "required": [
+     "temp_id"
+    ],
+    "title": "NewRow",
+    "type": "object"
+   },
+   "Settings": {
+    "additionalProperties": false,
+    "description": "User settings with the PRD \u00a77.10 defaults. Unknown keys are rejected.",
+    "properties": {
+     "accent": {
+      "default": "verdigris",
+      "enum": [
+       "verdigris",
+       "arcane",
+       "ember",
+       "aether",
+       "brass"
+      ],
+      "title": "Accent",
+      "type": "string"
+     },
+     "after_upload": {
+      "default": "ask",
+      "enum": [
+       "ask",
+       "always",
+       "never"
+      ],
+      "title": "After Upload",
+      "type": "string"
+     },
+     "chatbar": {
+      "default": "pinned",
+      "enum": [
+       "pinned",
+       "autohide",
+       "hidden"
+      ],
+      "title": "Chatbar",
+      "type": "string"
+     },
+     "cleaning_mode": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "stepwise"
+      ],
+      "title": "Cleaning Mode",
+      "type": "string"
+     },
+     "default_tab": {
+      "default": "dashboard",
+      "enum": [
+       "csv",
+       "dashboard",
+       "flow"
+      ],
+      "title": "Default Tab",
+      "type": "string"
+     },
+     "reduce_motion": {
+      "default": "system",
+      "enum": [
+       "system",
+       "on",
+       "off"
+      ],
+      "title": "Reduce Motion",
+      "type": "string"
+     },
+     "spotlight": {
+      "default": "subtle",
+      "enum": [
+       "off",
+       "subtle",
+       "full"
+      ],
+      "title": "Spotlight",
+      "type": "string"
+     },
+     "story_updates": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "ask"
+      ],
+      "title": "Story Updates",
+      "type": "string"
+     },
+     "theme": {
+      "default": "system",
+      "enum": [
+       "dark",
+       "light",
+       "system"
+      ],
+      "title": "Theme",
+      "type": "string"
+     }
+    },
+    "title": "Settings",
+    "type": "object"
+   },
+   "UndoRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "base_version": {
+      "minimum": 1.0,
+      "title": "Base Version",
+      "type": "integer"
+     },
+     "confirm": {
+      "default": false,
+      "title": "Confirm",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "base_version"
+    ],
+    "title": "UndoRequest",
+    "type": "object"
+   },
+   "ValidationError": {
+    "properties": {
+     "ctx": {
+      "title": "Context",
+      "type": "object"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "title": "Location",
+      "type": "array"
+     },
+     "msg": {
+      "title": "Message",
+      "type": "string"
+     },
+     "type": {
+      "title": "Error Type",
+      "type": "string"
+     }
+    },
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+   }
+  }
+ },
+ "info": {
+  "title": "Sherlock",
+  "version": "0.1.0"
+ },
+ "openapi": "3.1.0",
+ "paths": {
+  "/api/v1/datasets": {
+   "get": {
+    "operationId": "list_datasets_api_v1_datasets_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/Dataset"
+         },
+         "title": "Response List Datasets Api V1 Datasets Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Datasets",
+    "tags": [
+     "datasets"
+    ]
+   },
+   "post": {
+    "operationId": "upload_dataset_api_v1_datasets_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_dataset_api_v1_datasets_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Dataset"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Upload Dataset",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/sample": {
+   "post": {
+    "description": "The bundled Titanic file; returns the user's existing sample instead of a duplicate.",
+    "operationId": "sample_dataset_api_v1_datasets_sample_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Dataset"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Sample Dataset",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}": {
+   "get": {
+    "description": "Opening a dataset records `last_opened_at`, which orders the library.",
+    "operationId": "get_dataset_api_v1_datasets__dataset_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Dataset"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Dataset",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/cells/{row_id}/{column}/history": {
+   "get": {
+    "operationId": "cell_history_api_v1_datasets__dataset_id__cells__row_id___column__history_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "row_id",
+      "required": true,
+      "schema": {
+       "title": "Row Id",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "path",
+      "name": "column",
+      "required": true,
+      "schema": {
+       "title": "Column",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Version"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Cell History Api V1 Datasets  Dataset Id  Cells  Row Id   Column  History Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Cell History",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/columns/{column}/values": {
+   "get": {
+    "description": "Distinct values with counts from the value index (dimension and target-like columns).",
+    "operationId": "column_values_api_v1_datasets__dataset_id__columns__column__values_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "column",
+      "required": true,
+      "schema": {
+       "title": "Column",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "prefix",
+      "required": false,
+      "schema": {
+       "default": "",
+       "title": "Prefix",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Column Values Api V1 Datasets  Dataset Id  Columns  Column  Values Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Column Values",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/datacard": {
+   "get": {
+    "description": "The version's DataCard (TRD \u00a76.1), built on first request and cached per version.",
+    "operationId": "get_datacard_api_v1_datasets__dataset_id__datacard_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Version"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Datacard Api V1 Datasets  Dataset Id  Datacard Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Datacard",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/edits": {
+   "post": {
+    "description": "One Save: one `edit` step and one new version, or `409` with the conflicts.",
+    "operationId": "post_edits_api_v1_datasets__dataset_id__edits_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/EditBatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Post Edits Api V1 Datasets  Dataset Id  Edits Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Post Edits",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/events": {
+   "get": {
+    "operationId": "dataset_events_api_v1_datasets__dataset_id__events_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "last_event_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 0,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last Event Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dataset Events",
+    "tags": [
+     "events"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/export.csv": {
+   "get": {
+    "description": "The version's data: every row the grid shows (quarantined rows too), user columns only, in\n`_row_id` order, as UTF-8 CSV (PRD CSV-12).",
+    "operationId": "export_csv_api_v1_datasets__dataset_id__export_csv_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Version"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Export Csv",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/find": {
+   "get": {
+    "description": "Matches on the cells' text (case-insensitive), in row order.",
+    "operationId": "find_api_v1_datasets__dataset_id__find_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "q",
+      "required": true,
+      "schema": {
+       "maxLength": 500,
+       "minLength": 1,
+       "title": "Q",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "regex",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "Regex",
+       "type": "boolean"
+      }
+     },
+     {
+      "in": "query",
+      "name": "column",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Column"
+      }
+     },
+     {
+      "in": "query",
+      "name": "selection",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Selection"
+      }
+     },
+     {
+      "in": "query",
+      "name": "all",
+      "required": false,
+      "schema": {
+       "default": false,
+       "title": "All",
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Find Api V1 Datasets  Dataset Id  Find Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Find",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/rows": {
+   "get": {
+    "description": "A page of rows with their cell marks. Quarantined rows are included and marked.",
+    "operationId": "get_rows_api_v1_datasets__dataset_id__rows_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Version"
+      }
+     },
+     {
+      "in": "query",
+      "name": "offset",
+      "required": false,
+      "schema": {
+       "default": 0,
+       "minimum": 0,
+       "title": "Offset",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 200,
+       "maximum": 500,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "sort",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Sort"
+      }
+     },
+     {
+      "in": "query",
+      "name": "filter",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Filter"
+      }
+     },
+     {
+      "in": "query",
+      "name": "view",
+      "required": false,
+      "schema": {
+       "default": "all",
+       "title": "View",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "selection",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Selection"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Rows Api V1 Datasets  Dataset Id  Rows Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Rows",
+    "tags": [
+     "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/steps": {
+   "get": {
+    "description": "Newest first. `active` is whether the step's effect is in the current version (undone steps\nand undo steps are not).",
+    "operationId": "list_steps_api_v1_datasets__dataset_id__steps_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Steps Api V1 Datasets  Dataset Id  Steps Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Steps",
+    "tags": [
+     "steps"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/steps/{step_id}": {
+   "get": {
+    "operationId": "get_step_api_v1_datasets__dataset_id__steps__step_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "step_id",
+      "required": true,
+      "schema": {
+       "title": "Step Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Step Api V1 Datasets  Dataset Id  Steps  Step Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Step",
+    "tags": [
+     "steps"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/steps/{step_id}/undo": {
+   "post": {
+    "operationId": "undo_api_v1_datasets__dataset_id__steps__step_id__undo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "step_id",
+      "required": true,
+      "schema": {
+       "title": "Step Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UndoRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Undo Api V1 Datasets  Dataset Id  Steps  Step Id  Undo Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Undo",
+    "tags": [
+     "steps"
+    ]
+   }
+  },
+  "/api/v1/events": {
+   "get": {
+    "operationId": "user_events_api_v1_events_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "last_event_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 0,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Last Event Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "User Events",
+    "tags": [
+     "events"
+    ]
+   }
+  },
+  "/api/v1/jobs": {
+   "get": {
+    "description": "Newest first: one dataset's jobs, or all of the user's (jobs of deleted datasets left out).",
+    "operationId": "list_jobs_api_v1_jobs_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "dataset_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Dataset Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response List Jobs Api V1 Jobs Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Jobs",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/jobs/{jid}": {
+   "get": {
+    "operationId": "get_api_v1_jobs__jid__get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Api V1 Jobs  Jid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/jobs/{jid}/cancel": {
+   "post": {
+    "description": "Idempotent: cancelling a finished job does nothing.",
+    "operationId": "cancel_api_v1_jobs__jid__cancel_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Cancel",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/jobs/{jid}/log": {
+   "get": {
+    "description": "The job's `job.log` lines, oldest first (kept 24 h).",
+    "operationId": "job_log_api_v1_jobs__jid__log_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Job Log Api V1 Jobs  Jid  Log Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Job Log",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/jobs/{jid}/retry": {
+   "post": {
+    "description": "A new job with the same kind, dataset and params. Only a failed or cancelled job can be retried.",
+    "operationId": "retry_api_v1_jobs__jid__retry_post",
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Retry Api V1 Jobs  Jid  Retry Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Retry",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/me": {
+   "get": {
+    "operationId": "get_me_api_v1_me_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Me"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Me",
+    "tags": [
+     "me"
+    ]
+   }
+  },
+  "/api/v1/me/settings": {
+   "put": {
+    "description": "Accepts a full or partial Settings; fields left out keep their stored value.",
+    "operationId": "put_settings_api_v1_me_settings_put",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Settings"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Settings"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Settings",
+    "tags": [
+     "me"
+    ]
+   }
+  },
+  "/healthz": {
+   "get": {
+    "operationId": "healthz_healthz_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Healthz Healthz Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Healthz",
+    "tags": [
+     "ops"
+    ]
+   }
+  }
+ }
+}
