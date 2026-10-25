@@ -318,6 +318,33 @@ def test_no_number_reaches_a_card_by_another_way():
     assert not nr.overview(Over(bad), None, widgets, ["sex", "survived", "fare"])[2]
 
 
+@pytest.mark.usefixtures("run_jobs")
+def test_the_grounding_eval_checks_every_number_on_the_cards(mocked, client):
+    import json
+
+    from sherlock.db.connection import connect
+    from sherlock.eval import grounding
+
+    ds = _ready_with_stories(client)
+    settings = get_settings()
+    db = connect(settings)
+    try:
+        res = grounding.check_dataset(client, db, settings, "titanic3.csv", ds)
+        assert res.cards >= 7 and res.chips > 0 and res.grounded == res.chips and res.problems == [], res.problems
+        card = db.execute("SELECT * FROM cards WHERE dataset_id = ? AND kind = 'widget' AND narrated_by IS NOT NULL", (ds,)).fetchone()
+        body = json.loads(card["body_json"])
+        chip = next(r for b in body["blocks"] for r in b["runs"] if r["type"] == "chip")
+        chip["value"] = "99.9%"  # a chip that no longer shows its fact
+        body["blocks"].append({"type": "paragraph", "runs": [{"type": "text", "text": "Seventeen more survived."}]})
+        db.execute("UPDATE cards SET body_json = ? WHERE id = ?", (json.dumps(body), card["id"]))
+        db.commit()
+        res = grounding.check_dataset(client, db, settings, "titanic3.csv", ds)
+        assert len(res.problems) == 2 and res.grounded == res.chips - 1, res.problems
+        assert "grounded" in grounding.report([res]).lower()
+    finally:
+        db.close()
+
+
 def test_rows_behind_a_widget_have_its_columns_filled_and_cte_names_are_not_columns():
     """Day 6 review: "Average fare across 1,309 passengers" for an average over the 1,308 with a fare,
     and a histogram that "read" its own CTE's `lo` and `w`."""

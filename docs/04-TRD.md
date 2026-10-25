@@ -1919,6 +1919,12 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
     - `drivers`: a two-class outcome from `strong`, then `moderate`, then a category, with an unrelated `noise` column, a `leak` copy of the outcome and an ID. It must rank `strong` then `moderate`, leave out the leak and the ID, and beat the baselines.
     - `noise`: a coin-toss outcome. It must say "no signal".
     - `regression`: a number from `strong` and `moderate`. It must rank them first and beat the mean.
+  - **The grounding test as built** (2026-10-25, Day 6 review, `sherlock/eval/grounding.py`). `uv run sherlock eval grounding [--sets a.csv,b.csv]` imports each file (default `titanic3.csv` and `sales_dated.csv`) in a throwaway data directory, builds it with "Use as is", waits for the stories, and checks every widget card and the overview:
+    - **Bound:** each chip not marked unverified names a fact of its card's current sheet and shows that fact's `formatted` value.
+    - **Grounded:** the fact still holds on the version, by `verify` (§7.4 step 4: the query re-run, or the derived fact recomputed, 0.5% tolerance). An overview chip `w<i>.<key>` is verified within its widget's facts.
+    - **No stray numbers:** no text run has a digit, a Unicode number or a number in words, and every `value:` label names a value in its column.
+    - **A card the user edited** holds the user's words, so its text runs aren't checked, and its chips are checked for their fact (bound and grounded) but not for the value stored when the user saved, since chips show the latest sheet's value (§4.6).
+    - It prints a table per file (cards, cards by the model, chips, grounded, problems, `llm_calls`, tokens) and lists each problem. The PRD target is 100% grounded. It uses the real model unless `LLM_MOCK` is set.
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.
