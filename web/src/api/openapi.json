@@ -65,6 +65,119 @@
     "title": "CellEdit",
     "type": "object"
    },
+   "ChatContext": {
+    "properties": {
+     "focused_widget_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Focused Widget Id"
+     },
+     "global_filter": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Global Filter"
+     },
+     "selected_card_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Card Ids"
+     },
+     "selected_cells": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Cells"
+     },
+     "selection_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selection Id"
+     },
+     "tab": {
+      "default": "dashboard",
+      "title": "Tab",
+      "type": "string"
+     }
+    },
+    "title": "ChatContext",
+    "type": "object"
+   },
+   "ChatRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "choice": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Choice"
+     },
+     "clarification_of": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Clarification Of"
+     },
+     "context": {
+      "$ref": "#/components/schemas/ChatContext"
+     },
+     "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "ChatRequest",
+    "type": "object"
+   },
    "CleanRequest": {
     "additionalProperties": false,
     "properties": {
@@ -285,6 +398,42 @@
     "title": "Dataset",
     "type": "object"
    },
+   "DatasetPatch": {
+    "additionalProperties": false,
+    "properties": {
+     "last_tab": {
+      "anyOf": [
+       {
+        "enum": [
+         "csv",
+         "dashboard",
+         "flow"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Tab"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "title": "DatasetPatch",
+    "type": "object"
+   },
    "EditBatch": {
     "additionalProperties": false,
     "properties": {
@@ -346,6 +495,95 @@
      }
     },
     "title": "HTTPValidationError",
+    "type": "object"
+   },
+   "Item": {
+    "properties": {
+     "collapsed": {
+      "default": false,
+      "title": "Collapsed",
+      "type": "boolean"
+     },
+     "h": {
+      "maximum": 100.0,
+      "minimum": 1.0,
+      "title": "H",
+      "type": "integer"
+     },
+     "i": {
+      "title": "I",
+      "type": "string"
+     },
+     "w": {
+      "maximum": 12.0,
+      "minimum": 1.0,
+      "title": "W",
+      "type": "integer"
+     },
+     "x": {
+      "maximum": 11.0,
+      "minimum": 0.0,
+      "title": "X",
+      "type": "integer"
+     },
+     "y": {
+      "maximum": 10000.0,
+      "minimum": 0.0,
+      "title": "Y",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "i",
+     "x",
+     "y",
+     "w",
+     "h"
+    ],
+    "title": "Item",
+    "type": "object"
+   },
+   "Layout": {
+    "additionalProperties": false,
+    "properties": {
+     "lg": {
+      "items": {
+       "$ref": "#/components/schemas/Item"
+      },
+      "maxItems": 500,
+      "title": "Lg",
+      "type": "array"
+     },
+     "md": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/Item"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Md"
+     },
+     "sm": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/Item"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Sm"
+     }
+    },
+    "title": "Layout",
     "type": "object"
    },
    "Me": {
@@ -667,6 +905,40 @@
    }
   },
   "/api/v1/datasets/{dataset_id}": {
+   "delete": {
+    "description": "Soft delete: the dataset and everything under it disappear at once and can be restored for\n10 minutes; the purge job (Implementation Plan D8.6) removes the files after that. Its jobs are\ncancelled.",
+    "operationId": "delete_dataset_api_v1_datasets__dataset_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Dataset",
+    "tags": [
+     "datasets"
+    ]
+   },
    "get": {
     "description": "Opening a dataset records `last_opened_at`, which orders the library.",
     "operationId": "get_dataset_api_v1_datasets__dataset_id__get",
@@ -704,6 +976,57 @@
      }
     },
     "summary": "Get Dataset",
+    "tags": [
+     "datasets"
+    ]
+   },
+   "patch": {
+    "description": "Rename (LOAD-5) and remember the last tab (App Flow \u00a71).",
+    "operationId": "patch_dataset_api_v1_datasets__dataset_id__patch",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DatasetPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Dataset"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Dataset",
     "tags": [
      "datasets"
     ]
@@ -785,6 +1108,130 @@
     "summary": "Cell History",
     "tags": [
      "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/chat": {
+   "get": {
+    "description": "The dataset's thread, oldest first: the last `limit` messages before `before` (a message ID).",
+    "operationId": "get_thread_api_v1_datasets__dataset_id__chat_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "before",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Before"
+      }
+     },
+     {
+      "in": "query",
+      "name": "limit",
+      "required": false,
+      "schema": {
+       "default": 50,
+       "maximum": 200,
+       "minimum": 1,
+       "title": "Limit",
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         "title": "Response Get Thread Api V1 Datasets  Dataset Id  Chat Get",
+         "type": "array"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Thread",
+    "tags": [
+     "chat"
+    ]
+   },
+   "post": {
+    "operationId": "send_api_v1_datasets__dataset_id__chat_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChatRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Send",
+    "tags": [
+     "chat"
     ]
    }
   },
@@ -1259,6 +1706,102 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/layout": {
+   "put": {
+    "description": "Saves the grid. Layout changes never start the cascade (PRD DASH-4).",
+    "operationId": "put_layout_api_v1_datasets__dataset_id__layout_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Layout"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Put Layout Api V1 Datasets  Dataset Id  Layout Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Layout",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/raw.csv": {
+   "get": {
+    "description": "The original upload, byte for byte (TRD \u00a74.2).",
+    "operationId": "raw_csv_api_v1_datasets__dataset_id__raw_csv_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Raw Csv",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/report": {
    "get": {
     "operationId": "report_api_v1_datasets__dataset_id__report_get",
@@ -1316,6 +1859,49 @@
     "summary": "Report",
     "tags": [
      "cleaning"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/restore": {
+   "post": {
+    "description": "Undo a delete within 10 minutes. Work that was cancelled by the delete starts again.",
+    "operationId": "restore_dataset_api_v1_datasets__dataset_id__restore_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Dataset"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Restore Dataset",
+    "tags": [
+     "datasets"
     ]
    }
   },
@@ -1459,6 +2045,63 @@
     "summary": "Get Rows",
     "tags": [
      "rows"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/selections": {
+   "post": {
+    "description": "A row selection on the current version: a validated predicate or explicit `_row_id`s.\n`row_count` counts rows that aren't quarantined, which is what widgets, ML and chat use.",
+    "operationId": "create_selection_api_v1_datasets__dataset_id__selections_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Selection Api V1 Datasets  Dataset Id  Selections Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Selection",
+    "tags": [
+     "widgets"
     ]
    }
   },
@@ -1668,6 +2311,105 @@
     "summary": "Use As Is",
     "tags": [
      "cleaning"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/widgets": {
+   "get": {
+    "operationId": "list_widgets_api_v1_datasets__dataset_id__widgets_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response List Widgets Api V1 Datasets  Dataset Id  Widgets Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List Widgets",
+    "tags": [
+     "widgets"
+    ]
+   },
+   "post": {
+    "description": "A `WidgetSpec` (optionally with a `title`), or `{ prompt }` for the model to design one. The\nquery runs first; a failure is `422`.",
+    "operationId": "create_widget_api_v1_datasets__dataset_id__widgets_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Widget Api V1 Datasets  Dataset Id  Widgets Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Widget",
+    "tags": [
+     "widgets"
     ]
    }
   },
@@ -1920,6 +2662,298 @@
     "summary": "Put Settings",
     "tags": [
      "me"
+    ]
+   }
+  },
+  "/api/v1/messages/{mid}/pin": {
+   "post": {
+    "description": "Pin a chart or table answer to the dashboard as a widget made by chat. Flow comes with D8.",
+    "operationId": "pin_api_v1_messages__mid__pin_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Pin Api V1 Messages  Mid  Pin Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Pin",
+    "tags": [
+     "chat"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}": {
+   "delete": {
+    "operationId": "delete_widget_api_v1_widgets__wid__delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Delete Widget",
+    "tags": [
+     "widgets"
+    ]
+   },
+   "patch": {
+    "description": "A partial `WidgetSpec` (merged over the current one) and/or a `title`.",
+    "operationId": "patch_widget_api_v1_widgets__wid__patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Body",
+        "type": "object"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Patch Widget Api V1 Widgets  Wid  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Widget",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/data": {
+   "get": {
+    "operationId": "widget_data_api_v1_widgets__wid__data_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "filters",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Filters"
+      }
+     },
+     {
+      "in": "query",
+      "name": "version",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Version"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Widget Data Api V1 Widgets  Wid  Data Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Widget Data",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/duplicate": {
+   "post": {
+    "operationId": "duplicate_widget_api_v1_widgets__wid__duplicate_post",
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Duplicate Widget Api V1 Widgets  Wid  Duplicate Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Duplicate Widget",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/explain": {
+   "get": {
+    "operationId": "widget_explain_api_v1_widgets__wid__explain_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "filters",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Filters"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Widget Explain Api V1 Widgets  Wid  Explain Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Widget Explain",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/restore": {
+   "post": {
+    "operationId": "restore_widget_api_v1_widgets__wid__restore_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Restore Widget Api V1 Widgets  Wid  Restore Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Restore Widget",
+    "tags": [
+     "widgets"
+    ]
+   }
+  },
+  "/api/v1/widgets/{wid}/undo": {
+   "post": {
+    "operationId": "undo_widget_api_v1_widgets__wid__undo_post",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Undo Widget Api V1 Widgets  Wid  Undo Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Undo Widget",
+    "tags": [
+     "widgets"
     ]
    }
   },

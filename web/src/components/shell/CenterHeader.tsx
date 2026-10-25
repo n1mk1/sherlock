@@ -10,11 +10,12 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "flow", label: "Flow" },
 ];
 
-export function CenterHeader({ dataset, tab, enabled, actions }: {
+export function CenterHeader({ dataset, tab, enabled, chips, actions }: {
   dataset: Dataset;
   tab: Tab;
   enabled: (t: Tab) => string | null; // null = enabled, else the reason it isn't
-  actions?: ReactNode;
+  chips?: ReactNode;   // filter and selection chips, after the version pill
+  actions?: ReactNode; // right-aligned: the tab's actions, the job tray, the dataset menu
 }) {
   return (
     <header className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-background px-6 pt-3">
@@ -44,6 +45,7 @@ export function CenterHeader({ dataset, tab, enabled, actions }: {
             {dataset.step_count > 0 && ` · ${dataset.step_count} ${dataset.step_count === 1 ? "step" : "steps"}`}
           </span>
         )}
+        {chips}
         <div className="ml-auto flex items-center gap-2">{actions}</div>
       </div>
     </header>

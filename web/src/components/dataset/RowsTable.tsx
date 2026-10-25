@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { request } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,15 +20,27 @@ const NUMERIC = /^(BIGINT|INTEGER|DOUBLE|FLOAT|DECIMAL|SMALLINT|TINYINT|HUGEINT|
 
 export function RowsTable({ datasetId, version }: { datasetId: string; version: number }) {
   const [offset, setOffset] = useState(0);
+  // ?rows=<selection id> shows a saved selection, e.g. "open these rows" from chat (App Flow §1).
+  const [params, setParams] = useSearchParams();
+  const selection = params.get("rows");
   const { data, isLoading, error } = useQuery({
-    queryKey: ["rows", datasetId, version, offset],
-    queryFn: () => request<RowsPage>("GET", `/api/v1/datasets/${datasetId}/rows?offset=${offset}&limit=${PAGE}&version=${version}`),
+    queryKey: ["rows", datasetId, version, offset, selection],
+    queryFn: () =>
+      request<RowsPage>("GET", `/api/v1/datasets/${datasetId}/rows?offset=${offset}&limit=${PAGE}&version=${version}${selection ? `&selection=${selection}` : ""}`),
     placeholderData: (prev) => prev,
   });
   if (error) return <p className="p-6 text-destructive">{(error as Error).message}</p>;
   if (isLoading || !data) return <p className="p-6 text-muted-foreground">Loading rows…</p>;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {selection && (
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+          <span className="inline-flex h-7 items-center rounded-full border border-accent bg-accent-soft px-2.5">
+            {data.total.toLocaleString()} rows selected
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => { setParams({}); setOffset(0); }}>Show all rows</Button>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="border-collapse text-[13px]">
           <thead className="sticky top-0 bg-background">

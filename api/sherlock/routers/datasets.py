@@ -1,22 +1,29 @@
 """Datasets (TRD §4.2): upload, sample, list, get. An import queues the profile job."""
 
 import json
+import re
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile, status
-from pydantic import BaseModel, ValidationError
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sherlock.db import datasets as datasets_repo
 from sherlock.db.connection import get_db
 from sherlock.db.users import User
+from sherlock.db.util import now_iso
 from sherlock.errors import ApiError
 from sherlock.identity import current_user
 from sherlock.ingest.importer import import_csv
 from sherlock.ingest.options import ImportOptions
-from sherlock.ownership import owned_dataset
+from sherlock.jobs.clean import queue_build
+from sherlock.jobs.runner import cancel_job
+from sherlock.ownership import check_dataset, owned_dataset
 from sherlock.profile import service as profile_service
+from sherlock.storage import dataset_dir, raw_path
 
 router = APIRouter(tags=["datasets"])
 
@@ -154,3 +161,68 @@ def get_dataset(row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connectio
     """Opening a dataset records `last_opened_at`, which orders the library."""
     datasets_repo.mark_opened(db, row["id"])
     return to_dataset(datasets_repo.get(db, row["user_id"], row["id"]), db)
+
+
+class DatasetPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    last_tab: Literal["csv", "dashboard", "flow"] | None = None
+
+
+@router.patch("/datasets/{dataset_id}", response_model=Dataset)
+def patch_dataset(body: DatasetPatch, row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)):
+    """Rename (LOAD-5) and remember the last tab (App Flow §1)."""
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise ApiError(422, "invalid", "name: can't be empty")
+        db.execute("UPDATE datasets SET name = ? WHERE id = ?", (name, row["id"]))
+    if body.last_tab is not None:
+        db.execute("UPDATE datasets SET last_tab = ? WHERE id = ?", (body.last_tab, row["id"]))
+    return to_dataset(datasets_repo.get(db, row["user_id"], row["id"]), db)
+
+
+@router.delete("/datasets/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_dataset(request: Request, row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)):
+    """Soft delete: the dataset and everything under it disappear at once and can be restored for
+    10 minutes; the purge job (Implementation Plan D8.6) removes the files after that. Its jobs are
+    cancelled."""
+    db.execute("UPDATE datasets SET deleted_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    for job in db.execute("SELECT id FROM jobs WHERE dataset_id = ? AND status IN ('queued', 'running')", (row["id"],)):
+        cancel_job(db, request.app.state.bus, job["id"])
+    request.app.state.duckdb.drop(row["id"])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/datasets/{dataset_id}/restore", response_model=Dataset)
+def restore_dataset(
+    request: Request, dataset_id: str, user: User = Depends(current_user), db: sqlite3.Connection = Depends(get_db),
+):
+    """Undo a delete within 10 minutes. Work that was cancelled by the delete starts again."""
+    row = check_dataset(db, user.id, dataset_id, include_deleted=True)
+    if row["deleted_at"]:
+        if row["deleted_at"] < _minutes_ago(RESTORE_MINUTES):
+            raise ApiError(404, "not_found", "Dataset not found")
+        db.execute("UPDATE datasets SET deleted_at = NULL WHERE id = ?", (row["id"],))
+        busy = db.execute("SELECT 1 FROM jobs WHERE dataset_id = ? AND status IN ('queued', 'running')", (row["id"],)).fetchone()
+        if not busy and row["status"] == "profiling":
+            request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
+        elif not busy and row["status"] in ("cleaning", "building"):
+            queue_build(db, request.app.state.bus, user.id, row["id"], request.app.state.jobs)
+    return to_dataset(datasets_repo.get(db, user.id, row["id"]), db)
+
+
+@router.get("/datasets/{dataset_id}/raw.csv")
+def raw_csv(request: Request, row: sqlite3.Row = Depends(owned_dataset)) -> FileResponse:
+    """The original upload, byte for byte (TRD §4.2)."""
+    path = raw_path(dataset_dir(request.app.state.settings, row["user_id"], row["id"]))
+    stem = re.sub(r"\.(csv|tsv|txt)$", "", row["name"].replace(" (sample)", ""), flags=re.I)
+    filename = re.sub(r"[^A-Za-z0-9._-]+", "_", f"{stem}-raw.csv")
+    return FileResponse(path, media_type="text/csv", filename=filename)
+
+
+RESTORE_MINUTES = 10
+
+
+def _minutes_ago(minutes: int) -> str:
+    return (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat(timespec="milliseconds").replace("+00:00", "Z")

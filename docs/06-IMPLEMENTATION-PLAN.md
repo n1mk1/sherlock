@@ -237,17 +237,17 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 - [ ] theme tokens (light and dark, five accents), fonts, ThemeProvider with mode and accent, reduce-motion
 - [ ] API client (generated), SSE hook with resume, TanStack Query setup, error boundaries: all but error boundaries done 2026-10-24 (D2.9)
-- [ ] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings: the ui store (panels, the import file, live progress) done 2026-10-24 (D2.9); settings live in the `me` query
-- [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the settings dialog with the four cut-1 settings done 2026-10-24 (matching the owner's design canvas); the rail, resizing and job tray are D4.4
-- [ ] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10)
+- [ ] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings: the ui store (panels, the import file, live progress) done 2026-10-24 (D2.9); settings live in the `me` query; the filters store (global filter) and the ui store's panel sizes, rail, Edit layout, focused widget and chat thread done 2026-10-25 (D4); the selection waits for brushing (cut 8) and the edits buffer is D5.2
+- [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the settings dialog with the four cut-1 settings done 2026-10-24 (matching the owner's design canvas); the rail, resizing and job tray are D4.4, done 2026-10-25 (the shortcuts sheet is cut 9)
+- [x] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10); rename and delete with Undo done 2026-10-25 (D4.5)
 - [ ] cleaning: offer, in-progress (log, so-far, checks), report view
-- [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile
-- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary
+- [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button and the outdated state (it comes with runs, D7)
+- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom charts are D6.5, brushing is cut 8, the accessible summary comes with fact sheets (D6)
 - [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus
 - [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells
 - [ ] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight
 - [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist
-- [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions
+- [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9
 - [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points
 - [ ] Playwright flow test (ends with Export notebook → file downloaded)
 

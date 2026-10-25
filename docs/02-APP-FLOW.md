@@ -197,6 +197,14 @@ Menu (⋯): Change view (list of compatible views) · Duplicate · Collapse · P
 | Add widget | Opens a drawer with: "Describe it" (text to chat), and quick templates by column (bar of X by Y, histogram of X, KPI of X, table). |
 | Delete | Removes the widget and its card; toast with Undo for 10 s. |
 
+As built (2026-10-25, Implementation Plan D4.6–D4.7):
+- **Hover.** Widget-to-card hover linking and the spotlight arrive with story cards (D6).
+- **Focus.** Pressing on a widget makes it the chat's context.
+- **Filtering.** A chart's click doesn't filter that chart (its clicked element is accented and the rest fade). Only bars, pie slices and ring slices filter, and only when the widget's category column is a column of the file. Lines and tables don't filter.
+- **Brushing** is cut (cut 8).
+- **Layout saving.** Moves and resizes save when the drag or resize ends. Collapsing a widget saves `collapsed: true` and keeps its height for when it expands.
+- **Fewer than 3 widgets.** A dashed card above the grid gives the "I could only build n widgets" message. With none, the tab shows "No widgets yet" and Add widget.
+
 ### 7.4 Story panel interactions
 
 | Action | Result |
@@ -303,6 +311,13 @@ Undo of a non-latest step: a confirmation explains "This undoes step 3 and repla
 4. Every answer has a **How do you know?** disclosure (SQL, recipe run, step references) and a copy button.
 5. Follow-ups reuse the saved focus (scope, columns, result ids).
 
+As built (2026-10-25, Implementation Plan D4.8):
+- The thread opens on focus or typing, and `/` (when nothing editable has focus) focuses the bar. Esc closes it.
+- Step 2's status lines come from the stream ("Thinking…", "Running a query", "Writing the answer"). The first table appears as soon as its query has run, and the final message replaces what streamed.
+- A clarification shows its options as buttons, which work on the latest message only.
+- Plans and proposals arrive with D8.5.
+- Row answers link to the CSV tab with `?rows=<selection>`. The interim table there shows a "n rows selected" chip and "Show all rows".
+
 Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. 'average fare by pclass'." · "There's no column for nationality. The closest is home.dest; want that?" (button) · "That needs about 100 rows and this selection has 41."
 
 ### 10.3 Chat on each tab
@@ -385,6 +400,8 @@ Opened from the gear or `?settings=1`. A centred dialog over a dimmed app. Conte
 ## 15. Background jobs tray
 
 A small icon in the centre header shows the number of running jobs. Clicking lists them (cleaning, dashboard build, story updates, ML runs) with progress and **Cancel**. Completed jobs show for 1 minute. Errors stay until dismissed, with "Retry".
+
+As built (D4.4): the tray lists the jobs of all your CSVs, each with its CSV's name. Dismissing a failed job only hides it in this tab.
 
 ---
 

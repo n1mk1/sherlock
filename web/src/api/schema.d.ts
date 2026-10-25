@@ -56,10 +56,20 @@ export interface paths {
         get: operations["get_dataset_api_v1_datasets__dataset_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Dataset
+         * @description Soft delete: the dataset and everything under it disappear at once and can be restored for
+         *     10 minutes; the purge job (Implementation Plan D8.6) removes the files after that. Its jobs are
+         *     cancelled.
+         */
+        delete: operations["delete_dataset_api_v1_datasets__dataset_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Patch Dataset
+         * @description Rename (LOAD-5) and remember the last tab (App Flow §1).
+         */
+        patch: operations["patch_dataset_api_v1_datasets__dataset_id__patch"];
         trace?: never;
     };
     "/api/v1/datasets/{dataset_id}/cells/{row_id}/{column}/history": {
@@ -73,6 +83,27 @@ export interface paths {
         get: operations["cell_history_api_v1_datasets__dataset_id__cells__row_id___column__history_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Thread
+         * @description The dataset's thread, oldest first: the last `limit` messages before `before` (a message ID).
+         */
+        get: operations["get_thread_api_v1_datasets__dataset_id__chat_get"];
+        put?: never;
+        /** Send */
+        post: operations["send_api_v1_datasets__dataset_id__chat_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -217,6 +248,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Layout
+         * @description Saves the grid. Layout changes never start the cascade (PRD DASH-4).
+         */
+        put: operations["put_layout_api_v1_datasets__dataset_id__layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/raw.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raw Csv
+         * @description The original upload, byte for byte (TRD §4.2).
+         */
+        get: operations["raw_csv_api_v1_datasets__dataset_id__raw_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/report": {
         parameters: {
             query?: never;
@@ -228,6 +299,26 @@ export interface paths {
         get: operations["report_api_v1_datasets__dataset_id__report_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Dataset
+         * @description Undo a delete within 10 minutes. Work that was cancelled by the delete starts again.
+         */
+        post: operations["restore_dataset_api_v1_datasets__dataset_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -248,6 +339,27 @@ export interface paths {
         get: operations["get_rows_api_v1_datasets__dataset_id__rows_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/selections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Selection
+         * @description A row selection on the current version: a validated predicate or explicit `_row_id`s.
+         *     `row_count` counts rows that aren't quarantined, which is what widgets, ML and chat use.
+         */
+        post: operations["create_selection_api_v1_datasets__dataset_id__selections_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -323,6 +435,28 @@ export interface paths {
          * @description Skip cleaning: build the dashboard on the current (typed) version.
          */
         post: operations["use_as_is_api_v1_datasets__dataset_id__use_as_is_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Widgets */
+        get: operations["list_widgets_api_v1_datasets__dataset_id__widgets_get"];
+        put?: never;
+        /**
+         * Create Widget
+         * @description A `WidgetSpec` (optionally with a `title`), or `{ prompt }` for the model to design one. The
+         *     query runs first; a failure is `422`.
+         */
+        post: operations["create_widget_api_v1_datasets__dataset_id__widgets_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -480,6 +614,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/messages/{mid}/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin
+         * @description Pin a chart or table answer to the dashboard as a widget made by chat. Flow comes with D8.
+         */
+        post: operations["pin_api_v1_messages__mid__pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Widget */
+        delete: operations["delete_widget_api_v1_widgets__wid__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Widget
+         * @description A partial `WidgetSpec` (merged over the current one) and/or a `title`.
+         */
+        patch: operations["patch_widget_api_v1_widgets__wid__patch"];
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Widget Data */
+        get: operations["widget_data_api_v1_widgets__wid__data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Duplicate Widget */
+        post: operations["duplicate_widget_api_v1_widgets__wid__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Widget Explain */
+        get: operations["widget_explain_api_v1_widgets__wid__explain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Widget */
+        post: operations["restore_widget_api_v1_widgets__wid__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/widgets/{wid}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Widget */
+        post: operations["undo_widget_api_v1_widgets__wid__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -516,6 +776,38 @@ export interface components {
             row_id: number;
             /** Value */
             value?: string | number | boolean | null;
+        };
+        /** ChatContext */
+        ChatContext: {
+            /** Focused Widget Id */
+            focused_widget_id?: string | null;
+            /** Global Filter */
+            global_filter?: {
+                [key: string]: unknown;
+            } | null;
+            /** Selected Card Ids */
+            selected_card_ids?: string[] | null;
+            /** Selected Cells */
+            selected_cells?: {
+                [key: string]: unknown;
+            } | null;
+            /** Selection Id */
+            selection_id?: string | null;
+            /**
+             * Tab
+             * @default dashboard
+             */
+            tab: string;
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Choice */
+            choice?: string | null;
+            /** Clarification Of */
+            clarification_of?: string | null;
+            context?: components["schemas"]["ChatContext"];
+            /** Text */
+            text: string;
         };
         /** CleanRequest */
         CleanRequest: {
@@ -588,6 +880,13 @@ export interface components {
              */
             step_count: number;
         };
+        /** DatasetPatch */
+        DatasetPatch: {
+            /** Last Tab */
+            last_tab?: ("csv" | "dashboard" | "flow") | null;
+            /** Name */
+            name?: string | null;
+        };
         /** EditBatch */
         EditBatch: {
             /** Base Version */
@@ -610,6 +909,33 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** Item */
+        Item: {
+            /**
+             * Collapsed
+             * @default false
+             */
+            collapsed: boolean;
+            /** H */
+            h: number;
+            /** I */
+            i: string;
+            /** W */
+            w: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** Layout */
+        Layout: {
+            /** Lg */
+            lg?: components["schemas"]["Item"][];
+            /** Md */
+            md?: components["schemas"]["Item"][] | null;
+            /** Sm */
+            sm?: components["schemas"]["Item"][] | null;
         };
         /** Me */
         Me: {
@@ -824,6 +1150,70 @@ export interface operations {
             };
         };
     };
+    delete_dataset_api_v1_datasets__dataset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_dataset_api_v1_datasets__dataset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cell_history_api_v1_datasets__dataset_id__cells__row_id___column__history_get: {
         parameters: {
             query?: {
@@ -848,6 +1238,77 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_thread_api_v1_datasets__dataset_id__chat_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_api_v1_datasets__dataset_id__chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1112,6 +1573,74 @@ export interface operations {
             };
         };
     };
+    put_layout_api_v1_datasets__dataset_id__layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Layout"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    raw_csv_api_v1_datasets__dataset_id__raw_csv_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     report_api_v1_datasets__dataset_id__report_get: {
         parameters: {
             query?: {
@@ -1147,6 +1676,37 @@ export interface operations {
             };
         };
     };
+    restore_dataset_api_v1_datasets__dataset_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_rows_api_v1_datasets__dataset_id__rows_get: {
         parameters: {
             query?: {
@@ -1168,6 +1728,45 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_selection_api_v1_datasets__dataset_id__selections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1303,6 +1902,78 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_widgets_api_v1_datasets__dataset_id__widgets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_widget_api_v1_datasets__dataset_id__widgets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -1523,6 +2194,231 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_api_v1_messages__mid__pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_widget_api_v1_widgets__wid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_widget_api_v1_widgets__wid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    widget_data_api_v1_widgets__wid__data_get: {
+        parameters: {
+            query?: {
+                filters?: string | null;
+                version?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_widget_api_v1_widgets__wid__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    widget_explain_api_v1_widgets__wid__explain_get: {
+        parameters: {
+            query?: {
+                filters?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_widget_api_v1_widgets__wid__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    undo_widget_api_v1_widgets__wid__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

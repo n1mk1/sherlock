@@ -134,6 +134,16 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - `queries.ts` holds the query hooks and the user-level stream, which patches the dataset list and the open dataset on `dataset.status` and keeps `job.progress` per dataset.
     - `sse.ts` is the stream hook. It skips events at or below the last ID it saw, and when the browser gives up on a stream it reopens with `?last_event_id=`, backing off from 1 s to 30 s.
   - **After an upload.** The dataset is read again after the upload's response, because a short profile job can finish, and emit its `dataset.status`, before the response arrives.
+  - **Day 4 additions (2026-10-25, Implementation Plan D4.4–D4.8):**
+    - **Charts.** Bklit's bar, line, area, pie and ring charts come from the `@bklit` shadcn registry (`components.json`) and are copied into `src/components/charts/`.
+      - They bring `@visx/*` 4.0.0, `d3-array`, `d3-shape`, `motion` and `@number-flow/react`.
+      - `adapter.tsx` turns a widget's view and data into a chart, a KPI tile or a table.
+      - Our edits to the copied code: `Bar` takes `getFill`/`isDimmed`, and `line.tsx` has a React 18 ref type.
+    - **Grid.** `react-grid-layout` 1.5.2, given the width of its container from a `ResizeObserver`.
+    - **Menus.** Radix dropdown menus come from `src/components/ui/menu.tsx`; an item's action runs a tick after the menu closes, so a dialog it opens keeps focus. Drawers come from `src/components/ui/drawer.tsx`.
+    - **Stores.** `src/state/filters.ts` holds the global filter per dataset. `src/state/ui.ts` adds the Edit layout toggle, the Add widget drawer, the focused widget and the chat thread, plus panel widths and the library rail, kept in `localStorage` under `sherlock.panels`.
+    - **Chat.** `sendChat` (`src/api/queries.ts`) reads `POST /chat`'s SSE frames from a `fetch` stream.
+    - **Dataset events.** The dashboard opens `GET /datasets/{id}/events` and refetches its widgets on `widget.updated`, `layout.updated` and `version.created`. Any `dataset.status` also refetches the widget list, so the builder's widgets appear when the dataset becomes ready.
   - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
@@ -365,6 +375,12 @@ Implementation (2026-10-24, Implementation Plan D2.1):
   - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
   - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
   - **Built by the job.** Since D2.5 the profile job builds the card right after import, so a later request reads the cached one. Builds of one dataset are serialized: a request that arrives while the job is building waits and gets the same card, with the same issue IDs.
+
+Rename, delete and restore as implemented (2026-10-25, Implementation Plan D4.5):
+- **`PATCH /datasets/{id}`** takes `{ name?, last_tab? }`; unknown keys are `422`. A name is trimmed and may not be empty. The web app sends `last_tab` when a tab opens, which `/d/:id` uses to choose a tab.
+- **`DELETE`.** It sets `deleted_at`, cancels the dataset's queued and running jobs, and drops its cached DuckDB connections. Everything under the dataset is hidden at once.
+- **`POST /restore`** works for 10 minutes after the delete; later it's `404`, as if purged. If the delete cancelled the dataset's work, that work is queued again: the profile job for a `profiling` dataset, the dashboard build for a `cleaning` or `building` one. The files themselves are removed by the purge job (D8.6).
+- **`GET /raw.csv`** returns the stored upload with `Content-Disposition: attachment; filename="<name>-raw.csv"`.
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
@@ -1296,17 +1312,17 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
     - The prompt gets each result's query, columns and up to 30 rows, plus a worked example of the run shape written with placeholders, not data.
   - The validator rejects:
     - a chip or label that names nothing
-    - two chips in a row
     - prose with no words
     - empty prose
     - a number shape without its chip, or with digits in its label
     - a chart with fewer than two rows
-  - Code adds a missing space between sentences, and a full stop when the prose doesn't end with `.`, `!`, `?` or `:`.
+  - Code adds a missing space between sentences, a comma between two chips in a row, and a full stop when the prose doesn't end with `.`, `!`, `?` or `:`.
   - The previous question is offered to every answerer, but only for a message that doesn't stand on its own. Without that rule, "Survival rate by sex" after "and for women only?" was judged unanswerable.
   - A `number` shows the cell. A `chart` shows the first column against the first numeric one, as a pinnable spec over the query with `{{rows}}`. A `table` or `text` shows the result table, so the rows behind the prose stay visible.
   - The fallback after one repair is the raw results: a single cell as a number, otherwise a table.
 - **Verify.** Every value in a block or chip is read from a result cell by code, and text runs can't contain digits (schema validator). So the check in step 7 holds by construction, and the eval counts unsourced answers.
 - **Not yet:** the multi-step planner (step 4), the thread summary, and `update_widget`, `edit_cells` and `clean_selection` proposals (D8.5). Suggested questions are cut (Implementation Plan §2.0, cut 9).
+- **Eval v0 (`uv run sherlock eval ask`, 2026-10-25).** The first run passed 31 of 35 and the second 32 of 35, with 0 unsourced answers and a median of 11–12 s per answer. The misses were routing variance, false "no column answers that", and `AVG` over a boolean; the SQL prompt now covers the last two.
 - **Live (2026-10-25, Nemotron 3 Nano for routing, Super for SQL and compose).** A routed question takes about 1 s, SQL 2–5 s and compose 2–6 s, so the first block arrives in about 4–6 s and the answer in 5–15 s.
 
 ### 8.2 Answerer contracts

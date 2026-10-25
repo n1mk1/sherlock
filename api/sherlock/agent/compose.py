@@ -88,6 +88,8 @@ def to_runs(prose: list, results: dict[str, Result], columns: list[str]) -> list
     for i, run in enumerate(prose):
         if isinstance(run, ChipRun):
             value, shown, _ = resolve_chip(run.chip, results)
+            if runs and runs[-1]["type"] == "chip":
+                runs.append({"type": "text", "text": ", "})  # two chips in a row read as a list
             runs.append({"type": "chip", "id": f"c{i}", "key": run.chip, "value": shown, "raw": value, "unverified": False})
         elif isinstance(run, LabelRun):
             runs.append({"type": "label", "ref": run.label, "text": label_text(run.label, columns)})
@@ -177,9 +179,6 @@ def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Resul
         if not a.prose:
             raise ValueError("write one to three sentences of prose")
         if a.prose:
-            kinds = [type(r).__name__ for r in a.prose]
-            if any(x == y == "ChipRun" for x, y in zip(kinds, kinds[1:])):
-                raise ValueError("two chips in a row: put words between them")
             if not any(isinstance(r, TextRun) and any(ch.isalpha() for ch in r.text) for r in a.prose):
                 raise ValueError("the prose needs words, not only chips")
         if a.shape == "number":

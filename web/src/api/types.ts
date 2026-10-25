@@ -116,6 +116,123 @@ export interface CleaningReport {
   decisions: { step_id: string; question: string; chosen: string; reason: string }[];
 }
 
+// Widgets (TRD §4.5, §6.3).
+export type ViewType = "bar" | "line" | "area" | "pie" | "ring" | "kpi" | "table" | string;
+
+export interface WidgetSpec {
+  scope: {
+    columns: { x?: string | null; y?: string | null; agg?: string | null; [k: string]: unknown };
+    rows: { predicate?: string | null; selection_id?: string | null; inherit_global_filters?: boolean };
+  };
+  op: { type: "sql"; sql: string } | { type: "ml"; recipe: string; method: string; params: Record<string, unknown> };
+  view: { type: ViewType; from?: string; options: Record<string, unknown> };
+}
+
+export interface Highlight {
+  kind: "bar" | "point" | "cell" | "series";
+  key: string;
+}
+
+export interface Widget {
+  id: string;
+  dataset_id: string;
+  spec: WidgetSpec;
+  title: string;
+  status: "ready" | "outdated" | "error" | "building";
+  error: string | null;
+  created_by: "builder" | "user" | "chat";
+  version_built: number;
+  score: number | null;
+  point: Highlight | null;
+  deleted_at: string | null;
+}
+
+export interface Column {
+  name: string;
+  type: string;
+}
+
+export interface WidgetData {
+  version: number;
+  columns: Column[];
+  rows: unknown[][];
+  row_count: number;
+  truncated: boolean;
+  highlight?: Highlight;
+}
+
+export interface LayoutItem {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  collapsed?: boolean;
+}
+
+export interface Layout {
+  lg: LayoutItem[];
+  md?: LayoutItem[];
+  sm?: LayoutItem[];
+}
+
+export interface Explain {
+  op: string;
+  sql?: string;
+  scope: WidgetSpec["scope"];
+  version: number;
+  recipe?: string;
+}
+
+/** The global filter (PRD DASH-5), in the rows API's filter JSON. */
+export interface FilterClause {
+  col: string;
+  op: "eq";
+  value: unknown;
+}
+
+// Chat (TRD §4.9, §5.3).
+export type Run =
+  | { type: "text"; text: string }
+  | { type: "chip"; id: string; key: string; value: string; raw?: unknown; unverified: boolean }
+  | { type: "label"; ref: string; text?: string };
+
+export interface CardBody {
+  blocks: { type: "paragraph" | "bullets"; runs: Run[] }[];
+}
+
+export type AnswerBlock =
+  | { type: "number"; value: unknown; formatted: string; format: string; label: string; result?: string }
+  | { type: "table"; columns: Column[]; rows: unknown[][]; total: number; selection_id?: string | null; result?: string; widget_id?: string }
+  | { type: "chart"; spec: WidgetSpec; data: WidgetData; result?: string; widget_id?: string }
+  | { type: "text"; body: CardBody };
+
+export interface Source {
+  kind: "sql" | "run" | "step" | "card" | "help";
+  sql?: string | null;
+  step_id?: string;
+  label: string;
+}
+
+export interface MessageAction {
+  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export";
+  block_index?: number;
+  widget_id?: string;
+  selection_id?: string;
+}
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  blocks: AnswerBlock[];
+  sources: Source[];
+  clarification?: { question: string; options: string[] };
+  clarification_of?: string | null;
+  actions?: MessageAction[];
+  created_at: string;
+}
+
 // Server-sent events (TRD §5.1). Every event's data carries dataset_id.
 export interface DatasetStatusEvent {
   dataset_id: string;

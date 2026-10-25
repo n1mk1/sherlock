@@ -40,9 +40,9 @@ Rules:
 """ + READING + """
 - Read only table t. Filter its rows with WHERE {{{{rows}}}} (exactly that placeholder; add your own conditions with AND).
 - Quote column names with double quotes when they contain anything but lowercase letters, digits and underscores.
-- Give every computed column a short alias. Rates and shares are fractions between 0 and 1 (AVG of a 0/1 or boolean column, or a ratio), never multiplied by 100.
+- Give every computed column a short alias. Rates and shares are fractions between 0 and 1 (AVG of a 0/1 column, or a ratio), never multiplied by 100. DuckDB can't average a BOOLEAN directly: use AVG(CAST(col AS INTEGER)).
 - Group and order so the answer reads well: categories in their natural order or by the value, time in order. At most 50 result rows unless the question asks for more.
-- Set answerable to false only when no column of this file is about what the question asks. If no column can answer it, set answerable to false, return SELECT 1 AS none FROM t WHERE {{{{rows}}}} LIMIT 0 as sql, and suggest the closest question this file can answer.
+- Almost every question about these columns is answerable. Set answerable to false only when no column of this file is about what the question asks (for example a quantity the file never records). If no column can answer it, set answerable to false, return SELECT 1 AS none FROM t WHERE {{{{rows}}}} LIMIT 0 as sql, and suggest the closest question this file can answer.
 
 {context}
 

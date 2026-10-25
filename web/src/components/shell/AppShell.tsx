@@ -1,7 +1,8 @@
-// The three-panel frame (UI brief §3.1): library left, the screen in the centre, stories right.
-// Below 1024px the side panels become slide-overs opened from the header.
+// The three-panel frame (UI brief §3.1): library left (240px, 200–320, or a 56px rail), the screen in
+// the centre, stories right (340px, 300–480). The dividers drag to resize, and sizes persist per
+// browser. Below 1024px the side panels become slide-overs opened from the header.
 import { Menu, PanelRight } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { useLibraryEvents } from "@/api/queries";
 import { DropOverlay } from "@/components/library/DropOverlay";
@@ -12,12 +13,15 @@ import { useUi } from "@/state/ui";
 import { SettingsDialog } from "./SettingsDialog";
 import { StoriesPanel } from "./StoriesPanel";
 
+const RAIL = 56;
+
 export function AppShell() {
-  const { leftOpen, rightOpen, setLeftOpen, setRightOpen, setProgress } = useUi();
+  const { leftOpen, rightOpen, setLeftOpen, setRightOpen, setProgress, railed, leftWidth, rightWidth, setPanelWidth } = useUi();
   useLibraryEvents(setProgress);
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} className="w-[240px]">
+      <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} width={railed ? RAIL : leftWidth}
+        onResize={railed ? undefined : (w) => setPanelWidth("left", w)}>
         <LibraryPanel />
       </SidePanel>
       <main className="@container relative flex min-w-0 flex-1 flex-col">
@@ -29,7 +33,8 @@ export function AppShell() {
         </div>
         <Outlet />
       </main>
-      <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} className="w-[340px]">
+      <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
+        onResize={(w) => setPanelWidth("right", w)}>
         <StoriesPanel />
       </SidePanel>
       <DropOverlay />
@@ -39,25 +44,57 @@ export function AppShell() {
   );
 }
 
-function SidePanel({ side, open, onClose, className, children }: {
-  side: "left" | "right"; open: boolean; onClose: () => void; className: string; children: ReactNode;
+function SidePanel({ side, open, onClose, width, onResize, children }: {
+  side: "left" | "right"; open: boolean; onClose: () => void; width: number; onResize?: (w: number) => void; children: ReactNode;
 }) {
   return (
     <>
       {open && <div className="fixed inset-0 z-30 bg-[rgba(46,48,53,0.28)] lg:hidden" onClick={onClose} aria-hidden />}
       <aside
+        style={{ "--panel-w": `${width}px` } as CSSProperties}
         className={cn(
-          "z-30 h-full shrink-0 bg-background",
+          "relative z-30 h-full w-[var(--panel-w)] shrink-0 bg-background max-lg:w-[min(320px,85vw)]",
           side === "left" ? "border-r border-border" : "border-l border-border",
           "max-lg:fixed max-lg:top-0 max-lg:shadow-[var(--shadow-overlay)] max-lg:transition-transform max-lg:duration-[var(--duration-base)]",
           side === "left" ? "max-lg:left-0" : "max-lg:right-0",
           !open && (side === "left" ? "max-lg:-translate-x-full" : "max-lg:translate-x-full"),
-          className,
         )}
       >
         {children}
+        {onResize && <Divider side={side} width={width} onResize={onResize} />}
       </aside>
     </>
+  );
+}
+
+/** A 1px divider with a wider invisible grip; dragging it resizes the panel (lg and up). */
+function Divider({ side, width, onResize }: { side: "left" | "right"; width: number; onResize: (w: number) => void }) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={side === "left" ? "Resize the library panel" : "Resize the stories panel"}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;
+        if (step) onResize(width + (side === "left" ? step : -step));
+      }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const move = (ev: PointerEvent) => onResize(width + (side === "left" ? ev.clientX - startX : startX - ev.clientX));
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+      className={cn(
+        "absolute top-0 z-10 hidden h-full w-1.5 cursor-col-resize hover:bg-accent-soft focus-visible:bg-accent-soft lg:block",
+        side === "left" ? "-right-[3px]" : "-left-[3px]",
+      )}
+    />
   );
 }
 

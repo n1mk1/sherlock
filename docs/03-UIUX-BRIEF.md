@@ -295,6 +295,17 @@ Row height 32px; header 56px. Editors open in place with the same height.
   - **As drawn.** On dataset routes the bar sits at the bottom of the centre column (24px side and 20px bottom padding). On the empty library it sits in the centred column, 24px under the pitch.
   - The send button is radius 10 with an arrow icon.
   - Until chat exists (D4.3/D4.8), the input and send button are disabled and the placeholder names the state.
+  - **As built (D4.8).** The bar is live on dataset routes once the file is profiled, and stays disabled on the empty library.
+    - The context chip always shows: "All rows", or the filter (`col = value`), or the widget last clicked. Its × clears that context.
+    - The thread opens 84px above the bar's bottom edge, with a 36px title row ("Ask about <name>", a collapse chevron).
+    - While an answer streams, the thread shows the user's bubble, the blocks as they arrive, and the status line.
+    - Answers render as follows:
+      - numbers at 26px mono with the label under them
+      - tables of up to 20 rows in a bordered box, with "Open these rows in CSV" or "Open all n rows in CSV" for row answers
+      - charts 220px tall with "Pin to dashboard", or "Open the widget" when chat made one
+      - text with number chips (§4.6)
+    - "How do you know?" is a `<details>` disclosure listing each source's label and its SQL.
+    - Suggested questions are cut (Implementation Plan §2.0, cut 9).
 - Thread: expands above the bar to at most 40% of the centre height, `--popover` surface, radius 16, with the drawer shadow. Messages: the user's in a `--secondary` bubble right-aligned (max 80%); Sherlock's as plain text left-aligned with number chips, tables, charts and action buttons inline.
 - Suggested questions: three ghost chips under the bar; they disappear once the thread has 3+ messages.
 - Status line while working: `--muted-foreground` italic with a 3-dot indicator.
@@ -382,6 +393,27 @@ Left 2/3: the live log card (`--card`), entries as a 3-column grid (mono time ·
 
 As §3.3 and §4.3. The filter bar: chips left, Filter (ghost with icon), then Add widget (secondary), Edit layout (ghost toggle; active state `--secondary` fill). KPI tiles: label (label size, muted), value (kpi), sub-line (label, muted).
 
+As built (2026-10-25, Implementation Plan D4.4–D4.7):
+- **Context row.** The filter chip (`col = value`, ×) follows the version pill. On the right: Add widget, Edit layout, the job tray, then the dataset menu. The "Filter" builder button isn't built yet.
+- **Layouts.** Only `lg` is stored by the builder. Until the user arranges a breakpoint, `md` and `sm` are packed from `lg` in reading order: KPIs at a quarter width (two to a row on `sm`), charts at full width on `sm`.
+- **Widget shell.**
+  - The KPI tile shows its value in mono at 28px, with "of n rows" under it. The widget title is the label.
+  - Updating is a pulsing 2px `--accent` line under the header, with the body at 60%.
+  - The scope chip shows "All rows", or "All rows · col = value" while a filter applies, and hides when the widget is narrower than 360px.
+  - The footer shows "first 2,000 rows" when a result was capped.
+- **Charts.** Bars are drawn with radius 4.
+  - The point's bar or slice is `--chart-accent`, and the rest are `--chart-1`. Pie and ring slices cycle `--chart-1…5`, with a legend list beside the pie.
+  - A dated result draws as a line or area. A result with too few dated points falls back to a table.
+- **Click-to-filter.** A click on a bar or slice sets the filter on the widget's category column; clicking it again or the chip's × clears it. The clicked chart doesn't filter itself: its clicked element keeps the accent and the others fade to 40%.
+- **Widget menu (⋯):**
+  - Change view (only the views that can draw the result, with a check on the current one)
+  - Duplicate
+  - Collapse / Expand
+  - Show as table (a check toggle, this browser only)
+  - Delete (toast with Undo, 10 s)
+- **Add widget drawer.** "Describe it" (a textarea and Add), then Quick templates: a segmented control (Bar of X by Y · KPI of X · Table), column selects, and Add template. A 20-widget warning shows as a warning toast.
+- **"How do you know?" drawer.** One sentence naming the widget and version, the SQL in a `--muted` mono block, Copy, and the result row count.
+
 ### 5.6 CSV tab
 
 Toolbar (40px): Add row, Add column (P1), Find (opens an inline find bar under the toolbar), Filter (toggles header filter row), Clean with AI (secondary with sparkle icon), Download (ghost, opens a menu: CSV · Notebook (.ipynb)). Right: the legend (three swatches with labels, label size). Header line: dataset name, version pill, unsaved count in `--accent`, Discard (ghost), Review changes (link), Save changes (n) (primary; disabled at 0). Grid fills the rest. Status bar 28px: left "3 cells · sum 452 · avg 150.7 · min 2 · max 300", right "Row 9 · home.dest".
@@ -435,6 +467,12 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
 ### 5.15 Job tray, banners and small disclosures
 
 - Job tray: a ghost icon button in the centre header with a count badge; its popover lists jobs (label, progress bar, Cancel or Retry), and completed ones stay for 1 minute.
+  - **As built (D4.4).** The `activity` icon carries an `--accent` count of queued and running jobs.
+  - The popover is 320px. Each row shows the job ("Cleaning · titanic3.csv"), its progress label and a 2px bar, then Cancel.
+  - Done and cancelled jobs show for a minute. Failed ones stay, with the error in `--destructive`, Retry and a dismiss ×.
+  - It polls `GET /jobs` every 3 s.
+- Library rail (D4.4): the « button beside the gear collapses the panel to a 56px rail with dataset initials (mono, 36px), Upload, Try with sample, the gear, and » to expand. Its dividers resize the panels (left 200–320, right 300–480; arrow keys move 16px), and sizes persist in this browser.
+- Library row menu (D4.5): a ⋯ on hover with Rename (inline), Download original CSV and Delete (confirm, then a toast with Undo for 10 s). The dataset menu (⋯) in the context row has Download CSV, Rename (a dialog) and Delete; Export notebook joins it with D5.6.
 - Offline banner: a full-width `--muted` strip under the header with the warning icon and "You're offline. Edits are kept locally."
 - Cascade progress line: a 2px `--accent` line under the header with a label-size caption ("Updating 4 widgets and 3 stories").
 - Chat sources disclosure: a "How do you know?" link under each answer that expands the SQL, run or step references in a `--muted` mono block.

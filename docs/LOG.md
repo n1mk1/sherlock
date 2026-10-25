@@ -113,3 +113,45 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **Decision for tomorrow:**
   - D4.1–D4.3 backend (widgets, the dashboard builder, agent v1).
   - Then D4.4–D4.8 frontend, starting with the Bklit and react-grid-layout checks (plan §2.0).
+
+## 2026-10-25 (Sat, early hours): Day 4
+
+- **Done** (each slice tested, documented, committed and pushed):
+  - **D4.1, widgets.**
+    - The spec model.
+    - `{{rows}}` compiles to the quarantine exclusion, the predicate, the selection and the global filter as literal SQL, and sqlglot allows one SELECT over `t`.
+    - Results are capped at 2,000 rows with a 10 s watchdog and a cache.
+    - CRUD with soft delete, undo and duplicate; `explain`; the layout; selections.
+  - **D4.2, the dashboard builder.**
+    - Candidates come from roles, are scored in code, curated by Nemotron Super with a templated fallback, and the layout is packed.
+    - Titanic got "Survival by sex", "Fare by class" and the KPIs. The four sample files all build with no failing widget.
+  - **D4.3, chat v1.**
+    - Route (Nano), resolve, `ask_data`, `find_rows`, `explain_widget`, `ask_history` and `create_widget`.
+    - Compose (Super) with chips bound to result cells, streamed over SSE; pin.
+    - Eval v0 (`uv run sherlock eval ask`) passed 31 and then 32 of 35, with 0 unsourced answers.
+  - **D4.4–D4.8, frontend.**
+    - The library rail, panel resizing, the job tray, and library rename and delete with Undo; on the backend, `PATCH`, `DELETE`, `restore` and `raw.csv`.
+    - The dashboard: the react-grid-layout grid, the widget shell and its menu, the Bklit adapter, click-to-filter, "How do you know?", and the Add widget drawer.
+    - The chat bar and thread, with streaming, blocks, sources, clarifications and Pin.
+  - **Day 4 exit, checked in the browser on the sample:**
+    - "Use as is" builds the dashboard.
+    - "average fare by class" answers with a table and its SQL.
+    - "add a chart of fare by port to the dashboard" creates the widget, reading port as `embarked`.
+    - Clicking "female" filters every other widget.
+    - Upload → clean → dashboard was checked through the API and the tests, not clicked through again.
+- **Spikes:** Bklit passed. react-grid-layout passed, with its `WidthProvider` replaced by our own `ResizeObserver` (`FEEDBACK.md`).
+- **Decisions made while you were offline:**
+  - Compose moved from Nano to Super. Nano left chips with no words between them (TRD §8.1, `FEEDBACK.md`).
+  - A chart doesn't filter itself on its own category: the clicked bar keeps the accent and the others fade.
+  - The builder's scoring gives bars only η²: a target's bars count in full, measures' bars are halved when the file has a target, and count bars get a quarter of their unevenness. Outlier and correlation credit waits for the D6 chart types.
+  - With no `LLM_BASE_URL` and no `LLM_MOCK`, model calls fail at once, so tests and bare runs use the fallbacks without retrying.
+  - Answers stream their table first, then the prose.
+- **Not done:**
+  - Prose fails twice for some answers, which then fall back to the table with its SQL.
+  - Median answer time is 11–12 s, against the ≤ 4 s target to the first block; the first table arrives in about 4–6 s.
+  - The web bundle is 907 kB and needs code-splitting.
+  - The Filter builder button and the shared hover between widgets (D6).
+- **Note on local dev:** another session's API was running on :8000 with the same `api/data` database. Two job runners on one database can claim each other's jobs, so for this session the API ran on :8001 with Vite on :5174 (`.claude/launch.json`, `web-8001`).
+- **Decision for tomorrow:**
+  - Day 5: the CSV tab within cut 5, and the notebook export v0 (D5.6).
+  - Then D3.6's leftovers and Day 6 within cut 6.

@@ -3,10 +3,14 @@
 import { useEffect } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useDataset, useMe } from "@/api/queries";
+import { rememberTab, useDataset, useMe } from "@/api/queries";
 import type { Dataset, Tab } from "@/api/types";
+import { Dashboard } from "@/components/dashboard/Dashboard";
+import { DashboardActions, FilterChip } from "@/components/dashboard/DashboardActions";
 import { CenterHeader } from "@/components/shell/CenterHeader";
 import { ChatBar } from "@/components/shell/ChatBar";
+import { DatasetMenu } from "@/components/shell/DatasetMenu";
+import { JobTray } from "@/components/shell/JobTray";
 import { CleaningOffer } from "./CleaningOffer";
 import { CleaningProgress } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
@@ -47,15 +51,37 @@ export function DatasetPage() {
   };
   // A tab that isn't available yet shows the status screen instead of its content.
   const showTab = enabled(tab) === null && (ready || tab === "csv");
+  const onDashboard = showTab && tab === "dashboard";
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <CenterHeader dataset={dataset} tab={tab} enabled={enabled} />
+      <RememberTab datasetId={dataset.id} tab={tab} active={showTab} />
+      <CenterHeader
+        dataset={dataset}
+        tab={tab}
+        enabled={enabled}
+        chips={onDashboard ? <FilterChip datasetId={dataset.id} /> : null}
+        actions={
+          <>
+            {onDashboard && <DashboardActions />}
+            <JobTray />
+            <DatasetMenu dataset={dataset} />
+          </>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {showTab ? <TabContent dataset={dataset} tab={tab} /> : <StatusScreen dataset={dataset} />}
       </div>
-      <ChatBar placeholder={chatPlaceholder(dataset)} />
+      <ChatBar dataset={dataset} tab={tab} placeholder={chatPlaceholder(dataset)} />
     </div>
   );
+}
+
+/** Opening a tab records it as the dataset's last tab (App Flow §1: `/d/:id` opens it). */
+function RememberTab({ datasetId, tab, active }: { datasetId: string; tab: Tab; active: boolean }) {
+  useEffect(() => {
+    if (active) rememberTab(datasetId, tab);
+  }, [datasetId, tab, active]);
+  return null;
 }
 
 function StatusScreen({ dataset }: { dataset: Dataset }) {
@@ -75,17 +101,14 @@ function StatusScreen({ dataset }: { dataset: Dataset }) {
 
 function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {
   if (tab === "csv") return <RowsTable datasetId={dataset.id} version={dataset.current_version} />;
+  if (tab === "dashboard") return <Dashboard dataset={dataset} />;
   return (
     <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-6 p-8">
       <div className="flex flex-col items-center gap-2 text-center">
-        <h2 className="text-[15px] font-semibold">{tab === "dashboard" ? "No widgets yet" : "The canvas is empty"}</h2>
-        <p className="text-muted-foreground">
-          {tab === "dashboard"
-            ? "Widgets appear here once the dashboard builds."
-            : "Cards and notes you place on the canvas appear here."}
-        </p>
+        <h2 className="text-[15px] font-semibold">The canvas is empty</h2>
+        <p className="text-muted-foreground">Cards and notes you place on the canvas appear here.</p>
       </div>
-      {tab === "dashboard" && <ReportSummary datasetId={dataset.id} title="Last cleaning report" />}
+      <ReportSummary datasetId={dataset.id} title="Last cleaning report" />
     </div>
   );
 }

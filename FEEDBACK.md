@@ -146,6 +146,23 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 - **Thinking off:** 0.90 s, but Story typed the numbers as digits ("paid on average 84.15 units…") instead of using fact chips. That breaks Sherlock's rule that the model never writes a number.
 - **Effect:** narration keeps thinking on. Routing (the Route schema) passed with thinking off on all three role models, so the chat router may turn it off for speed. That's decided when the LLM client is built (Implementation Plan D2.7).
 
+### Nemotron in the dashboard builder and chat (2026-10-25, Implementation Plan D4)
+
+- **Curation (Super, schema `Curation`).** It picked 7–8 widgets from a 14-item shortlist and titled them in plain words ("Survival by sex", "Fare by class", "Passengers by port"). None of its titles needed the templated fallback.
+- **Routing (Nano, reasoning off).** About 1 s per message.
+  - With a flat list of intents it sent plain breakdowns ("average fare by class", "median fare by class") to `ask_stats`.
+  - Saying "most messages are ask_data; when in doubt choose ask_data", and narrowing `ask_stats` to explicit significance questions, fixed most of it.
+  - "Survival rate by sex as a chart" was read as also asking for a dashboard widget until `create_widget` was limited to requests that name the dashboard.
+- **SQL (Super).** 2–5 s, and good with the column examples in the prompt. Two habits:
+  - It read "port" as `home.dest` until the prompt said to match words by the columns' example values, not their names. Then it chose `embarked`.
+  - It sometimes wrote `AVG(<boolean>)`, which DuckDB refuses. The prompt now says to cast.
+- **Compose: Nano versus Super.**
+  - Nano, with reasoning on, strung chips together with no words ("87.5121.1813.30") and left sentences unfinished, so compose moved to Super.
+  - Super, with `prose` as the schema's last field, often closed the object with an empty `prose`. Moving `prose` first cut the repairs.
+  - Super still sometimes writes JSON fragments inside a text run, which the no-digits rule rejects. After one repair, the answer falls back to the raw table with its SQL.
+  - **Suggestion for Token Factory or the model card:** document how property order in a strict `json_schema` affects generation. It changes the output a lot.
+- **Eval v0** (35 questions on two files): 31 and then 32 passed, with 0 unsourced answers and a median of 11–12 s per answer.
+
 ### NVIDIA embedding model (`embed`)
 
 - None is available on Token Factory, so this role is empty (see Token Factory problem 1).
@@ -187,3 +204,21 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 
 - **2026-10-24, scaffold:** Starlette's `TestClient` now warns that using it with `httpx` is deprecated and asks for `httpx2`, so the API's dev dependencies use `httpx2`. This isn't a Nebius issue; it's kept so the build log is complete.
 - **2026-10-24, CI:** `astral-sh/setup-uv` no longer publishes a moving major tag such as `v10`, so CI pins `v10.3.2`.
+- **2026-10-25, Bklit check (Implementation Plan §2.0, before D4.7). It passed.**
+  - **Install.** `@bklit/bar-chart`, `line-chart`, `area-chart`, `pie-chart` and `ring-chart` came from the `@bklit` shadcn registry (`https://ui.bklit.com/r/{name}.json`) with shadcn CLI 4.22.1.
+  - **Problems along the way:**
+    - The CLI calls `pnpm` directly, which on this machine only exists through Corepack, so the install needed a `pnpm` shim on `PATH`.
+    - It asked to overwrite `src/lib/utils.ts`, and `--yes` didn't answer that.
+    - It appended its own oklch palette to `index.css`, which overrode our chart tokens. We removed it and mapped Bklit's extra variables onto the brief's tokens in `theme.css`.
+    - The code targets React 19, so one ref type needed a cast under React 18. `@types/d3-shape` and `@types/d3-array` had to be added.
+  - **Pass rules.**
+    - Custom tooltip rows: yes (`ChartTooltip rows`).
+    - Theme tokens: yes, every color is a CSS variable.
+    - A shared hover between two charts: not tried yet (that's D6 hover linking).
+  - **Brushing** wasn't needed (cut 8).
+  - **What we changed.** `Bar` has no per-bar fill or click handler, so we added `getFill` and `isDimmed` props to our copy, and a click on the chart reads the hovered index from `useChartHover`. Bklit's `RingChart` is a radial progress ring, so a share "ring" is drawn as a `PieChart` with an inner radius.
+- **2026-10-25, react-grid-layout check. It passed with one fallback.**
+  - 1.5.2 works with React 18.
+  - Drag is restricted to a handle with `draggableHandle`, and `draggableCancel` keeps clicks on buttons and charts.
+  - `WidthProvider` failed the re-measure check: it measured the container as 0 when the tab mounted and never measured again, so the grid stayed on its 4-column layout. The dashboard now measures its container with its own `ResizeObserver` and passes `width`.
+  - `react-resizable`'s stylesheet isn't reachable under pnpm's strict layout, so the resize corner is styled in `index.css`.
