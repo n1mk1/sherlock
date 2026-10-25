@@ -371,6 +371,8 @@ The five-file end-to-end set is `titanic3.csv`, `sales_dated.csv`, `wide_messy.c
 
 As generated (2026-10-24, D3.5): `sales_dated.csv` (5,000 rows × 8), `wide_messy.csv` (800 × 60), `reviews_text.csv` (600 × 6) and `broken_latin1.txt` (150 data rows × 4, Latin-1, `;`) are committed in `api/samples/`. `titanic_blanks.csv` isn't made: cut 7 removed the `predict` recipe. In `broken_latin1.txt` the two preamble lines carry the same delimiters as the data, so the sniffer reads them as data (152 rows) unless the import preview sets header row 3. This gap in header detection is known (App Flow §18: "auto-detection tries the first 5 rows").
 
+`samples/eval/corruption/*` isn't a folder of files as built (D3.3): the three clean sets come from seeded generators in `sherlock/eval/synthetic.py`, and the damage plan (column, kind, share, seed) is in `sherlock/eval/corruption.py` (TRD §14). Checked in the Day 3 review (2026-10-25): two runs of `scripts/make_samples.py` write byte-identical files, equal to the committed ones.
+
 ---
 
 ## 7. Submission artifacts

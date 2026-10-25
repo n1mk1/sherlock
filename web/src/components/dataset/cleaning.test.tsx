@@ -27,6 +27,18 @@ describe("cleaning screens", () => {
     expect(mmss(83)).toBe("01:23");
   });
 
+  it("merges a running line with its outcome across a wait for the model", () => {
+    const base = { job_id: "j", ts: "2026-10-24T00:00:00Z", level: "info" };
+    const entries: JobLogEntry[] = [
+      { ...base, icon: "running", text: "263 missing values", column: "age", issue_id: "i1", detail: "checking candidates" },
+      { ...base, icon: "wait", text: "Waiting for the model…", level: "warn" },
+      { ...base, icon: "check", text: "Fills ages by title", column: "age", issue_id: "i1", gate: "commit", detail: "committed · step 2" },
+    ];
+    const out = collapse(entries);
+    expect(out.map((e) => e.icon)).toEqual(["check", "wait"]);
+    expect(out[0]).toMatchObject({ text: "263 missing values", outcome: "Fills ages by title" });
+  });
+
   it("starts cleaning and can remember the choice", async () => {
     const calls = mockApi({
       "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
@@ -70,5 +82,18 @@ describe("cleaning screens", () => {
     expect(screen.getByText("changes more than a fifth of the data")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "View full report" }));
     expect(await screen.findByText(/Looks like an ID column/)).toBeInTheDocument();
+  });
+
+  it("names the configured issue budget when the run hit it", async () => {
+    mockApi({
+      "GET /api/v1/datasets/ds_1/report": {
+        job_id: "job_1", status: "done", from_version: 2, to_version: 9, ended_by: "steps", waited_for_model_s: 0,
+        attempted: 12, budget: { max_steps: 12, max_seconds: 300 }, started_at: null, finished_at: null, error: null,
+        counts: { found: 30, fixed: 7, flagged: 0, skipped: 5, rows_deleted: 0 },
+        steps: [], skipped: [], hand_edited_skipped: [], decisions: [],
+      },
+    });
+    renderAt(<ReportSummary datasetId="ds_1" />);
+    expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
   });
 });

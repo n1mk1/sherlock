@@ -150,13 +150,16 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
   );
 }
 
-/** A "running" line is replaced by its outcome for the same issue. */
+/** A "running" line is replaced by its outcome for the same issue, also when "Waiting for the
+ * model…" lines came in between (those stay, after it). */
 export function collapse(entries: JobLogEntry[]): JobLogEntry[] {
   const out: JobLogEntry[] = [];
   for (const e of entries) {
-    const prev = out[out.length - 1];
+    let i = out.length - 1;
+    while (i >= 0 && out[i].icon === "wait") i--;
+    const prev = out[i];
     if (prev && prev.icon === "running" && e.icon !== "running" && e.icon !== "wait" && prev.issue_id && prev.issue_id === e.issue_id) {
-      out[out.length - 1] = { ...e, text: prev.text, outcome: e.text };
+      out[i] = { ...e, text: prev.text, outcome: e.text };
     } else {
       out.push(e);
     }

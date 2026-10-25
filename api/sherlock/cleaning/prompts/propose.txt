@@ -20,4 +20,4 @@ How the code runs:
 - Start from `result = df.copy()` and assign whole columns; keep the code short and plain.
 - When you parse values, quarantine the rows whose values failed: `result = quarantine_rows(result, parse_failures(df[col], parsed), "parse: <column>")`.
 
-For each candidate give a short label (like "Median by title in name"), the code, and its expected effect in one sentence.
+For each candidate give a short label naming the approach and the columns it uses (like "Median by <group column>"), the code, and its expected effect in one sentence.
