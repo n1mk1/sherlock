@@ -939,6 +939,7 @@ Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleani
   2. `int`: `[+-]?\d+`
   3. `float`: `pd.to_numeric`
   4. `date` or `datetime`: ISO 8601, then the format set (`%d/%m/%Y`, `%m/%d/%Y`, `%d.%m.%Y`, `%Y/%m/%d`, `%d-%m-%Y`, `%m-%d-%Y`, named months, two-digit years); `datetime` if any value has a time
+     - Timestamps with more than one UTC offset in a column (daylight saving, `-05:00` and `-04:00`) don't count as dates: pandas can't hold them as one datetime column, so the column falls through to the text rules and isn't typed. Before, profiling such a file failed (review of Day 2, 2026-10-25).
   5. `id`: text with > 95% unique values and at least 20 values
   6. `category`: ≤ 50 distinct or ≤ 5% unique
   7. otherwise `text`

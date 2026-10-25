@@ -5,6 +5,7 @@ A type wins when at least 99% of the non-missing values parse as it.
 """
 
 import re
+import warnings
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -52,15 +53,27 @@ def as_text(series: pd.Series) -> pd.Series:
     return s[~s.str.lower().isin(SENTINEL_STRINGS)]
 
 
+def _to_datetime(text: pd.Series, fmt: str) -> pd.Series:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", FutureWarning)  # pandas will raise on mixed offsets one day
+        try:
+            parsed = pd.to_datetime(text, format=fmt, errors="coerce")
+        except (TypeError, ValueError):
+            parsed = None
+    if not pd.api.types.is_datetime64_any_dtype(parsed):  # mixed UTC offsets come back as objects: not dates
+        return pd.Series(pd.NaT, index=text.index, dtype="datetime64[ns]")
+    return parsed
+
+
 def parse_dates(text: pd.Series) -> tuple[pd.Series, str | None, float]:
     """Best date parse: ISO 8601 first, then the format set. Returns (parsed, format, share)."""
     if text.empty:
         return pd.Series(dtype="datetime64[ns]"), None, 0.0
-    best = (pd.to_datetime(text, format="ISO8601", errors="coerce"), "ISO8601")
+    best = (_to_datetime(text, "ISO8601"), "ISO8601")
     best_share = best[0].notna().mean()
     if best_share < THRESHOLD:
         for fmt in DATE_FORMATS:
-            parsed = pd.to_datetime(text, format=fmt, errors="coerce")
+            parsed = _to_datetime(text, fmt)
             share = parsed.notna().mean()
             if share > best_share:
                 best, best_share = (parsed, fmt), share
