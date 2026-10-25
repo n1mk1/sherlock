@@ -42,7 +42,9 @@ def test_ask_stats_picks_the_test_by_the_column_types(client, ready):
 def test_ask_why_answers_from_the_cached_driver_run(client, ready):
     run = driver_done(client, ready["id"])
     _, msg = send(client, ready["id"], "what drives survival?")
-    assert msg["text"].startswith("A model can predict survived better than simple rules")
+    # With the folds grouped by ticket (Day 7 review F1), families no longer leak across folds, and on
+    # Titanic sex alone does about as well as the model: the answer says so instead of "better than simple rules".
+    assert msg["text"].startswith("sex alone predicts survived about as well as the model"), msg["text"]
     assert "The strongest factors are sex" in msg["text"] and "not causes" in msg["text"]
     assert {"kind": "open_model_card", "run_id": run["id"]} in msg["actions"]
     jobs = [j for j in client.get(f"{API}/jobs?dataset_id={ready['id']}").json() if j["kind"] == "ml_run"]

@@ -72,21 +72,33 @@ def resolve_chip(ref: str, results: dict[str, Result]) -> tuple[object, str, str
     return value, fmt(value, kind), column
 
 
-def label_text(ref: str, columns: list[str]) -> str:
+def label_text(ref: str, columns: list[str], values: set[str] | None = None) -> str:
+    """The text a label shows. With `values`, a `value:` label must be one of them: it's shown as
+    written, so a value the data doesn't have ("fare 512.33") could carry a number the model made up."""
     kind, _, rest = ref.partition(":")
     if kind == "column" and rest in columns:
         return rest
     if kind == "value":
         col, _, val = rest.partition(":")
         if col in columns and val:
+            if values is not None and val not in values and f"{col}:{val}" not in values:
+                raise ValueError(f"label {ref!r} is a value no result shows; use a chip for a number")
             return val
     raise ValueError(f"label {ref!r} names no column or value of this file")
 
 
-def to_runs(prose: list, results: dict[str, Result], columns: list[str]) -> list[dict]:
+def label_values(results: dict[str, Result], known: dict[str, list] | None = None) -> set[str]:
+    """The values a `value:` label may show (Day 6 review F2): any cell of the answer's results, and
+    `<column>:<value>` for the values the DataCard knows (its top values)."""
+    out = {str(v) for res in results.values() for row in res.rows for v in row if v is not None}
+    return out | {f"{col}:{v}" for col, vals in (known or {}).items() for v in vals if v is not None}
+
+
+def to_runs(prose: list, results: dict[str, Result], columns: list[str], known: dict[str, list] | None = None) -> list[dict]:
     """Runs with every value filled in by code. A sentence that runs into the next gets its space,
-    and prose that doesn't end a sentence gets its full stop."""
+    and prose that doesn't end a sentence gets its full stop. `known`: the DataCard's values by column."""
     runs = []
+    values = label_values(results, known)
     for i, run in enumerate(prose):
         if isinstance(run, ChipRun):
             value, shown, _ = resolve_chip(run.chip, results)
@@ -94,7 +106,7 @@ def to_runs(prose: list, results: dict[str, Result], columns: list[str]) -> list
                 runs.append({"type": "text", "text": ", "})  # two chips in a row read as a list
             runs.append({"type": "chip", "id": f"c{i}", "key": run.chip, "value": shown, "raw": value, "unverified": False})
         elif isinstance(run, LabelRun):
-            runs.append({"type": "label", "ref": run.label, "text": label_text(run.label, columns)})
+            runs.append({"type": "label", "ref": run.label, "text": label_text(run.label, columns, values)})
         elif isinstance(run, TextRun):
             text = run.text
             prev = runs[-1] if runs else None
@@ -169,15 +181,16 @@ def rows_found(res: Result) -> list[dict]:
 
 
 def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Result], columns: list[str],
-            version: int, selection_id: str | None) -> tuple[list[dict], bool]:
-    """(blocks, composed_by_model). Row lists from `find_rows` are composed in code."""
+            version: int, selection_id: str | None, known: dict[str, list] | None = None) -> tuple[list[dict], bool]:
+    """(blocks, composed_by_model). Row lists from `find_rows` are composed in code. `known`: the
+    DataCard's values by column, which value labels may name besides the results' cells."""
     if all(r.selection_id for r in results):
         return [b for r in results for b in rows_found(r)], False
     results = [r for r in results if not r.selection_id] + [r for r in results if r.selection_id]
     by_id = {r.id: r for r in results}
 
     def check(a: Answer) -> None:
-        to_runs(a.prose, by_id, columns)  # raises on a chip or label that names nothing
+        to_runs(a.prose, by_id, columns, known)  # raises on a chip or label that names nothing
         if not a.prose:
             raise ValueError("write one to three sentences of prose")
         if a.prose:
@@ -204,7 +217,7 @@ def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Resul
         return fallback_blocks(results, version), False
 
     blocks = []
-    runs = to_runs(a.prose, by_id, columns)
+    runs = to_runs(a.prose, by_id, columns, known)
     if runs:
         blocks.append(text_block(runs))
     main = results[0]

@@ -12,8 +12,8 @@ import inspect
 from sherlock.ml import core
 from sherlock.ml.plan import Plan
 
-CORE_FUNCTIONS = ("sample", "prepare", "preprocessor", "make_model", "folds", "metric_name", "score", "pipeline", "evaluate",
-                  "baselines", "importance", "run", "out_of_fold")
+CORE_FUNCTIONS = ("sample", "prepare", "preprocessor", "make_model", "group_labels", "folds", "metric_name", "score", "pipeline",
+                  "evaluate", "baselines", "importance", "run", "out_of_fold")
 
 
 def core_source() -> str:
@@ -42,6 +42,8 @@ def render(plan: Plan, model: str, alternatives: list[dict], run_id: str, versio
         sample = (f"    # The scope had more than {plan.sample['n']:,} rows, so the run used a random sample of them ({how}seed {plan.sample['seed']}).\n"
                   f"    data = sample(data, {plan.target!r}, {plan.task!r}, {plan.sample['n']}, seed)\n")
     sql = f"SELECT * FROM t WHERE {plan.rows_sql} ORDER BY _row_id"
+    group = (f"    # Rows that share a {plan.group} stay in one fold, so a held-out row's group isn't in its training rows.\n"
+             if plan.group else "")
     return f'''# Reproduces Sherlock run {run_id} (driver analysis on version {version}).
 # Auto tried: {others}. The winner, {core.MODEL_LABELS.get(model, model)}, is reproduced here.
 import duckdb
@@ -57,7 +59,8 @@ def reproduce(df, seed=42):
 {sample}    # Features used: {", ".join(plan.features)}
     # Left out, with the reason:
 {excluded}
-    return run(data, {plan.target!r}, {plan.numeric!r}, {plan.categorical!r}, {plan.high_card!r}, {plan.task!r}, {model!r}, seed, n_folds={n_folds})
+{group}    return run(data, {plan.target!r}, {plan.numeric!r}, {plan.categorical!r}, {plan.high_card!r}, {plan.task!r}, {model!r}, seed,
+               n_folds={n_folds}, group={plan.group!r})
 '''
 
 

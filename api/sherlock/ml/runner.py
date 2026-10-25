@@ -348,7 +348,7 @@ def preview(env: ws.Env, dataset: sqlite3.Row, req: dict) -> dict:
     if len(data) > PREVIEW_ROWS:
         data = data.sample(n=PREVIEW_ROWS, random_state=SEED).sort_values("_row_id")
     X, y = core.prepare(data, target, plan.numeric, plan.categorical, plan.high_card)
-    splits = core.folds(X, y, plan.task, SEED, p.params["cv_folds"])
+    splits, _ = core.folds(X, y, plan.task, SEED, p.params["cv_folds"], core.group_labels(data, plan.group) if plan.group else None)
     base = core.baselines(X, y, plan.task, SEED, plan.numeric, plan.categorical, plan.high_card, splits)
     used = plan.rows["used"]
     estimate = int(min(p.params["time_budget_s"] + 20, max(3, round(used * len(plan.features) / 800))))

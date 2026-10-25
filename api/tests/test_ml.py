@@ -38,7 +38,7 @@ def test_drivers_are_found_and_the_leak_and_the_id_are_left_out():
     assert a.card["verdict"] == "beats_baseline"
     assert a.card["model"]["value"] > max(b["value"] for b in a.card["baselines"])
     assert {b["name"].split(":")[0] for b in a.card["baselines"]} == {"everyone gets the most common outcome", "best one-column rule"}
-    assert a.card["split"] == {"kind": "stratified_kfold", "folds": 5, "seed": 42}
+    assert a.card["split"] == {"kind": "stratified_kfold", "folds": 5, "seed": 42, "group": None}
 
 
 def test_pure_noise_is_reported_as_no_signal():
@@ -130,6 +130,40 @@ def test_a_large_scope_is_sampled_stratified_in_the_app_and_its_reproduction(mon
     a = _analyze(planted.drivers(n=600), "outcome")
     assert a.card["sample"] == {"seed": 42, "stratify_column": "outcome", "n": 300} and a.result["rows"] == 300
     assert "stratified by outcome, seed 42" in a.code and "data = sample(data, 'outcome', 'classification', 300, seed)" in a.code
+
+
+def _families(n_families: int = 300, seed: int = 4) -> pd.DataFrame:
+    """Rows in families of three that share a `ticket` and mostly share the outcome, plus a weak driver.
+    A target-encoded ticket on random folds reads a held-out row's relatives' outcomes."""
+    rng = np.random.default_rng(seed)
+    fam = np.repeat(np.arange(n_families), 3)
+    shared = rng.normal(0, 1.5, n_families)[fam]
+    df = pd.DataFrame({"ticket": [f"T-{f:04d}" for f in fam], "x": rng.normal(0, 1, len(fam)).round(3)})
+    df["outcome"] = np.where(shared + 0.5 * df["x"] + rng.normal(0, 0.3, len(fam)) > 0, "yes", "no")
+    return df.sample(frac=1, random_state=seed).reset_index(drop=True)
+
+
+def test_rows_sharing_an_id_like_value_stay_in_one_fold():
+    df = _families()
+    a = _analyze(df, "outcome")
+    assert a.plan.group == "ticket" and "ticket" in a.plan.high_card
+    assert a.card["split"] == {"kind": "stratified_group_kfold", "folds": 5, "seed": 42, "group": "ticket"}
+    X, y = core.prepare(df, "outcome", a.plan.numeric, a.plan.categorical, a.plan.high_card)
+    splits, grouped = core.folds(X, y, "classification", 42, 5, core.group_labels(df, "ticket"))
+    assert grouped and all(not set(df["ticket"].iloc[tr]) & set(df["ticket"].iloc[te]) for tr, te in splits)
+    # On random folds the ticket's encoding reads relatives' outcomes and looks like the best simple rule.
+    naive = core.baselines(X, y, "classification", 42, a.plan.numeric, a.plan.categorical, a.plan.high_card,
+                           core.folds(X, y, "classification", 42)[0])
+    assert naive[1]["column"] == "ticket" and naive[1]["value"] > 0.8
+    rule = a.card["baselines"][1]
+    assert rule["column"] == "x" and rule["value"] < 0.75, a.card["baselines"]
+    assert "group='ticket'" in a.code and "Rows that share a ticket stay in one fold" in a.code
+    again = repro.execute(a.code, planted.as_version(df))
+    assert again["metrics"]["value"] == a.card["model"]["value"] and again["grouped_by"] == "ticket"
+    # A repeating column with big groups (a region) is a category, not a group: the folds stay plain.
+    df["region"] = np.random.default_rng(1).choice([f"r{i}" for i in range(60)], len(df))
+    assert plan_module.group_column(df, ["region"]) is None and plan_module.group_column(df, ["region", "ticket"]) == "ticket"
+    assert plan_module.group_column(df.assign(ticket=[f"u{i}" for i in range(len(df))]), ["ticket"]) is None  # unique: an ID
 
 
 def test_the_reproduction_code_gives_the_model_cards_numbers():

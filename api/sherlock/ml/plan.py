@@ -20,6 +20,7 @@ MIN_ROWS = 100           # supervised recipes refuse below this (PRD ML-10)
 FOLDS = 5                # the default number of cross-validation folds (core.FOLDS)
 SAMPLE_ROWS = 50_000     # larger scopes are sampled, stratified, with the seed (TRD §6.7)
 HIGH_CARDINALITY = 50
+GROUP_SHARE = 0.25       # an ID-like group column has at least this many values per filled row
 SEED = 42
 
 
@@ -38,10 +39,11 @@ class Plan:
     sample: dict | None = None    # {seed, stratify_column, n} when sampled
     classes: list | None = None
     forced: list[dict] = field(default_factory=list)    # [{column, reason}] put back in by the user despite a check
+    group: str | None = None      # rows sharing a value of this column stay in one fold (step 4)
 
     def json(self) -> dict:
         return {k: getattr(self, k) for k in ("target", "task", "metric", "rows_sql", "features", "numeric", "categorical",
-                                              "high_card", "excluded", "rows", "sample", "classes", "forced")}
+                                              "high_card", "excluded", "rows", "sample", "classes", "forced", "group")}
 
 
 def task_for(series: pd.Series, col_type: str) -> str:
@@ -126,7 +128,22 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
     sample = {"seed": SEED, "stratify_column": target if task == "classification" else None, "n": SAMPLE_ROWS} \
         if with_target > SAMPLE_ROWS else None
     return Plan(target, task, metric, rows_sql, features, numeric, categorical, high, excluded, rows, sample, classes,
-                kept_anyway)
+                kept_anyway, group_column(df[y.notna()], high))
+
+
+def group_column(df: pd.DataFrame, high_card: list[str]) -> str | None:
+    """The column whose rows stay together in the folds (TRD §7.5 step 4): of the target-encoded
+    columns whose values repeat, the one with the most values, when they number at least a quarter of
+    its filled rows, so most groups are a few rows (a ticket, an account, a household). A target-encoded
+    column's held-out rows would otherwise be encoded from their own group's outcomes. None when no
+    column is like that."""
+    best = None
+    for c in high_card:
+        s = df[c].dropna()
+        distinct = int(s.nunique())
+        if len(s) and distinct < len(s) and distinct >= GROUP_SHARE * len(s) and (best is None or distinct > best[1]):
+            best = (c, distinct)
+    return best[0] if best else None
 
 
 def _words(name: str) -> list[str]:

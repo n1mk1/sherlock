@@ -179,6 +179,28 @@ def test_resolution_and_formatting():
     assert comp.resolve_chip("r1:total", {"r1": res})[0] == 1
 
 
+def test_a_value_label_must_be_a_value_the_answer_or_the_data_has():
+    """Rule 2 (Day 6 review F2): a `value:` label is shown as written, so "fare 512.33" or
+    "three quarters" as a label would put a number the model made up into the answer."""
+    from sherlock.llm.schemas import ChipRun, LabelRun, TextRun
+
+    res = Result("r1", "sql", "tpl", [{"name": "class", "type": "BIGINT"}, {"name": "avg_fare", "type": "DOUBLE"}],
+                 [[1, 87.51], [3, 13.3]], 2)
+    cols = ["pclass", "fare", "sex", "embarked"]
+    known = {"sex": ["male", "female"], "embarked": ["S", "C", "Q"]}
+
+    def shown(label):
+        runs = comp.to_runs([TextRun(text="The highest is "), LabelRun(label=label), TextRun(text=" at "), ChipRun(chip="r1:0:1")],
+                            {"r1": res}, cols, known)
+        return runs[1]["text"]
+
+    assert shown("value:pclass:1") == "1"  # a cell of the result
+    assert shown("value:sex:female") == "female" and shown("value:embarked:Q") == "Q"  # values the DataCard knows
+    for label in ("value:fare:512.33", "value:sex:three quarters", "value:embarked:female"):
+        with pytest.raises(ValueError, match="no result shows"):
+            shown(label)
+
+
 def test_eval_checks():
     msg = {"blocks": [{"type": "table", "columns": [], "rows": [[1, 87.5], [2, 21.18]], "total": 2}], "sources": [{"sql": "x"}]}
     assert ask_eval.check(msg, {"rows": {"1": 87.509, "2": 21.179}})[0]

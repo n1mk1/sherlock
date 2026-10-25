@@ -3,8 +3,9 @@
 The model writes runs, not prose with numbers: every number is a chip naming a fact key, every
 column name or category value a label, and text runs may hold no digits (the `Story` schema). Code
 fills the chips from the fact sheet. Each story is checked before it is kept: chips must name facts,
-labels must name this file's columns or values, no causal wording, and a small-sample note when the
-widget has fewer than 30 rows. One repair; then the card shows the fact sheet as bullets.
+labels must name this file's columns or values, no causal wording, a small-sample note when the
+widget has fewer than 30 rows, and no claim around a chip that its fact doesn't back (`check_wording`).
+One repair; then the card shows the fact sheet as bullets.
 """
 
 import re
@@ -31,6 +32,16 @@ NUMBER_WORDS = re.compile(r"\b(zero|two|three|four|five|six|seven|eight|nine|ten
                           r"|one (?:in|out of)|an? (?:third|quarter|fifth|tenth) of)\b", re.I)
 # So are Roman numerals ("XLV passengers"): upper case, two letters or more.
 ROMAN = re.compile(r"\b(?=[MDCLXVI]{2,}\b)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})\b")
+# "0.373 lower than unit_price" says the gap is 0.373: only a fact that is a difference or a ratio may be read that way.
+GAP_AFTER = re.compile(r"^\s*(?:points?\s+|times\s+)?(?:lower|higher|less|more|greater|smaller|larger|bigger|fewer|better|worse)\s+than\b", re.I)
+DIFFERENCE = re.compile(r"\b(than|over|above|below|change|gap|difference|ratio)\b", re.I)
+IMPORTANCE = re.compile(r"^(.*\.)?driver_\d+_importance$")
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# Comparing numbers from two sources (two cards, two widgets): only checkable for two numbers of one kind.
+COMPARE = re.compile(r"\b(higher|lower|more|less|greater|smaller|larger|bigger|fewer|better|worse|above|below|exceed\w*"
+                     r"|outpac\w*|surpass\w*|trail\w*|lag\w*|than|versus|vs|compared (?:with|to))\b", re.I)
+UP = re.compile(r"\b(higher|more|greater|larger|bigger|better|above|exceed\w*|outpac\w*|surpass\w*)\b", re.I)
+DOWN = re.compile(r"\b(lower|less|smaller|fewer|worse|below|trail\w*|lag\w*)\b", re.I)
 
 
 def number_in_words(text: str) -> str | None:
@@ -48,7 +59,8 @@ Rules:
 - Every number is a chip: {{"chip": "<fact key>"}}, using only the fact keys listed. Text runs never contain digits or numbers in words ("six", "twice"); a category that is a number is a label.
 - When a fact names two categories (a cell of a heatmap), name both.
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
-- Text runs carry the words, including the spaces around chips and labels.
+- Text runs carry the words, including the spaces around chips and labels. A label already shows its name: don't repeat the word beside it.
+- Put each number right after the name it belongs to (an importance right after its column). A number followed by "higher than" or "lower than" reads as a gap, so write that only for a fact that is a difference or a ratio; to compare two numbers, give both.
 - Say what the widget shows and what stands out. These are associations in the data: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - {small}
 - You may mention a related widget by what it shows, without numbers.
@@ -69,6 +81,7 @@ Rules:
 - Every number is a chip: {{"chip": "<widget>.<fact key>"}}, using only the keys listed. Text runs never contain digits.
 - Column names and values are labels: {{"label": "column:<name>"}}, or a category value as {{"label": "value:<column>:<value>"}} chosen from the allowed value labels.
 - Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
+- A bullet that compares numbers uses numbers from one widget, or exactly two numbers of the same kind from two widgets, saying which is higher.
 - Each bullet is a list of runs, for example [{{"text": "Survival was highest for "}}, {{"label": "value:sex:female"}}, {{"text": " passengers, at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
 Widgets and their facts:
@@ -124,12 +137,14 @@ def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str
     """Runs with values filled in by code, spaced so chips and labels don't run into the words.
     `values`: the `value:` labels allowed (all, when None)."""
     out: list[dict] = []
+    chip_facts: dict[str, tuple[str, dict]] = {}  # chip id → (the key as the model wrote it, its fact)
     for i, run in enumerate(runs):
         if isinstance(run, ChipRun):
             f = facts.get(run.chip)
             if f is None:
                 raise ValueError(f"chip {run.chip!r} names no fact")
             item = {"type": "chip", "id": f"c{i}", "key": key_prefix + run.chip, "value": f["formatted"], "unverified": False}
+            chip_facts[item["id"]] = (run.chip, f)
         elif isinstance(run, LabelRun):
             item = {"type": "label", "ref": run.label, "text": label_text(run.label, dataset_columns, values)}
         else:
@@ -163,7 +178,88 @@ def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str
     if last and not (last["type"] == "text" and last["text"].rstrip().endswith((".", "!", "?"))) \
             and not (last["type"] == "chip" and last["value"].endswith((".", "!", "?"))):
         out.append({"type": "text", "text": "."})
+    check_wording(out, chip_facts, facts)
     return out
+
+
+def _name(item: dict, chip_facts: dict) -> str | None:
+    """The column or value a run names: a label's text, or a chip whose fact is a name (`driver_1`)."""
+    if item["type"] == "label":
+        return item["text"]
+    if item["type"] == "chip" and item["id"] in chip_facts and chip_facts[item["id"]][1].get("format") == "text":
+        return item["value"]
+    return None
+
+
+def sentences(out: list[dict]) -> list[list[dict]]:
+    """The runs split into sentences at a full stop, question or exclamation mark followed by a space."""
+    sents, cur = [], []
+    for item in out:
+        if item["type"] != "text":
+            cur.append(item)
+            continue
+        for j, piece in enumerate(SENTENCE_END.split(item["text"])):
+            if j:
+                sents.append(cur)
+                cur = []
+            if piece:
+                cur.append({**item, "text": piece})
+    return [s for s in sents + [cur] if s]
+
+
+def check_wording(out: list[dict], chip_facts: dict, facts: dict) -> None:
+    """Claims around the chips that the facts don't back, though each number is right (Day 7 review F4):
+    a name said twice ("Sex sex"), an importance placed away from its column ("influenced by 1.00"),
+    and a level read as a gap ("0.373 lower than unit_price")."""
+    for i, item in enumerate(out):
+        name = _name(item, chip_facts)
+        if name:
+            before = out[i - 1]["text"] if i and out[i - 1]["type"] == "text" else ""
+            after = out[i + 1]["text"] if i + 1 < len(out) and out[i + 1]["type"] == "text" else ""
+            words = name.lower().split()
+            # Across a sentence's end it's a new sentence, not a repeat ("…for each sex. sex leads").
+            prev_word = "" if before.rstrip().endswith((".", "!", "?")) else (before.split() or [""])[-1].strip(",;:()").lower()
+            next_word = (after.split() or [""])[0].strip(".,;:()").lower()
+            if words and (prev_word == words[0] or next_word == words[-1]):
+                raise ValueError(f"{name!r} is said twice: the label already shows the name, so leave it out of the text")
+        if item["type"] == "chip" and item["id"] in chip_facts:
+            key, f = chip_facts[item["id"]]
+            after = out[i + 1]["text"] if i + 1 < len(out) and out[i + 1]["type"] == "text" else ""
+            if GAP_AFTER.search(after) and f.get("format") != "x" and not DIFFERENCE.search(f.get("label", "")):
+                raise ValueError(f"chip {key!r} is {f['label']}, not a difference: name both numbers to compare them, "
+                                 f"instead of '{item['value']}{GAP_AFTER.search(after).group(0)}'")
+    for sent in sentences(out):
+        for j, item in enumerate(sent):
+            if item["type"] != "chip" or item["id"] not in chip_facts or not IMPORTANCE.match(chip_facts[item["id"]][0]):
+                continue
+            key, f = chip_facts[item["id"]]
+            owner = (facts.get(key.removesuffix("_importance")) or {}).get("value")
+            if owner is None:
+                m = re.search(r"importance of (.+?) \(", f.get("label", ""))
+                owner = m.group(1) if m else None
+            names = [(k, _name(x, chip_facts)) for k, x in enumerate(sent) if _name(x, chip_facts)]
+            near = [n for k, n in reversed(names) if k < j] or [n for k, n in names if k > j]
+            if owner and (not near or near[0] != owner):
+                raise ValueError(f"chip {key!r} is the importance of {owner}: put it right after {owner}'s name")
+        check_comparison(sent, chip_facts)
+
+
+def check_comparison(sent: list[dict], chip_facts: dict) -> None:
+    """A sentence comparing numbers from two sources (`c1.…` and `c2.…`: two cards, or two widgets in
+    the overview) is kept only when code can check it: two numbers of the same kind, and "higher" or
+    "lower" the way their values go. Code never compared them otherwise (Day 8 review F1)."""
+    text = "".join(x.get("text", "") for x in sent if x["type"] == "text")
+    chips = [chip_facts[x["id"]] for x in sent if x["type"] == "chip" and x["id"] in chip_facts]
+    if len({key.partition(".")[0] for key, _ in chips if "." in key}) < 2 or not COMPARE.search(text):
+        return
+    numbers = [(key, f) for key, f in chips if f.get("format") not in ("text", "p") and isinstance(f["value"], (int, float))]
+    if len(numbers) != 2 or len(chips) != 2 or numbers[0][1].get("format") != numbers[1][1].get("format"):
+        raise ValueError("this sentence compares numbers from different cards that code hasn't compared: "
+                         "give each card's number in its own sentence, or compare two numbers of the same kind")
+    a, b = numbers[0][1]["value"], numbers[1][1]["value"]
+    up, down = UP.search(text), DOWN.search(text)
+    if (up and down) or (up and not a > b) or (down and not a < b):
+        raise ValueError(f"the comparison is wrong or unclear: {numbers[0][1]['formatted']} against {numbers[1][1]['formatted']}")
 
 
 def plain(runs: list) -> str:

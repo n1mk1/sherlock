@@ -79,7 +79,8 @@ export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
             <H>Method</H>
             <p>
               Auto picked <span className="font-medium">{labelOf(card.chosen_model)}</span> by{" "}
-              {card.split.folds}-fold {card.split.kind === "stratified_kfold" ? "stratified " : ""}cross-validation (seed {card.split.seed}).
+              {card.split.folds}-fold {card.split.kind.startsWith("stratified") ? "stratified " : ""}cross-validation (seed {card.split.seed})
+              {card.split.group ? <>, keeping rows that share a <span className="font-mono">{card.split.group}</span> in one fold.</> : "."}
             </p>
             {card.alternatives.length > 0 && (
               <p className="text-muted-foreground">

@@ -55,16 +55,18 @@ def get_card(cid: str, _: Owned = Depends(owned("card")), db: sqlite3.Connection
 @router.patch("/cards/{cid}")
 def edit_card(cid: str, body: CardEdit, request: Request, _: Owned = Depends(owned("card")),
               db: sqlite3.Connection = Depends(get_db)) -> dict:
-    """The user's own text. Numbers typed by hand become unverified chips; the card is never
-    narrated over again, only offered suggestions (PRD STORY-7)."""
+    """The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's
+    value from the sheet (one whose fact isn't there is unverified), and the card is never narrated
+    over again, only offered suggestions (PRD STORY-7)."""
     sets, params = ["edited_by_user = 1", "updated_at = ?"], [now_iso()]
+    card = _card(db, cid)
     for key in ("headline", "body"):
         value = getattr(body, key)
         if value is not None:
             if not isinstance(value.get("blocks"), list):
                 raise ApiError(422, "invalid", f"{key}: expected {{blocks: [...]}}")
             sets.append(f"{key}_json = ?")
-            params.append(json.dumps(stories.mark_unverified(value)))
+            params.append(json.dumps(stories.checked_edit(db, card, value)))
     db.execute(f"UPDATE cards SET {', '.join(sets)} WHERE id = ?", (*params, cid))  # noqa: S608
     return _changed(request, db, cid)
 

@@ -459,7 +459,7 @@ As built (2026-10-25, `web/src/components/ml/ModelCardDrawer.tsx`): the 420px dr
 - **Verdict.** In 20px serif semibold. When outdated, a `--warning` bordered row follows with Re-run.
 - **Data.** Target, task, version, scope, rows used of the total, and rows without the target. Plus the sample when there is one.
 - **Excluded columns.** Mono and struck through, each with its reason.
-- **Method.** "Auto picked <model> by 5-fold stratified cross-validation (seed 42)", the other models with their scores, and the params.
+- **Method.** "Auto picked <model> by 5-fold stratified cross-validation (seed 42)", the other models with their scores, and the params. When the folds are grouped (TRD §7.5 step 4), the sentence ends "…(seed 42), keeping rows that share a <column> in one fold."
 - **Baselines vs model.** Columns: the metric and the 95% interval. The model row is bold, followed by AUC or MAE.
 - **Importance.** A list with values.
 - **Warnings.** Bordered `--warning` boxes with the suggestion under the text.

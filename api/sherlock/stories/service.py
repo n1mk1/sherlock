@@ -371,6 +371,48 @@ def mark_unverified(body: dict) -> dict:
     return out
 
 
+def checked_edit(db: sqlite3.Connection, r: sqlite3.Row, body: dict) -> dict:
+    """A user's edit of card `r` with nothing taken on trust from the browser (Day 6 review F3): a chip
+    shows its fact's value from the card's sheet (or, on a synthesis or answer card, its source card's
+    sheet), and a chip whose fact isn't there is marked unverified. A label is kept only when the card
+    already had it or it names a column of the file; otherwise its text is the user's text, and a
+    number in it becomes an unverified chip (`mark_unverified`)."""
+    sheet = get_sheet(db, r["fact_sheet_id"])
+    parts = [json.loads(r["headline_json"]), json.loads(r["body_json"])]
+    if r["suggestion_json"]:
+        parts += list(json.loads(r["suggestion_json"]).values())
+    had = {(run.get("ref"), run.get("text")) for p in parts for b in p.get("blocks", []) for run in b.get("runs", [])
+           if run.get("type") == "label"}
+    v = db.execute("SELECT columns_json FROM versions v JOIN datasets d ON d.id = v.dataset_id AND v.version = d.current_version "
+                   "WHERE d.id = ?", (r["dataset_id"],)).fetchone()
+    columns = {c["name"] for c in json.loads(v["columns_json"])} if v else set()
+    out = {"blocks": []}
+    for n, block in enumerate(b for b in body.get("blocks") or [] if isinstance(b, dict)):
+        runs = []
+        for k, run in enumerate(x for x in block.get("runs") or [] if isinstance(x, dict)):
+            kind = run.get("type")
+            if kind == "chip":
+                cid = run.get("id") if isinstance(run.get("id"), str) else f"e{n}_{k}"
+                key = run.get("key") if isinstance(run.get("key"), str) else None
+                f = None
+                if key and not run.get("unverified"):
+                    f = (sheet or {}).get("facts", {}).get(key) if sheet else (fact_for(db, r["dataset_id"], key) if "." in key else None)
+                if f is not None:
+                    runs.append({"type": "chip", "id": cid, "key": key, "value": f["formatted"], "unverified": False})
+                else:
+                    runs.append({"type": "chip", "id": cid, "key": None, "value": str(run.get("value") or ""), "unverified": True})
+            elif kind == "label":
+                ref, text = str(run.get("ref") or ""), str(run.get("text") or "")
+                if (ref, text) in had or (ref.startswith("column:") and ref[7:] in columns and text == ref[7:]):
+                    runs.append({"type": "label", "ref": ref, "text": text})
+                elif text:
+                    runs.append({"type": "text", "text": text})
+            elif kind == "text" and isinstance(run.get("text"), str):
+                runs.append({"type": "text", "text": run["text"]})
+        out["blocks"].append({"type": block["type"] if block.get("type") in ("paragraph", "bullets") else "paragraph", "runs": runs})
+    return mark_unverified(out)
+
+
 def find_chip(card: dict, chip_id: str) -> dict | None:
     for part in (card["headline"], card["body"], *(card["suggestion"].values() if card["suggestion"] else [])):
         for block in part.get("blocks", []):

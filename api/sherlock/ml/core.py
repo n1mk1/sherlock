@@ -18,7 +18,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score, roc_auc_score
-from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
+from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -85,10 +85,29 @@ def make_model(name, task, seed):
             "one_column_rule": DecisionTreeRegressor(max_depth=1, random_state=seed)}[name]
 
 
-def folds(X, y, task, seed, n_folds=FOLDS):
+def group_labels(data, column):
+    """One label per row for keeping rows that share a value of `column` in one fold. A blank is a
+    group of its own."""
+    labels = data[column].astype(str).to_numpy(dtype=object)
+    blank = data[column].isna().to_numpy()
+    labels[blank] = [f"(blank {i})" for i in range(int(blank.sum()))]
+    return labels
+
+
+def folds(X, y, task, seed, n_folds=FOLDS, groups=None):
+    """The cross-validation splits and whether they keep groups together (TRD §7.5 step 4). With
+    `groups`, the rows of one group (a shared ticket, account or household) stay in one fold, so a
+    held-out row's relatives aren't among its training rows; for categories the folds stay
+    stratified. When grouping leaves a fold without one of the outcomes, or there are fewer groups
+    than folds, the folds are the plain ones."""
+    if groups is not None and len(set(groups)) >= n_folds:
+        split = StratifiedGroupKFold(n_folds, shuffle=True, random_state=seed) if task == "classification" else GroupKFold(n_folds)
+        out = list(split.split(X, y, groups))
+        if task == "regression" or all(y.iloc[test].nunique() == y.nunique() for _, test in out):
+            return out, True
     split = (StratifiedKFold(n_folds, shuffle=True, random_state=seed) if task == "classification"
              else KFold(n_folds, shuffle=True, random_state=seed))
-    return list(split.split(X, y))
+    return list(split.split(X, y)), False
 
 
 def metric_name(task, y):
@@ -115,7 +134,7 @@ def evaluate(name, X, y, task, seed, numeric, categorical, high_card, splits=Non
     per-fold pipelines (for importance)."""
     warnings.filterwarnings("ignore", message="Unknown solver options")  # scikit-learn 1.5 with a newer SciPy
     metric = metric_name(task, y)
-    splits = splits or folds(X, y, task, seed)
+    splits = splits or folds(X, y, task, seed)[0]
     out = {"metric": metric, "folds": [], "fitted": []}
     aucs, maes = [], []
     for train, test in splits:
@@ -167,10 +186,10 @@ def importance(fitted, X, y, metric, seed):
     return table.sort_values(["importance", "feature"], ascending=[False, True]).reset_index(drop=True)
 
 
-def run(data, target, numeric, categorical, high_card, task, model, seed=42, n_folds=FOLDS):
+def run(data, target, numeric, categorical, high_card, task, model, seed=42, n_folds=FOLDS, group=None):
     """Train and score `model` the way Sherlock did: the same folds, baselines and importance."""
     X, y = prepare(data, target, numeric, categorical, high_card)
-    splits = folds(X, y, task, seed, n_folds)
+    splits, grouped = folds(X, y, task, seed, n_folds, group_labels(data, group) if group else None)
     result = evaluate(model, X, y, task, seed, numeric, categorical, high_card, splits)
     base = baselines(X, y, task, seed, numeric, categorical, high_card, splits)
     imp = importance(result["fitted"], X, y, result["metric"], seed)
@@ -182,7 +201,7 @@ def run(data, target, numeric, categorical, high_card, task, model, seed=42, n_f
     for k in ("auc", "mae"):
         if k in result:
             metrics[k] = round(result[k], 6)
-    out = {"metrics": metrics, "baselines": base, "importance": imp, "rows": int(len(X))}
+    out = {"metrics": metrics, "baselines": base, "importance": imp, "rows": int(len(X)), "grouped_by": group if grouped else None}
     if task == "classification":
         out["oof"] = out_of_fold(result["fitted"], X, y, data)
     return out

@@ -343,7 +343,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |
 | Export a notebook from the CLI | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |
 | Smoke the model | `uv run python scripts/smoke_llm.py` (from the repo root: `uv run --project api python scripts/smoke_llm.py`; options `--models a,b`, `--out report.json`, `--no-thinking`) |
-| Seed the sample | `uv run python scripts/seed_sample.py` (from the repo root: `uv run --project api python scripts/seed_sample.py`; writes `api/samples/seed/titanic3/`, D9.1) |
+| Seed the sample | `uv run python scripts/seed_sample.py` (from the repo root: `uv run --project api python scripts/seed_sample.py`; writes `api/samples/seed/titanic3/`, D9.1). `--keep-data` keeps the current seed's cleaned data and runs its analyses and stories again (after a fix to the ML, stories or synthesis code; TRD §4.2) |
 | Deploy | `./scripts/deploy.sh` (build → push → update endpoint) |
 | Check the deployed site | `uv run --project api python scripts/live_check.py [--url …] [--files all]` (D9.2, D9.5: health, the instant sample, isolation, rate limits, a sourced answer, the cascade; `--files all` also uploads the five-file set, exports each notebook and runs it here) |
 | Refresh the example notebook | `uv run --project api python scripts/example_notebook.py` (writes `docs/examples/titanic3-v<N>.ipynb` and its raw file from the cached sample) |

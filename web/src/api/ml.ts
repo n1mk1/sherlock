@@ -47,7 +47,7 @@ export interface ModelCard {
   features_used: string[];
   excluded: Excluded[];
   rows: { total: number; with_target: number; blank_target: number; used: number; train: number };
-  split: { kind: string; folds: number; seed: number };
+  split: { kind: string; folds: number; seed: number; group?: string | null };
   baselines: Baseline[];
   model: { metric: string; value: number; ci: [number, number]; folds: number[]; lift_over_best_baseline: number; auc?: number; mae?: number };
   alternatives: { model: string; label: string; metric: string; value: number }[];

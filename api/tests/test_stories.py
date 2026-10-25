@@ -178,6 +178,24 @@ def test_stories_job_cards_evidence_and_edits(mocked, client):
     assert ev["unverified"] and ev["value"] == "73%"
     assert client.post(f"{API}/cards/{sex['id']}/dismiss-badge").json()["changed_badge"] is False
 
+    # Day 6 review F3: nothing the browser sends is taken on trust. A chip with a real key shows its
+    # fact's value whatever value was sent; a chip with no fact behind it, or a pasted label that isn't
+    # the card's or a column's, can't pass for computed.
+    key = chips[0]["key"]
+    forged = client.patch(f"{API}/cards/{sex['id']}", json={"body": {"blocks": [{"type": "paragraph", "runs": [
+        {"type": "text", "text": "Fares: "}, {"type": "chip", "id": "p1", "key": key, "value": "999.99", "unverified": False},
+        {"type": "text", "text": ", "}, {"type": "chip", "id": "p2", "key": "made_up", "value": "512.33", "unverified": False},
+        {"type": "text", "text": ", "}, {"type": "chip", "id": "p3", "key": None, "value": "42", "unverified": False},
+        {"type": "text", "text": " and "}, {"type": "label", "ref": "value:fare:7.25", "text": "7.25"},
+        {"type": "text", "text": " for "}, {"type": "label", "ref": "column:fare", "text": "fare"}]}]}}).json()
+    runs = forged["body"]["blocks"][0]["runs"]
+    got = {r["id"]: r for r in runs if r["type"] == "chip"}
+    assert got["p1"] == {"type": "chip", "id": "p1", "key": key, "value": sex["facts"][key]["formatted"], "unverified": False}
+    assert got["p2"]["unverified"] and got["p2"]["key"] is None and got["p3"]["unverified"]
+    assert any(r["type"] == "chip" and r["unverified"] and r["value"] == "7.25" for r in runs)  # the pasted label became typed text
+    assert {"type": "label", "ref": "column:fare", "text": "fare"} in runs
+    assert client.get(f"{API}/cards/{sex['id']}/evidence/p2").json()["unverified"]
+
 
 @pytest.mark.usefixtures("run_jobs")
 def test_the_cascade_retells_only_the_cards_that_depend_on_the_change(mocked, client):
@@ -438,6 +456,76 @@ def test_ask_first_marks_the_affected_cards_outdated_without_narrating(mocked, c
         assert after[wid]["status"] == "outdated" and after[wid]["body"] == before[wid]["body"], widgets[wid]["title"]
     assert all(after[wid]["status"] == "ready" for wid in after if wid not in fare and widgets[wid]["spec"]["op"]["type"] == "sql")
     assert len(db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'narrate'", ds)) == narrated
+
+
+def test_the_words_around_a_chip_must_say_what_its_fact_is():
+    """Day 7 review F4: live run cards read "influenced by 1.00", "importance is 0.373 lower than
+    that of unit_price" (0.373 is units' own importance) and "Sex sex is the strongest driver"."""
+    facts = {"driver_1": fx.fact("unit_price", "text", "factor number 1 by permutation importance"),
+             "driver_1_importance": fx.fact(1.0, "num", "relative importance of unit_price (1 is the strongest)"),
+             "driver_2": fx.fact("units", "text", "factor number 2 by permutation importance"),
+             "driver_2_importance": fx.fact(0.373, "num", "relative importance of units (1 is the strongest)"),
+             "model_score": fx.fact(0.804, "pct", "the model's accuracy on held-out rows"),
+             "lift": fx.fact(2.4, "num", "points better than the best simple rule")}
+    cols = ["unit_price", "units", "revenue", "sex"]
+
+    def ok(runs):
+        nr.to_runs(runs, facts, cols)
+
+    ok([ChipRun(chip="driver_1"), TextRun(text=" is the strongest factor ("), ChipRun(chip="driver_1_importance"),
+        TextRun(text="), then "), ChipRun(chip="driver_2"), TextRun(text=" ("), ChipRun(chip="driver_2_importance"), TextRun(text=").")])
+    ok([LabelRun(label="column:units"), TextRun(text=" follows, at "), ChipRun(chip="driver_2_importance"), TextRun(text=".")])
+    ok([TextRun(text="The model beats the simple rule by "), ChipRun(chip="lift"), TextRun(text=" points better than it.")])
+    ok([TextRun(text="It shows units for each sex."), LabelRun(label="column:sex"), TextRun(text=" leads.")])  # a new sentence
+    for bad, error in [
+        ([TextRun(text="Revenue is most strongly linked with "), ChipRun(chip="driver_1_importance"), TextRun(text=".")], "importance of unit_price"),
+        ([LabelRun(label="column:units"), TextRun(text=" matters less: its importance is "), ChipRun(chip="driver_2_importance"),
+          TextRun(text=" lower than that of "), LabelRun(label="column:unit_price"), TextRun(text=".")], "not a difference"),
+        ([TextRun(text="The strongest factors are "), ChipRun(chip="driver_1"), TextRun(text=" and "), ChipRun(chip="driver_2"),
+          TextRun(text=", at "), ChipRun(chip="driver_1_importance"), TextRun(text=".")], "importance of unit_price"),
+        ([TextRun(text="Sex "), LabelRun(label="column:sex"), TextRun(text=" is the strongest.")], "said twice"),
+        ([TextRun(text="Unit_price "), ChipRun(chip="driver_1"), TextRun(text=" comes first.")], "said twice"),
+        ([TextRun(text="Accuracy was "), ChipRun(chip="model_score"), TextRun(text=" higher than the rule.")], "not a difference"),
+    ]:
+        with pytest.raises(ValueError, match=error):
+            ok(bad)
+
+
+def test_a_synthesis_states_only_what_its_cards_say():
+    """Day 8 review F1: a live synthesis joined true chips into a false number ("This shows an average
+    unit price of 21.41") and drew a conclusion no card backs ("all point to Gizmo outperforming
+    Sprocket"). Numbers from two cards are compared only when code can check the comparison."""
+    from sherlock.stories import synthesis
+
+    facts = {"c1.total": fx.fact(1025982.0, "num", "total revenue"), "c2.total": fx.fact(47715, "int", "total units"),
+             "c3.price": fx.fact(21.41, "num", "average unit price"),
+             "c1.rate": fx.fact(0.727, "pct", "rate for the top sex"), "c2.rate": fx.fact(0.382, "pct", "overall survival rate"),
+             "c2.top_value": fx.fact(0.62, "pct", "rate for the top class"), "c2.bottom_value": fx.fact(0.24, "pct", "rate for the bottom class")}
+    cols = ["revenue", "units", "unit_price", "product", "sex"]
+
+    def check(runs):
+        synthesis._check([runs], facts, cols, {"value:product:Gizmo", "value:product:Sprocket"})
+
+    check([TextRun(text="Total revenue was "), ChipRun(chip="c1.total"), TextRun(text=" while total units were "), ChipRun(chip="c2.total"),
+           TextRun(text=".")])
+    check([TextRun(text="The top sex survived at "), ChipRun(chip="c1.rate"), TextRun(text=", higher than the overall "),
+           ChipRun(chip="c2.rate"), TextRun(text=".")])
+    check([TextRun(text="Within classes, survival ran from "), ChipRun(chip="c2.top_value"), TextRun(text=" down to "),
+           ChipRun(chip="c2.bottom_value"), TextRun(text=", lower for the bottom class.")])  # one card's own numbers
+    for bad, error in [
+        ([TextRun(text="Revenue and units are both large. This shows an average unit price of "), ChipRun(chip="c3.price"),
+          TextRun(text=".")], "conclusion"),
+        ([TextRun(text="Returns and prices all point to "), LabelRun(label="value:product:Gizmo"), TextRun(text=" leading "),
+          LabelRun(label="value:product:Sprocket"), TextRun(text=".")], "conclusion"),
+        ([TextRun(text="The overall rate of "), ChipRun(chip="c2.rate"), TextRun(text=" is higher than the top sex's "),
+          ChipRun(chip="c1.rate"), TextRun(text=".")], "wrong or unclear"),
+        ([TextRun(text="Revenue of "), ChipRun(chip="c1.total"), TextRun(text=" is far above the "), ChipRun(chip="c2.rate"),
+          TextRun(text=" survival rate.")], "hasn't compared"),
+        ([TextRun(text="The top sex's "), ChipRun(chip="c1.rate"), TextRun(text=" is higher than "), ChipRun(chip="c2.top_value"),
+          TextRun(text=" and "), ChipRun(chip="c2.bottom_value"), TextRun(text=".")], "hasn't compared"),
+    ]:
+        with pytest.raises(ValueError, match=error):
+            check(bad)
 
 
 def test_a_synthesis_takes_only_the_value_labels_its_cards_use():

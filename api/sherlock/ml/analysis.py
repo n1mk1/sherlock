@@ -51,7 +51,7 @@ def analyze(df: pd.DataFrame, card: dict, rows_sql: str, target: str, *, feature
     if plan.sample:
         data = core.sample(data, plan.target, plan.task, plan.sample["n"], core_seed())
     X, y = core.prepare(data, plan.target, plan.numeric, plan.categorical, plan.high_card)
-    splits = core.folds(X, y, plan.task, core_seed(), n_folds)
+    splits, _ = core.folds(X, y, plan.task, core_seed(), n_folds, core.group_labels(data, plan.group) if plan.group else None)
     check_cancel()
 
     progress(3, 6, "setting baselines")
@@ -134,6 +134,12 @@ def verdict(metric: str, value: float, baselines: list[dict]) -> tuple[str, str]
     return "no_signal", f"No signal: the model does no better than the best simple rule ({unit} compared on held-out rows)."
 
 
+def split(task: str, group: str | None, n_folds: int) -> dict:
+    """The model card's `split`: the fold kind, and the column whose groups stay in one fold."""
+    kind = ("stratified_" if task == "classification" else "") + ("group_kfold" if group else "kfold")
+    return {"kind": kind, "folds": n_folds, "seed": core_seed(), "group": group}
+
+
 def model_card(plan: Plan, model: str, alternatives: list[dict], result: dict, y: pd.Series) -> dict:
     m = result["metrics"]
     best_base = max(b["value"] for b in result["baselines"])
@@ -165,7 +171,7 @@ def model_card(plan: Plan, model: str, alternatives: list[dict], result: dict, y
         "recipe": "driver_analysis", "method": "auto", "chosen_model": model, "task": plan.task, "target": plan.target,
         "features_used": plan.features, "excluded": plan.excluded,
         "rows": {**plan.rows, "train": result["rows"]},
-        "split": {"kind": "stratified_kfold" if plan.task == "classification" else "kfold", "folds": len(m["folds"]), "seed": core_seed()},
+        "split": split(plan.task, result.get("grouped_by"), len(m["folds"])),
         "baselines": baselines, "model": model_block,
         "alternatives": [{"model": a["model"], "label": core.MODEL_LABELS.get(a["model"], a["model"]), "metric": a["metric"],
                           "value": round(a["mean"], 6)} for a in alternatives],

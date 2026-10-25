@@ -385,7 +385,9 @@ class Agent:
 
         if results:
             self.emit("status", {"text": "Writing the answer"})
-            composed, _ = compose(self.llm, scope, question, results, columns, dataset["current_version"], rows_scope.selection_id)
+            known = {c["name"]: [v["value"] for v in c.get("top_values") or []] for c in card["columns"]}
+            composed, _ = compose(self.llm, scope, question, results, columns, dataset["current_version"], rows_scope.selection_id,
+                                  known)
             by_id = {r.id: r for r in results}
             # A model card's numbers have no query to pin: shown as a table, never a pinnable chart.
             composed = [table_block(by_id[b["result"]]) if b["type"] == "chart" and b.get("result") in computed else b

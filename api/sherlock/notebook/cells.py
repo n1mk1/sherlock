@@ -292,7 +292,9 @@ def run(title: str, card: dict, code: str, outdated: bool, metrics_output, basel
     lines = [f"## {title}", "",
              f"What drives **{card['target']}** · {scope_text({'scope': card.get('scope') or {}})} · "
              f"Auto picked {MODEL_LABELS.get(card['chosen_model'], card['chosen_model'])} by {card['split']['folds']}-fold "
-             f"cross-validation (seed {card['split']['seed']}).", "", f"**{card['verdict_text']}**", ""]
+             f"cross-validation (seed {card['split']['seed']})"
+             + (f", keeping rows that share a `{card['split']['group']}` in one fold." if card["split"].get("group") else "."),
+             "", f"**{card['verdict_text']}**", ""]
     if card["excluded"]:
         lines += ["Left out, with the reason:", ""] + [f"- `{e['column']}`: {e['reason']}" for e in card["excluded"]] + [""]
     if outdated:

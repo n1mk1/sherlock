@@ -9,6 +9,7 @@ lists each source card's headline, chips included.
 """
 
 import json
+import re
 import sqlite3
 
 from pydantic import Field
@@ -22,11 +23,20 @@ from sherlock.stories import service as stories
 
 MAX_SOURCES = 8
 MAX_FACTS = 12
+# A synthesis states what its cards say. Live, one joined three true chips into a false number ("This
+# shows an average unit price of 21.41") and another drew a conclusion no card backs ("all point to
+# Gizmo outperforming Sprocket") (Day 8 review F1).
+DERIVE = re.compile(r"\b(?:this|that|which|these|it|they)\s+(?:shows?|means?|implies|imply|gives?|yields?|suggests?|indicates?"
+                    r"|explains?|confirms?|proves?)\b|\bshow(?:s|ed|ing)?\s+that\b|\b(?:therefore|thus|hence|consequently"
+                    r"|as a result|in turn|suggest(?:s|ed|ing)?|indicat(?:es?|ed|ing)|impl(?:y|ies|ied))\b"
+                    r"|\bpoint(?:s|ed|ing)?\s+to\b|\b(?:out|under)perform\w*|\b(?:works?|adds?)\s+(?:out\s+|up\s+)?to\b", re.I)
 
 SYNTHESIS = """Several story cards are selected on a canvas. Write one synthesis card that says what they show together: a one-sentence headline and a body of two to four sentences.
 
 Rules:
-- Connect or compare the cards; don't repeat each one in turn.
+- Say in words what the cards have in common, or where they point the same way or apart; don't repeat each one in turn.
+- Say only what the cards say. Don't work a new number out of the chips (a total, an average, a share, a difference) and don't draw a conclusion from them: never "this shows", "which means", "points to", "therefore", "suggests", "indicates" or "outperforms".
+- A sentence that compares numbers uses numbers from one card, or exactly two numbers of the same kind (two rates, two medians) from two cards, saying which is higher.
 - Every number is a chip: {{"chip": "<card>.<fact key>"}}, using only the keys listed. Text runs never contain digits or numbers in words ("six", "twice").
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
 - Text runs carry the words, including the spaces around chips and labels. A chip or a label is always its own run.
@@ -43,6 +53,7 @@ Rules:
 - Every number is a chip: {{"chip": "<card>.<fact key>"}}, using only the keys listed. Text runs never contain digits or numbers in words.
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
 - A chip or a label is always its own run. Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
+- Say only what the cards say: don't work a new number out of the chips or draw a conclusion from them ("this shows", "points to", "therefore"). Compare numbers from two cards only when they are two numbers of the same kind.
 
 Cards (what each says, then its facts as key · what it is · value):
 {cards}
@@ -142,6 +153,8 @@ def _check(runs_list: list[list], facts: dict, columns: list[str], values: set[s
             raise ValueError(f"a number in words ({nr.number_in_words(text)!r}); use a fact chip")
         if nr.CAUSAL.search(text):
             raise ValueError(f"causal wording ({nr.CAUSAL.search(text).group(0)!r}); describe an association instead")
+        if DERIVE.search(text):
+            raise ValueError(f"a conclusion the cards don't state ({DERIVE.search(text).group(0)!r}); say what each card shows instead")
 
 
 def fallback(db, cards: list[tuple[sqlite3.Row, dict]]) -> tuple[dict, dict]:

@@ -21,8 +21,9 @@ export interface paths {
         head?: never;
         /**
          * Edit Card
-         * @description The user's own text. Numbers typed by hand become unverified chips; the card is never
-         *     narrated over again, only offered suggestions (PRD STORY-7).
+         * @description The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's
+         *     value from the sheet (one whose fact isn't there is unverified), and the card is never narrated
+         *     over again, only offered suggestions (PRD STORY-7).
          */
         patch: operations["edit_card_api_v1_cards__cid__patch"];
         trace?: never;
