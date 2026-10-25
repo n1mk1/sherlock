@@ -1446,7 +1446,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
 | `LOG_LEVEL` | `info` | |
 
-Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all.
+Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host since 2026-10-24, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` `sync: false`, so it's entered in the dashboard and never stored in the repo.
 
 ---
 
