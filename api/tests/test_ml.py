@@ -150,6 +150,8 @@ def test_recipes_preview_run_results_code_and_cache(client):
     assert recipes["predict"]["compatible"] is False and recipes["predict"]["reason"]
     few = client.get(f"{API}/recipes", params={"dataset_id": ds, "scope": '{"rows": {"predicate": "strong > 2"}}'}).json()
     assert few[0]["compatible"] is False and "needs 100 rows" in few[0]["reason"]
+    bad = client.get(f"{API}/recipes", params={"dataset_id": ds, "scope": "{not json"})
+    assert bad.status_code == 422 and "not valid JSON" in bad.json()["error"]["message"]
 
     pre = client.post(f"{API}/datasets/{ds}/runs/preview", json={"recipe": "driver_analysis"}).json()
     assert pre["target"] == "outcome" and pre["task"] == "classification" and pre["metric"] == "accuracy"

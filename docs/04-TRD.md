@@ -651,6 +651,7 @@ Canvas API as implemented (2026-10-25, Implementation Plan D8.1, `sherlock/canva
 As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/routers/runs.py`, `sherlock/ml/runner.py`):
 - **Recipes and methods.** Only `driver_analysis` with `method: "auto"` runs. Any other method is `422` ("Only Auto is available in this release"). A disabled recipe is `422` with its reason.
 - **`GET /recipes?dataset_id&scope`.** It returns every manifest (§6.5) with `compatible` and `reason`. Rows are counted in the scope (quarantine excluded). `driver_analysis` also carries `targets`: the columns it can explain, the DataCard's target candidates first.
+  - (Day 7 review, 2026-10-25) `scope` is the `Scope` as JSON; text that isn't valid JSON is `422` ("scope: not valid JSON"), as an invalid scope is.
 - **`RunRequest` additions:**
   - `filters` (optional): the dashboard's filter clauses. They are folded into `scope.rows.predicate`, and a run always has `inherit_global_filters: false`. Its rows are fixed by its scope and are part of the cache key.
   - `scope.columns.target`: filled in with the best guess when it's missing.
