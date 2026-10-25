@@ -1426,6 +1426,7 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
   - empty columns, IDs, free text and dates (dates aren't features yet);
   - the DataCard's `leakage_candidates` for this target;
   - names containing the target's name;
+    - (Day 7 review, 2026-10-25) anywhere when the target's name has four or more letters and digits ("survived" in `survivedcount`), as whole words when it is shorter, split at punctuation and camelCase. So a target `y` leaves out `y_hat` but keeps `day` and `salary`, and `age` leaves out `age_group` but keeps `page_views`;
   - numbers with |correlation| above 0.98;
   - a category that settles a categorical outcome by itself: at least 98% of the rows of each of its values share one outcome while the outcome alone is under 95% predictable. This purity check stands in for "mutual information near max".
 - **Step 4.** `StratifiedKFold` (classification) or `KFold` (regression), 5 folds by default, seed 42. The `TimeSeriesSplit` and `GroupKFold` choices are not built.

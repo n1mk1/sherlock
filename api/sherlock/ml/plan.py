@@ -74,7 +74,6 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
     metric = "r2" if task == "regression" else ("accuracy" if len(classes) == 2 else "macro_f1")
 
     leak = {lc["column"]: lc["reason"] for lc in card.get("leakage_candidates") or [] if lc.get("target") in (None, target)}
-    stem = re.sub(r"[^a-z0-9]", "", target.lower())
     excluded, features, kept_anyway = [], [], []
     forced = set(forced or [])
     yn = pd.to_numeric(y, errors="coerce") if task == "regression" or (classes and all(isinstance(c, (int, float, bool, np.bool_)) for c in classes)) else None
@@ -92,7 +91,7 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
             reason = "a date (dates aren't used as features yet)"
         elif name in leak:
             reason = f"records the outcome (leakage): {leak[name]}"
-        elif stem and stem in re.sub(r"[^a-z0-9]", "", name.lower()):
+        elif names_target(name, target):
             reason = f"derived from {target} (its name contains it)"
         elif task == "classification" and c["type"] not in ("int", "float") and _pure(df[name], y):
             reason = f"each of its values goes with one {target} value (leakage)"
@@ -121,6 +120,22 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
         if with_target > SAMPLE_ROWS else None
     return Plan(target, task, metric, rows_sql, features, numeric, categorical, high, excluded, rows, sample, classes,
                 kept_anyway)
+
+
+def _words(name: str) -> list[str]:
+    """A column name's words: split at anything not a letter or digit, and at camelCase."""
+    return [w for w in re.split(r"[^a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name).lower()) if w]
+
+
+def names_target(name: str, target: str) -> bool:
+    """A column whose name contains the target's: anywhere for a target name of four or more letters
+    and digits ("survived" in "survivedcount"), as whole words for a shorter one, so "age" matches
+    "age_group" but not "page_views", and "y" matches "y_hat" but not "day"."""
+    stem = re.sub(r"[^a-z0-9]", "", target.lower())
+    if len(stem) >= 4:
+        return stem in re.sub(r"[^a-z0-9]", "", name.lower())
+    words, tw = _words(name), _words(target)
+    return bool(tw) and any(words[i:i + len(tw)] == tw for i in range(len(words)))
 
 
 def _pure(x: pd.Series, y: pd.Series) -> bool:

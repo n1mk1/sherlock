@@ -5,6 +5,7 @@ cascade."""
 
 import time
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -57,6 +58,24 @@ def test_minimum_rows_are_enforced():
     with pytest.raises(ApiError) as err:
         make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
     assert err.value.status == 422 and "at least 100 rows" in err.value.message and "99" in err.value.message
+
+
+def test_a_short_target_name_leaves_out_only_columns_named_after_it():
+    rng = np.random.default_rng(3)
+    n = 200
+    df = pd.DataFrame({"day": rng.integers(1, 29, n), "salary": rng.normal(50, 10, n).round(1),
+                       "y_hat": rng.normal(0, 1, n).round(3), "y": rng.choice(["yes", "no"], n)})
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "y"), ALL, "y")
+    assert set(plan.features) == {"day", "salary"}, plan.excluded
+    assert [e["column"] for e in plan.excluded] == ["y_hat"]
+    df = pd.DataFrame({"page_views": rng.integers(1, 500, n), "age_group": rng.choice(["young", "old"], n),
+                       "age": rng.normal(40, 12, n).round(1)})
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "age"), ALL, "age")
+    assert plan.features == ["page_views"] and [e["column"] for e in plan.excluded] == ["age_group"]
+    df = planted.drivers()
+    df["outcome_score"] = df["strong"]
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
+    assert "outcome_score" in {e["column"] for e in plan.excluded}  # a long name still matches anywhere
 
 
 def test_a_forced_column_is_used_with_a_warning_and_turned_off_columns_are_listed():
