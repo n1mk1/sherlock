@@ -121,3 +121,15 @@ def test_the_shipped_seed_clones_and_works(client, app, monkeypatch):
     assert len(canvas["nodes"]) >= 3 and canvas["edges"]
     assert client.get(f"{API}/datasets/{ds['id']}/rows?limit=3").json()["total"] == 1309
     assert client.get(f"{API}/datasets/{ds['id']}/report").status_code == 200
+
+    # Every ID in the seed is new in the clone, in every table and JSON (canvas node and edge IDs too),
+    # and the public seed doesn't name the machine that built it.
+    from sherlock.sample_seed import TABLES
+
+    seed = json.loads((DEFAULT_SEED / "rows.json").read_text(encoding="utf-8"))["rows"]
+    seed_ids = {m.group(0) for m in ID.finditer(json.dumps(seed))}
+    clone = json.dumps([dict(r) for t in TABLES for r in db_rows(
+        f"SELECT * FROM {t} WHERE {'id' if t == 'datasets' else 'dataset_id'} = ?", ds["id"])])  # noqa: S608
+    assert not seed_ids & {m.group(0) for m in ID.finditer(clone)}
+    assert {n["id"] for n in canvas["nodes"]}.isdisjoint(seed_ids)
+    assert all(j["owner_pid"] is None for j in seed["jobs"])

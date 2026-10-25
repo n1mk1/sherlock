@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { EMPTY_THREAD_HINT } from "./ChatBar";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineBanner } from "./OfflineBanner";
 
@@ -26,5 +27,11 @@ describe("quality of life (D8.3)", () => {
     expect(screen.queryByRole("status")).toBeNull();
     fireEvent(window, new Event("offline"));
     expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+});
+
+describe("the empty chat thread's hint (Day 9 review)", () => {
+  it("names no sample column, so it fits any file (CLAUDE.md rule 4)", () => {
+    expect(EMPTY_THREAD_HINT).not.toMatch(/fare|class|port|surviv|passenger|titanic/i);
   });
 });

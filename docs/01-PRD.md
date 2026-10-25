@@ -413,7 +413,7 @@ Sources: [official_page.md](official_page.md) (the Devpost rules, which control)
 | Category | Best Apps and Agents | — |
 | Project description | Problem, audience, solution, technical architecture, demonstrated result, differentiation, limitations, future work | §3.1, §3.2, TRD §1, README benchmark and user-test tables, Implementation Plan §7 |
 | Working demo URL | Public, no login, "Try with sample" works from a fresh browser; live through judging (§9) | P0-11 |
-| Demo video | Public YouTube, ≤ 3:00, shows the working product and how the NVIDIA models and Nebius are used | Implementation Plan §9 |
+| Demo video | Public YouTube, ≤ 3:00, shows the working product and how the NVIDIA models and Nebius are used. The live rules say "less than three (3) minutes" (checked 2026-10-25), so under 3:00 | Implementation Plan §9 |
 | Public repository | GitHub, readable without a login | `github.com/n1mk1/sherlock` |
 | Open-source license | MIT, `LICENSE` at the repo root so it shows at the top of the repo page | `LICENSE` |
 | README | Setup and run commands, the NVIDIA models and what each does, Nebius Token Factory and the other Nebius services used | `README.md` (Implementation Plan §7) |

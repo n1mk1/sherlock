@@ -46,6 +46,8 @@ def snapshot(settings: Settings, db: sqlite3.Connection, dataset_id: str, out: P
         where = "id = ?" if table == "datasets" else "dataset_id = ?"
         order = "ORDER BY id" if table == "job_events" else ""
         rows[table] = [dict(r) for r in db.execute(f"SELECT * FROM {table} WHERE {where} {order}", (dataset_id,))]  # noqa: S608
+    for job in rows["jobs"]:
+        job["owner_pid"] = None  # "<hostname>:<pid>:…" of the machine that built the seed; the seed is public
     if out.exists():
         shutil.rmtree(out)
     files = out / "files"
@@ -58,13 +60,16 @@ def snapshot(settings: Settings, db: sqlite3.Connection, dataset_id: str, out: P
 
 
 def _remapper(seed: dict, user_id: str):
-    """old ID → new ID for every ID the seed's rows own; the seed's user becomes this user."""
+    """old ID → new ID for every ID in the seed's rows, in any column or JSON (canvas node and edge IDs
+    live only in the canvas JSON); the seed's user becomes this user."""
     mapping = {seed["meta"]["user_id"]: user_id}
     for table, rows in seed["rows"].items():
         for r in rows:
-            for col, v in r.items():
-                if isinstance(v, str) and (col == "id" or col.endswith("_id")) and ID.fullmatch(v) and v not in mapping:
-                    mapping[v] = new_id(ID.fullmatch(v).group(1))
+            for v in r.values():
+                if isinstance(v, str):
+                    for m in ID.finditer(v):
+                        if m.group(0) not in mapping:
+                            mapping[m.group(0)] = new_id(m.group(1))
 
     def remap(value):
         return ID.sub(lambda m: mapping.get(m.group(0), m.group(0)), value) if isinstance(value, str) else value

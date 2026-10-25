@@ -273,7 +273,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 ### Day 10 · Oct 29: submit
 
-1. Record the video from the demo script in §9 (screen recording of the live site; voice-over; captions for each hero moment). Upload to YouTube (public). Keep it ≤ 3:00.
+1. Record the video from the demo script in §9 (screen recording of the live site; voice-over; captions for each hero moment). Upload to YouTube (public). Keep it ≤ 3:00. The live rules say the video "should be less than three (3) minutes" and judges needn't watch past 3:00, so aim for 2:55 at most (checked 2026-10-25, Day 9 review; the live rules win).
 2. Write the Devpost description with the sections in §7.
 3. Finalize `FEEDBACK.md` into the feedback field, in the structure in §7.
 4. Submit. Verify the submission page shows the repo, URL, video and track.
@@ -400,7 +400,7 @@ As generated (2026-10-24, D3.5): `sales_dated.csv` (5,000 rows × 8), `wide_mess
 
 What each artifact must contain is set by PRD §12 (the official rules and the judges' rubric).
 
-- Repo: `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), `docs/USER-TESTS.md`, architecture diagram (`docs/architecture.png`), screenshots, `docs/examples/titanic3-v7.ipynb` (the sample's exported notebook, viewable on GitHub). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). Owner: As Wasti. LICENSE on Day 0, README and THIRD_PARTY.md on Day 9, FEEDBACK.md kept from Day 1 and finalized on Day 10.
+- Repo: `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), `docs/USER-TESTS.md`, architecture diagram (`docs/architecture.png`), screenshots, `docs/examples/titanic3-v7.ipynb` (the sample's exported notebook, viewable on GitHub; as built it is `docs/examples/titanic3-v4.ipynb`, because the cached sample is v4, D9.2). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). Owner: As Wasti. LICENSE on Day 0, README and THIRD_PARTY.md on Day 9, FEEDBACK.md kept from Day 1 and finalized on Day 10.
 - README sections, in order: what Sherlock is in two sentences and the hosted URL · a screenshot · try it (sample, then your own CSV) · **NVIDIA models and Nebius** (a table per role: model ID, what it does, median latency, tokens and cost per sample run; the Nebius services the deployed app actually uses; the request/data-flow diagram) · how trust works (sources, chips, verifiers, quarantine) · results (cleaning benchmark, ML planted-truth tests, grounding test, ask-anything eval, user test and baseline comparison) · **known limitations** (failed eval questions, cleaning cases the benchmark misses, files that fail, anonymous identity with no recovery, 7-day expiry, anything not shipped from P0) · accessibility · local setup and run (`.env.example`, a Token Factory key, `docker compose up`) · deploy · tests and evals · license and third-party notices.
 - `docs/USER-TESTS.md`: for each tester (at least 3, none who has seen Sherlock before): who they are, the CSV, the task, time to first sourced answer, where they hesitated, what they said, what was changed because of it; plus the baseline comparison (the same 3 questions on the same file by hand versus with Sherlock: time, steps, and how many answers could be traced to their source).
 - Public URL on Render (or the Nebius alternative), live through the judging period and winner announcement (PRD §9, TRD §11). Owner: As Wasti. First deploy on Day 1, final on Day 9.
@@ -418,6 +418,8 @@ Each day: pull → run tests → work the "must" list top-down → commit per sl
 ---
 
 ## 9. Demo script (video, ≤ 3:00)
+
+The live rules ask for *less than* three minutes (Day 10 item 1), so the timings below are compressed to end by 2:55.
 
 The hero moments the PRD's video metric refers to, in recording order. Every moment that uses a model carries a small on-screen caption naming the NVIDIA model and the Nebius service behind it (for example "Nemotron 3 Ultra on Nebius Token Factory plans each fix"), so the integration is shown throughout and not only at the end.
 

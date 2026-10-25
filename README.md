@@ -53,7 +53,7 @@ flowchart LR
 - **Cleaning is code you can read, and it never deletes.** Each fix is pandas the sandbox ran, checked by hard verifiers (no row loss, types kept, the blast radius limited) and gated by confidence and Super's critique. Rows it can't fix are quarantined with a reason, never dropped. Missing values stay missing unless a rule over related columns recovers them.
 - **Every change is a step.** Cleaning, your edits and approved chat proposals each make a new version with Undo, so nothing changes in place. Data changes asked in chat arrive as proposals to approve or reject.
 - **Honest models.** "What drives this?" compares against a majority baseline and the best one-column rule, excludes leaking and ID columns with the reason, and says "no signal" when there is none. Its metrics come from executing its own `repro.py`.
-- **The notebook is the proof.** It rebuilds the current version from the raw file, step by step, and asserts it matches.
+- **The notebook is the proof.** It rebuilds the current version from the raw file, step by step, and asserts it matches (row count, columns and types; `tests/test_notebook.py` and the notebook eval also compare every value).
 
 ## Results
 
@@ -84,7 +84,7 @@ flowchart LR
 - Every control is a real button, link or input; icon buttons are labelled. The chat bar has a `/` shortcut, Escape closes the thread, and dialogs and drawers close with Escape.
 - Story cards' palette rows on Flow can be placed with Enter, and canvas nodes are reachable and deletable from the keyboard.
 - Charts have a table view, and each custom chart has a text summary as its label.
-- Light and dark themes with tuned contrast for text and chart marks; a Reduce motion setting.
+- Light and dark themes with tuned contrast for text and chart marks; a Reduce motion setting, which follows the operating system's (the in-app switch is among the settings cut 1 left out, so the settings dialog has four).
 - Known gaps: click-to-filter on charts is mouse-only, the slide-over panels on narrow screens don't trap focus, and some chart animations ignore reduced motion.
 
 ## Local setup and run

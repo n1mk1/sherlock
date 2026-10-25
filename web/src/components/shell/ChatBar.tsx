@@ -19,6 +19,11 @@ import { useFilters, useGlobalFilter } from "@/state/filters";
 import { useFlow } from "@/state/flow";
 import { useUi } from "@/state/ui";
 
+// The empty thread's hint names no column, so it reads right on any file (CLAUDE.md rule 4).
+export const EMPTY_THREAD_HINT =
+  "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), " +
+  "or ask for a widget (“add a chart of … by … to the dashboard”).";
+
 export function ChatBar({ placeholder, className, dataset, tab }: {
   placeholder: string; className?: string; dataset?: Dataset; tab?: Tab;
 }) {
@@ -247,9 +252,7 @@ function Thread({ dataset, messages, pending, onClose, onChoice }: {
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {messages.length === 0 && !pending && (
-          <p className="text-[13px] text-muted-foreground">
-            Ask about the data (“average fare by class”), find rows, or ask for a widget (“add a chart of fare by port to the dashboard”).
-          </p>
+          <p className="text-[13px] text-muted-foreground">{EMPTY_THREAD_HINT}</p>
         )}
         {messages.map((m) => (
           <MessageView key={m.id} message={m} dataset={dataset} onChoice={m.id === lastId ? onChoice : undefined} />
