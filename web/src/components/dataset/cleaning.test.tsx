@@ -27,6 +27,18 @@ describe("cleaning screens", () => {
     expect(mmss(83)).toBe("01:23");
   });
 
+  it("merges a running line with its outcome across a wait for the model", () => {
+    const base = { job_id: "j", ts: "2026-10-24T00:00:00Z", level: "info" };
+    const entries: JobLogEntry[] = [
+      { ...base, icon: "running", text: "263 missing values", column: "age", issue_id: "i1", detail: "checking candidates" },
+      { ...base, icon: "wait", text: "Waiting for the model…", level: "warn" },
+      { ...base, icon: "check", text: "Fills ages by title", column: "age", issue_id: "i1", gate: "commit", detail: "committed · step 2" },
+    ];
+    const out = collapse(entries);
+    expect(out.map((e) => e.icon)).toEqual(["check", "wait"]);
+    expect(out[0]).toMatchObject({ text: "263 missing values", outcome: "Fills ages by title" });
+  });
+
   it("starts cleaning and can remember the choice", async () => {
     const calls = mockApi({
       "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
