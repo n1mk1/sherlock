@@ -112,7 +112,7 @@ Contents:
 - The one-line summary: top 3 issues by impact ("263 missing ages · 1,014 missing cabins · 2 columns look like they record the outcome").
 - An expandable "All 7 issues" list: each with column, issue type, count, and what Sherlock would do.
 - Three buttons: **Clean it for me** (primary), **Use as is**, and (P1) **Go step by step**.
-- A checkbox: "Remember my choice" (writes the "After upload" setting).
+- A checkbox: "Remember my choice" (writes the "After upload" setting). As built (2026-10-24): checked, "Clean it for me" saves `after_upload: always` and "Use as is" saves `never`. Go step by step is shown disabled (P1). The profile job follows the setting: `always` queues the clean (the status goes straight to `cleaning`), `never` queues the build. The "Cleaning automatically (change in Settings)" toast isn't shown yet.
 
 Transitions:
 - **Clean it for me** → §5 Headless cleaning.
@@ -144,7 +144,13 @@ If the setting is "Always clean", the offer is skipped and cleaning starts; a to
 **End of run.**
 - The centre shows the **report** for 3 seconds (counts and the first three steps) with "View full report", then transitions automatically to the dashboard build. The full report lives in the CSV tab's Changes panel.
 - On failure (server error, budget exceeded with zero steps): the centre shows the error and two buttons: **Build dashboard without cleaning** (uses the typed version) and **Try cleaning again**. As built (2026-10-24), the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>", and the offer screen shows that line above its buttons, so "Use as is" and "Clean it for me" are those two buttons.
-- **Stop** (as built): the job is cancelled at its next check between candidates or issues, committed steps stay, the report covers what ran (`ended_by: stopped`), and the dashboard build starts.
+- **Stop** (as built): the job is cancelled at once (a sandbox worker that's running is killed), committed steps stay, the report covers what ran (`ended_by: stopped`), and the dashboard build starts.
+- **As built (2026-10-24, D3.6).**
+  - The log is the dataset's event stream replayed from the start, keeping this job's `job.log` lines. An issue's "running" line ("263 missing values", "checking candidates") is replaced by its outcome when it arrives: the effect or the skip reason, the candidate chips with the chosen one filled, and the gate line in the gate's color.
+  - "So far" and the budget line read the run's report, refreshed on every log line.
+  - "Checks on the latest step" lists the hard verifiers of the last committed step.
+  - During `building`, the centre shows "Building your dashboard…" above the report summary: counts, the first three steps, and "View full report", a dialog with every step, skipped issue, hand-edited cell and decision.
+  - Until the dashboard builder lands (D4.2), the ready Dashboard tab shows the same summary as "Last cleaning report".
 
 ---
 

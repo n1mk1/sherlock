@@ -1,0 +1,9 @@
+[
+  {"purpose": "diagnose",
+   "content": {"cause": "Typed by hand.", "approach_options": ["Normalize", "Leave"], "preferred_option": 0, "risk": "low", "leave_as_is": false}},
+  {"purpose": "propose",
+   "content": {"candidates": [
+     {"label": "Busy loop", "code": "x = 0\nfor i in range(10 ** 10):\n    x += 1\nresult = df.copy()\n", "expected_effect": "Takes a long time."}
+   ]}},
+  {"purpose": "critic", "content": {"changed_something_it_shouldnt": false, "concerns": []}}
+]

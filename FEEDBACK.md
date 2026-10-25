@@ -29,6 +29,39 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 - **`MODEL_EMBED` is empty:** the catalog has no NVIDIA embedding model.
 - **Story schema:** it moves to a union of one-key run objects so strict decoding itself enforces one kind per run (TRD §3.5). That fixed Super's thinking-off failure. A rerun with the union, thinking on, passed Story on all three roles (Ultra 4.0 s, Super 7.3 s, Nano 10.5 s).
 
+## The Cleaner on Nemotron (2026-10-24, Implementation Plan D3)
+
+**What we used it for:** the headless Cleaner. Per issue, Ultra (`large`) diagnoses it and writes up to three pandas candidates against our helper library, every candidate runs in the sandbox and is scored by code verifiers, and Super (`medium`) critiques the best one before the gate. All three calls use strict `response_format` JSON schemas with reasoning on.
+
+**First live runs on the Titanic sample:**
+
+| Run | Where | Time | Calls (diagnose · propose · critic) | Tokens (prompt + completion) | Median latency |
+|---|---|---|---|---|---|
+| 1 | local (Windows) | 130 s | 10 · 7 · 6 | 21.1k + 29.8k ≈ 51k | diagnose 3.3 s · propose 6.9 s · critic 3.1 s |
+| 2 | Render (Linux, sandbox user) | 119 s | similar | similar | similar |
+
+- **What worked:**
+  - Every reply validated against its schema on the first try; no repair call was needed.
+  - Ultra's code ran in our restricted sandbox: it used the helpers (`fill_by_group`, `normalize_whitespace_case`, `quarantine_rows`) instead of importing anything.
+  - Ultra left legitimate values alone when asked to judge: "The age 80 belongs to the oldest passenger … not an error."
+- **Problems:**
+  - Run 1 imputed the missing `body` numbers, a column our leakage detector had flagged, because only the leakage issue itself was excluded from fixing. That was our bug (a missing-values issue on the same column got through), now fixed. The model did what the issue asked.
+  - The same input gave different gates between runs. In run 2, Super raised concerns on three "fill with 'Unknown'" steps that it had passed in run 1, so they committed with a flag instead of outright. With reasoning on, temperature 0 isn't deterministic for us.
+  - One candidate called `df.insert` on a column that already existed and failed in the sandbox; the other candidates covered it.
+- **Suggestion:** a `seed` parameter honoured end to end (with reasoning on) on Token Factory would make agent pipelines like this reproducible for tests and for judges re-running a demo. It would help anyone building evaluation harnesses on Nemotron.
+
+**Corruption benchmark** (`uv run sherlock eval corruption`, 2026-10-24): the clean sets are damaged in known ways and the Cleaner runs on each with the real models.
+
+| Set | Rows | Damaged cells | Recovered | Harm | Row loss | Quarantined | Steps | Time |
+|---|---|---|---|---|---|---|---|---|
+| titanic_clean | 1,043 | 509 | 92.1% | 0.00% | 0.0% | 81 | 5 | 81 s |
+| sales | 1,500 | 765 | 97.3% | 0.00% | 0.0% | 45 | 5 | 87 s |
+| hr | 800 | 269 | 94.1% | 0.00% | 0.0% | 5 | 5 | 80 s |
+
+- **What it recovered fully:** money formatting (`$1,234.5` → numbers), case and spacing variants, mojibake (`ZÃ¼rich` → `Zürich`) and day-first dates. Typos in categories were 42 of 45.
+- **Weak spot:** placeholder values (`N/A`, `-999`, `?`) in numeric columns. Only 28 of 102 became missing; the rest were quarantined as parse failures, or `-999` stayed a number. The quarantined rows keep their text and are excluded from analysis, so nothing is silently wrong, but the cleaning is incomplete. This is our pipeline's order (the issue is diagnosed after the typing step), not a model fault.
+- **Harm 0%** after we fixed two bugs in our own scorer: yes/no columns typed as booleans counted as changed, and money damage rounded fares to cents. The first two runs reported 11–13% harm, all of it the scorer.
+
 ## Token Factory
 
 **What we used it for:**

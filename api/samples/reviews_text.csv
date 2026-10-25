@@ -1,0 +1,601 @@
+review_id,product,rating,review,verified,posted
+R10000,Sprocket,4,"Excellent value, battery died after a week, packaging was damaged.",true,2024-05-25
+R10001,Widget,5,"Packaging was damaged, arrived late, excellent value.",false,2024-03-20
+R10002,Sprocket,2,"The support team was helpful, battery died after a week, would not buy again, five stars, no complaints.",true,2024-01-31
+R10003,Gadget,1,"Arrived late, packaging was damaged, would not buy again, too small for me.",true,2024-07-03
+R10004,Widget,5,"Battery died after a week, too small for me, arrived late.",true,2024-03-14
+R10005,Doohickey,5,"Arrived late, would not buy again.",true,2024-01-14
+R10006,Gizmo,5,"Battery died after a week, packaging was damaged, arrived late, five stars, no complaints.",true,2024-02-24
+R10007,Gizmo,5,"Packaging was damaged, arrived late.",false,2024-04-27
+R10008,Gizmo,1,"Battery died after a week, works great.",true,2024-07-24
+R10009,Gizmo,4,"Would not buy again, too small for me, arrived late, exactly as described.",false,2024-03-31
+R10010,Gadget,2,"Arrived late, works great.",false,2024-02-13
+R10011,Gizmo,5,"Packaging was damaged, works great, excellent value, too small for me.",false,2024-08-23
+R10012,Doohickey,5,"Packaging was damaged, exactly as described, works great, the support team was helpful.",true,2024-04-18
+R10013,Doohickey,5,"Would not buy again, packaging was damaged.",true,2024-07-13
+R10014,Sprocket,4,"Exactly as described, works great, excellent value.",true,2024-04-19
+R10015,Gadget,1,"Battery died after a week, exactly as described.",true,2024-05-01
+R10016,Widget,5,"Five stars, no complaints, battery died after a week, exactly as described, too small for me.",true,2024-07-15
+R10017,Gizmo,5,"Works great, exactly as described, excellent value, would not buy again.",false,2024-07-01
+R10018,Gadget,3,"Arrived late, battery died after a week, too small for me.",true,2024-09-22
+R10019,Widget,5,"Packaging was damaged, works great.",true,2024-06-29
+R10020,Doohickey,2,"Packaging was damaged, would not buy again, too small for me, works great.",false,2024-04-28
+R10021,Doohickey,4,"Would not buy again, packaging was damaged.",false,2024-09-08
+R10022,Gizmo,5,"Works great, too small for me.",true,2024-08-13
+R10023,Widget,2,"Battery died after a week, exactly as described, would not buy again.",true,2024-09-10
+R10024,Gadget,4,"Packaging was damaged, arrived late, too small for me, five stars, no complaints.",false,2024-09-12
+R10025,Widget,3,"Five stars, no complaints, battery died after a week, packaging was damaged.",true,2024-03-25
+R10026,Sprocket,4,"Too small for me, packaging was damaged, battery died after a week, arrived late.",true,2024-07-11
+R10027,Sprocket,1,"Would not buy again, arrived late.",true,2024-05-06
+R10028,Sprocket,4,"Battery died after a week, arrived late, the support team was helpful, would not buy again.",true,2024-04-04
+R10029,Widget,4,"Five stars, no complaints, too small for me.",true,2024-07-08
+R10030,Widget,2,"Exactly as described, works great, five stars, no complaints.",true,2024-06-07
+R10031,Gizmo,1,"Packaging was damaged, works great, the support team was helpful.",true,2024-07-09
+R10032,Doohickey,5,"Works great, five stars, no complaints.",false,2024-06-28
+R10033,Widget,2,"Battery died after a week, would not buy again, five stars, no complaints.",true,2024-01-08
+R10034,Gadget,3,"The support team was helpful, five stars, no complaints, arrived late.",true,2024-08-04
+R10035,Doohickey,4,"Works great, arrived late, battery died after a week, the support team was helpful.",true,2024-05-20
+R10036,Gizmo,3,"Exactly as described, too small for me.",false,2024-05-09
+R10037,Gadget,5,"Five stars, no complaints, too small for me, would not buy again, exactly as described.",true,2024-01-14
+R10038,Doohickey,4,"Too small for me, arrived late, excellent value.",false,2024-05-25
+R10039,Widget,3,"Would not buy again, five stars, no complaints, works great.",false,2024-10-20
+R10040,Sprocket,3,"Packaging was damaged, too small for me.",true,2024-01-07
+R10041,Gizmo,3,"Excellent value, the support team was helpful, packaging was damaged, would not buy again.",false,2024-04-23
+R10042,Sprocket,1,"Arrived late, would not buy again.",false,2024-01-11
+R10043,Sprocket,2,"Packaging was damaged, works great, exactly as described.",true,2024-03-02
+R10044,Widget,5,"Exactly as described, works great, too small for me.",true,2024-10-17
+R10045,Widget,3,"Packaging was damaged, five stars, no complaints, would not buy again.",true,2024-02-14
+R10046,Gadget,4,"Packaging was damaged, five stars, no complaints, the support team was helpful, excellent value.",false,2024-10-27
+R10047,Gadget,1,"Too small for me, battery died after a week, would not buy again, works great.",true,2024-05-18
+R10048,Gadget,4,"Exactly as described, five stars, no complaints, works great.",true,2024-04-24
+R10049,Doohickey,2,"Works great, five stars, no complaints.",false,2024-05-06
+R10050,Gadget,4,"Battery died after a week, would not buy again.",true,2024-06-28
+R10051,Widget,5,"Exactly as described, works great.",true,2024-10-11
+R10052,Widget,5,"The support team was helpful, battery died after a week.",true,2024-05-23
+R10053,Doohickey,3,"Works great, battery died after a week.",true,2024-03-23
+R10054,Gadget,5,"Battery died after a week, exactly as described.",true,2024-04-18
+R10055,Doohickey,3,"Excellent value, would not buy again, works great.",true,2024-07-31
+R10056,Gizmo,4,"Exactly as described, five stars, no complaints, the support team was helpful.",true,2024-06-04
+R10057,Gadget,2,"Arrived late, exactly as described.",false,2024-08-09
+R10058,Gadget,4,"Battery died after a week, exactly as described, the support team was helpful.",true,2024-06-26
+R10059,Doohickey,1,"Too small for me, would not buy again.",false,2024-05-02
+R10060,Sprocket,3,"Arrived late, too small for me.",true,2024-08-24
+R10061,Sprocket,5,"Five stars, no complaints, packaging was damaged, works great, would not buy again.",false,2024-04-27
+R10062,Gadget,5,"Five stars, no complaints, packaging was damaged.",false,2024-03-07
+R10063,Sprocket,5,"Arrived late, exactly as described.",true,2024-04-09
+R10064,Gizmo,4,"Packaging was damaged, excellent value, five stars, no complaints.",false,2024-05-21
+R10065,Gadget,4,"Packaging was damaged, would not buy again.",false,2024-04-04
+R10066,Doohickey,4,"Five stars, no complaints, battery died after a week, arrived late, packaging was damaged.",true,2024-07-24
+R10067,Sprocket,5,"Exactly as described, arrived late.",true,2024-08-28
+R10068,Gadget,4,"Would not buy again, battery died after a week, exactly as described.",false,2024-08-08
+R10069,Sprocket,4,"Excellent value, exactly as described.",true,2024-02-16
+R10070,Widget,2,"Would not buy again, arrived late.",true,2024-07-01
+R10071,Doohickey,4,"Five stars, no complaints, too small for me, arrived late, would not buy again.",false,2024-06-21
+R10072,Widget,4,"The support team was helpful, five stars, no complaints, excellent value.",true,2024-04-14
+R10073,Gizmo,1,"Packaging was damaged, too small for me.",true,2024-02-13
+R10074,Gizmo,5,"Battery died after a week, arrived late, five stars, no complaints.",true,2024-07-21
+R10075,Gadget,1,"Works great, five stars, no complaints, battery died after a week, excellent value.",true,2024-04-16
+R10076,Gadget,5,"Works great, packaging was damaged.",true,2024-01-25
+R10077,Sprocket,4,"Battery died after a week, arrived late.",true,2024-03-02
+R10078,Doohickey,4,"Works great, too small for me, would not buy again.",true,2024-04-05
+R10079,Gizmo,3,"Exactly as described, works great, five stars, no complaints.",false,2024-04-30
+R10080,Gizmo,3,"Arrived late, works great, five stars, no complaints.",false,2024-09-17
+R10081,Widget,5,"The support team was helpful, excellent value, would not buy again.",true,2024-10-04
+R10082,Sprocket,3,"Five stars, no complaints, exactly as described.",true,2024-05-12
+R10083,Gadget,4,"Battery died after a week, excellent value, exactly as described, the support team was helpful.",true,2024-03-28
+R10084,Gadget,4,"Works great, five stars, no complaints.",false,2024-03-19
+R10085,Doohickey,5,"Excellent value, exactly as described, works great, the support team was helpful.",false,2024-09-24
+R10086,Doohickey,2,"Exactly as described, battery died after a week.",true,2024-08-15
+R10087,Widget,4,"Five stars, no complaints, packaging was damaged, arrived late.",false,2024-09-21
+R10088,Sprocket,2,"Too small for me, would not buy again, arrived late, five stars, no complaints.",true,2024-10-03
+R10089,Doohickey,3,"Would not buy again, exactly as described.",true,2024-09-20
+R10090,Doohickey,3,"Five stars, no complaints, excellent value.",true,2024-06-30
+R10091,Gadget,5,"Excellent value, arrived late.",true,2024-04-06
+R10092,Sprocket,4,"Would not buy again, the support team was helpful, excellent value, battery died after a week.",true,2024-07-22
+R10093,Sprocket,5,"Works great, would not buy again, exactly as described, excellent value.",true,2024-05-22
+R10094,Gizmo,1,"Arrived late, the support team was helpful, works great.",true,2024-07-31
+R10095,Widget,5,"Five stars, no complaints, too small for me.",true,2024-07-24
+R10096,Widget,5,"Works great, would not buy again.",true,2024-03-08
+R10097,Gizmo,1,"Excellent value, five stars, no complaints, too small for me.",true,2024-08-30
+R10098,Doohickey,4,"Would not buy again, works great.",true,2024-03-14
+R10099,Sprocket,2,"The support team was helpful, exactly as described, excellent value.",false,2024-03-14
+R10100,Sprocket,5,"Works great, excellent value.",true,2024-05-08
+R10101,Gadget,1,"The support team was helpful, arrived late, packaging was damaged.",true,2024-07-07
+R10102,Widget,4,"Arrived late, works great.",true,2024-08-01
+R10103,Sprocket,2,"The support team was helpful, excellent value, would not buy again.",true,2024-08-28
+R10104,Gadget,4,"Five stars, no complaints, packaging was damaged, too small for me, the support team was helpful.",false,2024-02-16
+R10105,Gadget,3,"Packaging was damaged, would not buy again, arrived late, works great.",false,2024-06-28
+R10106,Gizmo,4,"Works great, too small for me, packaging was damaged, five stars, no complaints.",true,2024-10-21
+R10107,Sprocket,4,"Packaging was damaged, exactly as described.",true,2024-06-26
+R10108,Widget,1,"Battery died after a week, five stars, no complaints.",true,2024-05-01
+R10109,Gadget,3,"Exactly as described, too small for me, packaging was damaged.",false,2024-03-23
+R10110,Gizmo,4,"Five stars, no complaints, battery died after a week, exactly as described, arrived late.",true,2024-10-01
+R10111,Widget,3,"Would not buy again, packaging was damaged.",true,2024-06-07
+R10112,Doohickey,4,"Excellent value, packaging was damaged, too small for me.",true,2024-01-08
+R10113,Gadget,5,"Works great, excellent value.",true,2024-07-19
+R10114,Doohickey,5,"Packaging was damaged, battery died after a week, exactly as described, works great.",true,2024-02-29
+R10115,Gizmo,3,"Too small for me, excellent value, exactly as described.",true,2024-03-13
+R10116,Doohickey,4,"Arrived late, five stars, no complaints, works great, battery died after a week.",true,2024-06-14
+R10117,Sprocket,4,"Battery died after a week, five stars, no complaints, exactly as described, excellent value.",true,2024-03-04
+R10118,Gizmo,2,"Five stars, no complaints, packaging was damaged, exactly as described.",true,2024-05-21
+R10119,Gadget,5,"Exactly as described, the support team was helpful, works great, too small for me.",true,2024-09-20
+R10120,Gizmo,4,"Works great, five stars, no complaints, exactly as described.",true,2024-04-16
+R10121,Widget,5,"Packaging was damaged, excellent value.",true,2024-01-03
+R10122,Doohickey,5,"Exactly as described, would not buy again, works great.",true,2024-04-02
+R10123,Widget,2,"Too small for me, arrived late, works great, battery died after a week.",true,2024-03-10
+R10124,Gadget,3,"Would not buy again, too small for me, battery died after a week, excellent value.",true,2024-05-27
+R10125,Doohickey,4,"Would not buy again, packaging was damaged, the support team was helpful.",true,2024-05-27
+R10126,Gizmo,4,"Packaging was damaged, the support team was helpful.",false,2024-10-15
+R10127,Gizmo,5,"Works great, packaging was damaged, arrived late.",true,2024-02-03
+R10128,Widget,4,"Works great, arrived late, too small for me.",true,2024-10-06
+R10129,Gadget,1,"Battery died after a week, arrived late.",true,2024-01-25
+R10130,Gizmo,5,"Would not buy again, exactly as described, works great, packaging was damaged.",false,2024-07-04
+R10131,Gadget,2,"Too small for me, works great.",false,2024-06-06
+R10132,Doohickey,3,"Would not buy again, arrived late, battery died after a week.",true,2024-08-07
+R10133,Doohickey,4,"Arrived late, exactly as described.",false,2024-07-06
+R10134,Doohickey,5,"Works great, packaging was damaged.",false,2024-04-14
+R10135,Sprocket,1,"Arrived late, exactly as described, the support team was helpful, five stars, no complaints.",true,2024-06-23
+R10136,Gizmo,3,"The support team was helpful, works great.",false,2024-01-18
+R10137,Gadget,2,"Too small for me, would not buy again.",true,2024-01-22
+R10138,Widget,3,"Too small for me, five stars, no complaints, battery died after a week.",true,2024-09-14
+R10139,Doohickey,2,"Works great, five stars, no complaints, the support team was helpful, arrived late.",true,2024-06-22
+R10140,Sprocket,2,"Works great, packaging was damaged, battery died after a week, would not buy again.",true,2024-06-18
+R10141,Widget,4,"Excellent value, packaging was damaged.",true,2024-03-16
+R10142,Gizmo,5,"Five stars, no complaints, works great, exactly as described, excellent value.",true,2024-09-09
+R10143,Gadget,5,"Exactly as described, packaging was damaged, arrived late.",true,2024-10-05
+R10144,Gizmo,1,"Packaging was damaged, battery died after a week.",false,2024-08-23
+R10145,Gadget,3,"Would not buy again, too small for me, works great, exactly as described.",true,2024-08-27
+R10146,Sprocket,3,"Excellent value, packaging was damaged, too small for me.",true,2024-10-10
+R10147,Doohickey,1,"Works great, would not buy again, too small for me.",false,2024-09-20
+R10148,Widget,5,"Excellent value, exactly as described, would not buy again, arrived late.",false,2024-02-27
+R10149,Doohickey,3,"Packaging was damaged, excellent value, too small for me, battery died after a week.",false,2024-06-07
+R10150,Doohickey,4,"Would not buy again, arrived late.",false,2024-02-12
+R10151,Sprocket,3,"Packaging was damaged, the support team was helpful, excellent value.",false,2024-10-01
+R10152,Gizmo,2,"Would not buy again, packaging was damaged.",true,2024-04-02
+R10153,Widget,3,"Arrived late, packaging was damaged, battery died after a week.",true,2024-04-01
+R10154,Doohickey,4,"Battery died after a week, works great, arrived late.",false,2024-04-10
+R10155,Doohickey,4,"Exactly as described, excellent value.",true,2024-06-16
+R10156,Doohickey,1,"Battery died after a week, too small for me, arrived late.",false,2024-07-11
+R10157,Widget,2,"Would not buy again, five stars, no complaints, works great.",true,2024-04-26
+R10158,Gizmo,5,"Works great, arrived late.",true,2024-02-25
+R10159,Widget,1,"Too small for me, exactly as described, excellent value.",true,2024-03-28
+R10160,Sprocket,2,"Works great, five stars, no complaints, would not buy again, arrived late.",true,2024-03-20
+R10161,Gadget,2,"Excellent value, the support team was helpful, works great.",true,2024-04-15
+R10162,Widget,1,"Five stars, no complaints, battery died after a week.",true,2024-07-12
+R10163,Gizmo,2,"Would not buy again, excellent value, five stars, no complaints.",false,2024-01-12
+R10164,Doohickey,3,"Too small for me, five stars, no complaints.",false,2024-09-29
+R10165,Doohickey,5,"Works great, packaging was damaged, exactly as described, excellent value.",true,2024-08-21
+R10166,Sprocket,4,"Packaging was damaged, would not buy again, the support team was helpful.",true,2024-03-23
+R10167,Sprocket,1,"Would not buy again, exactly as described.",true,2024-02-28
+R10168,Gizmo,3,"Arrived late, would not buy again.",true,2024-08-25
+R10169,Gizmo,4,"Arrived late, would not buy again.",false,2024-09-16
+R10170,Sprocket,2,"Works great, would not buy again, the support team was helpful.",false,2024-09-17
+R10171,Sprocket,4,"Packaging was damaged, exactly as described, would not buy again, arrived late.",true,2024-05-02
+R10172,Gizmo,3,"Excellent value, the support team was helpful, would not buy again.",true,2024-03-02
+R10173,Gizmo,5,"The support team was helpful, arrived late, works great, exactly as described.",false,2024-08-16
+R10174,Sprocket,2,"Battery died after a week, too small for me, exactly as described, five stars, no complaints.",true,2024-01-13
+R10175,Gadget,1,"Too small for me, would not buy again, arrived late, packaging was damaged.",false,2024-03-27
+R10176,Sprocket,4,"Would not buy again, excellent value, the support team was helpful, too small for me.",true,2024-07-30
+R10177,Widget,4,"Excellent value, exactly as described.",false,2024-09-20
+R10178,Sprocket,3,"Would not buy again, arrived late.",false,2024-02-04
+R10179,Gizmo,3,"Exactly as described, the support team was helpful.",true,2024-03-14
+R10180,Sprocket,2,"The support team was helpful, five stars, no complaints.",false,2024-08-18
+R10181,Gizmo,5,"Exactly as described, too small for me.",true,2024-07-02
+R10182,Widget,4,"Five stars, no complaints, too small for me.",false,2024-06-28
+R10183,Sprocket,1,"Exactly as described, works great, arrived late.",true,2024-09-10
+R10184,Sprocket,4,"Exactly as described, arrived late, too small for me.",true,2024-06-09
+R10185,Doohickey,2,"Packaging was damaged, excellent value, five stars, no complaints.",false,2024-05-29
+R10186,Gadget,5,"Arrived late, would not buy again, the support team was helpful, battery died after a week.",true,2024-05-24
+R10187,Doohickey,1,"Excellent value, too small for me, arrived late.",true,2024-10-14
+R10188,Sprocket,5,"Works great, excellent value.",false,2024-01-15
+R10189,Sprocket,1,"Exactly as described, too small for me.",true,2024-09-02
+R10190,Doohickey,2,"Too small for me, the support team was helpful, battery died after a week.",true,2024-07-09
+R10191,Widget,3,"Excellent value, too small for me, arrived late.",true,2024-09-25
+R10192,Gizmo,5,"Would not buy again, the support team was helpful, packaging was damaged, exactly as described.",true,2024-08-20
+R10193,Gizmo,4,"Works great, packaging was damaged, battery died after a week, too small for me.",true,2024-08-19
+R10194,Gizmo,4,"Arrived late, exactly as described, five stars, no complaints, packaging was damaged.",true,2024-04-24
+R10195,Sprocket,3,"Works great, arrived late, too small for me.",false,2024-05-22
+R10196,Gadget,3,"Arrived late, battery died after a week, works great, exactly as described.",true,2024-03-01
+R10197,Widget,3,"Works great, would not buy again.",true,2024-10-24
+R10198,Doohickey,1,"Excellent value, exactly as described, works great.",true,2024-01-09
+R10199,Widget,2,"The support team was helpful, excellent value.",false,2024-06-05
+R10200,Sprocket,2,"Excellent value, battery died after a week, packaging was damaged, would not buy again.",true,2024-01-15
+R10201,Sprocket,3,"The support team was helpful, battery died after a week, excellent value.",true,2024-01-30
+R10202,Sprocket,5,"Packaging was damaged, five stars, no complaints.",false,2024-03-22
+R10203,Gizmo,3,"Arrived late, five stars, no complaints, would not buy again.",true,2024-07-31
+R10204,Sprocket,4,"Arrived late, packaging was damaged, exactly as described.",true,2024-02-24
+R10205,Sprocket,4,"Works great, would not buy again, the support team was helpful, arrived late.",true,2024-05-18
+R10206,Widget,2,"Would not buy again, battery died after a week, five stars, no complaints, the support team was helpful.",true,2024-01-25
+R10207,Gadget,5,"Arrived late, excellent value.",true,2024-03-10
+R10208,Widget,4,"Packaging was damaged, the support team was helpful.",true,2024-07-02
+R10209,Gadget,2,"Packaging was damaged, arrived late, five stars, no complaints, would not buy again.",false,2024-02-11
+R10210,Sprocket,2,"Excellent value, too small for me, packaging was damaged, the support team was helpful.",false,2024-07-14
+R10211,Doohickey,5,"Would not buy again, the support team was helpful, battery died after a week.",true,2024-10-13
+R10212,Gadget,1,"Battery died after a week, works great, would not buy again, the support team was helpful.",true,2024-07-15
+R10213,Gizmo,1,"Arrived late, five stars, no complaints, battery died after a week.",true,2024-08-02
+R10214,Gadget,5,"Battery died after a week, arrived late.",true,2024-04-20
+R10215,Gadget,3,"Works great, the support team was helpful, arrived late.",false,2024-05-12
+R10216,Doohickey,4,"Battery died after a week, exactly as described.",true,2024-08-08
+R10217,Gadget,2,"Works great, the support team was helpful, excellent value, would not buy again.",true,2024-08-08
+R10218,Doohickey,5,"Works great, exactly as described, packaging was damaged, too small for me.",true,2024-07-27
+R10219,Gizmo,2,"Five stars, no complaints, works great, arrived late, the support team was helpful.",false,2024-07-19
+R10220,Gizmo,4,"Too small for me, would not buy again, excellent value.",false,2024-09-19
+R10221,Gadget,5,"Packaging was damaged, battery died after a week, works great, too small for me.",true,2024-08-17
+R10222,Doohickey,5,"Exactly as described, packaging was damaged.",true,2024-10-25
+R10223,Gadget,4,"Arrived late, too small for me, five stars, no complaints, works great.",false,2024-05-15
+R10224,Sprocket,1,"Would not buy again, arrived late, the support team was helpful, packaging was damaged.",true,2024-02-19
+R10225,Doohickey,2,"Battery died after a week, works great.",true,2024-06-17
+R10226,Sprocket,3,"Five stars, no complaints, the support team was helpful, works great.",false,2024-03-19
+R10227,Doohickey,5,"Would not buy again, excellent value, battery died after a week.",true,2024-01-15
+R10228,Gizmo,5,"Exactly as described, too small for me, battery died after a week.",true,2024-08-03
+R10229,Widget,3,"The support team was helpful, arrived late, battery died after a week.",true,2024-02-20
+R10230,Gizmo,4,"Would not buy again, exactly as described.",true,2024-04-01
+R10231,Widget,4,"Works great, the support team was helpful.",false,2024-06-01
+R10232,Sprocket,2,"Five stars, no complaints, excellent value.",false,2024-06-23
+R10233,Widget,5,"Too small for me, the support team was helpful, five stars, no complaints, battery died after a week.",true,2024-07-01
+R10234,Gizmo,2,"Five stars, no complaints, too small for me, would not buy again, the support team was helpful.",true,2024-03-08
+R10235,Widget,4,"Would not buy again, works great, arrived late, excellent value.",false,2024-07-25
+R10236,Widget,2,"Packaging was damaged, battery died after a week.",true,2024-06-03
+R10237,Gizmo,5,"The support team was helpful, packaging was damaged.",true,2024-10-07
+R10238,Gadget,5,"Works great, excellent value.",true,2024-03-17
+R10239,Widget,4,"Works great, the support team was helpful.",false,2024-04-29
+R10240,Gadget,4,"Arrived late, excellent value, works great.",false,2024-10-01
+R10241,Widget,4,"Works great, would not buy again.",false,2024-07-16
+R10242,Doohickey,3,"The support team was helpful, too small for me.",true,2024-02-25
+R10243,Sprocket,3,"Would not buy again, exactly as described.",true,2024-05-14
+R10244,Doohickey,4,"Would not buy again, battery died after a week.",true,2024-05-22
+R10245,Gadget,5,"Too small for me, battery died after a week, excellent value, five stars, no complaints.",false,2024-05-03
+R10246,Sprocket,1,"Works great, the support team was helpful, five stars, no complaints.",false,2024-09-09
+R10247,Sprocket,2,"The support team was helpful, would not buy again.",true,2024-03-08
+R10248,Sprocket,2,"Arrived late, excellent value, battery died after a week.",false,2024-05-04
+R10249,Widget,3,"Exactly as described, works great, packaging was damaged, excellent value.",false,2024-03-31
+R10250,Gizmo,2,"Too small for me, battery died after a week, arrived late, exactly as described.",true,2024-02-28
+R10251,Gadget,4,"Would not buy again, works great.",false,2024-01-07
+R10252,Gadget,3,"Excellent value, arrived late.",true,2024-07-25
+R10253,Doohickey,4,"The support team was helpful, battery died after a week, would not buy again.",false,2024-02-15
+R10254,Gizmo,5,"Excellent value, exactly as described, packaging was damaged.",true,2024-04-19
+R10255,Sprocket,5,"Battery died after a week, too small for me, excellent value, works great.",false,2024-06-26
+R10256,Gizmo,4,"Exactly as described, excellent value, too small for me.",true,2024-10-11
+R10257,Gadget,5,"Exactly as described, would not buy again.",true,2024-04-06
+R10258,Doohickey,1,"The support team was helpful, too small for me.",true,2024-10-02
+R10259,Gadget,5,"Five stars, no complaints, arrived late, would not buy again.",false,2024-10-16
+R10260,Doohickey,5,"The support team was helpful, packaging was damaged, exactly as described.",true,2024-10-09
+R10261,Sprocket,1,"Too small for me, would not buy again, battery died after a week, the support team was helpful.",true,2024-07-19
+R10262,Gadget,4,"The support team was helpful, five stars, no complaints, packaging was damaged, arrived late.",true,2024-07-15
+R10263,Gadget,2,"Arrived late, the support team was helpful, packaging was damaged, would not buy again.",true,2024-01-25
+R10264,Gadget,3,"Battery died after a week, would not buy again, the support team was helpful.",false,2024-08-26
+R10265,Widget,1,"Excellent value, five stars, no complaints, works great.",false,2024-04-08
+R10266,Gizmo,2,"The support team was helpful, too small for me, excellent value.",false,2024-05-05
+R10267,Gadget,4,"The support team was helpful, excellent value, too small for me, five stars, no complaints.",true,2024-09-04
+R10268,Widget,3,"Battery died after a week, five stars, no complaints, excellent value.",true,2024-10-05
+R10269,Gadget,5,"Battery died after a week, the support team was helpful, packaging was damaged.",true,2024-04-07
+R10270,Gadget,5,"Would not buy again, works great, exactly as described.",false,2024-05-19
+R10271,Gizmo,5,"Five stars, no complaints, too small for me, excellent value, the support team was helpful.",true,2024-06-08
+R10272,Sprocket,2,"Excellent value, arrived late, would not buy again.",true,2024-02-19
+R10273,Doohickey,5,"Excellent value, exactly as described, arrived late.",true,2024-08-03
+R10274,Widget,5,"Arrived late, packaging was damaged, five stars, no complaints, excellent value.",true,2024-02-15
+R10275,Sprocket,2,"Arrived late, packaging was damaged, excellent value, works great.",false,2024-05-18
+R10276,Sprocket,4,"Would not buy again, five stars, no complaints, exactly as described, packaging was damaged.",true,2024-09-15
+R10277,Gizmo,5,"Exactly as described, the support team was helpful, arrived late.",true,2024-08-29
+R10278,Widget,1,"Five stars, no complaints, works great.",false,2024-01-02
+R10279,Gizmo,1,"Works great, arrived late.",true,2024-09-12
+R10280,Gizmo,2,"Arrived late, five stars, no complaints.",true,2024-08-12
+R10281,Widget,5,"Arrived late, would not buy again, excellent value, five stars, no complaints.",true,2024-02-22
+R10282,Doohickey,4,"Arrived late, works great, battery died after a week.",false,2024-09-13
+R10283,Sprocket,3,"Would not buy again, arrived late, the support team was helpful, five stars, no complaints.",true,2024-03-16
+R10284,Sprocket,5,"The support team was helpful, excellent value, would not buy again.",true,2024-02-14
+R10285,Widget,4,"Five stars, no complaints, excellent value, too small for me.",false,2024-03-11
+R10286,Sprocket,5,"Exactly as described, too small for me, arrived late, works great.",true,2024-03-28
+R10287,Widget,5,"Excellent value, packaging was damaged, too small for me.",true,2024-08-27
+R10288,Doohickey,2,"Exactly as described, arrived late, packaging was damaged.",true,2024-10-26
+R10289,Sprocket,5,"Too small for me, excellent value, would not buy again, works great.",true,2024-05-27
+R10290,Sprocket,3,"Packaging was damaged, would not buy again.",true,2024-08-21
+R10291,Sprocket,5,"Five stars, no complaints, excellent value, packaging was damaged.",true,2024-01-28
+R10292,Gadget,3,"Exactly as described, packaging was damaged.",true,2024-01-04
+R10293,Widget,4,"Excellent value, exactly as described.",true,2024-04-27
+R10294,Widget,3,"Exactly as described, five stars, no complaints, works great, the support team was helpful.",true,2024-04-21
+R10295,Doohickey,1,"Packaging was damaged, battery died after a week, excellent value, the support team was helpful.",true,2024-05-07
+R10296,Widget,4,"Excellent value, battery died after a week, too small for me.",true,2024-01-19
+R10297,Doohickey,2,"Would not buy again, battery died after a week, the support team was helpful.",true,2024-06-02
+R10298,Widget,3,"The support team was helpful, arrived late.",true,2024-03-14
+R10299,Gadget,1,"Exactly as described, too small for me.",false,2024-10-04
+R10300,Gizmo,2,"Excellent value, the support team was helpful, arrived late.",true,2024-01-01
+R10301,Doohickey,2,"Arrived late, the support team was helpful, five stars, no complaints.",true,2024-08-14
+R10302,Doohickey,4,"Works great, too small for me, excellent value, arrived late.",false,2024-10-26
+R10303,Gadget,5,"Excellent value, too small for me.",true,2024-03-10
+R10304,Gizmo,3,"Would not buy again, five stars, no complaints, packaging was damaged, too small for me.",true,2024-02-23
+R10305,Widget,3,"Works great, five stars, no complaints.",true,2024-05-03
+R10306,Gizmo,4,"Arrived late, packaging was damaged, works great, battery died after a week.",true,2024-02-13
+R10307,Gizmo,5,"Excellent value, battery died after a week.",true,2024-04-21
+R10308,Gizmo,4,"Exactly as described, works great, excellent value, packaging was damaged.",true,2024-03-17
+R10309,Gadget,5,"Battery died after a week, arrived late, too small for me.",true,2024-01-08
+R10310,Gizmo,4,"Five stars, no complaints, would not buy again, arrived late.",false,2024-08-21
+R10311,Widget,5,"Packaging was damaged, too small for me, five stars, no complaints.",true,2024-02-13
+R10312,Widget,5,"Excellent value, battery died after a week, five stars, no complaints.",true,2024-08-28
+R10313,Gadget,1,"The support team was helpful, exactly as described.",true,2024-01-19
+R10314,Widget,5,"Excellent value, works great, the support team was helpful, exactly as described.",true,2024-07-04
+R10315,Widget,5,"Arrived late, the support team was helpful, packaging was damaged, works great.",true,2024-08-12
+R10316,Sprocket,5,"Battery died after a week, excellent value.",false,2024-04-02
+R10317,Gizmo,4,"Packaging was damaged, too small for me.",true,2024-10-24
+R10318,Sprocket,2,"Too small for me, exactly as described, works great.",true,2024-01-08
+R10319,Gizmo,2,"Too small for me, packaging was damaged.",false,2024-10-06
+R10320,Doohickey,1,"Packaging was damaged, would not buy again, excellent value, exactly as described.",true,2024-08-15
+R10321,Widget,1,"Too small for me, the support team was helpful, exactly as described.",true,2024-06-30
+R10322,Widget,1,"Arrived late, battery died after a week.",false,2024-05-13
+R10323,Sprocket,3,"Packaging was damaged, battery died after a week, arrived late.",true,2024-09-13
+R10324,Gizmo,5,"Exactly as described, the support team was helpful, packaging was damaged, would not buy again.",true,2024-10-13
+R10325,Widget,5,"The support team was helpful, works great, would not buy again.",false,2024-09-02
+R10326,Gizmo,3,"The support team was helpful, packaging was damaged.",false,2024-07-01
+R10327,Gadget,4,"Five stars, no complaints, packaging was damaged.",false,2024-03-24
+R10328,Doohickey,4,"Excellent value, five stars, no complaints, packaging was damaged.",true,2024-07-05
+R10329,Gizmo,2,"Battery died after a week, too small for me, exactly as described, excellent value.",false,2024-06-06
+R10330,Widget,1,"Too small for me, works great, excellent value.",false,2024-09-01
+R10331,Sprocket,3,"Packaging was damaged, five stars, no complaints.",false,2024-01-25
+R10332,Sprocket,3,"Works great, too small for me, excellent value, battery died after a week.",true,2024-07-22
+R10333,Gizmo,2,"Five stars, no complaints, arrived late, excellent value.",true,2024-09-26
+R10334,Gadget,3,"Too small for me, battery died after a week.",true,2024-06-04
+R10335,Widget,4,"Packaging was damaged, excellent value, too small for me.",true,2024-02-02
+R10336,Gadget,2,"Battery died after a week, the support team was helpful, would not buy again, excellent value.",false,2024-04-22
+R10337,Widget,4,"Would not buy again, five stars, no complaints, battery died after a week.",true,2024-09-29
+R10338,Gadget,4,"Would not buy again, the support team was helpful, too small for me.",true,2024-07-04
+R10339,Gadget,1,"Battery died after a week, the support team was helpful, works great.",true,2024-07-07
+R10340,Sprocket,5,"Arrived late, exactly as described, packaging was damaged.",false,2024-09-18
+R10341,Gizmo,4,"Would not buy again, exactly as described, too small for me.",true,2024-05-19
+R10342,Doohickey,3,"Arrived late, excellent value.",false,2024-10-14
+R10343,Gizmo,5,"Battery died after a week, five stars, no complaints, too small for me, the support team was helpful.",false,2024-01-16
+R10344,Gizmo,4,"Exactly as described, excellent value, too small for me.",false,2024-06-17
+R10345,Gadget,5,"Arrived late, would not buy again, battery died after a week.",true,2024-07-21
+R10346,Gadget,5,"Works great, exactly as described, would not buy again, excellent value.",false,2024-10-05
+R10347,Gizmo,4,"Would not buy again, the support team was helpful, excellent value, too small for me.",true,2024-04-20
+R10348,Doohickey,5,"Five stars, no complaints, would not buy again.",true,2024-08-31
+R10349,Widget,3,"Battery died after a week, five stars, no complaints, packaging was damaged, arrived late.",true,2024-07-24
+R10350,Gizmo,4,"Arrived late, excellent value.",true,2024-04-04
+R10351,Doohickey,5,"The support team was helpful, arrived late.",false,2024-06-21
+R10352,Gizmo,2,"Too small for me, arrived late, battery died after a week, excellent value.",true,2024-04-04
+R10353,Sprocket,4,"Exactly as described, would not buy again.",true,2024-03-25
+R10354,Sprocket,4,"Would not buy again, too small for me.",true,2024-07-18
+R10355,Widget,4,"Works great, exactly as described, five stars, no complaints, packaging was damaged.",true,2024-03-02
+R10356,Sprocket,2,"Battery died after a week, arrived late, would not buy again, excellent value.",false,2024-06-14
+R10357,Sprocket,4,"Battery died after a week, arrived late.",false,2024-07-29
+R10358,Widget,5,"Exactly as described, would not buy again, the support team was helpful, battery died after a week.",true,2024-08-15
+R10359,Gizmo,3,"Five stars, no complaints, would not buy again.",true,2024-01-19
+R10360,Sprocket,1,"Arrived late, too small for me, would not buy again, battery died after a week.",true,2024-08-29
+R10361,Sprocket,3,"Battery died after a week, works great, would not buy again.",false,2024-05-11
+R10362,Gadget,1,"Exactly as described, excellent value, the support team was helpful, packaging was damaged.",true,2024-05-02
+R10363,Doohickey,4,"Packaging was damaged, exactly as described.",false,2024-08-20
+R10364,Widget,1,"Five stars, no complaints, too small for me, battery died after a week, would not buy again.",true,2024-01-17
+R10365,Gadget,4,"The support team was helpful, exactly as described, arrived late.",false,2024-08-23
+R10366,Gizmo,2,"Battery died after a week, arrived late.",true,2024-10-14
+R10367,Widget,5,"Five stars, no complaints, arrived late.",true,2024-01-11
+R10368,Widget,4,"Battery died after a week, works great.",true,2024-05-25
+R10369,Doohickey,3,"Works great, arrived late, would not buy again, packaging was damaged.",true,2024-09-28
+R10370,Doohickey,2,"Exactly as described, too small for me, battery died after a week.",true,2024-09-15
+R10371,Gizmo,5,"Too small for me, arrived late.",true,2024-01-18
+R10372,Widget,5,"Too small for me, five stars, no complaints.",true,2024-01-06
+R10373,Gizmo,3,"Excellent value, too small for me, works great, battery died after a week.",true,2024-01-27
+R10374,Widget,5,"Excellent value, exactly as described.",true,2024-03-10
+R10375,Sprocket,5,"Exactly as described, arrived late, packaging was damaged, too small for me.",true,2024-10-03
+R10376,Widget,4,"Works great, arrived late.",false,2024-04-14
+R10377,Doohickey,1,"The support team was helpful, packaging was damaged, excellent value, too small for me.",true,2024-10-10
+R10378,Doohickey,4,"Excellent value, too small for me, would not buy again.",true,2024-02-29
+R10379,Widget,4,"Five stars, no complaints, arrived late, would not buy again.",false,2024-09-10
+R10380,Doohickey,1,"Five stars, no complaints, packaging was damaged, arrived late, works great.",true,2024-01-23
+R10381,Widget,4,"Five stars, no complaints, the support team was helpful.",true,2024-01-13
+R10382,Doohickey,4,"Packaging was damaged, would not buy again, exactly as described.",false,2024-03-12
+R10383,Sprocket,5,"Would not buy again, works great, packaging was damaged.",true,2024-02-11
+R10384,Gizmo,3,"Exactly as described, the support team was helpful, works great.",true,2024-02-15
+R10385,Sprocket,1,"Exactly as described, excellent value, too small for me, would not buy again.",true,2024-10-25
+R10386,Gadget,5,"Five stars, no complaints, excellent value, arrived late, the support team was helpful.",true,2024-10-09
+R10387,Sprocket,2,"Five stars, no complaints, packaging was damaged, would not buy again, exactly as described.",true,2024-08-13
+R10388,Gadget,4,"Packaging was damaged, five stars, no complaints.",true,2024-06-14
+R10389,Doohickey,3,"Excellent value, works great.",true,2024-08-13
+R10390,Widget,5,"The support team was helpful, too small for me.",false,2024-07-01
+R10391,Doohickey,1,"Too small for me, excellent value, exactly as described.",false,2024-07-18
+R10392,Gizmo,2,"Exactly as described, packaging was damaged, battery died after a week, works great.",true,2024-07-21
+R10393,Widget,4,"The support team was helpful, packaging was damaged.",true,2024-02-13
+R10394,Gizmo,5,"Excellent value, five stars, no complaints.",true,2024-06-26
+R10395,Gadget,4,"Packaging was damaged, arrived late, five stars, no complaints.",false,2024-04-23
+R10396,Gadget,2,"Would not buy again, too small for me, battery died after a week.",true,2024-05-08
+R10397,Doohickey,5,"Would not buy again, works great.",false,2024-01-21
+R10398,Gizmo,5,"Five stars, no complaints, would not buy again, works great.",false,2024-06-14
+R10399,Sprocket,2,"The support team was helpful, exactly as described.",false,2024-02-27
+R10400,Doohickey,4,"Battery died after a week, would not buy again, excellent value.",true,2024-04-10
+R10401,Sprocket,2,"Would not buy again, battery died after a week, too small for me.",true,2024-09-08
+R10402,Doohickey,4,"Works great, battery died after a week, packaging was damaged, excellent value.",false,2024-08-07
+R10403,Sprocket,5,"Arrived late, would not buy again, battery died after a week, the support team was helpful.",false,2024-06-10
+R10404,Doohickey,4,"Five stars, no complaints, the support team was helpful.",true,2024-08-15
+R10405,Sprocket,3,"Five stars, no complaints, excellent value.",true,2024-05-15
+R10406,Gadget,5,"Battery died after a week, the support team was helpful.",true,2024-09-03
+R10407,Widget,2,"The support team was helpful, too small for me.",true,2024-05-25
+R10408,Gadget,4,"Excellent value, would not buy again, exactly as described.",true,2024-07-15
+R10409,Widget,3,"Excellent value, too small for me, works great, five stars, no complaints.",true,2024-05-21
+R10410,Gadget,1,"Five stars, no complaints, packaging was damaged, exactly as described, excellent value.",true,2024-06-29
+R10411,Doohickey,1,"Too small for me, five stars, no complaints.",false,2024-01-12
+R10412,Widget,2,"Would not buy again, five stars, no complaints, too small for me.",true,2024-02-27
+R10413,Gadget,2,"Would not buy again, five stars, no complaints.",true,2024-08-20
+R10414,Doohickey,1,"Arrived late, excellent value.",true,2024-03-03
+R10415,Gizmo,4,"Too small for me, arrived late.",false,2024-01-04
+R10416,Gizmo,1,"Exactly as described, battery died after a week, the support team was helpful.",false,2024-09-02
+R10417,Doohickey,5,"Five stars, no complaints, arrived late.",true,2024-03-10
+R10418,Gadget,1,"Would not buy again, five stars, no complaints.",true,2024-04-26
+R10419,Widget,5,"Five stars, no complaints, arrived late.",true,2024-05-06
+R10420,Gadget,4,"Excellent value, battery died after a week, arrived late, would not buy again.",true,2024-04-02
+R10421,Widget,3,"Works great, excellent value, too small for me.",true,2024-06-13
+R10422,Widget,5,"Excellent value, battery died after a week, works great, the support team was helpful.",true,2024-01-29
+R10423,Gadget,2,"The support team was helpful, battery died after a week, excellent value.",false,2024-10-05
+R10424,Sprocket,4,"Too small for me, arrived late.",true,2024-04-11
+R10425,Gizmo,2,"Five stars, no complaints, battery died after a week, arrived late, would not buy again.",false,2024-02-13
+R10426,Widget,2,"Too small for me, exactly as described, excellent value.",true,2024-05-10
+R10427,Doohickey,5,"The support team was helpful, would not buy again.",true,2024-07-10
+R10428,Gizmo,3,"Battery died after a week, five stars, no complaints, exactly as described, too small for me.",true,2024-03-15
+R10429,Gizmo,5,"Arrived late, excellent value.",true,2024-07-30
+R10430,Doohickey,1,"Battery died after a week, would not buy again, packaging was damaged, arrived late.",true,2024-03-29
+R10431,Widget,4,"Arrived late, five stars, no complaints.",true,2024-01-18
+R10432,Doohickey,5,"Works great, too small for me, arrived late, the support team was helpful.",true,2024-08-14
+R10433,Widget,1,"Battery died after a week, the support team was helpful.",true,2024-03-14
+R10434,Sprocket,4,"Packaging was damaged, would not buy again.",false,2024-01-25
+R10435,Sprocket,4,"Excellent value, the support team was helpful, exactly as described, five stars, no complaints.",false,2024-07-26
+R10436,Sprocket,5,"Excellent value, packaging was damaged, five stars, no complaints.",true,2024-02-08
+R10437,Widget,2,"Exactly as described, works great.",true,2024-01-20
+R10438,Gizmo,3,"The support team was helpful, packaging was damaged, five stars, no complaints, arrived late.",false,2024-08-01
+R10439,Doohickey,2,"Excellent value, five stars, no complaints, too small for me, exactly as described.",true,2024-06-11
+R10440,Doohickey,5,"Too small for me, five stars, no complaints, the support team was helpful, exactly as described.",false,2024-02-25
+R10441,Gizmo,5,"Battery died after a week, packaging was damaged, five stars, no complaints.",false,2024-10-04
+R10442,Widget,5,"Works great, five stars, no complaints, packaging was damaged, battery died after a week.",true,2024-08-18
+R10443,Widget,4,"Would not buy again, battery died after a week, works great.",true,2024-09-08
+R10444,Widget,5,"Works great, the support team was helpful, arrived late, would not buy again.",true,2024-09-10
+R10445,Doohickey,4,"Exactly as described, works great.",true,2024-09-30
+R10446,Doohickey,5,"Exactly as described, would not buy again, the support team was helpful.",true,2024-01-29
+R10447,Sprocket,4,"Too small for me, excellent value, the support team was helpful, battery died after a week.",true,2024-05-04
+R10448,Widget,4,"Would not buy again, five stars, no complaints, excellent value, arrived late.",false,2024-08-27
+R10449,Gadget,4,"Would not buy again, battery died after a week.",false,2024-04-15
+R10450,Sprocket,4,"Exactly as described, too small for me, excellent value.",true,2024-10-18
+R10451,Doohickey,1,"Excellent value, arrived late, would not buy again, battery died after a week.",true,2024-03-29
+R10452,Gizmo,1,"Would not buy again, five stars, no complaints, too small for me, the support team was helpful.",true,2024-02-25
+R10453,Gizmo,4,"Excellent value, works great, exactly as described.",false,2024-09-06
+R10454,Gizmo,3,"Packaging was damaged, five stars, no complaints.",true,2024-04-15
+R10455,Doohickey,5,"Works great, five stars, no complaints, packaging was damaged, too small for me.",false,2024-10-16
+R10456,Doohickey,5,"Works great, the support team was helpful.",true,2024-09-04
+R10457,Sprocket,5,"Battery died after a week, would not buy again, the support team was helpful, five stars, no complaints.",true,2024-10-20
+R10458,Doohickey,1,"Battery died after a week, arrived late, would not buy again.",true,2024-03-31
+R10459,Gadget,3,"Battery died after a week, excellent value, packaging was damaged, would not buy again.",true,2024-01-10
+R10460,Gadget,5,"Arrived late, would not buy again.",true,2024-06-12
+R10461,Doohickey,2,"Battery died after a week, works great, five stars, no complaints, packaging was damaged.",true,2024-01-25
+R10462,Doohickey,4,"Works great, too small for me, excellent value.",false,2024-07-31
+R10463,Widget,4,"The support team was helpful, battery died after a week, works great.",true,2024-04-05
+R10464,Sprocket,4,"Excellent value, arrived late, would not buy again, exactly as described.",true,2024-05-13
+R10465,Widget,4,"The support team was helpful, packaging was damaged, works great.",false,2024-06-24
+R10466,Sprocket,3,"Exactly as described, the support team was helpful.",true,2024-01-25
+R10467,Gizmo,5,"Battery died after a week, packaging was damaged.",false,2024-07-30
+R10468,Gizmo,2,"Arrived late, battery died after a week, excellent value.",true,2024-09-08
+R10469,Widget,5,"The support team was helpful, packaging was damaged, excellent value.",true,2024-02-29
+R10470,Widget,4,"Would not buy again, exactly as described, packaging was damaged.",true,2024-02-08
+R10471,Doohickey,5,"The support team was helpful, would not buy again, exactly as described.",false,2024-05-13
+R10472,Sprocket,4,"Excellent value, five stars, no complaints, the support team was helpful.",false,2024-04-06
+R10473,Sprocket,1,"Too small for me, exactly as described.",true,2024-03-13
+R10474,Doohickey,1,"Packaging was damaged, works great, five stars, no complaints.",true,2024-06-25
+R10475,Gadget,1,"Packaging was damaged, five stars, no complaints.",false,2024-09-29
+R10476,Sprocket,3,"Would not buy again, works great, too small for me, arrived late.",true,2024-10-09
+R10477,Gadget,4,"Excellent value, the support team was helpful, too small for me, exactly as described.",true,2024-09-01
+R10478,Sprocket,5,"Arrived late, the support team was helpful, battery died after a week, excellent value.",true,2024-09-15
+R10479,Sprocket,3,"The support team was helpful, packaging was damaged, works great, arrived late.",false,2024-05-01
+R10480,Gadget,3,"Battery died after a week, works great, five stars, no complaints, arrived late.",true,2024-08-25
+R10481,Gadget,5,"Excellent value, exactly as described, battery died after a week, too small for me.",true,2024-09-20
+R10482,Gizmo,5,"Five stars, no complaints, arrived late.",false,2024-09-08
+R10483,Gadget,4,"Arrived late, too small for me.",false,2024-07-29
+R10484,Widget,4,"The support team was helpful, exactly as described.",true,2024-01-28
+R10485,Gadget,4,"Exactly as described, battery died after a week, arrived late.",true,2024-04-11
+R10486,Sprocket,3,"Exactly as described, works great, would not buy again, the support team was helpful.",false,2024-07-31
+R10487,Gadget,4,"The support team was helpful, five stars, no complaints.",false,2024-06-12
+R10488,Sprocket,4,"Arrived late, works great, exactly as described, would not buy again.",true,2024-09-08
+R10489,Doohickey,1,"Exactly as described, arrived late, would not buy again, excellent value.",true,2024-04-26
+R10490,Sprocket,2,"Five stars, no complaints, would not buy again.",true,2024-06-10
+R10491,Widget,5,"Battery died after a week, works great.",true,2024-01-28
+R10492,Gadget,4,"Battery died after a week, arrived late, excellent value, would not buy again.",true,2024-02-18
+R10493,Doohickey,3,"Five stars, no complaints, battery died after a week, arrived late.",true,2024-05-11
+R10494,Sprocket,4,"Works great, five stars, no complaints, arrived late.",false,2024-09-03
+R10495,Gizmo,5,"Would not buy again, five stars, no complaints.",false,2024-03-18
+R10496,Gizmo,5,"Five stars, no complaints, packaging was damaged.",true,2024-08-23
+R10497,Sprocket,5,"Packaging was damaged, battery died after a week, excellent value, too small for me.",false,2024-03-15
+R10498,Sprocket,5,"Would not buy again, exactly as described, battery died after a week.",true,2024-01-02
+R10499,Doohickey,3,"Too small for me, excellent value, works great.",false,2024-08-07
+R10500,Doohickey,4,"Too small for me, works great, five stars, no complaints, would not buy again.",true,2024-10-17
+R10501,Doohickey,2,"Battery died after a week, arrived late, packaging was damaged.",true,2024-08-09
+R10502,Doohickey,5,"Five stars, no complaints, excellent value.",true,2024-04-09
+R10503,Gizmo,5,"Excellent value, exactly as described.",true,2024-05-31
+R10504,Widget,1,"Excellent value, too small for me, exactly as described.",true,2024-03-29
+R10505,Doohickey,4,"Would not buy again, packaging was damaged, the support team was helpful, arrived late.",true,2024-05-25
+R10506,Gadget,4,"Exactly as described, the support team was helpful, five stars, no complaints.",false,2024-06-22
+R10507,Sprocket,3,"Exactly as described, arrived late, would not buy again.",true,2024-02-20
+R10508,Widget,1,"Too small for me, battery died after a week.",true,2024-10-02
+R10509,Doohickey,4,"The support team was helpful, excellent value, battery died after a week, works great.",true,2024-01-05
+R10510,Doohickey,4,"Too small for me, the support team was helpful.",true,2024-10-14
+R10511,Gizmo,2,"Five stars, no complaints, the support team was helpful.",false,2024-09-24
+R10512,Gadget,1,"Excellent value, packaging was damaged.",false,2024-09-03
+R10513,Gizmo,5,"Would not buy again, packaging was damaged.",true,2024-10-08
+R10514,Gizmo,5,"Exactly as described, battery died after a week, packaging was damaged.",true,2024-07-29
+R10515,Gizmo,2,"Packaging was damaged, works great, exactly as described, battery died after a week.",true,2024-01-13
+R10516,Doohickey,2,"Arrived late, packaging was damaged, works great.",true,2024-01-29
+R10517,Doohickey,5,"Arrived late, works great, would not buy again.",false,2024-02-18
+R10518,Gadget,1,"Works great, excellent value, too small for me, exactly as described.",true,2024-06-10
+R10519,Gadget,5,"Arrived late, excellent value.",true,2024-04-20
+R10520,Sprocket,5,"Packaging was damaged, arrived late, exactly as described.",false,2024-08-23
+R10521,Gadget,5,"Exactly as described, excellent value, would not buy again, works great.",true,2024-01-10
+R10522,Gizmo,4,"Five stars, no complaints, the support team was helpful, packaging was damaged.",true,2024-01-20
+R10523,Sprocket,3,"Arrived late, exactly as described, too small for me, would not buy again.",false,2024-02-28
+R10524,Widget,2,"Five stars, no complaints, exactly as described.",true,2024-04-10
+R10525,Doohickey,3,"The support team was helpful, five stars, no complaints, excellent value, packaging was damaged.",true,2024-09-28
+R10526,Gadget,5,"Arrived late, battery died after a week, packaging was damaged, would not buy again.",true,2024-01-29
+R10527,Gadget,5,"Exactly as described, excellent value, arrived late, would not buy again.",true,2024-07-19
+R10528,Widget,5,"Excellent value, works great.",true,2024-01-18
+R10529,Widget,5,"Arrived late, excellent value.",true,2024-09-20
+R10530,Widget,4,"Battery died after a week, the support team was helpful.",true,2024-10-04
+R10531,Widget,4,"Battery died after a week, exactly as described.",false,2024-06-29
+R10532,Gizmo,4,"The support team was helpful, would not buy again, too small for me.",true,2024-02-12
+R10533,Gizmo,4,"Works great, packaging was damaged, excellent value.",false,2024-09-10
+R10534,Widget,5,"Five stars, no complaints, exactly as described.",true,2024-04-06
+R10535,Gizmo,2,"Five stars, no complaints, would not buy again, exactly as described.",true,2024-02-27
+R10536,Gizmo,5,"Works great, packaging was damaged.",true,2024-06-22
+R10537,Sprocket,4,"Excellent value, battery died after a week, arrived late, works great.",true,2024-03-16
+R10538,Widget,3,"Exactly as described, five stars, no complaints, works great.",false,2024-09-22
+R10539,Widget,5,"Battery died after a week, would not buy again, five stars, no complaints, the support team was helpful.",false,2024-07-30
+R10540,Widget,5,"Exactly as described, five stars, no complaints.",true,2024-04-12
+R10541,Widget,1,"Arrived late, packaging was damaged.",true,2024-07-06
+R10542,Gizmo,5,"Excellent value, five stars, no complaints.",true,2024-10-27
+R10543,Widget,4,"Too small for me, battery died after a week, arrived late.",false,2024-06-08
+R10544,Gizmo,4,"Packaging was damaged, arrived late, excellent value.",true,2024-03-16
+R10545,Gadget,1,"Battery died after a week, too small for me, arrived late.",true,2024-01-22
+R10546,Gadget,2,"Works great, would not buy again.",true,2024-03-30
+R10547,Doohickey,4,"Five stars, no complaints, the support team was helpful.",true,2024-03-05
+R10548,Gadget,5,"Exactly as described, too small for me.",false,2024-05-15
+R10549,Gizmo,3,"The support team was helpful, excellent value, packaging was damaged.",true,2024-07-01
+R10550,Gadget,1,"The support team was helpful, exactly as described, works great.",false,2024-03-13
+R10551,Gizmo,4,"Would not buy again, battery died after a week.",false,2024-07-11
+R10552,Gizmo,5,"Works great, would not buy again, arrived late.",false,2024-02-18
+R10553,Widget,4,"Would not buy again, exactly as described, packaging was damaged.",true,2024-10-03
+R10554,Sprocket,1,"The support team was helpful, battery died after a week, works great, five stars, no complaints.",true,2024-06-26
+R10555,Gizmo,3,"Works great, exactly as described.",true,2024-02-22
+R10556,Gadget,2,"Packaging was damaged, exactly as described.",true,2024-04-17
+R10557,Gadget,4,"The support team was helpful, five stars, no complaints.",true,2024-03-03
+R10558,Sprocket,4,"Five stars, no complaints, exactly as described, excellent value.",true,2024-01-11
+R10559,Gadget,4,"Too small for me, works great, five stars, no complaints.",false,2024-02-01
+R10560,Gadget,4,"The support team was helpful, works great.",true,2024-10-11
+R10561,Sprocket,4,"Excellent value, five stars, no complaints, works great, would not buy again.",true,2024-01-16
+R10562,Gizmo,5,"Battery died after a week, the support team was helpful, arrived late, five stars, no complaints.",true,2024-07-17
+R10563,Gizmo,3,"Too small for me, five stars, no complaints.",true,2024-06-24
+R10564,Widget,1,"Five stars, no complaints, arrived late.",true,2024-08-12
+R10565,Sprocket,4,"Works great, excellent value, the support team was helpful.",true,2024-03-17
+R10566,Widget,1,"Would not buy again, five stars, no complaints, too small for me.",true,2024-02-27
+R10567,Gizmo,4,"Arrived late, five stars, no complaints, too small for me, exactly as described.",true,2024-05-13
+R10568,Sprocket,4,"Battery died after a week, arrived late.",false,2024-03-15
+R10569,Sprocket,1,"Arrived late, packaging was damaged, too small for me.",true,2024-08-01
+R10570,Widget,3,"Excellent value, battery died after a week, five stars, no complaints.",true,2024-06-18
+R10571,Widget,5,"Too small for me, the support team was helpful.",true,2024-08-13
+R10572,Doohickey,4,"Arrived late, works great, exactly as described.",true,2024-04-02
+R10573,Widget,3,"Arrived late, would not buy again.",true,2024-03-11
+R10574,Doohickey,2,"Would not buy again, exactly as described, battery died after a week.",false,2024-08-03
+R10575,Gadget,4,"Exactly as described, packaging was damaged, would not buy again.",true,2024-01-25
+R10576,Gadget,5,"Works great, arrived late, battery died after a week.",true,2024-02-22
+R10577,Gadget,4,"Exactly as described, packaging was damaged, the support team was helpful.",false,2024-10-13
+R10578,Sprocket,1,"Five stars, no complaints, would not buy again, works great, the support team was helpful.",true,2024-08-03
+R10579,Doohickey,5,"Five stars, no complaints, packaging was damaged, arrived late.",true,2024-03-17
+R10580,Doohickey,4,"Exactly as described, the support team was helpful, battery died after a week, would not buy again.",true,2024-04-29
+R10581,Gizmo,1,"Excellent value, packaging was damaged, the support team was helpful, works great.",true,2024-06-13
+R10582,Widget,5,"Arrived late, works great.",false,2024-04-17
+R10583,Widget,1,"Too small for me, works great.",false,2024-07-07
+R10584,Doohickey,4,"Works great, battery died after a week.",true,2024-03-02
+R10585,Doohickey,3,"Exactly as described, the support team was helpful.",true,2024-06-07
+R10586,Gadget,5,"Exactly as described, the support team was helpful.",false,2024-09-27
+R10587,Sprocket,5,"Five stars, no complaints, exactly as described, the support team was helpful.",true,2024-08-18
+R10588,Gadget,3,"Battery died after a week, five stars, no complaints.",false,2024-03-01
+R10589,Widget,4,"Excellent value, battery died after a week, packaging was damaged.",true,2024-09-25
+R10590,Doohickey,4,"Works great, packaging was damaged.",true,2024-01-15
+R10591,Widget,4,"Excellent value, works great.",false,2024-09-22
+R10592,Sprocket,2,"Works great, packaging was damaged.",true,2024-03-15
+R10593,Gizmo,2,"Exactly as described, five stars, no complaints.",true,2024-05-04
+R10594,Widget,5,"Would not buy again, excellent value, too small for me.",false,2024-06-29
+R10595,Sprocket,3,"Excellent value, battery died after a week, arrived late, the support team was helpful.",true,2024-08-11
+R10596,Gizmo,4,"Arrived late, battery died after a week.",true,2024-05-12
+R10597,Sprocket,5,"Packaging was damaged, five stars, no complaints, excellent value.",true,2024-02-11
+R10598,Widget,5,"Too small for me, exactly as described, battery died after a week.",true,2024-08-01
+R10599,Doohickey,5,"Exactly as described, arrived late.",true,2024-03-08

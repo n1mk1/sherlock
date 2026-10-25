@@ -50,6 +50,8 @@ VOTES = 3
 @dataclass
 class RunState:
     from_version: int
+    max_steps: int
+    max_seconds: int
     ended_by: str = "done"
     waited_for_model_s: float = 0.0
     attempted: int = 0
@@ -62,6 +64,7 @@ class RunState:
     def json(self) -> dict:
         return {
             "from_version": self.from_version, "ended_by": self.ended_by,
+            "max_steps": self.max_steps, "max_seconds": self.max_seconds,
             "waited_for_model_s": round(self.waited_for_model_s, 1), "attempted": self.attempted,
             "handled": self.handled, "skipped": self.skipped,
             "hand_edited_skipped": self.hand_edited_skipped[:500], "step_ids": self.step_ids,
@@ -78,6 +81,20 @@ def issue_line(issue: dict) -> str:
     return f"{issue['count']:,} rows with {what}{where}: {issue.get('proposal') or ''}".strip()
 
 
+ISSUE_WORDS = {
+    "missing": "missing values", "mixed_types": "values of another type", "sentinels": "placeholder values",
+    "whitespace_case": "spacing or case variants", "near_duplicate_categories": "near-duplicate categories",
+    "duplicates": "duplicate rows", "impossible_values": "impossible values", "numbers_as_text": "numbers stored as text",
+    "ambiguous_dates": "ambiguous dates", "mojibake": "garbled characters", "unit_mixes": "mixed units",
+    "cross_column": "values out of order", "functional_dependency": "rows breaking a dependency", "outliers": "outliers",
+}
+
+
+def short_line(issue: dict) -> str:
+    """The log's one-line name for an issue: "263 missing values"."""
+    return f"{issue['count']:,} {ISSUE_WORDS.get(issue['detector'], issue['detector'].replace('_', ' '))}"
+
+
 def _json(value, limit: int = 1500) -> str:
     text = json.dumps(value, default=str, ensure_ascii=False)
     return text if len(text) <= limit else text[: limit - 1] + "…"
@@ -92,7 +109,8 @@ class Cleaner:
         self.params = ctx.params
         self.dataset = self._dataset()
         self.folder = dataset_dir(self.settings, self.dataset["user_id"], self.dataset["id"])
-        self.state = RunState(from_version=self.dataset["current_version"])
+        self.state = RunState(from_version=self.dataset["current_version"], max_steps=self.settings.clean_max_steps,
+                              max_seconds=self.settings.clean_max_seconds)
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
         self.work = self.settings.data_dir / ".clean" / ctx.id
@@ -178,6 +196,7 @@ class Cleaner:
             return self._finish()
         self.allowed = set(allowed) if allowed is not None else None
         self.protected = self.protected_cells()
+        self._checkpoint()  # the report (and the live screen's counts) can read the run from the start
         self._log_typing_step()
         try:
             while True:
@@ -259,7 +278,7 @@ class Cleaner:
         column = issue["column"]
         cap = min(self.settings.clean_max_steps, self.state.attempted + 5)
         self.ctx.progress(self.state.attempted, cap, f"Step {self.state.attempted} · {column or 'rows'}")
-        self.ctx.log(issue_line(issue), icon="running", column=column, detail="checking candidates", issue_id=issue["id"])
+        self.ctx.log(short_line(issue), icon="running", column=column, detail="checking candidates", issue_id=issue["id"])
         version, path = self._current_parquet()
         before = self._read(path)
         card = self._card()
@@ -281,7 +300,10 @@ class Cleaner:
             self.ctx.check_cancel()
             out = self.work / f"cand_{uuid.uuid4().hex}.parquet"
             r = sandbox.execute(self.settings, cand.code, sample_path, out, db=self.db,
-                                dataset_id=self.dataset["id"], job_id=self.ctx.id)
+                                dataset_id=self.dataset["id"], job_id=self.ctx.id,
+                                should_stop=self._stop_requested)
+            if r.cancelled:
+                raise JobCancelled()
             if not r.ok:
                 scored.append((cand, 0.0, None, r.error or "the code failed"))
                 continue
@@ -304,7 +326,10 @@ class Cleaner:
         self.ctx.check_cancel()
         full_out = self.work / f"full_{uuid.uuid4().hex}.parquet"
         r = sandbox.execute(self.settings, best.code, path, full_out, db=self.db,
-                            dataset_id=self.dataset["id"], job_id=self.ctx.id)
+                            dataset_id=self.dataset["id"], job_id=self.ctx.id,
+                                should_stop=self._stop_requested)
+        if r.cancelled:
+            raise JobCancelled()
         if not r.ok:
             return self._skip(issue, f"Failed on the full data ({r.error})", candidates=chips)
         try:
@@ -360,6 +385,14 @@ class Cleaner:
         self.ctx.log(best.expected_effect, icon="check" if decision.gate == "commit" else "flag", column=column,
                      gate=decision.gate, candidates=chips, step_id=step["id"], step_no=step["no"],
                      confidence=decision.confidence, detail=text, checks=full_report.hard, issue_id=issue["id"])
+
+    def _stop_requested(self) -> bool:
+        """Polled while a sandbox worker runs, so Stop kills it instead of waiting for it."""
+        try:
+            self.ctx.check_cancel()
+            return False
+        except JobCancelled:
+            return True
 
     # --- model calls ----------------------------------------------------------------------------
 

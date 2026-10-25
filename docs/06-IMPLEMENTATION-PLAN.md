@@ -260,7 +260,9 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Install | `cd api && uv sync` · `cd web && pnpm install` |
 | Run locally | `docker compose up` or `uv run uvicorn sherlock.main:app --reload` + `pnpm dev` |
 | Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` |
-| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute) |
+| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-24 only `corruption` runs; the others answer that they come with D4, D5.6, D6 and D7, and exit 2 |
+| Clean a file headless | `uv run sherlock clean <file.csv or sample>` (in `api/`): imports it, prints the live log and the report (D3.5) |
+| Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |
 | Export a notebook from the CLI | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |
 | Smoke the model | `uv run python scripts/smoke_llm.py` (from the repo root: `uv run --project api python scripts/smoke_llm.py`; options `--models a,b`, `--out report.json`, `--no-thinking`) |
 | Seed the sample | `uv run python scripts/seed_sample.py` |
@@ -307,6 +309,8 @@ Never cut: headless cleaning with a report, the auto-dashboard, grounded story c
 | `samples/eval/corruption/*` | clean sets + injection config | day 3 |
 
 The five-file end-to-end set is `titanic3.csv`, `sales_dated.csv`, `wide_messy.csv`, `reviews_text.csv` and `broken_latin1.txt`; `titanic_blanks.csv` is only for the prediction demo. The synthetic files come from `scripts/make_samples.py` (seeded, Day 3).
+
+As generated (2026-10-24, D3.5): `sales_dated.csv` (5,000 rows × 8), `wide_messy.csv` (800 × 60), `reviews_text.csv` (600 × 6) and `broken_latin1.txt` (150 data rows × 4, Latin-1, `;`) are committed in `api/samples/`. `titanic_blanks.csv` isn't made: cut 7 removed the `predict` recipe. In `broken_latin1.txt` the two preamble lines carry the same delimiters as the data, so the sniffer reads them as data (152 rows) unless the import preview sets header row 3. This gap in header detection is known (App Flow §18: "auto-detection tries the first 5 rows").
 
 ---
 

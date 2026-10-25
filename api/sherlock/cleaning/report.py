@@ -40,6 +40,9 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
         "ended_by": ended_by,
         "waited_for_model_s": state.get("waited_for_model_s", 0.0),
         "attempted": state.get("attempted", 0),
+        "budget": {"max_steps": state.get("max_steps"), "max_seconds": state.get("max_seconds")},
+        "started_at": job["started_at"],
+        "finished_at": job["finished_at"],
         "counts": {
             "found": found,
             "fixed": sum(1 for s in steps if s["gate"] == "commit"),

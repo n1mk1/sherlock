@@ -148,3 +148,37 @@ def test_new_rows_scope_changes_only_those_rows(client):
     # A scoped clean doesn't change the dataset's status.
     assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer"
     assert json.loads(db_rows("SELECT params_json FROM jobs WHERE id = ?", job["id"])[0][0])["scope"]["kind"] == "new_rows"
+
+
+@pytest.fixture
+def slow_model(monkeypatch, mocked_llm):
+    monkeypatch.setenv("LLM_MOCK", str(FIXTURES.parent / "cleaner_slow.json"))
+    get_settings.cache_clear()
+
+
+def test_stop_kills_the_running_worker_and_builds(slow_model, client):
+    import time
+
+    ds = offered(client)
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={}).json()
+    wait_for(lambda: any(e.get("detail") == "checking candidates"
+                         for e in client.get(f"{API}/jobs/{job['id']}/log").json()["entries"]))
+    time.sleep(1.5)  # the busy-loop candidate is running in the sandbox now
+    stopped_at = time.monotonic()
+    assert client.post(f"{API}/jobs/{job['id']}/cancel").status_code == 204
+    done = finished(client, job["id"])
+    assert done["status"] == "cancelled" and time.monotonic() - stopped_at < 10
+    assert wait_status(client, ds["id"], "ready", "failed")["status"] == "ready"  # Stop still builds the dashboard
+    assert client.get(f"{API}/datasets/{ds['id']}/report").json()["ended_by"] == "stopped"
+
+
+@pytest.mark.parametrize(("choice", "first_kind"), [("always", "clean"), ("never", "build_dashboard")])
+def test_after_upload_setting_skips_the_offer(client, choice, first_kind):
+    assert client.put(f"{API}/me/settings", json={"after_upload": choice}).status_code == 200
+    ds = upload(client, CSV, "messy.csv")
+    done = wait_status(client, ds["id"], "ready", "failed")
+    assert done["status"] == "ready"
+    kinds = [j["kind"] for j in reversed(client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json())]
+    assert kinds[:2] == ["profile", first_kind]
+    statuses = [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
+    assert "offer" not in statuses

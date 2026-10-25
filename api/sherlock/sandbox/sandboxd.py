@@ -14,10 +14,13 @@ It accepts nothing else.
 
 import json
 import os
+import select
 import socket
 import subprocess
 import sys
 import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 SANDBOX_USER = "sandbox"
@@ -53,15 +56,64 @@ def _recv_line(conn: socket.socket) -> bytes:
     return data
 
 
-def request(socket_path: str, worker_request: dict, workdir: Path, timeout_s: float) -> tuple[str, str, int, bool]:
-    """Client side, used by the API (as `app`)."""
+CANCELLED_RC = -15
+POLL_S = 0.5
+
+
+def run_worker(command: list[str], worker_request: dict, cwd: Path, timeout_s: float, env: dict,
+               preexec=None, should_stop: Callable[[], bool] | None = None) -> dict:
+    """Run one worker; kill it at the timeout, or as soon as `should_stop()` is true (a cancelled job)."""
+    proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, cwd=cwd, env=env, preexec_fn=preexec)
+    deadline = time.monotonic() + timeout_s
+    payload: str | None = json.dumps(worker_request)
+    while True:
+        try:
+            out, err = proc.communicate(input=payload, timeout=POLL_S)
+            return {"stdout": out, "stderr": err[-4000:], "returncode": proc.returncode, "timed_out": False}
+        except subprocess.TimeoutExpired:
+            payload = None  # sent with the first call
+            timed_out = time.monotonic() > deadline
+            if timed_out or (should_stop is not None and should_stop()):
+                proc.kill()
+                proc.communicate()
+                return {"stdout": "", "stderr": "", "returncode": -9 if timed_out else CANCELLED_RC,
+                        "timed_out": timed_out, "cancelled": not timed_out}
+
+
+def request(socket_path: str, worker_request: dict, workdir: Path, timeout_s: float,
+            should_stop: Callable[[], bool] | None = None) -> tuple[str, str, int, bool]:
+    """Client side, used by the API (as `app`). Closing the connection early (a cancelled job) makes
+    the daemon kill the worker."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-        conn.settimeout(timeout_s + 30)
         conn.connect(socket_path)
         payload = {"workdir": str(workdir), "request": worker_request, "timeout_s": timeout_s}
         conn.sendall(json.dumps(payload).encode() + b"\n")
-        answer = json.loads(_recv_line(conn) or b"{}")
+        conn.settimeout(POLL_S)
+        data = b""
+        deadline = time.monotonic() + timeout_s + 30
+        while not data.endswith(b"\n"):
+            try:
+                chunk = conn.recv(65536)
+            except TimeoutError:
+                if (should_stop is not None and should_stop()) or time.monotonic() > deadline:
+                    return "", "", CANCELLED_RC, False
+                continue
+            if not chunk:
+                break
+            data += chunk
+        answer = json.loads(data or b"{}")
     return answer.get("stdout", ""), answer.get("stderr", ""), int(answer.get("returncode", -1)), bool(answer.get("timed_out"))
+
+
+def _client_gone(conn: socket.socket) -> bool:
+    readable, _, _ = select.select([conn], [], [], 0)
+    if not readable:
+        return False
+    try:
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except OSError:
+        return True
 
 
 class Daemon:
@@ -86,12 +138,14 @@ class Daemon:
                 workdir = Path(payload["workdir"]).resolve()
                 if workdir.parent != self.sandbox_root or not workdir.is_dir():
                     raise ValueError("workdir must be a directory directly under the sandbox root")
-                answer = self.run(workdir, payload["request"], float(payload["timeout_s"]), _peer_uid(conn))
+                answer = self.run(workdir, payload["request"], float(payload["timeout_s"]), _peer_uid(conn),
+                                  should_stop=lambda: _client_gone(conn))
             except Exception as exc:  # noqa: BLE001 - the client gets the reason, the daemon keeps running
                 answer = {"stdout": "", "stderr": f"sandboxd: {exc}", "returncode": -1, "timed_out": False}
             conn.sendall(json.dumps(answer).encode() + b"\n")
 
-    def run(self, workdir: Path, worker_request: dict, timeout_s: float, caller_uid: int | None) -> dict:
+    def run(self, workdir: Path, worker_request: dict, timeout_s: float, caller_uid: int | None,
+            should_stop: Callable[[], bool] | None = None) -> dict:
         command = [self.python, "-I", "-m", "sherlock.sandbox.worker"]
         preexec = None
         if self.run_as:
@@ -104,11 +158,7 @@ class Daemon:
                 os.setgid(self.gid)
                 os.setuid(self.uid)
         try:
-            proc = subprocess.run(command, input=json.dumps(worker_request), capture_output=True, text=True,
-                                  cwd=workdir, timeout=timeout_s, env=worker_env(), preexec_fn=preexec)
-            answer = {"stdout": proc.stdout, "stderr": proc.stderr[-4000:], "returncode": proc.returncode, "timed_out": False}
-        except subprocess.TimeoutExpired:
-            answer = {"stdout": "", "stderr": "", "returncode": -9, "timed_out": True}
+            answer = run_worker(command, worker_request, workdir, timeout_s, worker_env(), preexec, should_stop)
         finally:
             if self.run_as and caller_uid is not None:
                 _chown_tree(workdir, caller_uid, -1)

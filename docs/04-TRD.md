@@ -200,6 +200,9 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - **Endings.** A job that returns ends `done` with its return value as `result`. One that raises ends `failed` with the first line of the error (at most 500 characters). One cancelled ends `cancelled` with the error "Cancelled." `job.done` reports `done`; `job.failed` reports both `failed` and `cancelled`, and its `Job.status` tells them apart.
   - **Heartbeats and recovery.** A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so at startup every job still `running` is re-queued, whatever its heartbeat. A sweep every 30 s also re-queues a `running` job of another owner whose heartbeat is older than 60 s. Startup also queues a `profile` job for any `profiling` dataset that has none queued or running (datasets imported before jobs existed).
   - **Not yet.** Checkpoints (`state_json`) come with D8.6; until then a re-queued job starts over, which is safe because kinds are idempotent (the profile job reads the cached DataCard). The Cleaner writes its run state to `state_json` for the report, but a re-queued clean job still starts over: issues already handled are fixed on the current version, so it finds fewer. Killing the sandbox on cancel is D3.5. `JOB_BACKEND=nebius` is not built.
+  - **Cancellation and the sandbox** (D3.5). While a worker runs, the Cleaner polls `cancel_requested` every 0.5 s, and a cancelled job's worker is killed at once, so Stop takes effect mid-candidate, not after up to 65 s.
+    - Direct workers are killed by the API.
+    - With `sherlock-sandboxd`, the API closes its connection, and the daemon, which watches the connection while the worker runs, kills the worker.
   - **`build_dashboard`** (D3.4, `sherlock/jobs/build.py`). Until the dashboard builder (D4.2) exists, the job reports one step, "Building the dashboard", and sets the dataset to `ready`. Its result is `{ version, widgets: 0 }`. If it fails or is cancelled, the dataset is still set to `ready`.
 
 ### 3.4 Sandbox
@@ -554,7 +557,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 |---|---|---|
 | `dataset.status` | `{ status, current_version }` | status changes |
 | `job.progress` | `Job.progress` + `job_id`, `kind` | each step of any job |
-| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines. As built, the Cleaner also sends `detail` (the line under the entry: "committed · step 3", "committed with a flag · step 2 · confidence 0.72", "skipped", "checking candidates"), `issue_id`, and for commits `step_id`, `step_no`, `confidence` and `checks` (the hard verifier results). `icon` is `running`, `check`, `flag`, `skip`, `wait` ("Waiting for the model…") or `error` |
+| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines. As built, the Cleaner also sends `detail` (the line under the entry: "committed · step 3", "committed with a flag · step 2 · confidence 0.72", "skipped", "checking candidates"), `issue_id`, and for commits `step_id`, `step_no`, `confidence` and `checks` (the hard verifier results). `icon` is `running`, `check`, `flag`, `skip`, `wait` ("Waiting for the model…") or `error`. A `running` line's `text` names the issue ("263 missing values"); its outcome line follows with the same `issue_id` |
 | `job.done` / `job.failed` | `Job` | job ends |
 | `version.created` | `{ version, step_id, summary, cells_changed, rows_added, rows_removed }` | a step commits |
 | `cascade.started` | `{ version, widget_ids, card_ids, run_ids }` | cascade begins |
@@ -749,7 +752,7 @@ Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[d
 
 ### 6.8 Report, run and proposal shapes
 
-`CleaningReport` as built (2026-10-24) adds `status` (the job's), `attempted`, `counts.rows_deleted` (always 0), each step's `confidence` and `flag_reason`, and `error`. `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one.
+`CleaningReport` as built (2026-10-24) adds `status` (the job's), `attempted`, `budget: { max_steps, max_seconds }`, `started_at`, `finished_at`, `counts.rows_deleted` (always 0), each step's `confidence` and `flag_reason`, and `error`. The run's state is checkpointed before the first issue, so the report can be read while the run is going; the cleaning screen polls it for its counts. `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one.
 
 `CleaningReport` (built from `steps` and the `issues` table for one clean job): `{ job_id, from_version, to_version, ended_by: "done"|"steps"|"time"|"tokens"|"stopped"|"error", waited_for_model_s, counts: { found, fixed, flagged, skipped }, steps: [{ step_id, no, summary, gate, impact }], skipped: [{ issue_id, column, detector, reason }], hand_edited_skipped: [{ row_id, column }], decisions: [{ step_id, question, chosen, reason }] }`. The cleaner writes `issues.outcome`, `handled_by_step_id` and `skip_reason` as it goes.
 
@@ -789,7 +792,7 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 Implementation of step 6 (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/profile.py`):
 - Steps 3–6 run as the `profile` job, which every import queues. Step 3b, the typing step, comes first, and the card is then built for the version it produces.
 - The job builds and caches the current version's DataCard, then sets the status and emits `dataset.status`.
-- Until the Cleaner (D3) and the dashboard builder (D4) exist, every "After upload" setting ends in `offer`.
+- Since D3.6 the ending follows the user's "After upload" setting: `ask` → `offer`; `always` → status `cleaning` and a whole-dataset `clean` job (params with `automatic: true`); `never` → status `building` and the `build_dashboard` job.
 - If the job fails, or is cancelled, the dataset becomes `failed` and the reason goes in `error`. The UI shows it as "Profiling failed: <reason>" (App Flow §3.3). Retrying the job (§4.10) moves the dataset back to `profiling`.
 - A dataset deleted before its job runs is skipped.
 
@@ -1294,6 +1297,20 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **Notebook execution**: for the sample (and each file in the end-to-end set, on demand), export the notebook, run it with `jupyter nbconvert --execute` in a fresh virtualenv built from the requirements cell, and assert (a) no cell errors, (b) the rebuilt DataFrame equals the current version by `_row_id`, (c) each widget cell's table equals the app's widget data, (d) each run's metrics are within 0.5 pp of the model card. Runs in CI on the sample (mocked-LLM artifacts, real execution).
 - **Integration**: ingest → profile → clean → build → stories on the five-file set, with the LLM mocked by recorded responses (`tests/fixtures/llm/*.json`) and a "live" marker for real calls.
 - **Benchmarks (`sherlock eval`)**: corruption benchmark (recovery, harm, row loss), planted-truth ML tests, grounding test, ask-anything eval (≈ 50 questions with expected values and tolerance), all runnable from the CLI and reported as a markdown table for the README.
+  - **The corruption benchmark as built** (2026-10-24, Implementation Plan D3.3, `sherlock/eval/corruption.py`, `sherlock/eval/synthetic.py`).
+    - **Sets.** Three clean sets, from seeded generators:
+      - `titanic_clean`: the sample's complete rows on its eight plain columns, 1,043 rows
+      - `sales`: 1,500 dated orders
+      - `hr`: 800 employees, with a city → region-code dependency and accented names
+    - **Damage.** Seeded injectors damage a share of a column's cells: money formatting (`$1,234.50`), placeholders (`N/A`, `-999`, `?`), case and spacing variants, one-letter typos, mojibake, and unambiguous day-first dates. Each damaged cell keeps its clean value; for a placeholder, the honest recovery is a missing value.
+    - **Run.** Each damaged CSV goes through the real pipeline in-process (import, profile and typing, the Cleaner, the final version) in a throwaway data directory. It uses the real model unless `LLM_MOCK` is set.
+    - **Scores.**
+      - Recovery: damaged cells whose final value equals the clean one.
+      - Harm: undamaged cells whose final value no longer does.
+      - Row loss: rows missing from the final version.
+      - Quarantined rows are counted apart.
+      - Values compare as numbers within 1e-6, dates by day, yes/no text as booleans (the typing step casts such columns), and text exactly.
+    - **Output.** `uv run sherlock eval corruption [--sets a,b]` prints the summary table and a per-damage breakdown. The first numbers are in `FEEDBACK.md`.
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.

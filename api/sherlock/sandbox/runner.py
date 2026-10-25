@@ -7,7 +7,6 @@ import hashlib
 import json
 import shutil
 import sqlite3
-import subprocess
 import sys
 import tempfile
 import time
@@ -38,6 +37,7 @@ class SandboxResult:
     flags: dict[str, list[int]] = field(default_factory=dict)  # flag_rows reasons → _row_ids
     wall_ms: int = 0
     timed_out: bool = False
+    cancelled: bool = False
 
 
 def sandbox_root(settings: Settings) -> Path:
@@ -48,15 +48,10 @@ def worker_command() -> list[str]:
     return [sys.executable, "-I", "-m", "sherlock.sandbox.worker"]
 
 
-def _direct(request: dict, workdir: Path, timeout_s: float) -> tuple[str, str, int, bool]:
-    try:
-        proc = subprocess.run(
-            worker_command(), input=json.dumps(request), capture_output=True, text=True,
-            cwd=workdir, timeout=timeout_s, env=sandboxd.worker_env(),
-        )
-        return proc.stdout, proc.stderr, proc.returncode, False
-    except subprocess.TimeoutExpired as exc:
-        return exc.stdout or "", exc.stderr or "", -9, True
+def _direct(request: dict, workdir: Path, timeout_s: float, should_stop=None) -> tuple[str, str, int, bool]:
+    answer = sandboxd.run_worker(worker_command(), request, workdir, timeout_s, sandboxd.worker_env(),
+                                 should_stop=should_stop)
+    return answer["stdout"], answer["stderr"], answer["returncode"], answer["timed_out"]
 
 
 def execute(
@@ -69,9 +64,12 @@ def execute(
     dataset_id: str | None = None,
     job_id: str | None = None,
     skip_static_check: bool = False,
+    should_stop=None,
 ) -> SandboxResult:
     """Run `code` on the version at `input_parquet`; on success the result is at `output_parquet`.
-    `skip_static_check` exists only for tests of the worker's own defences."""
+    `should_stop()` is polled while the worker runs: when it turns true (the job was cancelled) the
+    worker is killed and the result has `cancelled`. `skip_static_check` exists only for tests of
+    the worker's own defences."""
     started = time.monotonic()
     violations = [] if skip_static_check else [str(v) for v in check(code)]
     if violations:
@@ -92,10 +90,14 @@ def execute(
         }
         timeout_s = settings.sandbox_cpu_s * WALL_FACTOR + STARTUP_S
         if settings.sandboxd_socket:
-            stdout, stderr, code_rc, timed_out = sandboxd.request(settings.sandboxd_socket, request, workdir, timeout_s)
+            stdout, stderr, code_rc, timed_out = sandboxd.request(settings.sandboxd_socket, request, workdir, timeout_s,
+                                                                  should_stop)
         else:
-            stdout, stderr, code_rc, timed_out = _direct(request, workdir, timeout_s)
-        result = _parse(stdout, stderr, code_rc, timed_out)
+            stdout, stderr, code_rc, timed_out = _direct(request, workdir, timeout_s, should_stop)
+        if code_rc == sandboxd.CANCELLED_RC and not stdout:
+            result = SandboxResult(ok=False, error="Cancelled.", cancelled=True)
+        else:
+            result = _parse(stdout, stderr, code_rc, timed_out)
         if result.ok:
             output_parquet.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(workdir / "output.parquet", output_parquet)
