@@ -614,6 +614,12 @@ A `purge` job runs every 10 minutes:
 4. Delete sandbox temp directories (`/tmp/sherlock-sandbox/`, outside `/data`) older than 1 h.
 5. Recompute `users.storage_bytes`.
 
+As built (2026-10-25, D8.6, `sherlock/jobs/purge.py`):
+- Hard-deleting a dataset removes its folder and its rows. The tables with a cascading foreign key go with it; `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals` and `value_index` are cleared explicitly. `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend figures read them.
+- A purged widget takes its card and fact sheets with it, and a run that pointed at it is unlinked. Canvas nodes of purged cards are pruned on the next canvas read (§2.12).
+- An export's file is deleted with its row.
+- `storage_bytes` counts every dataset still on disk, soft-deleted ones included, since their files remain until they are purged. Each dataset's `folder_bytes` is measured again first.
+
 ---
 
 ## 7. Integrity rules enforced in code

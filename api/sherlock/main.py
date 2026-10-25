@@ -19,6 +19,7 @@ from sherlock.jobs import cascade as _cascade_job  # noqa: F401
 from sherlock.jobs import clean as _clean_job  # noqa: F401
 from sherlock.jobs import export as _export_job  # noqa: F401
 from sherlock.jobs import profile as _profile_job  # noqa: F401
+from sherlock.jobs import purge as _purge_job  # noqa: F401
 from sherlock.jobs import stories as _stories_job  # noqa: F401
 from sherlock.ml import runner as _ml_job  # noqa: F401
 from sherlock.jobs.events import EventBus

@@ -318,7 +318,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 |---|---|
 | Install | `cd api && uv sync` · `cd web && pnpm install` |
 | Run locally | `docker compose up` or `uv run uvicorn sherlock.main:app --reload` + `pnpm dev` |
-| Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` |
+| Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` (`pnpm e2e` builds the web app first; D8.6) |
 | Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-25 `corruption`, `ask` and `notebook` run (`notebook` takes `--sets a.csv,b.csv` or `all` for the end-to-end set); the others answer that they come with D6 and D7, and exit 2 |
 | Clean a file headless | `uv run sherlock clean <file.csv or sample>` (in `api/`): imports it, prints the live log and the report (D3.5) |
 | Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |

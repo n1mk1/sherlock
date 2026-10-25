@@ -42,8 +42,21 @@ def _run(ctx: JobContext) -> dict:
             ctx.progress(i, len(ctx.params["synthesis_ids"]), "Writing the synthesis again")
             synthesis.refresh(ctx.db, ctx.bus, LLMClient(ctx.settings), scope, dataset, cid, columns)
         return {"cards": len(ctx.params["synthesis_ids"]), "widgets": 0}
-    return stories.tell(env, LLMClient(ctx.settings), scope, dataset, ctx.params.get("widget_ids"),
-                        reason=ctx.params.get("reason", "build"), progress=ctx.progress, check_cancel=ctx.check_cancel)
+    # Resume (D8.6): a re-queued job skips the widgets whose cards its last run already stored.
+    told = set(ctx.state.get("told", []))
+    widget_ids = ctx.params.get("widget_ids")
+    if told:
+        live = [r["id"] for r in ctx.db.execute("SELECT id FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL",
+                                                (dataset["id"],))]
+        widget_ids = [w for w in (live if widget_ids is None else widget_ids) if w not in told]
+
+    def told_one(widget_id: str) -> None:
+        told.add(widget_id)
+        ctx.checkpoint({"told": sorted(told)})
+
+    return stories.tell(env, LLMClient(ctx.settings), scope, dataset, widget_ids,
+                        reason=ctx.params.get("reason", "build"), progress=ctx.progress, check_cancel=ctx.check_cancel,
+                        on_told=told_one)
 
 
 async def run(ctx: JobContext) -> dict:

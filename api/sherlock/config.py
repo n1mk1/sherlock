@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     job_backend: Literal["local", "nebius"] = "local"
     job_workers: int = 4
+    purge_interval_s: int = 600  # the purge job's period (Schema §6); 0 turns it off
     sandbox_cpu_s: int = 30
     sandbox_mem_mb: int = 2048
     # Unix socket of sherlock-sandboxd (the image sets it); empty: workers start directly (dev, tests).

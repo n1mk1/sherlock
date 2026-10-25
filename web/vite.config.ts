@@ -20,6 +20,7 @@ export default defineConfig({
     },
   },
   test: {
+    include: ["src/**/*.test.{ts,tsx}"], // e2e/*.spec.ts is Playwright's
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: false,

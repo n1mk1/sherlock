@@ -214,7 +214,8 @@ def _set_status(db, dataset_id: str, widget_id: str, status: str) -> str | None:
 
 
 def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, widget_ids: list[str] | None, *,
-         reason: str, ask_first: bool = False, progress=lambda *_: None, check_cancel=lambda: None) -> dict:
+         reason: str, ask_first: bool = False, progress=lambda *_: None, check_cancel=lambda: None,
+         on_told=lambda _widget_id: None) -> dict:
     """Fact sheets and cards for the widgets (all when None), then the overview. `reason` is
     "build" (a new dashboard), "widget" (one added or changed), "cascade" or "refresh"."""
     db = env.db
@@ -283,6 +284,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
             cid = _upsert(db, dataset["id"], "widget", w["id"], headline, body, sheet["id"], version,
                           llm.settings.model_medium if by_model else None, changed=existed and reason == "cascade")
             emit_card(db, env.bus, dataset, cid, scope.job_id)
+            on_told(w["id"])  # the stories job's checkpoint (D8.6)
             done += 1
     told = {w["id"] for w, _, _ in jobs}
     for w in chosen:  # never leave a card spinning: a failed query asks for Refresh, no facts keeps the text

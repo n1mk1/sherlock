@@ -6,8 +6,10 @@ function that does its blocking work through `asyncio.to_thread`; it reports thr
 bus message. A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so
 at startup every job still marked running was orphaned by the previous process and is re-queued;
 a sweep also re-queues any running job of another process whose heartbeat is older than 60 s.
-Checkpoints (resuming mid-pipeline from `state_json`) come with Implementation Plan D8.6; until
-then a re-queued job starts over, which is safe because job kinds are idempotent.
+A job kind can checkpoint (`ctx.checkpoint(state)` writes `state_json`); a re-queued job gets that
+state back as `ctx.state` and resumes from it (D8.6). Kinds without checkpoints start over, which is
+safe because job kinds are idempotent. The sweeper also queues the `purge` job every
+`PURGE_INTERVAL_S` (Schema §6).
 """
 
 import asyncio
@@ -143,8 +145,16 @@ class JobContext:
         self.dataset_id: str | None = row["dataset_id"]
         self.user_id: str = row["user_id"]
         self.params: dict = json.loads(row["params_json"])
+        # The last checkpoint, when the job was re-queued mid-run (after a restart or a stale heartbeat).
+        self.state: dict = json.loads(row["state_json"]) if row["state_json"] else {}
         self.db = connect(self.settings)
         self._lock = threading.RLock()
+
+    def checkpoint(self, state: dict) -> None:
+        """Save how far the job got, so a re-queued run can carry on from here (TRD §3.3)."""
+        with self._lock:
+            self.state = state
+            self.db.execute("UPDATE jobs SET state_json = ? WHERE id = ?", (json.dumps(state), self.id))
 
     def close(self) -> None:
         with self._lock:
@@ -287,13 +297,30 @@ class JobRunner:
             db.close()
 
     async def _sweeper(self) -> None:
+        last_purge = 0.0
         while True:
             await asyncio.sleep(SWEEP_S)
             try:
                 if await asyncio.to_thread(self._requeue_stale):
                     self.wake()
+                interval = self.settings.purge_interval_s
+                if interval > 0 and self.settings.job_workers > 0 and self._loop.time() - last_purge >= interval:
+                    last_purge = self._loop.time()
+                    if await asyncio.to_thread(self._queue_purge):
+                        self.wake()
             except sqlite3.Error:
                 log.exception("jobs: sweep failed")
+
+    def _queue_purge(self) -> bool:
+        """One purge job at a time (Schema §6): the first sweep after a start, then every interval."""
+        db = connect(self.settings)
+        try:
+            if db.execute("SELECT 1 FROM jobs WHERE kind = 'purge' AND status IN ('queued', 'running')").fetchone():
+                return False
+            insert_job(db, "system", None, "purge", {})
+            return True
+        finally:
+            db.close()
 
     # --- workers ---------------------------------------------------------------------------
 
