@@ -186,6 +186,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - `owned(kind)` for bare-ID routes, which resolves through the table's `dataset_id`, except jobs, which carry `user_id`
 
     A soft-deleted dataset hides itself and its children. Not-owned and missing look the same: `404 not_found`.
+
+    `tests/test_ownership_routes.py` walks every route in the app and fails when one with a path parameter has neither dependency. A route that has to check in its body is listed there with its reason; today that's only `POST /datasets/{dataset_id}/restore`, which must find a soft-deleted dataset (`check_dataset(…, include_deleted=True)`) (added 2026-10-25, Day 1 review).
   - **Error envelope.** FastAPI's own errors are mapped onto it: validation errors → `422 invalid`, unknown routes → `404 not_found`, unhandled exceptions → `500 internal`.
   - **Database.** Routes get one SQLite connection per request through `get_db` (`sherlock/db/connection.py`). The identity middleware uses its own short-lived connection, in a worker thread. Migrations run in the lifespan, after the model-role check.
 
@@ -291,6 +293,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Transport: OpenAI-compatible chat completions (`LLM_BASE_URL`, `LLM_API_KEY`) through the `openai` Python SDK. If Token Factory's API differs, only this adapter changes.
 - Startup check and health (implemented in `sherlock/llm/models.py`):
   - The role check runs in the app's lifespan, so a misconfigured deployment refuses to start.
+  - `NVIDIA_EMBED_MODELS` is configuration too, so it can't vouch for a model on its own: `MODEL_EMBED` must be in that list and also look like an NVIDIA embedding ID (it contains `embed` and one of `nvidia`, `nv-` or `nemotron`, the same rule the smoke test uses to find embedding models in the catalog). A non-NVIDIA ID such as `BAAI/bge-m3` fails startup even when it's listed (added 2026-10-25, Day 1 review).
   - `/healthz` reports `llm.reachable` from a `GET /models` probe with a 5 s timeout, cached for 60 s so an uptime monitor doesn't hit Token Factory on every check.
   - Reasoning traces (`<think>…</think>`, or a lone closing tag) are stripped before JSON is parsed (`sherlock/llm/text.py`).
 - Day 1 results (`scripts/smoke_llm.py`, 2026-10-24; details in `FEEDBACK.md`):
@@ -1719,7 +1722,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
 | `LOG_LEVEL` | `info` | |
 
-Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all.
+Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host since 2026-10-24, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` `sync: false`, so it's entered in the dashboard and never stored in the repo.
 
 ---
 

@@ -19,7 +19,7 @@ def embed_allowlist(settings: Settings) -> list[str]:
 
 
 def validate_model_roles(settings: Settings) -> None:
-    """Fail startup unless large/medium/small are Nemotron and embed is empty or allowlisted."""
+    """Fail startup unless large/medium/small are Nemotron and embed is empty or an allowlisted NVIDIA model."""
     problems = []
     for role in ("large", "medium", "small"):
         model_id = settings.models[role]
@@ -28,6 +28,9 @@ def validate_model_roles(settings: Settings) -> None:
     embed = settings.model_embed
     if embed and embed not in embed_allowlist(settings):
         problems.append(f"MODEL_EMBED={embed!r} is not listed in NVIDIA_EMBED_MODELS")
+    elif embed and not is_nvidia_embed(embed):
+        # The allowlist is configuration too, so it can't vouch for a non-NVIDIA model.
+        problems.append(f"MODEL_EMBED={embed!r} is not an NVIDIA embedding model")
     if problems:
         raise ModelConfigError("; ".join(problems))
 

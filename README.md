@@ -2,7 +2,7 @@
 
 Sherlock is an AI data analyst for people who own a messy CSV and need answers they can defend. It cleans the data, builds a dashboard, runs honest models and writes story cards; every number comes from executed code, and the whole analysis exports as a runnable Jupyter notebook.
 
-**Hosted URL:** https://sherlock-anw3.onrender.com (Render, Frankfurt; currently the scaffold, with `/healthz` live)
+**Hosted URL:** https://sherlock-anw3.onrender.com (Render, Frankfurt; the build deployed by hand from `main`, with `/healthz` live)
 
 > This README is a skeleton. Its sections follow Implementation Plan §7 and are filled in on Oct 28.
 
@@ -67,6 +67,13 @@ Sherlock is hosted on **Render**: one Docker web service built from `api/Dockerf
 3. Apply. Render builds the image, attaches the disk and deploys.
 
 Later pushes to `main` that touch `api/`, `web/` or `render.yaml` redeploy once CI passes.
+
+While GitHub Actions can't start jobs on this account (billing, since 2026-10-25), CI never passes, so nothing deploys on its own. Deploy by hand instead (TRD §11):
+
+1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
+2. Push to `main`.
+3. Start a **Manual Deploy** of the service in the Render dashboard (or through the Render API).
+4. Check `/healthz` and that the site serves the new build.
 
 ### Nebius alternative
 

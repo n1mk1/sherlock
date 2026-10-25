@@ -35,6 +35,12 @@ def test_validate_embed_must_be_allowlisted():
     )
 
 
+def test_validate_embed_allowlist_cannot_admit_a_non_nvidia_model():
+    # CLAUDE.md rule 2: listing a model in NVIDIA_EMBED_MODELS doesn't make it NVIDIA.
+    with pytest.raises(ModelConfigError, match="not an NVIDIA embedding model"):
+        validate_model_roles(settings(model_embed="BAAI/bge-m3", nvidia_embed_models="BAAI/bge-m3"))
+
+
 def test_pick_roles_prefers_nemotron_3_tiers():
     catalog = [
         "meta-llama/Llama-3.3-70B-Instruct",
