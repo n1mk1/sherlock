@@ -48,4 +48,16 @@ describe("export dialog", () => {
     expect(asked.every((q) => !q.includes("null"))).toBe(true);
     await waitFor(() => expect(document.body.textContent).toContain("0 story cards"));
   });
+
+  it("opens with Ctrl+Shift+E even when the focused element stops the key (the CSV grid does)", async () => {
+    mockApi({
+      "GET /api/v1/datasets/ds_1/exports/notebook/preview": {
+        version: 4, notes: [], counts: { steps: 2, widgets: 6, runs: 0, cards: 0 },
+        options: { include_data: true, include_cards: true, include_notes: false, include_runs: true, order: "steps_dashboard" },
+      },
+    });
+    renderAt(<><div data-testid="grid" tabIndex={0} onKeyDown={(e) => e.stopPropagation()} /><ExportDialog dataset={DATASET} /></>);
+    fireEvent.keyDown(screen.getByTestId("grid"), { key: "E", ctrlKey: true, shiftKey: true });
+    expect(useUi.getState().exportOpen).toBe(true);
+  });
 });

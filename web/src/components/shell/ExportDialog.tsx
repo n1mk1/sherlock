@@ -85,8 +85,9 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
         if (!blocked) setOpen(true);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase: the CSV grid stops the keys it handles from bubbling, and it usually has focus there.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [blocked, setOpen]);
   useEffect(() => {
     if (params.get("export") === "notebook" && !blocked) {
