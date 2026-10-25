@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Job, Widget } from "@/api/types";
 import { initials } from "@/components/library/LibraryPanel";
-import { visibleJobs } from "@/components/shell/JobTray";
+import { JobTray, visibleJobs } from "@/components/shell/JobTray";
 import { formatCell, formatNumber, isPctColumn } from "@/lib/format";
 import { useFilters } from "@/state/filters";
 import { mockApi, renderAt } from "@/test/render";
@@ -81,6 +81,23 @@ describe("dashboard helpers", () => {
     expect(visibleJobs(jobs, new Set(["e"]), now).map((j) => j.id)).toEqual(["a", "b", "d"]);
     expect(initials("titanic3.csv (sample)")).toBe("TI");
     expect(initials("sales_semicolon.csv")).toBe("SS");
+  });
+});
+
+describe("job tray", () => {
+  it("is a popover whose Retry and Dismiss are reached with Tab", async () => {
+    mockApi({
+      "GET /api/v1/jobs": [{ id: "job_1", dataset_id: "ds_1", kind: "clean", status: "failed", error: "Model unavailable",
+        progress: { step: 0, of: 0, label: "", pct: 0 }, created_at: "", started_at: null, finished_at: null, result: null }],
+      "GET /api/v1/datasets": [],
+    });
+    renderAt(<JobTray />);
+    fireEvent.click(await screen.findByRole("button", { name: /Background jobs/ }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByRole("dialog")).toContainElement(retry);
+    // A dropdown menu cancels Tab inside it (UI/UX brief §8: every control is reachable by keyboard).
+    expect(fireEvent.keyDown(retry, { key: "Tab" })).toBe(true);
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 });
 

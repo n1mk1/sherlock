@@ -1,7 +1,7 @@
 // The jobs tray (App Flow §15, UI/UX brief §5.15): a ghost icon in the centre header with a count of
 // running jobs. Its popover lists jobs with progress and Cancel; finished jobs stay for a minute,
 // failed ones until dismissed, with Retry.
-import * as Popover from "@radix-ui/react-dropdown-menu";
+import * as Popover from "@radix-ui/react-popover";
 import { Activity, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
