@@ -182,6 +182,10 @@ def test_resolution_and_formatting():
 def test_eval_checks():
     msg = {"blocks": [{"type": "table", "columns": [], "rows": [[1, 87.5], [2, 21.18]], "total": 2}], "sources": [{"sql": "x"}]}
     assert ask_eval.check(msg, {"rows": {"1": 87.509, "2": 21.179}})[0]
+    # The measure before the category (live, "Revenue by region" listed revenue first) still matches.
+    flipped = {"blocks": [{"type": "table", "columns": [], "rows": [[104063.01, "Central"], [198168.56, "East"]], "total": 2}]}
+    assert ask_eval.check(flipped, {"rows": {"Central": 104063.01, "East": 198168.56}})[0]
+    assert not ask_eval.check(flipped, {"rows": {"Central": 198168.56, "East": 104063.01}})[0]
     assert ask_eval.check({"blocks": [{"type": "number", "value": 38.2}]}, {"value": 0.38197, "tol": 0.01})[0]
     assert not ask_eval.check({"blocks": [{"type": "number", "value": 12}]}, {"value": 13})[0]
     assert ask_eval.unsourced({"blocks": [{"type": "number", "value": 1}], "sources": []})

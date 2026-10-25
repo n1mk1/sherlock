@@ -247,6 +247,7 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **Not done:**
   - The "How many orders" miss above: counting rows when the user names an ID column. It passed on the re-run, so it may be model variance rather than a fixed bug.
   - The ask eval's group-by check keys each table on its first column, so a right answer whose SQL lists the measure first fails (two misses on the re-run). The fix is to match on whichever column holds the expected keys; it hasn't been made.
+    - **Fixed later the same day:** the check now tries every column as the key, with a unit test for the flipped table (`test_eval_checks`) and TRD §8.1's scoring note. It wasn't re-run live, so 33 of 35 stands as the last live score. The values the re-run printed for those two questions match the expected ones, so by this rule it would likely have scored 35 of 35.
   - Answer time: the median is still 11.8 s against the ≤ 4 s target to the first block (TRD §13).
   - **Day 5:** the export dialog's Save and export button (the dialog says to save first) and the Flow palette's Export entry (D8). The grid's range paste wasn't verified (TSV paste is cut 5).
   - **Day 6:** relations don't yet weigh correlation between measures or ML dependencies (TRD §7.4). Gauges render as a KPI tile.

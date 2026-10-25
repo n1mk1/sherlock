@@ -1620,6 +1620,8 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 - **Verify.** Every value in a block or chip is read from a result cell by code, and text runs can't contain digits (schema validator). So the check in step 7 holds by construction, and the eval counts unsourced answers.
 - **Not yet:** the multi-step planner (step 4), the thread summary, and `update_widget`, `edit_cells` and `clean_selection` proposals (D8.5). Suggested questions are cut (Implementation Plan §2.0, cut 9).
 - **Eval v0 (`uv run sherlock eval ask`, 2026-10-25).** The first run passed 31 of 35 and the second 32 of 35, with 0 unsourced answers and a median of 11–12 s per answer. The misses were routing variance, false "no column answers that", and `AVG` over a boolean; the SQL prompt now covers the last two.
+  - **Scoring.** A value question passes when any number block or cell is within the tolerance. A rows question passes when one table or chart holds every expected key with its value. Every column is tried as the key, because the SQL may list the measure before the category (on 2026-10-25, "Revenue by region" listed `revenue` first and was scored a miss although its values were right). A count question passes on the row list's total.
+  - Later runs on 2026-10-25: 34 of 35 after Day 7's first slice, and 33 of 35 after `cfb4b08`. Both re-run misses were the column-order case above, scored before this fix.
 - **Live (2026-10-25, Nemotron 3 Nano for routing, Super for SQL and compose).** A routed question takes about 1 s, SQL 2–5 s and compose 2–6 s, so the first block arrives in about 4–6 s and the answer in 5–15 s.
 
 ### 8.2 Answerer contracts

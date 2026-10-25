@@ -60,12 +60,14 @@ def numbers(blocks: list[dict]) -> list:
 
 
 def row_maps(blocks: list[dict]) -> list[dict[str, list]]:
-    """Each table or chart as {first column as text: the row's other values}."""
+    """Each table or chart as {key column as text: the row's other values}, once per column taken as
+    the key. The SQL may list the measure before the category, so the first column isn't always it."""
     maps = []
     for b in blocks:
         t = b if b["type"] == "table" else b.get("data") if b["type"] == "chart" else None
         if t and t["rows"]:
-            maps.append({_key(r[0]): r[1:] for r in t["rows"]})
+            for i in range(len(t["rows"][0])):
+                maps.append({_key(r[i]): r[:i] + r[i + 1:] for r in t["rows"]})
     return maps
 
 
