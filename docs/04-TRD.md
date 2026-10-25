@@ -279,6 +279,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Transport: OpenAI-compatible chat completions (`LLM_BASE_URL`, `LLM_API_KEY`) through the `openai` Python SDK. If Token Factory's API differs, only this adapter changes.
 - Startup check and health (implemented in `sherlock/llm/models.py`):
   - The role check runs in the app's lifespan, so a misconfigured deployment refuses to start.
+  - `NVIDIA_EMBED_MODELS` is configuration too, so it can't vouch for a model on its own: `MODEL_EMBED` must be in that list and also look like an NVIDIA embedding ID (it contains `embed` and one of `nvidia`, `nv-` or `nemotron`, the same rule the smoke test uses to find embedding models in the catalog). A non-NVIDIA ID such as `BAAI/bge-m3` fails startup even when it's listed (added 2026-10-25, Day 1 review).
   - `/healthz` reports `llm.reachable` from a `GET /models` probe with a 5 s timeout, cached for 60 s so an uptime monitor doesn't hit Token Factory on every check.
   - Reasoning traces (`<think>…</think>`, or a lone closing tag) are stripped before JSON is parsed (`sherlock/llm/text.py`).
 - Day 1 results (`scripts/smoke_llm.py`, 2026-10-24; details in `FEEDBACK.md`):
