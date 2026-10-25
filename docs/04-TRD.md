@@ -1896,7 +1896,7 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **New users per client IP** (2026-10-25, owner's decision on the Day 1 review). `IdentityMiddleware` admits at most `NEW_USERS_PER_IP_HOUR` (default 30) new users per client IP in a sliding hour, in memory (one process).
   - A request that would create one past the cap gets `429 rate_limited` with `Retry-After`. Existing cookies are never capped.
   - The client IP is the last `X-Forwarded-For` entry, the one the host's proxy appended, else the socket's peer. Render appends to whatever the client sends, so the first entry can be forged.
-  - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's.
+  - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's. The `sherlock.*` loggers get a stderr handler at INFO in `create_app`. Before, they had none, so their INFO lines were dropped at the root logger's WARNING level, this one included.
   - 30 an hour leaves room for judges behind one office network. The app-wide token ceiling (§3.5) bounds the cost either way.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).
 - Dependencies pinned; licenses recorded in `THIRD_PARTY.md`.

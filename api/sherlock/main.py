@@ -1,5 +1,6 @@
 """FastAPI app (TRD §3.1). Run with one worker: the job runner and SSE bus live in-process."""
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -40,7 +41,19 @@ def _db_status(settings: Settings) -> dict:
         return {"ok": False, "schema_version": None}
 
 
+def _app_logging() -> None:
+    """The app's own INFO lines (`sherlock.*`: new users, job re-queues, repairs) next to uvicorn's.
+    Without a handler they'd fall through to the root logger's WARNING level and be dropped."""
+    root = logging.getLogger("sherlock")
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        root.addHandler(handler)
+        root.setLevel(logging.INFO)
+
+
 def create_app() -> FastAPI:
+    _app_logging()
     settings = get_settings()
 
     @asynccontextmanager
