@@ -194,6 +194,8 @@ def test_find_values_and_csv_download(client, ds):
     r = client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "^[AB]", "regex": True, "column": "name", "all": True}).json()
     assert r["count"] == 2 and r["first_matches"][0] == {"row_id": 1, "column": "name", "value": "Ann"}
     assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "(", "regex": True}).status_code == 422
+    for q in ("(?=a)", r"(a)\1"):  # valid for Python's `re`, refused by DuckDB's RE2
+        assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": q, "regex": True}).status_code == 422
     assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "100%"}).json()["count"] == 0
 
     download = client.get(f"{API}/datasets/{ds['id']}/export.csv")

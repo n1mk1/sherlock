@@ -440,7 +440,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
   - **Conflicts.** A stale `base_version` is always `409 conflict`, with `current_version` and `conflicts: [{ row_id, column, mine, theirs }]`: the edited cells whose value differs between the base version and the current one, which may be none. The client reapplies the edits on the new version ("Rebase and save", App Flow §8.2) and sends them again with the new `base_version`.
   - `run_cleaning_on_new_rows` is accepted; it queues a Clean with AI job scoped to the new rows once the Cleaner exists (D3.2).
 - **`GET /find`.**
-  - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`).
+  - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`). DuckDB runs the expression with RE2, so a pattern Python accepts but RE2 doesn't, such as a lookahead `(?=…)` or a backreference `\1`, is invalid too (review of Day 2, 2026-10-25).
   - `column` limits it to one column, and `selection` to a selection's rows.
   - Matches come in row order, then column order. `first_matches` holds the first 100. With `all=true`, it holds up to 10,000, each with its `value`.
 - **`GET /columns/{column}/values`.** It answers from `value_index`, most frequent first; `prefix` is a case-sensitive prefix and `limit` is 1–500 (default 50).
