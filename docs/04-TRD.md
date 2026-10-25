@@ -490,6 +490,7 @@ Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `she
   - A whole-dataset clean sets the status to `cleaning`. A scoped one leaves the status alone.
 - **`POST /use-as-is`.** Only from `offer`: the status becomes `building`, a `build_dashboard` job is queued, and the answer is `201` with that `Job`.
 - **`POST /edits` with `run_cleaning_on_new_rows`.** It queues a clean job scoped to the new rows' IDs and returns it as `clean_job`.
+  - As of 2026-10-25 (Day 5 review): a save with `run_cleaning_on_new_rows` and at least one new row also counts against the LLM bucket (10 per minute), like `POST /clean`, and is `429` past it before anything is saved. A save without it isn't limited by that bucket.
 
 Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/routers/steps.py`):
 - **Step list.** `GET /datasets/{id}/steps` returns every step newest first (by `no`), each in the §6.2 shape plus `active`. `active` is whether the step is in the current version's effective chain: undone steps and undo steps are not.
