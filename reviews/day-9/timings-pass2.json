@@ -1,0 +1,45 @@
+{
+ "log": [
+  {
+   "name": "open the URL (first paint of Try with sample)",
+   "ok": true,
+   "s": 2.311
+  },
+  {
+   "name": "Try with sample → dashboard with stories",
+   "ok": true,
+   "s": 1.227,
+   "detail": "22 story cards visible"
+  },
+  {
+   "name": "ask: average fare by class → sourced answer",
+   "ok": true,
+   "s": 14.915,
+   "detail": "Ask about titanic3.csv (sample) | average fare by class | First class averages 87.51, second class averages 21.18, and third class averages 13.30. | Add to Flow | class\tavg_fare | 1\t87.51 | 2\t21.18 | 3\t13.30 | How do you know?"
+  },
+  {
+   "name": "edit a cell (CSV tab, from chat): proposal → Approve → new version",
+   "ok": false,
+   "s": 90.084,
+   "detail": "TimeoutError: locator.waitFor: Timeout 90000ms exceeded."
+  },
+  {
+   "name": "a card updates (the cascade re-tells the stories that read fare)",
+   "ok": false,
+   "s": 180.001,
+   "detail": "TimeoutError: locator.waitFor: Timeout 180000ms exceeded."
+  },
+  {
+   "name": "Flow: place two cards, select, Make sense of this → synthesis",
+   "ok": false,
+   "s": 30.95,
+   "detail": "TimeoutError: page.waitForFunction: Timeout 30000ms exceeded."
+  }
+ ],
+ "errors": [
+  "429 GET /api/v1/me",
+  "Failed to load resource: the server responded with a status of 429 ()",
+  "404 GET /api/v1/datasets//widgets",
+  "Failed to load resource: the server responded with a status of 404 ()"
+ ]
+}
