@@ -173,6 +173,21 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Checkpoints: pipelines persist state after each step (`jobs.state_json`); on restart, queued and running jobs are resumed from their checkpoint. A running job refreshes `jobs.heartbeat_at` every 10 s; on startup, any running job whose heartbeat is older than 60 s is re-queued from its checkpoint.
 - Cancellation: a `cancel_requested` flag checked between steps; the sandbox subprocess is killed.
 - `JOB_BACKEND=nebius`: `enqueue` creates a Serverless Job running `python -m sherlock.jobs.run <job_id>` with the same image and volume; the job process writes events to the same SQLite; the API's SSE endpoint polls `job_events` every 500 ms for jobs not owned by its process.
+- Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/`):
+  - **Runner** (`runner.py`). `JobRunner` starts in the lifespan after migrations and stops before the DuckDB cache closes.
+    - It runs `JOB_WORKERS` worker tasks. Each one claims with the statement above (ties on `created_at` broken by `id`), then waits for a wake-up from `enqueue` or polls every second.
+    - `owner_pid` is `<hostname>:<pid>:<ulid>`, so it is unique per process start.
+    - On stop, running jobs get 10 s to finish. Anything still running is left `running` and re-queued at the next start.
+    - `JOB_WORKERS=0` queues jobs without running them, which the tests use.
+  - **Kinds.** A job kind registers an async `run(ctx)` and an optional `on_failure(db, bus, job, message)`, which also runs on cancellation. A kind with no handler fails with "No handler for <kind> jobs yet."
+  - **`JobContext`.** Its methods are synchronous and thread-safe, so a kind can call them from its `to_thread` work:
+    - `progress(step, of, label, pct?)`: `step` is the one now running, and `pct` defaults to the share of steps done. It is stored in `progress_json` and emitted as `job.progress`. A job that ends `done` has `pct` 100.
+    - `log(text, level, icon, **fields)` emits `job.log`.
+    - `set_dataset_status(status, error?)` emits `dataset.status`.
+    - `check_cancel()` raises when `cancel_requested` is set.
+  - **Endings.** A job that returns ends `done` with its return value as `result`. One that raises ends `failed` with the first line of the error (at most 500 characters). One cancelled ends `cancelled` with the error "Cancelled." `job.done` reports `done`; `job.failed` reports both `failed` and `cancelled`, and its `Job.status` tells them apart.
+  - **Heartbeats and recovery.** A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so at startup every job still `running` is re-queued, whatever its heartbeat. A sweep every 30 s also re-queues a `running` job of another owner whose heartbeat is older than 60 s. Startup also queues a `profile` job for any `profiling` dataset that has none queued or running (datasets imported before jobs existed).
+  - **Not yet.** Checkpoints (`state_json`) come with D8.6; until then a re-queued job starts over, which is safe because kinds are idempotent (the profile job reads the cached DataCard). Killing the sandbox on cancel comes with the Cleaner, the first kind to use it. `JOB_BACKEND=nebius` is not built.
 
 ### 3.4 Sandbox
 
@@ -296,11 +311,11 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 - **`POST /datasets/sample`** imports the bundled `api/samples/titanic3.csv` as "titanic3.csv (sample)" with `is_sample = 1` and answers `201`. If the user already has a sample, it answers `200` with that one. The cached, pre-built sample (Implementation Plan D9.1) replaces the import later.
 - **`GET /datasets`** lists the user's datasets that aren't deleted, most recently opened first, then newest.
 - **`GET /datasets/{id}`** sets `last_opened_at`.
-- **Status for now.** Datasets stay in `profiling` until the profile job exists (D2.2, D2.5).
+- **Status.** Since D2.5, `POST /datasets` and a new `POST /datasets/sample` import queue a `profile` job (§7.1 steps 3–6) in the same request, and the dataset leaves `profiling` when it ends: `offer`, or `failed` with the reason in `error`. Returning an existing sample queues nothing.
 - **`GET /datasets/{id}/datacard`** (2026-10-24, D2.2):
   - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
   - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
-  - **Later.** The profile job (D2.5) will build the card right after import, so the first request is already cached.
+  - **Built by the job.** Since D2.5 the profile job builds the card right after import, so a later request reads the cached one. Builds of one dataset are serialized: a request that arrives while the job is building waits and gets the same card, with the same issue IDs.
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
@@ -438,6 +453,18 @@ JSON Canvas nodes: `{ id, type: "text"|"file"|"link"|"group", x, y, width, heigh
 
 `Job`: `{ id, dataset_id, kind: "profile"|"clean"|"build_dashboard"|"stories"|"ml_run"|"cascade"|"undo"|"export_notebook"|"purge", status: "queued"|"running"|"done"|"failed"|"cancelled", progress: { step, of, label, pct }, created_at, started_at?, finished_at?, error?, result?: object }`
 
+Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`):
+- **`GET /jobs`.** `dataset_id` is optional. With it, the dataset must be owned (`404` otherwise) and the list is its jobs. Without it, the list is all of the user's jobs, leaving out those of deleted datasets. Newest first, at most 200.
+- **Bare IDs.** `/jobs/{jid}` routes resolve through `jobs.user_id` (§3.1). Another user's job is `404 not_found`.
+- **`POST /jobs/{jid}/cancel`.**
+  - A queued job is cancelled at once: status `cancelled`, `finished_at` set, its kind's failure hook run, and `job.failed` emitted.
+  - A running job gets `cancel_requested = 1` and stops at its next `check_cancel` (§3.3).
+  - Cancelling a finished job does nothing. It is always `204`.
+- **`POST /jobs/{jid}/retry`.** It answers `201` with a new queued job of the same kind, dataset and params. Only a `failed` or `cancelled` job can be retried; any other is `409 conflict`.
+- **`GET /jobs/{jid}/log`.** It returns the job's `job.log` event data, oldest first.
+- **`progress`.** Before a job reports, it is `{ step: 0, of: 0, label: "", pct: 0 }`.
+- **The profile job.** It reports one step, labelled "Profiling <n> columns". Its `result` is `{ version, issues }`, the number of issues on the card.
+
 ---
 
 ## 5. Server-sent events
@@ -464,6 +491,26 @@ JSON Canvas nodes: `{ id, type: "text"|"file"|"link"|"group", x, y, width, heigh
 ### 5.2 Delivery
 
 Events are written to `job_events` (for jobs) and published on an in-process bus; the SSE handler merges both. Heartbeat comment every 15 s. On reconnect, events after `Last-Event-ID` are replayed from the table (kept 24 h).
+
+Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`, `sherlock/routers/streams.py`):
+- **Every event is a row.** Each event is written to `job_events` first, then published on the bus, and the row's id is the SSE `id`. That includes events that don't come from a job (`job_id` NULL), so every event can be replayed.
+- **`dataset_id` in every event.** Each event's `data` also carries `dataset_id`, so the user-level stream can say which dataset an event is about.
+- **`dataset.status` errors.** When the status is `failed`, `dataset.status` also carries `error`.
+- **Emitted so far:**
+  - `dataset.status`, `job.progress`, `job.log`, `job.done` and `job.failed`, from the runner and the profile job.
+  - `version.created`, from `commit_step` and undo. Its `rows_removed` is the step's `impact.rows_deleted`.
+- **Wire format.**
+  - A stream opens with `retry: 3000`.
+  - Each event is `id`, `event` and one `data` line of compact JSON.
+  - The heartbeat is the comment `: ping`.
+  - Responses send `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
+- **Replay.**
+  - The stream subscribes to the bus first.
+  - If the request has `Last-Event-ID`, it then replays the rows after that id: at most 5,000, in id order. A first connection, which can't set the header from `EventSource`, can pass `?last_event_id=` instead, and the header wins when both are sent.
+  - Then it streams live events, skipping any whose id is at or below the last one replayed.
+  - Without either, the stream starts with live events only.
+- **Scope.** `GET /datasets/{id}/events` needs an owned dataset (`404` otherwise) and carries all of that dataset's events. `GET /events` carries only `dataset.status` and `job.progress`, for all of the user's datasets; its replay leaves out deleted ones.
+- **Rate limit.** Opening a stream counts as one read (§15).
 
 ### 5.3 Chat stream events
 
@@ -659,6 +706,13 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 - **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`.
 - **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
+
+Implementation of step 6 (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/profile.py`):
+- Steps 3–6 run as the `profile` job, which every import queues.
+- The job builds and caches the current version's DataCard, then sets the status and emits `dataset.status`.
+- Until the Cleaner (D3) and the dashboard builder (D4) exist, every "After upload" setting ends in `offer`.
+- If the job fails, or is cancelled, the dataset becomes `failed` and the reason goes in `error`. The UI shows it as "Profiling failed: <reason>" (App Flow §3.3). Retrying the job (§4.10) moves the dataset back to `profiling`.
+- A dataset deleted before its job runs is skipped.
 
 Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleaning/detectors/`). The step 3b typing step is Implementation Plan D2.8 and not built yet.
 - **Inference input.** It runs in pandas on the version's usable rows. Values are stripped, and the sentinel strings are left out before inference.

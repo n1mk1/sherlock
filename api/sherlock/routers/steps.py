@@ -51,5 +51,5 @@ def undo(
     row: sqlite3.Row = Depends(owned_dataset),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    ctx = Context(request.app.state.settings, db, request.app.state.duckdb)
+    ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
     return undo_step(ctx, row["id"], step_id, body.base_version, body.confirm)

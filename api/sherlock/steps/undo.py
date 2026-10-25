@@ -11,7 +11,7 @@ import json
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import not_found
 from sherlock.profile import service as profile_service
-from sherlock.steps.commit import Context, conflict, current_version_row, load_step
+from sherlock.steps.commit import Context, conflict, current_version_row, emit_version_created, load_step
 from sherlock.steps.notebook import UNDO_CODE
 from sherlock.storage import dataset_dir, dataset_lock
 
@@ -102,4 +102,6 @@ def undo_step(ctx: Context, dataset_id: str, step_id: str, base_version: int, co
             raise
     dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
     profile_service.get_or_build(ctx.settings, db, ctx.cache, dataset, new_version)
-    return {"step": load_step(db, undo_id), "version": new_version}
+    step = load_step(db, undo_id)
+    emit_version_created(ctx, dataset, step, new_version)
+    return {"step": step, "version": new_version}

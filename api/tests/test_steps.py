@@ -281,3 +281,18 @@ def test_other_users_cannot_see_steps(app, setup):
     with TestClient(app) as bob:
         assert bob.get(f"{API}/datasets/{ds}/steps").status_code == 404
         assert bob.post(f"{API}/datasets/{ds}/steps/x/undo", json={"base_version": 2}).status_code == 404
+
+
+def test_commit_and_undo_emit_version_created(setup, app):
+    ctx, ds, client = setup
+    ctx.bus = app.state.bus
+    step, _ = fill_age(ctx, ds)
+    r = client.post(f"{API}/datasets/{ds}/steps/{step['id']}/undo", json={"base_version": 2, "confirm": True})
+    assert r.status_code == 200, r.text
+    rows = ctx.db.execute(
+        "SELECT data_json FROM job_events WHERE dataset_id = ? AND type = 'version.created' ORDER BY id", (ds,)
+    ).fetchall()
+    created = [json.loads(row[0]) for row in rows]
+    assert [(c["version"], c["step_id"]) for c in created] == [(2, step["id"]), (3, r.json()["step"]["id"])]
+    assert created[0] == {"dataset_id": ds, "version": 2, "step_id": step["id"], "summary": "Filled missing ages with 30",
+                          "cells_changed": 263, "rows_added": 0, "rows_removed": 0}

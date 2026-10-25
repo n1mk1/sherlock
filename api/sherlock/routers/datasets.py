@@ -1,4 +1,4 @@
-"""Datasets (TRD §4.2): upload, sample, list, get."""
+"""Datasets (TRD §4.2): upload, sample, list, get. An import queues the profile job."""
 
 import json
 import sqlite3
@@ -89,6 +89,7 @@ def upload_dataset(
         shown = f"{size_mb:.1f}" if size_mb < 10 else f"{size_mb:.0f}"
         raise ApiError(413, "too_large", f"This file is {shown} MB. The limit is {limit} MB.")
     row = import_csv(settings, db, user.id, file.file, file.filename or "upload.csv", _parse_options(options))
+    request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
     return to_dataset(row)
 
 
@@ -108,6 +109,7 @@ def sample_dataset(
             request.app.state.settings, db, user.id, fh, SAMPLE_CSV.name, ImportOptions(),
             name=SAMPLE_NAME, is_sample=True,
         )
+    request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
     response.status_code = status.HTTP_201_CREATED
     return to_dataset(row)
 

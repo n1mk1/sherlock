@@ -13,9 +13,12 @@ from sherlock.db.connection import connect
 from sherlock.db.migrate import current_version, migrate
 from sherlock.errors import RequestIdMiddleware, install_error_handlers, not_found
 from sherlock.identity import IdentityMiddleware, current_user
+from sherlock.jobs import profile as _profile_job  # noqa: F401  (registers the job kind)
+from sherlock.jobs.events import EventBus
+from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import datasets, me, steps
+from sherlock.routers import datasets, jobs, me, steps, streams
 from sherlock.storage import VersionConnections
 from sherlock.storage_check import check_storage
 
@@ -43,7 +46,9 @@ def create_app() -> FastAPI:
             migrate(conn)
         finally:
             conn.close()
+        await app.state.jobs.start()
         yield
+        await app.state.jobs.stop()
         app.state.duckdb.close()
 
     app = FastAPI(title="Sherlock", version=__version__, lifespan=lifespan)
@@ -52,6 +57,8 @@ def create_app() -> FastAPI:
     app.state.rate_limiter = RateLimiter()
     app.state.storage = {}
     app.state.duckdb = VersionConnections(settings)
+    app.state.bus = EventBus()
+    app.state.jobs = JobRunner(settings, app.state.bus, app.state.duckdb)
     install_error_handlers(app)
 
     # Added inner to outer: identity runs inside the request-ID scope; CORS is outermost.
@@ -84,6 +91,8 @@ def create_app() -> FastAPI:
     api.include_router(me.router)
     api.include_router(datasets.router)
     api.include_router(steps.router)
+    api.include_router(jobs.router)
+    api.include_router(streams.router)
     app.include_router(api)
     if settings.web_dist_dir and settings.web_dist_dir.is_dir():
         _serve_web(app, settings.web_dist_dir)

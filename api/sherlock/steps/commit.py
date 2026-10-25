@@ -3,7 +3,8 @@
 Under the dataset lock: check `base_version`, let the caller write the new Parquet, check it,
 diff it against the current version (lineage), then in one SQLite transaction write the step,
 the version (with its effective chain), the lineage, `user_edited_cells` for edit batches, and
-bump `current_version`, `next_row_id`, `state_rev` and storage. Then re-profile the new version.
+bump `current_version`, `next_row_id`, `state_rev` and storage. Then re-profile the new version
+and emit `version.created` (TRD §5.1).
 """
 
 import json
@@ -15,6 +16,7 @@ from pathlib import Path
 from sherlock.config import Settings
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
+from sherlock.jobs.events import EventBus, emit
 from sherlock.profile import service as profile_service
 from sherlock.steps.diff import check_version_file, diff_versions
 from sherlock.steps.notebook import validate_notebook_code
@@ -49,6 +51,16 @@ class Context:
     settings: Settings
     db: sqlite3.Connection
     cache: VersionConnections
+    bus: EventBus | None = None
+
+
+def emit_version_created(ctx: Context, dataset: sqlite3.Row, step: dict, version: int) -> None:
+    impact = step["impact"]
+    emit(ctx.db, ctx.bus, dataset["id"], dataset["user_id"], "version.created", {
+        "version": version, "step_id": step["id"], "summary": step["summary"],
+        "cells_changed": impact["cells_changed"], "rows_added": impact["rows_added"],
+        "rows_removed": impact["rows_deleted"],
+    }, job_id=step["job_id"])
 
 
 def conflict(message: str, **extra) -> ApiError:
@@ -106,7 +118,9 @@ def commit_step(
         except Exception:
             out.unlink(missing_ok=True)
             raise
-    profile_service.get_or_build(ctx.settings, ctx.db, ctx.cache, _dataset(ctx, dataset_id), new_version)
+    dataset = _dataset(ctx, dataset_id)
+    profile_service.get_or_build(ctx.settings, ctx.db, ctx.cache, dataset, new_version)
+    emit_version_created(ctx, dataset, step, new_version)
     return step, new_version
 
 

@@ -364,6 +364,12 @@ CREATE INDEX job_events_dataset ON job_events(dataset_id, id);
 
 Retention: `job_events` older than 24 h are deleted by the purge job.
 
+Implementation notes (2026-10-24, Implementation Plan D2.5):
+- `job_events` holds every SSE event of a dataset (TRD §5), not only job events. An event that doesn't come from a job, such as `version.created` for a step committed through the API, has `job_id` NULL. So every event has an `id` and can be replayed.
+- `data_json` always carries `dataset_id`, which the user-level stream needs.
+- `jobs.owner_pid` is `<hostname>:<pid>:<ulid>`, unique per process start. At startup, every `running` job is re-queued (one process holds the runner). While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
+- `jobs.progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
+
 ### 2.15 chat
 
 ```sql

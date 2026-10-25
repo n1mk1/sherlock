@@ -208,7 +208,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 ### Backend
 
-- [ ] `config.py`, `main.py` lifespan (migrations, job runner), `/healthz`, `/metrics`
+- [ ] `config.py`, `main.py` lifespan (migrations, job runner), `/healthz`, `/metrics`: all but `/metrics` done 2026-10-24 (the job runner starts in the lifespan since D2.5)
 - [ ] `db/` migrations 001, repositories (users, datasets, versions, steps, lineage, widgets, cards, canvases, runs, jobs, messages, proposals, selections, value_index, llm_calls)
 - [x] identity middleware, ownership dependency, rate limiter (2026-10-24)
 - [ ] `storage.py` folder layout, locks, byte accounting
@@ -218,7 +218,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
 - [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; replay (D5.5) and lineage queries (D2.6) remain
-- [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub
+- [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain
 - [ ] `dashboard/` candidates, scoring, curation, validation, layout, job
 - [ ] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash

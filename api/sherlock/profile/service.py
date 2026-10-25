@@ -1,11 +1,14 @@
 """DataCards cached per version (PRD PROF-3) in `datacards`, with `issues` and `value_index` rows.
 
-The card is built on first request for a version and stored; later requests read the stored one.
-The profile job (Implementation Plan D2.5) will call `get_or_build` right after import.
+The profile job builds the card right after import; any later request reads the stored one. Builds
+of one dataset are serialized, so a request that arrives mid-build waits for it and returns the
+same card (with the same issue IDs) instead of building a second one.
 """
 
 import json
 import sqlite3
+import threading
+from collections import defaultdict
 
 from sherlock.config import Settings
 from sherlock.db.util import now_iso
@@ -15,6 +18,20 @@ from sherlock.storage import VersionConnections, dataset_dir
 
 VALUE_INDEX_ROLES = ("dimension", "target_like")
 MAX_INDEXED_VALUES = 10_000
+_build_locks: defaultdict[str, threading.Lock] = defaultdict(threading.Lock)
+_locks_guard = threading.Lock()
+
+
+def _build_lock(dataset_id: str) -> threading.Lock:
+    with _locks_guard:
+        return _build_locks[dataset_id]
+
+
+def _stored(db: sqlite3.Connection, dataset_id: str, version: int) -> dict | None:
+    row = db.execute(
+        "SELECT card_json FROM datacards WHERE dataset_id = ? AND version = ?", (dataset_id, version)
+    ).fetchone()
+    return json.loads(row[0]) if row is not None else None
 
 
 def get_or_build(
@@ -30,17 +47,18 @@ def get_or_build(
     ).fetchone()
     if row is None:
         raise not_found(f"Version {version} not found")
-    stored = db.execute(
-        "SELECT card_json FROM datacards WHERE dataset_id = ? AND version = ?", (dataset["id"], version)
-    ).fetchone()
+    stored = _stored(db, dataset["id"], version)
     if stored is not None:
-        return json.loads(stored[0])
-
-    # An undo version points at an earlier version's file, so the path comes from the row.
-    folder = dataset_dir(settings, dataset["user_id"], dataset["id"])
-    with cache.connection(dataset["id"], version, folder / row["parquet_path"]) as conn:
-        card, frame = build_datacard(conn, version)
-    _store(db, dataset["id"], version, card, frame, is_current=version == dataset["current_version"])
+        return stored
+    with _build_lock(dataset["id"]):
+        stored = _stored(db, dataset["id"], version)
+        if stored is not None:
+            return stored  # built while this request waited
+        # An undo version points at an earlier version's file, so the path comes from the row.
+        folder = dataset_dir(settings, dataset["user_id"], dataset["id"])
+        with cache.connection(dataset["id"], version, folder / row["parquet_path"]) as conn:
+            card, frame = build_datacard(conn, version)
+        _store(db, dataset["id"], version, card, frame, is_current=version == dataset["current_version"])
     return card
 
 
