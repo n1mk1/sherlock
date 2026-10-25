@@ -176,6 +176,12 @@ class LLMClient:
         s = self.settings
         db = connect(s)
         try:
+            if s.app_token_budget > 0:
+                used = db.execute(
+                    "SELECT COALESCE(SUM(COALESCE(prompt_tokens, 0) + COALESCE(completion_tokens, 0)), 0) "
+                    "FROM llm_calls WHERE created_at >= ?", (_today() + "T00:00:00",)).fetchone()[0]
+                if used >= s.app_token_budget:
+                    raise BudgetExceeded("Sherlock has used today's model budget for everyone. It resets at midnight UTC.")
             if scope.user_id:
                 row = db.execute("SELECT tokens_used_today, tokens_day FROM users WHERE id = ?", (scope.user_id,)).fetchone()
                 if row is not None and row["tokens_day"] == _today() and row["tokens_used_today"] >= s.user_token_budget:

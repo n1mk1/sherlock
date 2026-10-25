@@ -3,7 +3,8 @@
 confidence = 0.6 × best score + 0.2 × agreement + 0.2 × (1 if the review passed else 0),
 where agreement is the share of candidates scoring within 0.1 of the best, and the review passes
 unless the critic says the step changed something it shouldn't (or the review couldn't be read).
-The critic's list of concerns is recorded on the step but doesn't lower confidence: concerns on
+The critic's verdict that the step changed something it shouldn't skips the step in the loop (owner's
+decision, 2026-10-25). The critic's list of concerns is recorded on the step but doesn't lower confidence: concerns on
 their own can't keep a step from committing (owner's decision, 2026-10-24).
 blast = cells changed / cells in the dataset, where a newly quarantined row counts as all of its
 cells (`cells_affected`): it leaves every widget, model and story, so it isn't one cell's change.

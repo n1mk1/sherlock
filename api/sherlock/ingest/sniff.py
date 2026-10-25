@@ -164,12 +164,39 @@ def sniff(utf8: Path) -> dict:
     except csv.Error:
         python_delimiter = None
     chosen = delimiter or python_delimiter or ","
+    chosen = present_delimiter(text, int(skip_rows or 0), chosen)
     return {
         "delimiter": chosen,
         "skip_rows": int(skip_rows or 0),
         "has_header": bool(has_header),
         "agreed": delimiter == python_delimiter,
     }
+
+
+SAMPLE_LINES = 50
+
+
+def present_delimiter(text: str, skip: int, chosen: str) -> str:
+    """Overrule a delimiter that barely occurs in the lines when another occurs on nearly all of them.
+    A few ragged rows (one with an extra field, or some short ones) make DuckDB's sniffer guess `|`,
+    and the file would import as one column named `a,b,c` (Day 2 review)."""
+    lines = [ln for ln in text.splitlines()[skip:] if ln.strip()][:SAMPLE_LINES]
+    if len(lines) < 2:
+        return chosen
+    share = {d: sum(d in ln for ln in lines) / len(lines) for d in DELIMITERS}
+    if share[chosen] >= 0.5:
+        return chosen
+    best = max(DELIMITERS, key=lambda d: share[d])
+    return best if share[best] >= 0.9 else chosen
+
+
+def max_fields(utf8: Path, delimiter: str, skip: int) -> int:
+    """The most fields any record has after `skip` lines (quote-aware; blank lines count as none)."""
+    with utf8.open(encoding="utf-8", newline="") as fh:
+        for _ in range(skip):
+            if not fh.readline():
+                return 0
+        return max((len(r) for r in csv.reader(fh, delimiter=delimiter)), default=0)
 
 
 def header_names(utf8: Path, delimiter: str, skip: int) -> list[str]:

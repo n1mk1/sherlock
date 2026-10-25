@@ -144,6 +144,37 @@ def test_preamble_semicolon_latin1_is_auto_detected(app, client):
     assert rows[:2] == [("Nord", "Käse", "größer"), ("Süd", "Brot", None)]
 
 
+def test_ragged_rows_keep_their_columns(app, client):
+    # Review Day 2 H1: one long row, or some short ones, made the sniffer pick `|` and the file
+    # imported as a single column named "a,b,c".
+    lines = ["a,b,c"] + [f"{i},x{i},{i * 2}" for i in range(100)]
+    long_ = lines[:51] + ["50,extra,1,TOO"] + lines[51:]
+    res = upload(client, ("\n".join(long_) + "\n").encode(), "long.csv")
+    assert res.status_code == 201, res.text
+    ds = res.json()
+    assert (ds["row_count"], ds["column_count"]) == (101, 4)
+    rows = read_version(app, ds["id"], folder_of(client, ds["id"]),
+                        "SELECT a, col_4, _quarantine_reason FROM t WHERE _quarantine_reason IS NOT NULL")
+    # The extra value is kept in col_4 and its row quarantined, never dropped (Rule 3).
+    assert rows == [("50", "TOO", "extra fields: this row has more fields than the header's 3")]
+
+    short = [ln if i % 10 else ln.rsplit(",", 1)[0] for i, ln in enumerate(lines)]
+    short[0] = "a,b,c"
+    ds = upload(client, ("\n".join(short) + "\n").encode(), "short.csv").json()
+    assert (ds["row_count"], ds["column_count"]) == (100, 3)
+    assert read_version(app, ds["id"], folder_of(client, ds["id"]),
+                        "SELECT count(*) FROM t WHERE _quarantine_reason IS NULL")[0][0] == 100  # short rows are padded
+
+
+def test_present_delimiter_overrules_a_rare_guess():
+    from sherlock.ingest.sniff import present_delimiter
+
+    text = "a,b,c\n" + "".join(f"{i},x,{i}\n" for i in range(20))
+    assert present_delimiter(text, 0, "|") == ","
+    assert present_delimiter(text, 0, ",") == ","
+    assert present_delimiter("a b\nc d\n", 0, "|") == "|"  # no candidate on 90% of lines: keep the guess
+
+
 def test_cjk_double_byte_is_still_detected(app, client):
     content = "名前,都市,金額\n山田太郎,東京都,1200\n佐藤花子,大阪府,980\n鈴木一郎,名古屋市,450\n".encode("shift_jis")
     res = upload(client, content, "jp.csv")

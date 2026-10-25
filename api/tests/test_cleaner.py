@@ -183,3 +183,27 @@ def test_after_upload_setting_skips_the_offer(client, choice, first_kind):
     assert kinds[:2] == ["profile", first_kind]
     statuses = [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
     assert "offer" not in statuses
+
+
+def test_a_step_the_critic_rejects_is_skipped(monkeypatch, tmp_path):
+    # Review Day 3 H2 (owner's decision, 2026-10-25): "changed something it shouldn't" used to cost
+    # only 0.2 of the confidence, so such a step still committed with a flag. Now it's skipped.
+    entries = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    entries.insert(0, {"purpose": "critic", "match": ["Column: region"],
+                       "content": {"changed_something_it_shouldnt": True, "concerns": ["State codes were re-cased."]}})
+    fixture = tmp_path / "critic_rejects.json"
+    fixture.write_text(json.dumps(entries), encoding="utf-8")
+    monkeypatch.setenv("LLM_MOCK", str(fixture))
+    get_settings.cache_clear()
+    from fastapi.testclient import TestClient
+
+    from sherlock.main import create_app
+    with TestClient(create_app()) as client:  # built after LLM_MOCK points at this fixture
+        ds = offered(client)
+        job = client.post(f"{API}/datasets/{ds['id']}/clean", json={}).json()
+        assert finished(client, job["id"])["status"] == "done"
+        wait_status(client, ds["id"], "ready", "failed")
+        report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert [s["summary"] for s in report["steps"]] == ["Parse money as numbers (amount)"]
+    skipped = {(s["detector"], s["column"]): s["reason"] for s in report["skipped"]}
+    assert skipped[("whitespace_case", "region")] == "Skipped: the review found it changed values it shouldn't have"

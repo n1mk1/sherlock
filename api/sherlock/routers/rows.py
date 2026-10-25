@@ -211,6 +211,17 @@ def column_values(
     return {"values": [{"value": r[0], "count": r[1]} for r in rows]}
 
 
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cell_safe(value) -> str:
+    """A text cell a spreadsheet would run as a formula (`=HYPERLINK(…)`, `+1+1`, `@SUM(…)`) gets a
+    leading `'` (OWASP CSV injection; owner's decision, 2026-10-25). Only text columns are escaped,
+    so numbers, dates and booleans export exactly."""
+    text = str(value)
+    return "'" + text if text.startswith(FORMULA_START) else text
+
+
 @router.get("/datasets/{dataset_id}/export.csv")
 def export_csv(
     request: Request,
@@ -229,9 +240,11 @@ def export_csv(
     def chunks() -> Iterator[str]:
         buf = io.StringIO()
         writer = csv.writer(buf, lineterminator="\n")
-        writer.writerow(list(types))
+        writer.writerow([_cell_safe(c) for c in types])
+        text = [t == "VARCHAR" for t in types.values()]
         for i, r in enumerate(rows, 1):
-            writer.writerow(["" if v is None else rq.json_value(v) for v in r])
+            writer.writerow(["" if v is None else _cell_safe(v) if is_text else rq.json_value(v)
+                             for v, is_text in zip(r, text)])
             if i % CSV_CHUNK == 0:
                 yield buf.getvalue()
                 buf.seek(0)

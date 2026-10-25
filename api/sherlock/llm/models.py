@@ -7,6 +7,7 @@ from openai import OpenAI
 
 from sherlock.config import Settings
 
+NVIDIA_PREFIX = "nvidia/"
 ROLE_TIERS = {"large": "ultra", "medium": "super", "small": "nano"}
 
 
@@ -23,8 +24,8 @@ def validate_model_roles(settings: Settings) -> None:
     problems = []
     for role in ("large", "medium", "small"):
         model_id = settings.models[role]
-        if "nemotron" not in model_id.lower():
-            problems.append(f"MODEL_{role.upper()}={model_id!r} is not a Nemotron model")
+        if not is_nemotron_chat(model_id):
+            problems.append(f"MODEL_{role.upper()}={model_id!r} is not an NVIDIA Nemotron model (nvidia/…nemotron…)")
     embed = settings.model_embed
     if embed and embed not in embed_allowlist(settings):
         problems.append(f"MODEL_EMBED={embed!r} is not listed in NVIDIA_EMBED_MODELS")
@@ -36,8 +37,11 @@ def validate_model_roles(settings: Settings) -> None:
 
 
 def is_nemotron_chat(model_id: str) -> bool:
+    """NVIDIA's own Nemotron chat models: the `nvidia/` publisher and "nemotron" in the name. Every
+    Nemotron ID in the Token Factory catalog starts with `nvidia/`; the prefix keeps out a third
+    party's `someorg/nemotron-distill` (Rule 2, Day 1 review)."""
     lowered = model_id.lower()
-    return "nemotron" in lowered and "embed" not in lowered
+    return lowered.startswith(NVIDIA_PREFIX) and "nemotron" in lowered and "embed" not in lowered
 
 
 def is_nvidia_embed(model_id: str) -> bool:

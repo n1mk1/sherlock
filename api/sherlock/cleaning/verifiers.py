@@ -10,6 +10,7 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
 - `parse_quarantine`: in a column that changed type, every value that didn't convert is quarantined.
 - `placeholder_fill`: missing values weren't filled with a placeholder word ("Unknown", "N/A",
   "Missing", …): an empty cell stays empty unless a rule recovers its value.
+- `quarantine_scope`: the step quarantined at most 2 × the issue's count + 10 rows.
 
 The soft score is the mean of: parse success rate, the share of the issue resolved (the detector
 re-run on the result), 1 − the share of cells changed outside the issue's column, and distribution
@@ -163,19 +164,35 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
 
     # --- soft score -------------------------------------------------------------------------------
     r.soft["parse_rate"] = r.parse_rate
+    counted = False
     if detector:
         try:
             r.issue_before = issue_count(before, detector, column)
             r.issue_after = issue_count(after, detector, column)
             r.soft["resolved"] = 1.0 - (r.issue_after / r.issue_before) if r.issue_before else 1.0
+            counted = True
         except Exception:  # a detector that can't run on the result counts as unresolved
             r.soft["resolved"] = 0.0
+    r.hard["quarantine_scope"] = _quarantine_scope(r.quarantined, r.issue_before if counted else None)
     total_cells = max(len(b) * max(len(user_cols), 1), 1)
     r.soft["unrelated"] = 1.0 - min(1.0, unrelated / max(changed_total, 1)) if changed_total else 1.0
     if column in b and pd.api.types.is_numeric_dtype(b[column]) and pd.api.types.is_numeric_dtype(a[column]):
         r.soft["distribution"] = _conservation(b[column], a[column])
     r.soft["unrelated"] = min(r.soft["unrelated"], 1.0 - unrelated / total_cells)
     return r
+
+
+QUARANTINE_FACTOR = 2
+QUARANTINE_MARGIN = 10
+
+
+def _quarantine_scope(quarantined: int, issue_count: int | None) -> str:
+    """A step may quarantine at most twice as many rows as its issue has, plus a small margin
+    (owner's decision, 2026-10-25). Live, a NaN comparison in a model's mask quarantined 1,020 of
+    1,309 rows for a 4-row issue and still committed with a flag (Day 3 review H1)."""
+    if issue_count is None or quarantined <= QUARANTINE_FACTOR * issue_count + QUARANTINE_MARGIN:
+        return "pass"
+    return f"fail: {quarantined:,} rows quarantined for an issue in {issue_count:,}"
 
 
 def _placeholder_fill(b: pd.DataFrame, a: pd.DataFrame, columns: list[str]) -> str:

@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from sherlock.config import get_settings
@@ -59,3 +60,45 @@ def test_two_browsers_are_two_users(app):
 def test_secure_cookie_behind_https_proxy(client):
     res = client.get("/api/v1/me", headers={"x-forwarded-proto": "https"})
     assert "Secure" in res.headers["set-cookie"]
+
+
+def test_new_users_are_capped_per_client_ip(monkeypatch):
+    # Review Day 1 #1: a client that drops its cookie got a fresh user, and fresh budgets, on every request.
+    from sherlock.main import create_app
+
+    monkeypatch.setenv("NEW_USERS_PER_IP_HOUR", "3")
+    get_settings.cache_clear()
+    try:
+        app = create_app()
+        with TestClient(app) as c:
+            hdr = {"X-Forwarded-For": "6.6.6.6, 203.0.113.9"}  # the proxy's last hop is the client
+            codes = []
+            for _ in range(3):
+                c.cookies.clear()
+                codes.append(c.get("/api/v1/me", headers=hdr).status_code)
+            c.cookies.clear()
+            blocked = c.get("/api/v1/me", headers=hdr)
+            assert codes == [200, 200, 200] and blocked.status_code == 429
+            assert blocked.json()["error"]["code"] == "rate_limited" and int(blocked.headers["retry-after"]) > 0
+            # A forged first hop doesn't buy a new bucket; another client IP has its own.
+            c.cookies.clear()
+            assert c.get("/api/v1/me", headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.9"}).status_code == 429
+            c.cookies.clear()
+            ok = c.get("/api/v1/me", headers={"X-Forwarded-For": "198.51.100.7"})
+            assert ok.status_code == 200
+            # Someone who already has a cookie is never capped.
+            assert c.get("/api/v1/me", headers=hdr).status_code == 200
+    finally:
+        get_settings.cache_clear()
+
+
+def test_new_user_limiter_window():
+    from sherlock.identity import NewUserLimiter, TooManyNewUsers
+
+    now = [0.0]
+    lim = NewUserLimiter(2, window_s=100, clock=lambda: now[0])
+    lim.admit("a"), lim.admit("a")
+    with pytest.raises(TooManyNewUsers):
+        lim.admit("a")
+    now[0] = 100.0
+    lim.admit("a")  # the first two have left the window

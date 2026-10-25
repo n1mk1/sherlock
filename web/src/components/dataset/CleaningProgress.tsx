@@ -17,6 +17,7 @@ const CHECK_LABELS: Record<string, string> = {
   pandera: "Data-card constraints (pandera)",
   parse_quarantine: "Parse failures quarantined",
   placeholder_fill: "No placeholder fills",
+  quarantine_scope: "Quarantine fits the issue",
   lossless: "Lossless round-trip",
 };
 

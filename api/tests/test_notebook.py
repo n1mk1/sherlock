@@ -212,3 +212,36 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     for w, rows in zip(widgets, results):
         app_rows = client.get(f"{API}/widgets/{w['id']}/data").json()["rows"]
         assert [[_norm(v) for v in r] for r in rows] == [[_norm(v) for v in r] for r in app_rows], w["title"]
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_ragged_file_rebuilds_in_the_notebook(client, tmp_path):
+    # Review Day 2 H1: a row with an extra field is read with explicit columns and quarantined at
+    # import; the notebook's load cell does the same, so it rebuilds the version exactly.
+    lines = ["a,b,c"] + [f"{i},x{i},{i * 2}" for i in range(60)]
+    content = ("\n".join(lines[:31] + ["30,extra,1,TOO"] + lines[31:]) + "\n").encode()
+    ds = client.post(f"{API}/datasets", files={"file": ("ragged.csv", content, "text/csv")}).json()["id"]
+    wait_status(client, ds, "offer")
+    client.post(f"{API}/datasets/{ds}/use-as-is")
+    wait_status(client, ds, "ready")
+    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled") for j in client.get(f"{API}/jobs?dataset_id={ds}").json()),
+             timeout=60)
+    nb = nbformat.reads(client.get(_export(client, ds)["download_url"]).text, as_version=4)
+    load = next(c.source for c in nb.cells if "load" in c.get("metadata", {}).get("tags", []))
+    assert "auto_detect=false" in load and "extra fields" in load
+
+    from sherlock.db.connection import connect
+    settings = get_settings()
+    db = connect(settings)
+    user_id, parquet = db.execute(
+        "SELECT d.user_id, v.parquet_path FROM datasets d JOIN versions v ON v.dataset_id = d.id AND v.version = d.current_version "
+        "WHERE d.id = ?", (ds,)).fetchone()
+    db.close()
+    folder = dataset_dir(settings, user_id, ds)
+    data_file = "".join(nb.cells[1].source).split('DATA_PATH = "')[1].split('"')[0]
+    work = tmp_path / "run"
+    work.mkdir()
+    df, _, _ = execute(nb, work, folder / "raw.csv", data_file)
+    expected = _version_frame(folder / parquet)
+    pd.testing.assert_frame_equal(df.sort_values("_row_id").reset_index(drop=True), expected, check_dtype=True)
+    assert expected["_quarantine_reason"].notna().sum() == 1

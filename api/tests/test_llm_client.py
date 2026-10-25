@@ -197,3 +197,20 @@ def test_llm_mock_setting_loads_fixtures(tmp_path, monkeypatch, db):
     monkeypatch.setenv("LLM_MOCK", str(tmp_path))
     get_settings.cache_clear()
     assert LLMClient(get_settings()).complete("small", [], purpose="plain").text == "mocked"
+
+
+def test_app_wide_daily_ceiling(db, monkeypatch):
+    # Review Day 1 #1: per-user budgets reset with a new cookie, so every user's calls together are capped too.
+    monkeypatch.setenv("APP_TOKEN_BUDGET", "50")
+    get_settings.cache_clear()
+    try:
+        client, _ = llm([{"purpose": "plain", "content": "ok", "prompt_tokens": 20, "completion_tokens": 20}] * 3)
+        client.complete("small", [], purpose="plain", scope=CallScope(user_id="usr_1"))  # 40 of 50 used
+        client.complete("small", [], purpose="plain", scope=CallScope(user_id="usr_2"))  # another user: 80
+        with pytest.raises(BudgetExceeded, match="for everyone"):
+            client.complete("small", [], purpose="plain", scope=CallScope(user_id="usr_3"))
+        # Yesterday's calls don't count.
+        db.execute("UPDATE llm_calls SET created_at = '2000-01-01T00:00:00.000Z'")
+        client.complete("small", [], purpose="plain", scope=CallScope(user_id="usr_3"))
+    finally:
+        get_settings.cache_clear()

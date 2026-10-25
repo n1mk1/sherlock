@@ -51,6 +51,7 @@ CREATE TABLE datasets (
   row_count        INTEGER,
   column_count     INTEGER,
   import_options_json TEXT NOT NULL,           -- {delimiter, encoding, header_row, skip_rows}
+                                               -- plus, for ragged files only, width and header_fields (TRD §7.1, 2026-10-25)
   last_tab         TEXT,                       -- csv|dashboard|flow
   last_opened_at   TEXT,
   expires_at       TEXT NOT NULL,              -- created_at + DATASET_TTL_DAYS

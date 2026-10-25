@@ -31,6 +31,7 @@ from sherlock.storage import (
 MB = 1024 * 1024
 RESERVED_COLUMNS = ("_row_id", "_quarantine_reason")
 NO_DATA = "This file has no data rows."
+EXTRA_FIELDS = "extra fields: this row has more fields than the header's {n}"
 
 
 def _quote_ident(name: str) -> str:
@@ -78,12 +79,28 @@ def _read_to_parquet(
     tmp.mkdir(exist_ok=True)
     conn = new_duckdb(settings, temp_dir=tmp)
     try:
-        conn.execute(
-            "CREATE VIEW src AS SELECT * FROM read_csv("
-            f"{sql_path(utf8)}, delim={_quote_str(resolved.delimiter)}, "
-            f"header={'true' if has_header else 'false'}, skip={skip}, "
-            "all_varchar=true, null_padding=true)"
-        )
+        try:
+            conn.execute(
+                "CREATE VIEW src AS SELECT * FROM read_csv("
+                f"{sql_path(utf8)}, delim={_quote_str(resolved.delimiter)}, "
+                f"header={'true' if has_header else 'false'}, skip={skip}, "
+                "all_varchar=true, null_padding=true)"
+            )
+        except duckdb.Error as exc:
+            if "sniffing" not in str(exc):
+                raise
+            # Rows of different lengths can defeat DuckDB's sniffer even with the delimiter given.
+            # Read with explicit text columns, as many as the widest record has (Day 2 review).
+            width = resolved.width = sniff.max_fields(utf8, resolved.delimiter, skip)
+            if not width:
+                raise ApiError(422, "invalid", NO_DATA) from None
+            columns = "{" + ", ".join(f"'c{i}': 'VARCHAR'" for i in range(1, width + 1)) + "}"
+            conn.execute(
+                "CREATE OR REPLACE VIEW src AS SELECT * FROM read_csv("
+                f"{sql_path(utf8)}, delim={_quote_str(resolved.delimiter)}, quote='\"', escape='\"', "
+                f"header=false, skip={skip + (1 if has_header else 0)}, auto_detect=false, "
+                f"columns={columns}, null_padding=true)"
+            )
         source_columns = [row[0] for row in conn.execute("DESCRIBE src").fetchall()]
         if not source_columns:
             raise ApiError(422, "invalid", NO_DATA)
@@ -96,8 +113,15 @@ def _read_to_parquet(
             "CREATE TABLE t AS SELECT row_number() OVER ()::BIGINT AS _row_id, "
             f"NULL::VARCHAR AS _quarantine_reason, {select} FROM src"
         )
+        if header and len(names) > len(header):
+            # Rows with more fields than the header: their extra values land in `col_N` columns past
+            # the header, and the rows are quarantined so nothing is lost or silently shifted (Rule 3).
+            extra = " OR ".join(f"{_quote_ident(n)} IS NOT NULL" for n in names[len(header):])
+            conn.execute(f"UPDATE t SET _quarantine_reason = {_quote_str(EXTRA_FIELDS.format(n=len(header)))} "
+                         f"WHERE {extra}")
+            resolved.header_fields = len(header)
         rows = conn.execute("SELECT count(*) FROM t").fetchone()[0]
-        any_value = " OR ".join(f"{_quote_ident(n)} IS NOT NULL" for n in names)
+        any_value =" OR ".join(f"{_quote_ident(n)} IS NOT NULL" for n in names)
         if rows == 0 or conn.execute(f"SELECT count(*) FROM t WHERE {any_value}").fetchone()[0] == 0:
             raise ApiError(422, "invalid", NO_DATA)  # no rows, or only empty ones
         if rows > settings.max_rows:
@@ -176,7 +200,7 @@ def import_csv(
                 current_version=1,
                 row_count=rows,
                 column_count=len(names),
-                import_options_json=resolved.model_dump_json(),
+                import_options_json=resolved.model_dump_json(exclude_none=True),
                 expires_at=expires,
                 folder_bytes=used,
                 next_row_id=rows + 1,

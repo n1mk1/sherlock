@@ -35,3 +35,6 @@ class ResolvedOptions(BaseModel):
     encoding: str
     header_row: int
     skip_rows: int
+    # Set only for ragged files (stored without nulls), so the notebook's load cell reads them alike:
+    width: int | None = None          # read with this many explicit text columns (the sniffer failed)
+    header_fields: int | None = None  # rows with values past this many fields were quarantined

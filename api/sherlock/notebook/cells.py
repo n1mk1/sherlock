@@ -101,17 +101,27 @@ def load(options: dict, names: list[str], types: dict[str, str]) -> list:
     skip = options["skip_rows"] + max(options["header_row"] - 1, 0)
     header = "true" if options["header_row"] > 0 else "false"
     delim = options["delimiter"].replace("'", "''")
+    if options.get("width"):  # a ragged file the import read with explicit text columns
+        columns = "{{" + ", ".join(f"'c{i}': 'VARCHAR'" for i in range(1, options["width"] + 1)) + "}}"  # braces escaped: the cell is an f-string
+        read = (f"read_csv('{{UTF8_PATH}}', delim='{delim}', quote='\\\"', escape='\\\"', header=false, "
+                f"skip={skip + (1 if options['header_row'] > 0 else 0)}, auto_detect=false, columns={columns}, null_padding=true)")
+    else:
+        read = f"read_csv('{{UTF8_PATH}}', delim='{delim}', header={header}, skip={skip}, all_varchar=true, null_padding=true)"
+    quarantine = ""
+    if options.get("header_fields"):  # rows with more fields than the header were quarantined at import
+        n = options["header_fields"]
+        reason = f"extra fields: this row has more fields than the header's {n}"
+        quarantine = (f"raw.loc[raw[{names[n:]!r}].notna().any(axis=1), \"_quarantine_reason\"] = {reason!r}\n")
     code = f'''# Load: decode the raw file ({options["encoding"]}) into a UTF-8 copy, then read it as Sherlock's import did.
 from pathlib import Path
 
 UTF8_PATH = Path(DATA_PATH).stem + ".utf8.csv"
 Path(UTF8_PATH).write_text(Path(DATA_PATH).read_bytes().decode({options["encoding"]!r}), encoding="utf-8", newline="")
-raw = duckdb.sql(f"SELECT * FROM read_csv('{{UTF8_PATH}}', delim='{delim}', header={header}, skip={skip}, "
-                 "all_varchar=true, null_padding=true)").df()
+raw = duckdb.sql(f"SELECT * FROM {read}").df()
 raw.columns = {names!r}
 raw.insert(0, "_quarantine_reason", None)
 raw.insert(0, "_row_id", range(1, len(raw) + 1))
-types = {json.dumps(types)}
+{quarantine}types = {json.dumps(types)}
 df = keep_types(raw, types)
 print(f"Loaded {{len(df):,}} rows and {{len(df.columns) - 2}} columns.")
 '''

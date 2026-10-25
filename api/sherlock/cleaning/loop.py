@@ -353,6 +353,11 @@ class Cleaner:
             review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
         except StructuredOutputError:
             critique, review_ok = None, False
+        if critique is not None and critique.changed_something_it_shouldnt:
+            # The critic's verdict skips the step (owner's decision, 2026-10-25): its 0.2 share of the
+            # confidence couldn't stop a commit with a flag (Day 3 review H2). Concerns alone still don't.
+            return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", candidates=chips,
+                              checks=full_report.hard)
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
         total_cells = len(before) * max(len(user_cols), 1)
         affected = gate.cells_affected(full_report.cells_changed, full_report.quarantined, len(user_cols), total_cells)

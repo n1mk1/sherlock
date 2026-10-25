@@ -80,3 +80,10 @@ def test_extract_code_and_no_digits_rule():
     assert extract_code("Here:\n```python\nresult = df.head()\n```") == "result = df.head()"
     assert has_digits("Fares rose by 12%")
     assert not has_digits("Fares rose sharply")
+
+
+def test_a_nemotron_name_from_another_publisher_is_refused():
+    # Review Day 1 #8: the check was a substring, so a third party's "nemotron" model passed (Rule 2).
+    with pytest.raises(ModelConfigError, match="MODEL_MEDIUM"):
+        validate_model_roles(settings(model_medium="someorg/nemotron-distill"))
+    validate_model_roles(settings(model_medium="NVIDIA/Nemotron-3-Super-120b-a12b"))  # case doesn't matter

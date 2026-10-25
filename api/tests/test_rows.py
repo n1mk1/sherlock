@@ -221,3 +221,17 @@ def test_rows_of_another_user_are_404(client, ds, app):
     with TestClient(app) as other:
         assert other.get(f"{API}/datasets/{ds['id']}/rows").status_code == 404
         assert other.post(f"{API}/datasets/{ds['id']}/edits", json={"base_version": 1, "deleted_row_ids": [1]}).status_code == 404
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_csv_download_escapes_formulas_in_text_columns(client):
+    # Owner's decision, 2026-10-25 (Day 2 review): `=HYPERLINK(…)` ran when the export was opened in a
+    # spreadsheet. Text cells starting with = + - @ get a leading '; typed columns export exactly.
+    from tests.test_jobs import upload, wait_status
+
+    body = "note,delta\n" + "".join(f"ok {i},{i - 3}\n" for i in range(150)) + '"=HYPERLINK(""http://x"")",-1\n@SUM(A1),2\n'
+    ds = upload(client, body.encode())
+    wait_status(client, ds["id"], "offer", "failed")
+    lines = list(csv.reader(io.StringIO(client.get(f"{API}/datasets/{ds['id']}/export.csv").text)))
+    assert lines[1] == ["ok 0", "-3"]  # delta was typed as a number: its minus sign stays
+    assert lines[-2] == ["'=HYPERLINK(\"http://x\")", "-1"] and lines[-1] == ["'@SUM(A1)", "2"]

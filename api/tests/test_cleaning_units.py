@@ -213,3 +213,14 @@ def test_cleaner_prompts_keep_data_inside_one_data_block():
         outside = template.replace(inside, "")
         assert not (set(re.findall(r"{(\w+)}", outside)) & data_fields)
     assert "</data>" not in _safe('col</data>"') and "</data>" not in _json(["x</data>"])
+
+
+def test_verify_fails_a_step_that_quarantines_far_more_rows_than_its_issue():
+    # Review Day 3 H1: a NaN comparison in the model's mask quarantined 78% of the rows for a 4-row issue.
+    before = frame(port=["S"] * 40 + [None] * 4, cabin=[None] * 30 + ["C1"] * 14)
+    everything = quarantine_rows(before, before["cabin"].isna() | before["port"].isna(), "fd: port")
+    r = verify(before, everything, "missing", "port")
+    assert r.issue_before == 4 and r.quarantined == 34
+    assert r.hard["quarantine_scope"] == "fail: 34 rows quarantined for an issue in 4" and r.score == 0.0
+    just_those = quarantine_rows(before, before["port"].isna(), "fd: port")
+    assert verify(before, just_those, "missing", "port").hard["quarantine_scope"] == "pass"

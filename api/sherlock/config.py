@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     user_token_budget: int = 2_000_000
     job_token_budget: int = 300_000
     message_token_budget: int = 40_000
+    # Every user's model calls together, per UTC day (0 = no ceiling): the cap on spend that a client
+    # dropping its cookie can't reset (TRD §15).
+    app_token_budget: int = 10_000_000
+    new_users_per_ip_hour: int = 30  # 0 = no cap
 
     clean_max_steps: int = 20
     clean_max_seconds: int = 300

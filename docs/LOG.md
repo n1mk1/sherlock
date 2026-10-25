@@ -322,3 +322,23 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - the Cleaner committing a step that quarantines most rows, or that its critic rejects (Day 3 H1, H2);
   - `export.csv` formula escaping, and the `nvidia/` prefix rule.
 - **Not done:** keyboard access to click-to-filter and the widgets, the slide-over focus trap, reduced motion for charts, the 20-widget warning outside the drawer, wide-file candidate capping, compose repairs, and the smaller review items (`reviews/day-*.md`).
+
+### 2026-10-25 (afternoon): the owner's four review decisions, applied
+
+- **Done** (the owner chose the recommended option for each; each has tests and its doc note):
+  - **Budgets that a dropped cookie can't reset** (Day 1 #1).
+    - An app-wide daily ceiling on all users' model tokens (`APP_TOKEN_BUDGET`, default 10M per UTC day, summed from `llm_calls`).
+    - At most 30 new users an hour per client IP (`NEW_USERS_PER_IP_HOUR`). The IP is the last `X-Forwarded-For` entry, which a client can't forge.
+    - PRD §9 Security, TRD §3.5 and §15, App Flow §18.
+  - **Ragged CSVs** (Day 2 H1).
+    - A delimiter guess that barely appears in the lines is overruled.
+    - Files whose row lengths defeat DuckDB's sniffer are read with explicit text columns.
+    - Rows with extra fields keep the values in `col_N` columns and are quarantined, never dropped. The notebook's load cell does the same and rebuilds the version (a kernel test).
+    - PRD LOAD-3a, TRD §7.1, Schema `import_options_json`.
+  - **The Cleaner's damaging steps** (Day 3 H1, H2).
+    - A new hard verifier, `quarantine_scope`, fails a step that quarantines more than 2 × its issue's count + 10 rows.
+    - A step the critic says "changed something it shouldn't" is now skipped; its concerns alone still don't block.
+    - PRD CLEAN-4a, TRD §7.2.
+  - **`export.csv`**: text cells starting with `=`, `+`, `-`, `@`, a tab or a CR get a leading `'`, and typed columns export exactly (PRD CSV-12a, TRD §4.3).
+  - **Rule 2**: chat roles must start with `nvidia/` as well as name Nemotron (TRD §3.5).
+- **To confirm on the live site:** how many `X-Forwarded-For` hops Render sends. Each new user logs a short IP hash and the hop count. If a normal request shows more than one hop, the last entry is a Render proxy, not the client, and the cap would group every visitor together. Then the setting needs the other entry.
