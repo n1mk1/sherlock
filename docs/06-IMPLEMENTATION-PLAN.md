@@ -273,7 +273,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 ### Day 10 · Oct 29: submit
 
-1. Record the video from the demo script in §9 (screen recording of the live site; voice-over; captions for each hero moment). Upload to YouTube (public). Keep it ≤ 3:00.
+1. Record the video from the demo script in §9 (screen recording of the live site; voice-over; captions for each hero moment). Upload to YouTube (public). Keep it ≤ 3:00. The live rules say the video "should be less than three (3) minutes" and judges needn't watch past 3:00, so aim for 2:55 at most (checked 2026-10-25, Day 9 review; the live rules win).
 2. Write the Devpost description with the sections in §7.
 3. Finalize `FEEDBACK.md` into the feedback field, in the structure in §7.
 4. Submit. Verify the submission page shows the repo, URL, video and track.
@@ -418,6 +418,8 @@ Each day: pull → run tests → work the "must" list top-down → commit per sl
 ---
 
 ## 9. Demo script (video, ≤ 3:00)
+
+The live rules ask for *less than* three minutes (Day 10 item 1), so the timings below are compressed to end by 2:55.
 
 The hero moments the PRD's video metric refers to, in recording order. Every moment that uses a model carries a small on-screen caption naming the NVIDIA model and the Nebius service behind it (for example "Nemotron 3 Ultra on Nebius Token Factory plans each fix"), so the integration is shown throughout and not only at the end.
 
