@@ -344,3 +344,20 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **To confirm on the live site:** how many `X-Forwarded-For` hops Render sends. Each new user logs a short IP hash and the hop count. If a normal request shows more than one hop, the last entry is a Render proxy, not the client, and the cap would group every visitor together. Then the setting needs the other entry.
   - **Checked live the same afternoon.** A plain request arrives with two hops: the client, then a Render proxy whose address varies. The first deploy keyed on the last entry, which would have lumped visitors together by proxy node. It now takes the entry before the host's `TRUSTED_PROXY_HOPS` (1), with a test, and the logs showed no INFO lines until `sherlock.*` got a handler.
 - **Cap raised (later the same afternoon, owner's instruction).** `NEW_USERS_PER_IP_HOUR` now defaults to 300, because 30 ran out while testing by hand. The deploy restarts the process, which empties the in-memory window.
+
+### 2026-10-25 (evening): Days 8 and 9, within cuts 2, 3 and 9
+
+- **Done** (each slice committed and pushed; the plan's §2 Day 8 and Day 9 notes list what each item covers):
+  - D8.1–D8.2: the Flow canvas (API and React Flow tab) with "make sense of this" writing a synthesis card live on Nemotron Super.
+  - D8.5: chat proposals for cell edits and Clean with AI (Approve and Reject), `update_widget` with Undo, multi-step plans, the running summary, export from chat.
+  - D8.3: error boundaries, the offline banner, card delete with Undo, scroll memory.
+  - D8.6: checkpoints with resume, the purge job, the Playwright flow (`pnpm e2e`).
+  - D8.4: eval ask at 50 questions and the grounding eval, both run live; fixes from their misses.
+  - D9.1: the cached sample (a seed built once with the real models, cloned per user in 0.2 s).
+  - D9.2–D9.5: deployed by hand to Render; `scripts/live_check.py` passed on the public URL (sample, isolation, rate limit, a sourced answer, the cascade); the five-file notebook eval passed in fresh venvs; README, THIRD_PARTY.md and the example notebook.
+  - Bugs found on the way, each with a test: first visits made several anonymous users at once (the library stream listened to the wrong one); an analysis widget could miss its story card; the overview's derived facts couldn't be re-checked; causal words "influences/affects/impacts" got through.
+- **Not done:**
+  - User tests and the baseline comparison (`docs/USER-TESTS.md`): they need three people who haven't seen Sherlock. The owner's, for Day 10 morning at the latest, since the README and Devpost cite them.
+  - `docs/architecture.png`: the README has a Mermaid diagram that GitHub renders; export it as an image if the Devpost form needs one.
+  - From the earlier reviews, still open: keyboard access to click-to-filter, the slide-over focus trap, reduced motion in charts.
+- **Decision for tomorrow (Day 10):** record the video from plan §9 on the live site (the sample is instant now; moment 6 filters instead of brushing, moment 7 uses "Make sense of this"), write the Devpost text from README sections, finalize FEEDBACK.md, submit. No feature work: the freeze holds, bugs only.

@@ -30,7 +30,7 @@ Rules:
 - Every number is a chip: {{"chip": "<card>.<fact key>"}}, using only the keys listed. Text runs never contain digits or numbers in words ("six", "twice").
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
 - Text runs carry the words, including the spaces around chips and labels. A chip or a label is always its own run.
-- These are associations in the data: never say causes, because, leads to, results in, drives or due to.
+- These are associations in the data: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 
 Cards (what each says, then its facts as key · what it is · value):
 {cards}
@@ -42,7 +42,7 @@ QUESTION = """Answer the question from these story cards only, in one to three s
 Rules:
 - Every number is a chip: {{"chip": "<card>.<fact key>"}}, using only the keys listed. Text runs never contain digits or numbers in words.
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
-- A chip or a label is always its own run. Associations only: never say causes, because, leads to, results in, drives or due to.
+- A chip or a label is always its own run. Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 
 Cards (what each says, then its facts as key · what it is · value):
 {cards}

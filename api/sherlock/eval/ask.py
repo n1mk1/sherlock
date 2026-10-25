@@ -115,14 +115,21 @@ def unsourced(message: dict) -> bool:
     return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step", "card") for s in message.get("sources") or [])
 
 
-def ask(client, ds_id: str, text: str) -> dict:
-    with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}}) as r:
-        event = None
-        for line in r.iter_lines():
-            if line.startswith("event: "):
-                event = line[7:]
-            elif line.startswith("data: ") and event == "message":
-                return json.loads(line[6:])
+def ask(client, ds_id: str, text: str, tries: int = 6) -> dict:
+    """One question through `POST /chat`. The eval asks faster than a person types, so a `429` (ten
+    model requests a minute per user, TRD §15) waits its `Retry-After` and asks again."""
+    for _ in range(tries):
+        with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}}) as r:
+            if r.status_code == 429:
+                time.sleep(float(r.headers.get("retry-after") or 6))
+                continue
+            event = None
+            for line in r.iter_lines():
+                if line.startswith("event: "):
+                    event = line[7:]
+                elif line.startswith("data: ") and event == "message":
+                    return json.loads(line[6:])
+        break
     return {"blocks": [], "sources": [], "text": "(no answer)"}
 
 

@@ -15,7 +15,9 @@ from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavail
 from sherlock.llm.schemas import ChipRun, LabelRun, Run, Story, Strict, TextRun
 from sherlock.stories.facts import small_sample
 
-CAUSAL = re.compile(r"\b(cause[sd]?|causing|because|leads? to|led to|results? in|resulted in|drives?|driven by|due to)\b", re.I)
+# D9: "how class influences ticket price" got past the first list in the cached sample's stories.
+CAUSAL = re.compile(r"\b(cause[sd]?|causing|because|leads? to|led to|results? in|resulted in|drives?|driven by|due to"
+                    r"|influenc(?:e[sd]?|ing)|affect(?:s|ed|ing)?|impact(?:s|ed|ing)?)\b", re.I)
 MARKUP = re.compile(r"[{}\[\]]|\bchip\b|\b(column|value):", re.I)
 NUMERIC_VALUE = re.compile(r"^-?\d+(\.\d+)?$")
 SPLICE = re.compile(r"([.!?])(?=[A-Z])")
@@ -35,7 +37,7 @@ Rules:
 - When a fact names two categories (a cell of a heatmap), name both.
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
 - Text runs carry the words, including the spaces around chips and labels.
-- Say what the widget shows and what stands out. These are associations in the data: never say causes, because, leads to, results in, drives or due to.
+- Say what the widget shows and what stands out. These are associations in the data: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - {small}
 - You may mention a related widget by what it shows, without numbers.
 
@@ -54,7 +56,7 @@ OVERVIEW = """Pick the three to five most important findings across this dashboa
 Rules:
 - Every number is a chip: {{"chip": "<widget>.<fact key>"}}, using only the keys listed. Text runs never contain digits.
 - Column names and values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}.
-- Associations only: never say causes, because, leads to, results in, drives or due to.
+- Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - Each bullet is a list of runs, for example [{{"text": "Survival was highest for "}}, {{"label": "value:sex:female"}}, {{"text": " passengers, at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
 Widgets and their facts:

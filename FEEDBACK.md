@@ -177,6 +177,17 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 - **Suggestion:** a documented pattern (or a constrained-decoding option) for "interleaved text and references" outputs, the shape every grounded-generation app needs. An example in the Nemotron docs showing the expected run list would help any team building cited or chip-based text.
 - **Token Factory returned `529 System is overloaded`** three times in one stories job (2026-10-25, about 07:10 UTC), each answered in about 3.4 s. Our retry with backoff (2 s) succeeded every time, so the cards were only slower. **Suggestion:** a `Retry-After` header on 529, and a status page entry, so clients back off for the right time.
 
+### Nemotron on the Flow canvas, chat actions and the evals (2026-10-25, Implementation Plan D8–D9)
+
+- **"Make sense of this" (Super, schema `Story`, purpose `synthesis`).** On Titanic it wrote a correct comparison of three cards in one call ("Overall survival stood at 38.2%, with females at 72.7% versus males at 19.1%…", every number a chip from the cards' fact sheets). On the sales file it twice typed chip markup inside a text run (`'The average unit price {"chip":"c3.value"} equals…'`), so the card fell back to the cards' headlines. Strict `json_schema` decoding enforces the run union's shape but not what a string holds, which is the same gap we hit in D6.
+  - **Suggestion:** document that strict decoding constrains structure only, and expose a "forbidden substrings in strings" or regex constraint. Teams forcing citation-style output would use it.
+- **Routing (Nano, reasoning off).** In the 50-question eval it sent "what is the overall survival rate?" and "what is the return rate?" to the significance-test answerer, though the intent line says "only when the user asks whether a difference … is significant". We now keep that intent in code for messages that mention a test or a relationship.
+- **SQL (Super).** It once used DuckDB's `APPROX_QUANTILE` for a median (60.31 against an exact 60.0), and twice judged "average revenue per order" and "men in second class" unanswerable. Two prompt lines fixed all three in the rerun.
+- **Wording (Super).** One story said "how class influences typical ticket price": causal language our first word list didn't cover. "Influence", "affect" and "impact" are now rejected too.
+- **Latency.** Medians held (Super 4–10 s, Nano about 1.5–3 s), but one Nano routing call took 27 s and one Super synthesis 23 s during an afternoon overload. With 90 s per answer and 8 calls we stayed inside the budget; a user waiting on a 27 s "Thinking…" notices.
+  - **Suggestion:** return `Retry-After` or a queue-depth hint on slow paths, as with 529, so clients can show "the model is busy" instead of spinning.
+- **Spend for Day 8–9.** Three seed builds of the sample (about 50–68k tokens each, Ultra and Super), two grounding builds, three 50-question eval runs and the live checks: roughly 1 M tokens, an estimate (each eval answer is about 3–5k tokens across route, SQL and compose; the console has the exact figure).
+
 ### NVIDIA embedding model (`embed`)
 
 - None is available on Token Factory, so this role is empty (see Token Factory problem 1).

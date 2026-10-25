@@ -241,6 +241,17 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 **Exit**: on the sample, drag three cards, "make sense of this" produces a synthesis card with chips; "take it toward age" produces a new widget and a connected card (pair only); evals pass thresholds or the gaps are listed.
 
+**Done 2026-10-25, within cuts 2, 3 and 9** (as built in TRD §4.4, §4.7, §4.9, §5.3, §7.4.1, §7.7, §8.1–§8.2, §3.3, §14; App Flow §10, §12, §17; UI/UX brief §5.10, §5.15; Schema §2.12, §2.15, §6):
+- [x] D8.1: `canvas/` (JSON Canvas with an etag, validation, pruning, AI writes in one transaction); `add_canvas_node` and `add_canvas_edge`; `ask_story`; "make sense of this" as a synthesis card whose chips resolve through its sources, with `sources_changed` and Refresh. Add to Flow makes an `answer` card. `propose_card_edit`, rewrites and "take it toward X" are cut (2, 3).
+- [x] D8.2: the Flow tab on React Flow: card, note and synthesis nodes from the tokens, labelled edges, connect mode and handles, the palette (drag, or Enter to place), minimap, zoom, Fit view, selection as the chat's context, "Open widget", in-place card editing, delete with Undo, three-way merge on save. Direction nodes and the building checklist are cut (3).
+- [x] D8.3: error boundaries, the offline banner, Undo on card delete (widgets, datasets and canvas nodes already had it), the dashboard's scroll and the canvas's viewport remembered, empty states; Export from the Flow palette and from chat ("export a notebook" opens the dialog with options from the wording); canvas notes and Flow cards in the notebook. The `?` sheet is cut (9).
+- [x] D8.4: eval ask at 50 questions over three files (every ASK-2 area) and the grounding eval. Live: 44 of 50, then 49 of 50 after fixes (0 unsourced each time); grounding 69 of 69 chips matching their facts, no digits or causal words. The misses and fixes are in TRD §8.1.
+- [x] D8.5: `update_widget` (with Undo); `edit_cells` and `clean_selection` proposals with Approve and Reject; multi-step plans with live step statuses; the running thread summary; Add to Flow. Resolve with the value index, clarification buttons and follow-up focus were already built.
+- [x] D8.6: job checkpoints with resume (the stories job), the purge job every 10 minutes, and the Playwright flow test (`pnpm e2e`, 11 s).
+- Also fixed on the way: first visits created several anonymous users at once, so the library's stream listened to the wrong user (seen live; the app now waits for `/me`); `fitView` in React Flow 12.11 waits for a node change (Fit view uses `fitBounds`); Shift-click selection on the canvas; an analysis widget left without a story when its run beat the first card.
+- Exit, checked: on the sample, three cards placed and selected, "make sense of this" (live Super) produced a synthesis card with chips from the three cards' facts, "summarized in" edges, and evidence that opens the source fact's query. "Take it toward age" is cut (3). The evals' gaps are listed in TRD §8.1 and the README.
+- **Feature freeze** applies from here: Day 9 changed only bugs, data and docs (the seed, wording rules found by the evals, the eval harness).
+
 ### Day 9 · Oct 28: ship
 
 **Must**
@@ -251,6 +262,14 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 5. Rate limits and budgets verified on the public URL; a second browser can't see the first's datasets.
 
 **Exit**: a judge with the URL can: click Try with sample → see the dashboard in seconds → ask a question → edit a cell → see a card update → build a Flow story, and upload their own CSV.
+
+**Done 2026-10-25** (as built in TRD §4.2 and §14; the README; `THIRD_PARTY.md`):
+- [x] D9.1: `scripts/seed_sample.py` runs the whole pipeline on Titanic with the real models (two cleaning steps, ten widgets with the analysis, twelve cards, a synthesis on the canvas) and saves a seed; "Try with sample" clones it with fresh IDs in 0.2 s live. The seed ships in the image (`api/samples/seed/titanic3/`) rather than `/data/sample/` (TRD §4.2 says why). Two browsers each got their own independent copy.
+- [x] D9.2: deployed `f94e802` and the later fixes to Render by hand (CI is blocked by billing); the five-file set run against the public URL and each notebook executed here (31 of 31 checks: titanic3 built in 54 s, sales_dated 48 s, reviews_text 46 s, broken_latin1 cleaned and built in 61 s, wide_messy cleaned in four steps and built in 685 s); all five also passed `sherlock eval notebook --sets all` in fresh venvs. The sample's notebook is `docs/examples/titanic3-v4.ipynb` (the cached sample is v4, not v7: the Cleaner now leaves most missing values alone), with its raw file next to it.
+- [x] D9.3: the README in the §7 order: URL, screenshot, try it, the NVIDIA models and Nebius table (latency, tokens and cost per sample run), the data-flow diagram, trust, results, limitations, accessibility, setup, deploy, tests. **Still the owner's:** user tests and the baseline comparison (`docs/USER-TESTS.md` needs three people who haven't seen Sherlock) and the architecture image for §7 (the README has a Mermaid diagram).
+- [x] D9.4: `THIRD_PARTY.md` from the packages' own metadata; Bklit UI is MIT and Bklit Studio is absent; the Titanic file is listed by OpenML as Public.
+- [x] D9.5: on the public URL, from fresh clients (`scripts/live_check.py`): the eleventh model request in a minute answers 429 and another user isn't affected; a second browser gets 404 for the first's dataset, widgets, cards and canvas, and an empty library. Budgets are config (`APP_TOKEN_BUDGET`, per-user daily tokens) and weren't exhausted on purpose.
+- Exit, checked live on https://sherlock-anw3.onrender.com: Try with sample ready in 0.2 s; a question answered with its SQL in 8.5 s; a fare edit saved as a new version and re-told only the stories that read fare (plus the overview and the synthesis citing them); the Flow story and an uploaded CSV as above.
 
 ### Day 10 · Oct 29: submit
 
@@ -284,7 +303,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto: done 2026-10-25 within cuts 4 and 7 (plan, core, analysis, repro, registry, runner, artifacts: `driver_analysis` with Auto); explain-row, predictions and compare-auto are cut
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9; `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help` and tool exposure by tab done 2026-10-25 (D7.3)
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
-- [ ] `canvas/` model, persistence, pruning
+- [x] `canvas/` model, persistence, pruning (2026-10-25, D8.1)
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5)
 - [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
@@ -305,10 +324,10 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats)
 - [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells: done 2026-10-25 (D7.4) within cuts 4 and 7 (importance with partial dependence; no confusion or ROC views, no predicted cells)
 - [x] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight: done 2026-10-25 (D6.3)
-- [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist
+- [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist: all but the direction checklist (cut 3) done 2026-10-25 (D8.2)
 - [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9
 - [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points: done 2026-10-25 (D5.6) but the Flow palette entry (D8) and the dialog's Save and export button (the note tells the user to save first)
-- [ ] Playwright flow test (ends with Export notebook → file downloaded)
+- [x] Playwright flow test (ends with Export notebook → file downloaded): 2026-10-25 (D8.6, `pnpm e2e`)
 
 ---
 
@@ -326,6 +345,8 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Smoke the model | `uv run python scripts/smoke_llm.py` (from the repo root: `uv run --project api python scripts/smoke_llm.py`; options `--models a,b`, `--out report.json`, `--no-thinking`) |
 | Seed the sample | `uv run python scripts/seed_sample.py` (from the repo root: `uv run --project api python scripts/seed_sample.py`; writes `api/samples/seed/titanic3/`, D9.1) |
 | Deploy | `./scripts/deploy.sh` (build → push → update endpoint) |
+| Check the deployed site | `uv run --project api python scripts/live_check.py [--url …] [--files all]` (D9.2, D9.5: health, the instant sample, isolation, rate limits, a sourced answer, the cascade; `--files all` also uploads the five-file set, exports each notebook and runs it here) |
+| Refresh the example notebook | `uv run --project api python scripts/example_notebook.py` (writes `docs/examples/titanic3-v<N>.ipynb` and its raw file from the cached sample) |
 | Generate the API client | `uv run --project api python scripts/dump_openapi.py`, then `pnpm openapi` in `web/` (reads `web/src/api/openapi.json`, TRD §3.1) |
 
 Environments: `local` (compose, `DATA_DIR=./data`, mocked LLM optional via `LLM_MOCK=1`), `prod` (Render web service with a disk, real Token Factory; the Nebius Serverless Endpoint is the alternative).

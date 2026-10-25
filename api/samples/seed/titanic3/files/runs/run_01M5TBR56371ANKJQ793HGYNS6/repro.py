@@ -1,5 +1,5 @@
-# Reproduces Sherlock run run_01M5TAKA5C3DF75NBC1ZAM13KY (driver analysis on version 3).
-# Auto tried: Gradient boosting (accuracy 0.800), Random forest (accuracy 0.801). The winner, Logistic regression, is reproduced here.
+# Reproduces Sherlock run run_01M5TBR56371ANKJQ793HGYNS6 (driver analysis on version 4).
+# Auto tried: Gradient boosting (accuracy 0.806), Random forest (accuracy 0.798). The winner, Logistic regression, is reproduced here.
 import duckdb
 
 import warnings

@@ -1,0 +1,451 @@
+{
+ "run_id": "run_01M5TBR56371ANKJQ793HGYNS6",
+ "recipe": "driver_analysis",
+ "method": "auto",
+ "chosen_model": "logistic_regression",
+ "task": "classification",
+ "target": "survived",
+ "features_used": [
+  "pclass",
+  "sex",
+  "age",
+  "sibsp",
+  "parch",
+  "ticket",
+  "fare",
+  "cabin",
+  "embarked",
+  "home.dest"
+ ],
+ "excluded": [
+  {
+   "column": "name",
+   "reason": "ID-like: unique per row"
+  },
+  {
+   "column": "boat",
+   "reason": "records the outcome (leakage): near-perfect predictor of survived (0.98)"
+  },
+  {
+   "column": "body",
+   "reason": "records the outcome (leakage): near-perfect predictor of survived (1.00)"
+  }
+ ],
+ "rows": {
+  "total": 1309,
+  "with_target": 1309,
+  "blank_target": 0,
+  "used": 1309,
+  "train": 1309
+ },
+ "split": {
+  "kind": "stratified_kfold",
+  "folds": 5,
+  "seed": 42
+ },
+ "baselines": [
+  {
+   "name": "everyone gets the most common outcome",
+   "metric": "accuracy",
+   "value": 0.6180281360591968
+  },
+  {
+   "name": "best one-column rule: sex",
+   "metric": "accuracy",
+   "value": 0.7799918107104208,
+   "column": "sex"
+  }
+ ],
+ "model": {
+  "metric": "accuracy",
+  "value": 0.807508,
+  "ci": [
+   0.788378,
+   0.826638
+  ],
+  "folds": [
+   0.793893,
+   0.801527,
+   0.782443,
+   0.824427,
+   0.835249
+  ],
+  "lift_over_best_baseline": 0.027516,
+  "auc": 0.858792
+ },
+ "alternatives": [
+  {
+   "model": "gradient_boosting",
+   "label": "Gradient boosting",
+   "metric": "accuracy",
+   "value": 0.80599
+  },
+  {
+   "model": "random_forest",
+   "label": "Random forest",
+   "metric": "accuracy",
+   "value": 0.798345
+  }
+ ],
+ "verdict": "beats_baseline",
+ "verdict_text": "Beats the best simple rule by 2.8 points.",
+ "importance": [
+  {
+   "column": "sex",
+   "value": 1.0
+  },
+  {
+   "column": "pclass",
+   "value": 0.1973
+  },
+  {
+   "column": "ticket",
+   "value": 0.1261
+  },
+  {
+   "column": "age",
+   "value": 0.1132
+  },
+  {
+   "column": "sibsp",
+   "value": 0.049
+  },
+  {
+   "column": "embarked",
+   "value": 0.0153
+  },
+  {
+   "column": "cabin",
+   "value": 0.0117
+  },
+  {
+   "column": "fare",
+   "value": 0.0051
+  },
+  {
+   "column": "home.dest",
+   "value": 0.0007
+  },
+  {
+   "column": "parch",
+   "value": 0.0
+  }
+ ],
+ "warnings": [
+  {
+   "code": "high_cardinality",
+   "text": "ticket, cabin, home.dest have many values and were target-encoded inside the folds.",
+   "suggestion": "Their importance can be inflated; check them by hand."
+  }
+ ],
+ "limits": [
+  "1,309 rows",
+  "correlational, not causal"
+ ],
+ "sample": null,
+ "confusion": {
+  "labels": [
+   "0",
+   "1"
+  ],
+  "matrix": [
+   [
+    699,
+    110
+   ],
+   [
+    142,
+    358
+   ]
+  ]
+ },
+ "misclassified": 252,
+ "roc": {
+  "positive": "1",
+  "auc": 0.857512,
+  "points": [
+   {
+    "fpr": 0.0,
+    "tpr": 0.0,
+    "threshold": 1.0
+   },
+   {
+    "fpr": 0.003708,
+    "tpr": 0.31,
+    "threshold": 0.856935
+   },
+   {
+    "fpr": 0.009889,
+    "tpr": 0.34,
+    "threshold": 0.831542
+   },
+   {
+    "fpr": 0.014833,
+    "tpr": 0.414,
+    "threshold": 0.77651
+   },
+   {
+    "fpr": 0.019778,
+    "tpr": 0.474,
+    "threshold": 0.732212
+   },
+   {
+    "fpr": 0.02843,
+    "tpr": 0.498,
+    "threshold": 0.711387
+   },
+   {
+    "fpr": 0.034611,
+    "tpr": 0.518,
+    "threshold": 0.700916
+   },
+   {
+    "fpr": 0.044499,
+    "tpr": 0.546,
+    "threshold": 0.679788
+   },
+   {
+    "fpr": 0.051916,
+    "tpr": 0.57,
+    "threshold": 0.665312
+   },
+   {
+    "fpr": 0.059333,
+    "tpr": 0.598,
+    "threshold": 0.6491
+   },
+   {
+    "fpr": 0.065513,
+    "tpr": 0.608,
+    "threshold": 0.642202
+   },
+   {
+    "fpr": 0.076638,
+    "tpr": 0.624,
+    "threshold": 0.626625
+   },
+   {
+    "fpr": 0.08529,
+    "tpr": 0.634,
+    "threshold": 0.616074
+   },
+   {
+    "fpr": 0.093943,
+    "tpr": 0.65,
+    "threshold": 0.600734
+   },
+   {
+    "fpr": 0.102596,
+    "tpr": 0.662,
+    "threshold": 0.586589
+   },
+   {
+    "fpr": 0.114957,
+    "tpr": 0.688,
+    "threshold": 0.551734
+   },
+   {
+    "fpr": 0.124845,
+    "tpr": 0.708,
+    "threshold": 0.531776
+   },
+   {
+    "fpr": 0.140915,
+    "tpr": 0.718,
+    "threshold": 0.494776
+   },
+   {
+    "fpr": 0.155748,
+    "tpr": 0.732,
+    "threshold": 0.458003
+   },
+   {
+    "fpr": 0.177998,
+    "tpr": 0.746,
+    "threshold": 0.416631
+   },
+   {
+    "fpr": 0.189122,
+    "tpr": 0.758,
+    "threshold": 0.399246
+   },
+   {
+    "fpr": 0.203956,
+    "tpr": 0.766,
+    "threshold": 0.377201
+   },
+   {
+    "fpr": 0.213844,
+    "tpr": 0.784,
+    "threshold": 0.351461
+   },
+   {
+    "fpr": 0.221261,
+    "tpr": 0.794,
+    "threshold": 0.343803
+   },
+   {
+    "fpr": 0.236094,
+    "tpr": 0.802,
+    "threshold": 0.318809
+   },
+   {
+    "fpr": 0.25958,
+    "tpr": 0.812,
+    "threshold": 0.295109
+   },
+   {
+    "fpr": 0.274413,
+    "tpr": 0.824,
+    "threshold": 0.271602
+   },
+   {
+    "fpr": 0.285538,
+    "tpr": 0.836,
+    "threshold": 0.25657
+   },
+   {
+    "fpr": 0.317676,
+    "tpr": 0.846,
+    "threshold": 0.227875
+   },
+   {
+    "fpr": 0.347342,
+    "tpr": 0.854,
+    "threshold": 0.200471
+   },
+   {
+    "fpr": 0.375773,
+    "tpr": 0.862,
+    "threshold": 0.18642
+   },
+   {
+    "fpr": 0.4178,
+    "tpr": 0.868,
+    "threshold": 0.169645
+   },
+   {
+    "fpr": 0.442522,
+    "tpr": 0.878,
+    "threshold": 0.158264
+   },
+   {
+    "fpr": 0.47466,
+    "tpr": 0.886,
+    "threshold": 0.144292
+   },
+   {
+    "fpr": 0.509271,
+    "tpr": 0.896,
+    "threshold": 0.130603
+   },
+   {
+    "fpr": 0.536465,
+    "tpr": 0.908,
+    "threshold": 0.123469
+   },
+   {
+    "fpr": 0.556242,
+    "tpr": 0.91,
+    "threshold": 0.120603
+   },
+   {
+    "fpr": 0.60445,
+    "tpr": 0.914,
+    "threshold": 0.110568
+   },
+   {
+    "fpr": 0.618047,
+    "tpr": 0.92,
+    "threshold": 0.109067
+   },
+   {
+    "fpr": 0.636588,
+    "tpr": 0.926,
+    "threshold": 0.106879
+   },
+   {
+    "fpr": 0.656366,
+    "tpr": 0.934,
+    "threshold": 0.105238
+   },
+   {
+    "fpr": 0.690977,
+    "tpr": 0.94,
+    "threshold": 0.101731
+   },
+   {
+    "fpr": 0.721879,
+    "tpr": 0.948,
+    "threshold": 0.096895
+   },
+   {
+    "fpr": 0.745365,
+    "tpr": 0.954,
+    "threshold": 0.09312
+   },
+   {
+    "fpr": 0.770087,
+    "tpr": 0.962,
+    "threshold": 0.08938
+   },
+   {
+    "fpr": 0.782447,
+    "tpr": 0.968,
+    "threshold": 0.085332
+   },
+   {
+    "fpr": 0.823239,
+    "tpr": 0.978,
+    "threshold": 0.078329
+   },
+   {
+    "fpr": 0.866502,
+    "tpr": 0.986,
+    "threshold": 0.067778
+   },
+   {
+    "fpr": 0.902349,
+    "tpr": 0.994,
+    "threshold": 0.052848
+   },
+   {
+    "fpr": 1.0,
+    "tpr": 1.0,
+    "threshold": 0.007583
+   }
+  ]
+ },
+ "version": 4,
+ "scope": {
+  "columns": {
+   "x": null,
+   "y": null,
+   "agg": null,
+   "series": null,
+   "target": "survived",
+   "features": null,
+   "exclude": []
+  },
+  "rows": {
+   "predicate": null,
+   "selection_id": null,
+   "inherit_global_filters": false
+  }
+ },
+ "params": {
+  "cv_folds": 5,
+  "time_budget_s": 60
+ },
+ "artifact_path": "runs/run_01M5TBR56371ANKJQ793HGYNS6/model.joblib",
+ "fact_sheet_id": "fs_01M5TBRANYRJ8C8M3DM8J1PW3Y",
+ "repro": {
+  "libraries": {
+   "pandas": "2.2.3",
+   "numpy": "2.1.3",
+   "duckdb": "1.1.3",
+   "scikit-learn": "1.5.2"
+  },
+  "code_path": "runs/run_01M5TBR56371ANKJQ793HGYNS6/repro.py"
+ }
+}

@@ -184,7 +184,7 @@ def test_cancel_running_job_and_log(client, monkeypatch):
 def test_kind_without_handler_fails(client):
     ds = upload(client)
     wait_status(client, ds["id"], "offer")
-    job_id = _start(client, ds["id"], "purge")
+    job_id = _start(client, ds["id"], "undo")  # undo runs in the request, so the kind has no job handler
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "failed" and j)
     assert "No handler" in job["error"]
 
