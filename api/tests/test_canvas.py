@@ -45,6 +45,10 @@ def test_put_needs_the_current_etag_and_a_valid_document(client):
         {"nodes": [{**note, "x": "far"}], "edges": []},
         {"nodes": [{**note, "sherlock": {"card_id": "crd_not_mine"}}], "edges": []},
         {"nodes": [{**note, "type": "shape"}], "edges": []},
+        # Wrong shapes inside a valid-looking document were 500s (Day 8 review).
+        {"nodes": [note, other], "edges": [{"id": "e1", "fromNode": ["n1"], "toNode": "n2"}]},
+        {"nodes": [note, other], "edges": [{"id": "e1", "fromNode": "n1", "toNode": "n2", "sherlock": "ai"}]},
+        {"nodes": [{**note, "sherlock": {"card_id": ["crd_x"]}}], "edges": []},
     ):
         r = client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": bad, "etag": etag})
         assert r.status_code == 422, (bad, r.text)

@@ -655,6 +655,7 @@ Canvas API as implemented (2026-10-25, Implementation Plan D8.1, `sherlock/canva
   - A card node's `sherlock.card_id` names a card of this dataset (a soft-deleted one counts), at most once per canvas; its `text` is stored empty.
   - An edge joins two different nodes on the canvas. `fromSide` and `toSide` are `top`, `right`, `bottom` or `left`, and a label is at most 200 characters. `sherlock` defaults to `{ made_by: "user", kind: "custom" }`.
   - Only the JSON Canvas keys and `sherlock` are kept; anything else is dropped.
+  - Since the Day 8 review, a value of the wrong type is `422` too, not `500`: an edge's `fromNode` or `toNode` that isn't a string, an edge's `sherlock` that isn't an object, and a `card_id` that isn't a string.
 - **A save** that changes the document bumps `datasets.state_rev` (so the notebook export cache sees it) and emits `canvas.updated` with `{ etag }`.
 - **Pruning on read.** A card node whose card no longer exists, and its edges, are removed; the canvas is written back, so the etag changes. A soft-deleted card's node stays, and the client hides it until the card is restored.
 - **AI writes** (`add_canvas_node`, `add_canvas_edge`) go through `mutate`: read, change, validate and store in one `BEGIN IMMEDIATE` transaction, so they can't race a tab's save. The tab then gets `canvas.updated`, and its next `PUT` with the old etag is `409`.
