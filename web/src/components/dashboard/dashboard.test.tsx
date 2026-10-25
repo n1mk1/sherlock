@@ -2,12 +2,12 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Job, Widget } from "@/api/types";
 import { initials } from "@/components/library/LibraryPanel";
-import { visibleJobs } from "@/components/shell/JobTray";
+import { JobTray, visibleJobs } from "@/components/shell/JobTray";
 import { formatCell, formatNumber, isPctColumn } from "@/lib/format";
 import { useFilters } from "@/state/filters";
 import { mockApi, renderAt } from "@/test/render";
 import { templateSpec } from "./AddWidgetDrawer";
-import { derive } from "./Dashboard";
+import { derive, toStored } from "./Dashboard";
 import { compatibleViews, WidgetShell } from "./WidgetShell";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -45,6 +45,16 @@ describe("dashboard helpers", () => {
     expect(sm.map((i) => [i.i, i.x, i.y, i.w])).toEqual([["k1", 0, 0, 2], ["k2", 2, 0, 2], ["a", 0, 3, 4], ["b", 0, 10, 4]]);
   });
 
+  it("keeps a collapsed widget's height when it collapses and when it expands", () => {
+    const stored = { lg: [{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }] };
+    const drawnCollapsed = { lg: [{ i: "a", x: 0, y: 0, w: 6, h: 1 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }] };
+    const collapsing = toStored({ lg: stored.lg }, stored, new Set(), new Set(["a"]));
+    expect(collapsing.lg[0]).toEqual({ i: "a", x: 0, y: 0, w: 6, h: 7, collapsed: true });
+    const collapsedStored = { lg: [{ ...stored.lg[0], collapsed: true }, stored.lg[1]] };
+    const expanding = toStored(drawnCollapsed, collapsedStored, new Set(["a"]), new Set());
+    expect(expanding.lg.map((i) => [i.i, i.h, i.collapsed])).toEqual([["a", 7, undefined], ["b", 7, undefined]]);
+  });
+
   it("lists the views that can draw a result", () => {
     const data = (columns: string[], rows: unknown[][]) => ({
       version: 2, columns: columns.map((c) => ({ name: c, type: c === "period" ? "DATE" : "BIGINT" })), rows,
@@ -71,6 +81,23 @@ describe("dashboard helpers", () => {
     expect(visibleJobs(jobs, new Set(["e"]), now).map((j) => j.id)).toEqual(["a", "b", "d"]);
     expect(initials("titanic3.csv (sample)")).toBe("TI");
     expect(initials("sales_semicolon.csv")).toBe("SS");
+  });
+});
+
+describe("job tray", () => {
+  it("is a popover whose Retry and Dismiss are reached with Tab", async () => {
+    mockApi({
+      "GET /api/v1/jobs": [{ id: "job_1", dataset_id: "ds_1", kind: "clean", status: "failed", error: "Model unavailable",
+        progress: { step: 0, of: 0, label: "", pct: 0 }, created_at: "", started_at: null, finished_at: null, result: null }],
+      "GET /api/v1/datasets": [],
+    });
+    renderAt(<JobTray />);
+    fireEvent.click(await screen.findByRole("button", { name: /Background jobs/ }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(screen.getByRole("dialog")).toContainElement(retry);
+    // A dropdown menu cancels Tab inside it (UI/UX brief §8: every control is reachable by keyboard).
+    expect(fireEvent.keyDown(retry, { key: "Tab" })).toBe(true);
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 });
 

@@ -38,16 +38,7 @@ export function Dashboard({ dataset }: { dataset: Dataset }) {
   const widgets = data?.widgets ?? [];
 
   const persist = (next: Layouts, collapsedIds: Set<string>) => {
-    const out: Layout = { lg: [] };
-    for (const bp of Object.keys(next) as Bp[]) {
-      const prev = new Map((stored?.[bp] ?? stored?.lg ?? []).map((i) => [i.i, i]));
-      out[bp] = next[bp].map((g) => {
-        const c = collapsedIds.has(g.i);
-        // A collapsed widget is drawn one row tall; keep its own height for when it expands.
-        const h = c ? (prev.get(g.i)?.h ?? g.h) : g.h;
-        return { i: g.i, x: g.x, y: g.y, w: g.w, h, ...(c ? { collapsed: true } : {}) } as LayoutItem;
-      });
-    }
+    const out = toStored(next, stored, collapsed, collapsedIds);
     saveLayout.mutate(out, { onError: (e) => toast.error((e as Error).message) });
   };
 
@@ -138,6 +129,21 @@ export function derive(lg: LayoutItem[], cols: number): LayoutItem[] {
     out.push({ ...it, x, y, w });
     x += w;
     rowH = Math.max(rowH, it.h);
+  }
+  return out;
+}
+
+/** The layout to save from the grid's. A collapsed widget is drawn one row tall, so a widget that is
+ * collapsed, or was drawn collapsed and is expanding now, keeps its stored height (App Flow §7.3). */
+export function toStored(next: Layouts, stored: Layout | undefined, drawnCollapsed: Set<string>, collapsedIds: Set<string>): Layout {
+  const out: Layout = { lg: [] };
+  for (const bp of Object.keys(next) as Bp[]) {
+    const prev = new Map((stored?.[bp] ?? stored?.lg ?? []).map((i) => [i.i, i]));
+    out[bp] = next[bp].map((g) => {
+      const c = collapsedIds.has(g.i);
+      const h = c || drawnCollapsed.has(g.i) ? (prev.get(g.i)?.h ?? g.h) : g.h;
+      return { i: g.i, x: g.x, y: g.y, w: g.w, h, ...(c ? { collapsed: true } : {}) } as LayoutItem;
+    });
   }
   return out;
 }

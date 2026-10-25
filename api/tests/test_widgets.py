@@ -64,6 +64,32 @@ def test_predicate_validation():
         wc.validate_predicate("pclass IN (SELECT pclass FROM t)", ["pclass"])
     with pytest.raises(wc.SqlError):
         wc.validate_predicate("1=1; DROP TABLE t", ["pclass"])
+    assert wc.validate_predicate("(pclass = 1) OR (pclass = 2)", ["pclass"]) == "(pclass = 1) OR (pclass = 2)"
+    with pytest.raises(wc.SqlError, match="unbalanced parentheses"):
+        wc.validate_predicate("pclass = 1) OR (1 = 1", ["pclass"])
+
+
+def test_rows_must_be_anded_into_every_read_of_t():
+    rows = wc.rows_clause(None, None, None)
+    for ok in [
+        "SELECT a FROM t WHERE {{rows}}",
+        "SELECT a FROM t WHERE b = 1 AND ({{rows}} AND c = 2)",
+        "WITH x AS (SELECT a FROM t WHERE {{rows}}) SELECT * FROM x",
+        "SELECT a, count(*) * 1.0 / (SELECT count(*) FROM t WHERE {{rows}}) FROM t WHERE {{rows}} GROUP BY 1",
+        "SELECT a FROM t WHERE {{rows}} UNION ALL SELECT b FROM t WHERE {{rows}}",
+    ]:
+        assert "_quarantine_reason IS NULL" in wc.compile_sql(ok, rows)
+    for bad, message in [
+        ("SELECT a FROM t WHERE {{rows}} OR 1=1", "ANDed into the WHERE"),
+        ("SELECT a FROM t WHERE NOT ({{rows}})", "ANDed into the WHERE"),
+        ("SELECT a FROM t WHERE b = 1 AND {{rows}} OR b = 2", "ANDed into the WHERE"),
+        ("SELECT CASE WHEN {{rows}} THEN 1 END FROM t WHERE {{rows}}", "ANDed into the WHERE"),
+        ("SELECT a FROM t GROUP BY a HAVING {{rows}}", "ANDed into the WHERE"),
+        ("SELECT (SELECT count(*) FROM t) AS everyone FROM t WHERE {{rows}}", "Every SELECT that reads t"),
+        ("SELECT a FROM t WHERE {{rows}} UNION ALL SELECT b FROM t", "Every SELECT that reads t"),
+    ]:
+        with pytest.raises(wc.SqlError, match=message):
+            wc.compile_sql(bad, rows)
 
 
 def test_pack_puts_kpis_first_then_packs_left_to_right():
