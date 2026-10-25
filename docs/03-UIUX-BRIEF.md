@@ -485,6 +485,8 @@ Canvas background `--background` with a dot grid (`--border` dots, 22px spacing)
 
 Palette (right panel): search input, then rows (drag handle · name · "on canvas" / "not placed" in muted), then a "Try asking" card, then Export: Notebook (.ipynb) (P0) and Obsidian (.canvas) (P1).
 
+As built (2026-10-25, D8.2, `src/components/flow/`): React Flow (`@xyflow/react` 12.11.3) with its structural `base.css` only; every colour comes from the tokens (`index.css`, `.flow-canvas`). Dots are `--border-strong`, 1.2px at 22px. Card nodes are 240px wide in the §4.5 style (the headline 15px serif, the body 13px clamped to six lines except on a synthesis), and notes 220px in a fill of 5% foreground over the background. Side handles (9px, `--accent` ring) show on hover and selection. The selected outline is 2px `--accent` offset 2px, dashed for the first node picked in connect mode. Edges are 1.5px bezier curves with a closed arrowhead, `--muted-foreground` for the user's and `--accent` for the AI's (2.25px when selected). Labels are pill chips at the midpoint, edited in place. The minimap's viewport mask has an `--info` stroke. "Make sense of this" is a primary button at the canvas's top left next to the node count.
+
 ### 5.11 Settings dialog
 
 As built (2026-10-24), with cut 1: four settings, each a segmented control with a help line.

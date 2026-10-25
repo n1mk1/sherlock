@@ -177,12 +177,21 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     for run in extra:  # include_runs: finished runs no widget shows
         nb.cells += _run_cells(settings, dataset, run, f"What drives {run['target']}?")
         emitted_runs.append(run["id"])
+    flow_cards = _flow_cards(db, dataset["id"]) if options.include_cards and options.up_to_step is None else []
+    flow_notes = _canvas_notes(db, dataset["id"]) if options.include_notes else []
+    if flow_cards or flow_notes:
+        nb.cells += cells.flow_intro(len(flow_cards), len(flow_notes))
+        for c, facts in flow_cards:
+            nb.cells += cells.card(c, facts)
+        for text in flow_notes:
+            nb.cells += cells.note(text)
     nb.cells += cells.closing()
 
     progress(3, 3, "Checking the notebook")
     nbformat.validate(nb)
     scan(nb)
-    counts = {"steps": len(chain), "widgets": emitted, "runs": len(emitted_runs), "cards": len(cards)}
+    counts = {"steps": len(chain), "widgets": emitted, "runs": len(emitted_runs), "cards": len(cards) + len(flow_cards),
+              "notes": len(flow_notes)}
     return Built(nb, version, counts, notes)
 
 
@@ -237,6 +246,35 @@ def _cards(db, dataset_id: str) -> dict:
     return out
 
 
+def _flow_cards(db, dataset_id: str) -> list[tuple[dict, dict]]:
+    """Synthesis and answer cards (from the Flow canvas and chat), oldest first, each with the facts its
+    chips name: an answer card's own sheet, or for a synthesis each cited card's fact (TRD §7.4.1)."""
+    from sherlock.stories import service as stories
+
+    out = []
+    for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('synthesis', 'answer') "
+                        "ORDER BY created_at", (dataset_id,)):
+        c = stories.to_card(db, r)
+        sheet = stories.get_sheet(db, c["fact_sheet_id"])
+        if sheet:
+            facts = sheet["facts"]
+        else:
+            keys = [run["key"] for p in (c["headline"], c["body"]) for b in p["blocks"] for run in b["runs"]
+                    if run["type"] == "chip" and run.get("key")]
+            facts = {k: f for k in keys if (f := stories.fact_for(db, dataset_id, k))}
+        out.append((c, facts))
+    return out
+
+
+def _canvas_notes(db, dataset_id: str) -> list[str]:
+    """The canvas's notes in reading order: top to bottom, then left to right (PRD NB-6)."""
+    from sherlock.canvas import service as canvas
+
+    doc, _ = canvas.read(db, dataset_id)
+    notes = [n for n in doc["nodes"] if not (n.get("sherlock") or {}).get("card_id") and (n.get("text") or "").strip()]
+    return [n["text"] for n in sorted(notes, key=lambda n: (round(n["y"] / 40), n["x"]))]
+
+
 def _helpers_used(db, step_id: str) -> list[str]:
     row = db.execute("SELECT helpers_used_json FROM steps WHERE id = ?", (step_id,)).fetchone()
     return json.loads(row[0]) if row and row[0] else []
@@ -251,7 +289,10 @@ def preview(db: sqlite3.Connection, dataset: sqlite3.Row, options: NotebookOptio
     runs += _extra_runs(db, dataset["id"], rows) if options.include_runs else []
     return {"version": target["version"], "notes": notes,
             "counts": {"steps": len(chain), "widgets": len(widgets) if options.up_to_step is None else 0,
-                       "runs": len(runs) if options.up_to_step is None else 0, "cards": len(_cards(db, dataset["id"])) if options.include_cards and options.up_to_step is None else 0}}
+                       "runs": len(runs) if options.up_to_step is None else 0,
+                       "cards": len(_cards(db, dataset["id"])) + len(_flow_cards(db, dataset["id"]))
+                       if options.include_cards and options.up_to_step is None else 0,
+                       "notes": len(_canvas_notes(db, dataset["id"])) if options.include_notes else 0}}
 
 
 def export_path(settings: Settings, dataset: sqlite3.Row, key: str) -> tuple[Path, str]:

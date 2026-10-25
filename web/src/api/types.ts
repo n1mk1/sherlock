@@ -261,6 +261,7 @@ export interface Card {
   dataset_id: string;
   kind: "overview" | "widget" | "synthesis" | "direction" | "answer";
   widget_id: string | null;
+  source_card_ids: string[] | null;
   headline: CardBody;
   body: CardBody;
   fact_sheet_id: string | null;

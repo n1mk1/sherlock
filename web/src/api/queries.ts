@@ -1,9 +1,10 @@
 // TanStack Query hooks over the API, and the user-level event stream that keeps the library live.
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { canvasKey, ownEtags } from "./canvas";
 import { api, ApiError, request, toApiError, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  CleaningReport, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout, Me,
+  Card, CleaningReport, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout, Me,
   Message, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
 } from "./types";
 
@@ -322,6 +323,10 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
     },
     "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
+    // The canvas changed in another tab or by the AI; this tab's own saves come back with known etags.
+    "canvas.updated": (data) => {
+      if (!ownEtags.has(String((data as { etag?: string }).etag))) qc.invalidateQueries({ queryKey: canvasKey(datasetId) });
+    },
     // A run's status (TRD §5): its widget re-reads the run; ML progress refreshes the running ones.
     "run.updated": (data) => {
       const run = data as { id: string };
@@ -395,6 +400,19 @@ export function usePin(datasetId: string) {
     mutationFn: ({ messageId, blockIndex }: { messageId: string; blockIndex: number }) =>
       request<Widget>("POST", `/api/v1/messages/${messageId}/pin`, { target: "dashboard", block_index: blockIndex }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
+  });
+}
+
+/** Add to Flow (TRD §4.9): an answer's text becomes an `answer` card placed on the canvas. */
+export function useAddToFlow(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, blockIndex }: { messageId: string; blockIndex: number }) =>
+      request<Card>("POST", `/api/v1/messages/${messageId}/pin`, { target: "flow", block_index: blockIndex }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cards", datasetId] });
+      qc.invalidateQueries({ queryKey: canvasKey(datasetId) });
+    },
   });
 }
 

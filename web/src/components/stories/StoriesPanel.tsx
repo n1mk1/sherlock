@@ -29,7 +29,8 @@ export function StoriesPanel() {
         </>
       )}
       {list.map((c) => (
-        <StoryCard key={c.id} card={c} title={c.widget_id ? titles[c.widget_id] ?? "" : "Overview"}
+        <StoryCard key={c.id} card={c}
+          title={c.widget_id ? titles[c.widget_id] ?? "" : c.kind === "synthesis" ? "Synthesis" : c.kind === "answer" ? "Answer" : "Overview"}
           onEvidence={(card, chip) => setEvidence({ card, chip })} />
       ))}
       <EvidenceDrawer value={evidence} onClose={() => setEvidence(null)} />
@@ -37,7 +38,7 @@ export function StoriesPanel() {
   );
 }
 
-function EvidenceDrawer({ value, onClose }: { value: { card: Card; chip: string } | null; onClose: () => void }) {
+export function EvidenceDrawer({ value, onClose }: { value: { card: Card; chip: string } | null; onClose: () => void }) {
   const { data, error } = useEvidence(value?.card.id ?? null, value?.chip ?? null);
   return (
     <Drawer open={!!value} onOpenChange={(o) => !o && onClose()} title="How do you know?">

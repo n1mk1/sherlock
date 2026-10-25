@@ -39,10 +39,11 @@ def _changed(request: Request, db, card_id: str) -> dict:
 
 @router.get("/datasets/{dataset_id}/cards")
 def list_cards(dataset: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)) -> list[dict]:
-    """The overview first, then the widget cards in dashboard order."""
+    """The overview first, then the widget cards in dashboard order, then synthesis and answer cards
+    oldest first."""
     rows = db.execute(
         "SELECT c.* FROM cards c LEFT JOIN widgets w ON w.id = c.widget_id WHERE c.dataset_id = ? AND c.deleted_at IS NULL "
-        "ORDER BY c.kind != 'overview', w.order_no, c.created_at", (dataset["id"],)).fetchall()
+        "ORDER BY c.kind != 'overview', c.widget_id IS NULL, w.order_no, c.created_at", (dataset["id"],)).fetchall()
     return [stories.to_card(db, r) for r in rows]
 
 

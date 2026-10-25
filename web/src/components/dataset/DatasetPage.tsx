@@ -7,6 +7,7 @@ import { rememberTab, useDataset, useDatasetEvents, useMe } from "@/api/queries"
 import type { Dataset, Tab } from "@/api/types";
 import { SaveActions } from "@/components/csv/SaveActions";
 import { DashboardActions, FilterChip } from "@/components/dashboard/DashboardActions";
+import { FlowActions } from "@/components/flow/FlowPalette";
 import { CenterHeader } from "@/components/shell/CenterHeader";
 import { ChatBar } from "@/components/shell/ChatBar";
 import { DatasetMenu } from "@/components/shell/DatasetMenu";
@@ -14,7 +15,6 @@ import { ExportDialog } from "@/components/shell/ExportDialog";
 import { JobTray } from "@/components/shell/JobTray";
 import { CleaningOffer } from "./CleaningOffer";
 import { CleaningProgress } from "./CleaningProgress";
-import { ReportSummary } from "./CleaningReport";
 import { OfferActions } from "./OfferActions";
 import { useUi } from "@/state/ui";
 import { BuildingScreen, FailedScreen, ProfilingScreen } from "./StatusScreens";
@@ -24,6 +24,8 @@ const TABS: Tab[] = ["csv", "dashboard", "flow"];
 const Dashboard = lazy(() => import("@/components/dashboard/Dashboard").then((m) => ({ default: m.Dashboard })));
 // So does the CSV grid (Glide Data Grid), when the CSV tab first opens.
 const CsvTab = lazy(() => import("@/components/csv/CsvTab").then((m) => ({ default: m.CsvTab })));
+// And the Flow canvas (React Flow), when the Flow tab first opens.
+const FlowTab = lazy(() => import("@/components/flow/FlowTab").then((m) => ({ default: m.FlowTab })));
 
 export function DatasetRedirect() {
   const { datasetId } = useParams();
@@ -58,6 +60,7 @@ export function DatasetPage() {
   const showTab = enabled(tab) === null && (ready || tab === "csv");
   const onDashboard = showTab && tab === "dashboard";
   const onCsv = showTab && tab === "csv";
+  const onFlow = showTab && tab === "flow";
   return (
     <div className="flex h-full min-h-0 flex-col">
       <RememberTab datasetId={dataset.id} tab={tab} active={showTab} />
@@ -72,13 +75,14 @@ export function DatasetPage() {
           <>
             {onCsv && <SaveActions dataset={dataset} />}
             {onDashboard && <DashboardActions />}
+            {onFlow && <FlowActions />}
             <JobTray />
             <DatasetMenu dataset={dataset} />
           </>
         }
       />
       <CascadeLine datasetId={dataset.id} />
-      <div className={tab === "csv" && showTab ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
+      <div className={(tab === "csv" || tab === "flow") && showTab ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {showTab ? <TabContent dataset={dataset} tab={tab} /> : <StatusScreen dataset={dataset} />}
       </div>
       <ChatBar dataset={dataset} tab={tab} placeholder={chatPlaceholder(dataset)} />
@@ -158,13 +162,9 @@ function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {
     );
   }
   return (
-    <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-6 p-8">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h2 className="text-[15px] font-semibold">The canvas is empty</h2>
-        <p className="text-muted-foreground">Cards and notes you place on the canvas appear here.</p>
-      </div>
-      <ReportSummary datasetId={dataset.id} title="Last cleaning report" />
-    </div>
+    <Suspense fallback={<p className="p-6 text-muted-foreground">Loading the canvas…</p>}>
+      <FlowTab dataset={dataset} />
+    </Suspense>
   );
 }
 

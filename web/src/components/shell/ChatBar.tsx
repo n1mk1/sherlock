@@ -4,17 +4,18 @@
 // Esc closes it. `/` focuses the bar when no input, cell or editor has focus. An answer streams in:
 // a status line, then its blocks, then the final message with its "How do you know?" sources.
 // The "Chat bar" setting pins it, hides it until pointed at, or hides it.
-import { ArrowRight, ChevronDown, X } from "lucide-react";
+import { ArrowRight, ChevronDown, Workflow, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { filterParam, keys, sendChat, useMe, usePin, useThread, useWidgets } from "@/api/queries";
+import { filterParam, keys, sendChat, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
 import type { AnswerBlock, Dataset, Message, Source, Tab } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useFilters, useGlobalFilter } from "@/state/filters";
+import { useFlow } from "@/state/flow";
 import { useUi } from "@/state/ui";
 
 export function ChatBar({ placeholder, className, dataset, tab }: {
@@ -78,6 +79,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   }, [chatDraft, setChatDraft, setOpen]);
   const [pending, setPending] = useState<Pending | null>(null);
   const focused = widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
+  const selectedCards = useFlow((s) => s.selectedCardIds);
 
   // `/` focuses the bar when nothing editable has focus (PRD §7.11).
   useEffect(() => {
@@ -101,6 +103,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         tab,
         ...(tab === "dashboard" && filter ? { global_filter: JSON.parse(filterParam(filter)) } : {}),
         ...(tab === "dashboard" && focused ? { focused_widget_id: focused.id } : {}),
+        ...(tab === "flow" ? { selected_card_ids: selectedCards } : {}),
       },
       ...extra,
     };
@@ -125,6 +128,14 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     }
   };
 
+  // A message another part of the page asked to send (the Flow header's "Make sense of this").
+  const { chatOutbox, sendChat: queueChat } = useUi();
+  useEffect(() => {
+    if (chatOutbox === null || pending) return;
+    queueChat(null);
+    void send(chatOutbox);
+  }, [chatOutbox]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
+
   const submit = () => {
     const message = text.trim();
     if (!message || pending) return;
@@ -134,6 +145,10 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
 
   const chip = tab === "dashboard" && (filter || focused)
     ? { label: filter ? `${filter.col} = ${String(filter.value)}` : focused!.title, clear: () => (filter ? clearFilter(dataset.id) : setFocusedWidget(null)) }
+    : null;
+  // On the canvas the selected cards are the context (App Flow §12.1).
+  const flowChip = tab === "flow"
+    ? (selectedCards.length ? `${selectedCards.length} ${selectedCards.length === 1 ? "card" : "cards"} selected` : "Whole canvas")
     : null;
 
   return (
@@ -159,7 +174,10 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
             <X className="size-3 shrink-0" />
           </button>
         ) : (
-          <span className="ml-1 inline-flex h-7 shrink-0 items-center rounded-full border border-border px-2.5 text-[12px] text-muted-foreground">All rows</span>
+          <span className={cn("ml-1 inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[12px]",
+            flowChip && selectedCards.length ? "border-accent text-accent" : "border-border text-muted-foreground")}>
+            {flowChip ?? "All rows"}
+          </span>
         )}
         <label className="sr-only" htmlFor="chat-input">Ask Sherlock</label>
         <input
@@ -248,10 +266,12 @@ function MessageView({ message, dataset, onChoice }: {
   message: Message; dataset: Dataset; onChoice?: (m: Message, choice: string) => void;
 }) {
   const pin = usePin(dataset.id);
+  const addToFlow = useAddToFlow(dataset.id);
   const navigate = useNavigate();
   const [card, setCard] = useState<string | null>(null);
   if (message.role === "user") return <UserBubble text={message.text} />;
   const pinnable = new Set((message.actions ?? []).filter((a) => a.kind === "pin").map((a) => a.block_index));
+  const addable = new Set((message.actions ?? []).filter((a) => a.kind === "add_to_flow").map((a) => a.block_index));
   const modelCard = (message.actions ?? []).find((a) => a.kind === "open_model_card");
   return (
     <div className="flex flex-col gap-3">
@@ -266,16 +286,27 @@ function MessageView({ message, dataset, onChoice }: {
         </div>
       )}
       {message.blocks.map((b, i) => (
-        <BlockView
-          key={i}
-          block={b}
-          datasetId={dataset.id}
-          pinning={pin.isPending && pin.variables?.blockIndex === i}
-          onPin={pinnable.has(i) ? () => pin.mutate({ messageId: message.id, blockIndex: i }, {
-            onSuccess: (w) => toast(`Pinned “${w.title}” to the dashboard`, { action: { label: "Open", onClick: () => navigate(`/d/${dataset.id}/dashboard`) } }),
-            onError: (e) => toast.error((e as Error).message),
-          }) : undefined}
-        />
+        <div key={i} className="flex flex-col gap-1.5">
+          <BlockView
+            block={b}
+            datasetId={dataset.id}
+            pinning={pin.isPending && pin.variables?.blockIndex === i}
+            onPin={pinnable.has(i) ? () => pin.mutate({ messageId: message.id, blockIndex: i }, {
+              onSuccess: (w) => toast(`Pinned “${w.title}” to the dashboard`, { action: { label: "Open", onClick: () => navigate(`/d/${dataset.id}/dashboard`) } }),
+              onError: (e) => toast.error((e as Error).message),
+            }) : undefined}
+          />
+          {addable.has(i) && (
+            <Button size="sm" variant="ghost" className="self-start"
+              loading={addToFlow.isPending && addToFlow.variables?.blockIndex === i}
+              onClick={() => addToFlow.mutate({ messageId: message.id, blockIndex: i }, {
+                onSuccess: () => toast("Added to the canvas", { action: { label: "Open", onClick: () => navigate(`/d/${dataset.id}/flow`) } }),
+                onError: (e) => toast.error((e as Error).message),
+              })}>
+              <Workflow /> Add to Flow
+            </Button>
+          )}
+        </div>
       ))}
       {modelCard?.run_id && (
         <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>

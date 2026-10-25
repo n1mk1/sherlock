@@ -11,6 +11,19 @@ const DS = {
 };
 
 describe("App shell", () => {
+  it("asks /me first, so a first visit's requests share one new user", async () => {
+    let answer: (v: unknown) => void = () => {};
+    const me = new Promise((r) => { answer = r; });
+    const fetchMock = mockApi({ "GET /api/v1/me": () => me, "GET /api/v1/datasets": [] });
+    renderAt(<App />);
+    await new Promise((r) => setTimeout(r, 50));
+    const paths = () => fetchMock.mock.calls.map(([input]) => new URL(typeof input === "object" && "url" in input ? (input as Request).url : String(input), "http://localhost").pathname);
+    expect(paths()).toEqual(["/api/v1/me"]);
+    answer(ME);
+    expect(await screen.findByRole("heading", { name: "Drop a CSV anywhere" })).toBeInTheDocument();
+    expect(paths()).toContain("/api/v1/datasets");
+  });
+
   it("shows the empty library with Upload and Try with sample", async () => {
     mockApi({ "GET /api/v1/me": ME, "GET /api/v1/datasets": [] });
     renderAt(<App />);

@@ -114,6 +114,26 @@ def test_make_sense_adds_a_synthesis_card_connected_to_its_sources(flow_mock, cl
     assert {e["fromNode"] for e in edges} == {"n0", "n1"}
     assert all(e["label"] == "summarized in" and e["sherlock"] == {"made_by": "ai", "kind": "summarized_in"} for e in edges)
 
+    # The notebook: the synthesis after the dashboard, and the canvas's notes when asked for (PRD NB-6).
+    import nbformat
+
+    from tests.test_notebook import _export
+
+    etag = _canvas(client, ds)["etag"]
+    after["nodes"].append({"id": "note1", "type": "text", "x": 900, "y": 0, "width": 220, "height": 80,
+                           "text": "Check the gap before the pitch."})
+    assert client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": after, "etag": etag}).status_code == 200
+    out = _export(client, ds, include_notes=True, include_data=False)
+    assert out["counts"]["notes"] == 1
+    nb = nbformat.reads(client.get(out["download_url"]).text, as_version=4)
+    md = [c.source for c in nb.cells if c.cell_type == "markdown"]
+    flow_at = next(i for i, m in enumerate(md) if m.startswith("## From the Flow canvas"))
+    synth_md = next(m for m in md[flow_at:] if m.startswith("### Both cards"))
+    assert all(r["value"] in synth_md for r in chips) and "<details><summary>Evidence</summary>" in synth_md
+    assert any("> Check the gap before the pitch." in m for m in md[flow_at:])
+    without = _export(client, ds, include_data=False)
+    assert without["counts"]["notes"] == 0
+
     # The cascade: a number the synthesis cites moved, so it says its sources changed.
     db_rows("UPDATE fact_sheets SET facts_json = replace(facts_json, ?, ?) WHERE id = ?",
             f'"formatted": "{cards[0]["facts"]["n"]["formatted"]}"', '"formatted": "-1"', cards[0]["fact_sheet_id"])

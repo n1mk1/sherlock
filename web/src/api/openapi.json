@@ -1631,7 +1631,7 @@
   },
   "/api/v1/datasets/{dataset_id}/cards": {
    "get": {
-    "description": "The overview first, then the widget cards in dashboard order.",
+    "description": "The overview first, then the widget cards in dashboard order, then synthesis and answer cards\noldest first.",
     "operationId": "list_cards_api_v1_datasets__dataset_id__cards_get",
     "parameters": [
      {

@@ -271,6 +271,18 @@ def card(c: dict, facts: dict, level: str = "###") -> list:
     return [new_markdown_cell("\n".join(lines).strip())]
 
 
+def flow_intro(cards: int, notes: int) -> list:
+    parts = ([f"{cards} {'card' if cards == 1 else 'cards'} written from other cards or from chat answers"] if cards else []) + \
+            ([f"{notes} {'note' if notes == 1 else 'notes'}"] if notes else [])
+    return [new_markdown_cell("## From the Flow canvas\n\n" + " and ".join(parts).capitalize() + ". "
+                              "Each number in them is a fact computed above, with its query under Evidence.")]
+
+
+def note(text: str) -> list:
+    """A canvas note (PRD NB-6, Include canvas notes): the user's own words, quoted."""
+    return [new_markdown_cell("> **Note**\n>\n" + "\n".join(f"> {line}" if line else ">" for line in text.strip().splitlines()))]
+
+
 def run(title: str, card: dict, code: str, outdated: bool, metrics_output, baselines_output, importance_output) -> list:
     """An analysis (TRD §6.7, §7.7): a Markdown header with the excluded columns and their reasons,
     the run's `repro.py` inlined and called on the rebuilt `df` (its metrics and tables embedded from

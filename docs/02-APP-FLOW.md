@@ -428,6 +428,19 @@ As built (2026-10-25, D6.3): Edit turns the card into two TipTap editors, Headli
 
 Failures: "Select at least two cards to make sense of them." · "I couldn't find a column about X. The closest are: age, fare." (buttons).
 
+As built (2026-10-25, Implementation Plan D8.1–D8.2, cuts 2 and 3 applied: no "take the story toward X", no direction cards, no "Rewrite this card"):
+- **Header.** **Add note**, **Connect** (pressed while on) and **Fit view** sit with the job tray and the ⋯ menu. "Story canvas · 6 nodes · 3 selected" sits at the canvas's top left instead, with **Make sense of this** beside it whenever two or more cards are selected, so the header row never changes width as the selection does.
+- **Palette rows** can also be placed from the keyboard: Enter or Space on a focused row (or a double-click) puts the card in the middle of the view, below any card already there. A row's accessible name is the card's title and "on canvas" or "not placed". Synthesis and answer cards are listed by their headline. The "Try asking" lines fill the chat bar.
+- **Selecting.** Click selects; Shift-, Ctrl- or Cmd-click adds to the selection. There is no box selection (Shift is the add key). The chat chip reads "3 cards selected", or "Whole canvas" with none.
+- **Connect mode.** A hint at the top reads "Click the first node, then the second". The second click makes the edge, opens its label input, and turns connect mode off. Dragging from a node's side handle to another node also connects them.
+- **Notes.** A new note opens in edit mode. Ctrl+Enter or clicking away saves it, and Esc cancels. A new note left empty is removed and never saved. Double-clicking a note edits it again.
+- **Card nodes** show the overline (the widget's title, "Overview", or "Synthesis" in the accent colour), the headline and the body with live chips; a chip opens the evidence drawer. They also show "Cites n cards" on a synthesis, "Open widget" on a widget card, and the badges: changed, edited, outdated, and "sources changed" (click to write it again). Double-clicking a card edits it in place with the card editor, the same object as in the stories panel.
+- **Delete** (or Backspace) removes the selected nodes or edges with a toast "Removed 2 items from the canvas" and Undo for 10 s. Cards stay in the palette.
+- **Saving.** Every change saves within a second. When another tab or the AI changed the canvas meanwhile, this tab's changes are merged onto the newer copy and saved again; nothing is lost. A synthesis from chat appears without a reload.
+- **Remember where I was.** The pan and zoom are kept per dataset in this browser. A canvas opened for the first time with nodes fits them in view; an empty one opens at 100%.
+- **Empty canvas.** "The canvas is empty", then how to add cards and notes, and that two selected cards can be made sense of.
+- **Chat.** "Make sense of this" with two or more cards selected writes a synthesis card and places it right of them with "summarized in" edges. Any other question about the cards is answered from them, with **Add to Flow**. Add to Flow on any answer's text (any tab) makes an "Answer" card on the canvas with its numbers and their evidence.
+
 ---
 
 ## 13. Settings overlay
@@ -488,7 +501,7 @@ Available from every tab in every status except `profiling` and `failed`.
 | Keyboard: Ctrl+Shift+E | Any tab |
 | `?export=notebook` | Deep link |
 
-As built (2026-10-25): the dataset menu (⋯, with the shortcut shown, disabled with its reason while profiling or failed), the CSV Download menu, the Changes panel link, Ctrl+Shift+E and `?export=notebook`. The Flow palette and chat entries come with D8.
+As built (2026-10-25): the dataset menu (⋯, with the shortcut shown, disabled with its reason while profiling or failed), the CSV Download menu, the Changes panel link, Ctrl+Shift+E and `?export=notebook`. The Flow palette and chat entries come with D8. The Flow palette's Export → Notebook (.ipynb) opens the dialog (D8.2).
 
 ### 17.2 The dialog
 
@@ -520,6 +533,7 @@ As built (2026-10-25): the toast is a loading toast that becomes "Notebook ready
 8. For each widget in dashboard order: Markdown (title), code (DuckDB SQL on the DataFrame → table, output embedded), code (matplotlib chart), then its story card as Markdown. ML widgets get their run's reproduction cell and its importance or coefficients table instead of the SQL and chart cells.
 9. For each ML run: Markdown (what and why, excluded columns with reasons), code (reproduction), output tables embedded; its story card.
 10. Synthesis and direction cards after their sources; canvas notes where they sit in the Flow path (when that order is chosen).
+   As built (2026-10-25, D8.3): synthesis and answer cards come in a section "From the Flow canvas" after the dashboard, oldest first, each with its numbers and evidence like any card. With **Include canvas notes**, the canvas's notes follow as quoted Markdown in reading order (top to bottom, then left to right).
 11. Closing cell: "How to continue" (how to add cells, where the helpers are documented, a link back to Sherlock).
 
 ### 17.5 Edge cases

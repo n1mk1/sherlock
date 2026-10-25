@@ -6,6 +6,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { Outlet, useMatch } from "react-router-dom";
 import { useLibraryEvents } from "@/api/queries";
 import { ChangesPanel } from "@/components/csv/ChangesPanel";
+import { FlowPalette } from "@/components/flow/FlowPalette";
 import { DropOverlay } from "@/components/library/DropOverlay";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
@@ -21,6 +22,7 @@ export function AppShell() {
   useLibraryEvents(setProgress);
   // The right panel is Changes on the CSV tab (App Flow §8.1), stories elsewhere.
   const csv = useMatch("/d/:datasetId/csv");
+  const flow = useMatch("/d/:datasetId/flow"); // the palette on the Flow tab (App Flow §12.1)
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} width={railed ? RAIL : leftWidth}
@@ -38,7 +40,7 @@ export function AppShell() {
       </main>
       <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
         onResize={(w) => setPanelWidth("right", w)}>
-        {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : <StoriesPanel />}
+        {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
       </SidePanel>
       <DropOverlay />
       <ImportPreviewDialog />

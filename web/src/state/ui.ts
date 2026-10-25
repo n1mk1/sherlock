@@ -45,6 +45,8 @@ interface UiState extends Panels {
   setFlashWidget: (id: string | null) => void;
   chatDraft: string | null;     // text "Ask why" puts in the chat bar
   setChatDraft: (text: string | null) => void;
+  chatOutbox: string | null;    // a message the chat bar sends as soon as it can ("Make sense of this")
+  sendChat: (text: string | null) => void;
   exportOpen: boolean;        // the Export notebook dialog (App Flow §17)
   setExportOpen: (open: boolean) => void;
   cascade: Record<string, { version: number; widgetIds: string[]; cardIds: string[] }>; // dataset_id → running cascade
@@ -85,6 +87,8 @@ export const useUi = create<UiState>((set, get) => ({
   setFlashWidget: (flashWidget) => set({ flashWidget }),
   chatDraft: null,
   setChatDraft: (chatDraft) => set({ chatDraft }),
+  chatOutbox: null,
+  sendChat: (chatOutbox) => set({ chatOutbox }),
   exportOpen: false,
   setExportOpen: (exportOpen) => set({ exportOpen }),
   cascade: {},
