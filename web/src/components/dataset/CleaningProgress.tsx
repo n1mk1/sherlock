@@ -75,7 +75,7 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
   }, [log.length]);
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-6 py-8">
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-6 py-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="font-serif text-[26px] leading-tight @3xl:text-[32px]">Cleaning {dataset.name}</h2>
@@ -89,15 +89,15 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
           Stop
         </Button>
       </div>
-      <div className="mt-5 flex justify-between text-[13px] text-muted-foreground">
+      <div className="-mb-3.5 flex justify-between text-[12px] text-muted-foreground">
         <span>{progress?.label || "Starting…"}</span>
         <span className="font-mono">{mmss(elapsed)}</span>
       </div>
-      <div className="mt-1.5 h-1 rounded bg-border" role="progressbar" aria-valuenow={Math.round(progress?.pct ?? 0)} aria-valuemin={0} aria-valuemax={100}>
+      <div className="h-1 rounded bg-border" role="progressbar" aria-valuenow={Math.round(progress?.pct ?? 0)} aria-valuemin={0} aria-valuemax={100}>
         <div className="h-1 rounded bg-accent transition-[width] duration-[var(--duration-base)]" style={{ width: `${progress?.pct ?? 2}%` }} />
       </div>
 
-      <div className="mt-6 grid gap-5 @3xl:grid-cols-[2fr_1fr]">
+      <div className="grid items-start gap-4 @3xl:grid-cols-[2fr_1fr]">
         <ol
           ref={listRef}
           aria-label="Cleaning log"
@@ -106,24 +106,24 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
             const el = e.currentTarget;
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           }}
-          className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-card px-5"
+          className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-card px-4 py-2"
         >
           {log.length === 0 && <li className="py-5 text-muted-foreground">Waiting for the first step…</li>}
           {log.map((e, i) => (
             <LogEntry key={i} entry={e} started={started} />
           ))}
         </ol>
-        <aside className="flex flex-col gap-5">
-          <section className="rounded-2xl border border-border bg-card p-5">
+        <aside className="flex flex-col gap-4">
+          <section className="rounded-2xl border border-border bg-card px-[22px] py-5">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">So far</h3>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-2.5 grid grid-cols-2 gap-2.5">
               <Stat value={report?.counts.found ?? 0} label="issues found" />
               <Stat value={report?.counts.fixed ?? 0} label="fixed" />
               <Stat value={report?.counts.flagged ?? 0} label="flagged" />
               <Stat value={0} label="rows deleted" />
             </div>
           </section>
-          <section className="rounded-2xl border border-border bg-card p-5">
+          <section className="rounded-2xl border border-border bg-card px-[22px] py-5">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Checks on the latest step</h3>
             <ul className="mt-3 flex flex-col gap-1.5">
               {latestChecks ? (
@@ -141,7 +141,7 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
               {report?.attempted ?? 0} of {maxSteps} issues tried · {mmss(elapsed)} of {mmss(maxSeconds)}
             </p>
           </section>
-          <p className="rounded-2xl border border-dashed border-border-strong p-5 text-muted-foreground">
+          <p className="rounded-2xl border border-dashed border-border-strong px-[22px] py-5 text-[13px] text-muted-foreground">
             When cleaning finishes, the dashboard builds itself.
           </p>
         </aside>
@@ -170,13 +170,13 @@ function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | nu
   const tone =
     gate === "commit" ? "text-success" : gate === "flag" ? "text-warning" : entry.icon === "running" ? "text-accent" : "text-muted-foreground";
   return (
-    <li className="grid grid-cols-[52px_24px_1fr] gap-x-2 border-b border-border py-4 last:border-b-0">
+    <li className="grid grid-cols-[56px_24px_minmax(0,1fr)] gap-x-2.5 border-b border-border py-3 last:border-b-0">
       <span className="font-mono text-[12.5px] text-muted-foreground">{mmss(t)}</span>
       <Icon entry={entry} />
       <div className="min-w-0">
         <p>
-          {entry.column && <span className="font-mono text-[13px]">{entry.column} · </span>}
-          {entry.text}
+          {entry.column && <span className="font-mono text-[12.5px]">{entry.column}</span>}
+          <span className="text-foreground-2">{entry.column ? " · " : ""}{entry.text}</span>
         </p>
         {entry.outcome && <p className="mt-1 text-[13px] text-foreground-2">{entry.outcome}</p>}
         {entry.candidates && entry.candidates.length > 0 && (
@@ -185,7 +185,7 @@ function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | nu
               <span
                 key={c.label}
                 className={cn(
-                  "rounded-full border px-2.5 py-0.5 text-[12px]",
+                  "inline-flex h-6 items-center rounded-full border px-2 text-[12px]",
                   c.chosen ? "border-primary bg-primary text-primary-foreground" : "border-border-strong text-foreground-2",
                 )}
               >
@@ -194,7 +194,7 @@ function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | nu
             ))}
           </div>
         )}
-        {entry.detail && <p className={cn("mt-1.5 text-[13px]", tone)}>{entry.detail}</p>}
+        {entry.detail && <p className={cn("mt-1.5 text-[12px]", tone)}>{entry.detail}</p>}
       </div>
     </li>
   );
@@ -212,9 +212,9 @@ function Icon({ entry }: { entry: JobLogEntry }) {
 
 function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <div className="rounded-xl bg-muted p-3">
-      <div className="font-serif text-[28px] leading-none">{value.toLocaleString()}</div>
-      <div className="mt-1.5 text-[12px] text-muted-foreground">{label}</div>
+    <div className="rounded-md bg-muted p-2.5">
+      <div className="font-mono text-[24px] leading-tight">{value.toLocaleString()}</div>
+      <div className="text-[12px] text-muted-foreground">{label}</div>
     </div>
   );
 }

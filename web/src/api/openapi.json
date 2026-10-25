@@ -200,6 +200,17 @@
       "title": "Id",
       "type": "string"
      },
+     "issue_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Issue Count"
+     },
      "last_opened_at": {
       "anyOf": [
        {
@@ -253,6 +264,11 @@
       ],
       "title": "Status",
       "type": "string"
+     },
+     "step_count": {
+      "default": 0,
+      "title": "Step Count",
+      "type": "integer"
      }
     },
     "required": [

@@ -362,6 +362,10 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
+As built (2026-10-24), `Dataset` adds two counts for the library row and the version pill (UI/UX brief §5.0, §3.2):
+- `issue_count`: the issues on the current version's DataCard, or `null` until that card is built
+- `step_count`: the steps in the current version's effective chain
+
 ### 4.3 Rows (CSV tab)
 
 | Method | Path | Body / Query | Response |

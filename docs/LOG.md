@@ -98,6 +98,18 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - The reviewer's concerns no longer lower confidence; only its "changed something it shouldn't" verdict does.
   - **Titanic now:** cabin, home.dest and embarked stay missing, and age is imputed by class and sex and committed.
   - **Benchmark rerun:** 97.2%, 94.5% and 74.0% recovered, harm 0% and row loss 0%. Hr's drop is model variance (`FEEDBACK.md`).
+- **The owner's design canvas, applied the same night:**
+  - The "Sherlock UI examples" canvas is now the stated source for anything the UI/UX brief leaves open. The brief gained its details: the library panel (§5.0), the "v7 · 6 steps" version pill, the cleaning screen's measurements, the chat bar's placement, and the settings dialog. The changed-cell marker is now the canvas's 2px top line.
+  - **Frontend:**
+    - the Settings gear and dialog (the four cut-1 settings, which apply live)
+    - library rows with issue counts
+    - the steps pill
+    - the 680px chat bar with its send button and the Chat bar setting
+    - the empty state's chat bar in its column
+    - the cleaning screen's mono tiles and its log grid
+    - the CSV marks per §4.7
+  - **API:** `Dataset` adds `issue_count` and `step_count`.
+  - **Decision:** the cleaning board draws the centre alone, but the app keeps both side panels there, as App Flow §5 requires.
 - **Decision for tomorrow:**
   - D4.1–D4.3 backend (widgets, the dashboard builder, agent v1).
   - Then D4.4–D4.8 frontend, starting with the Bklit and react-grid-layout checks (plan §2.0).

@@ -42,9 +42,14 @@ class Dataset(BaseModel):
     last_tab: Literal["csv", "dashboard", "flow"] | None
     cleaning_progress: CleaningProgress | None = None
     error: str | None = None
+    # For the library row ("offer · 4 issues") and the version pill ("v7 · 6 steps"): the issues on the
+    # current version's DataCard (null until it's built) and the steps in its effective chain.
+    issue_count: int | None = None
+    step_count: int = 0
 
 
-def to_dataset(row: sqlite3.Row) -> Dataset:
+def to_dataset(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> Dataset:
+    issue_count, step_count = _counts(db, row) if db is not None else (None, 0)
     return Dataset(
         id=row["id"],
         name=row["name"],
@@ -56,7 +61,26 @@ def to_dataset(row: sqlite3.Row) -> Dataset:
         last_opened_at=row["last_opened_at"],
         last_tab=row["last_tab"],
         error=row["error"],
+        issue_count=issue_count,
+        step_count=step_count,
     )
+
+
+def _counts(db: sqlite3.Connection, row: sqlite3.Row) -> tuple[int | None, int]:
+    version = row["current_version"]
+    chain = db.execute(
+        "SELECT effective_step_ids_json FROM versions WHERE dataset_id = ? AND version = ?", (row["id"], version)
+    ).fetchone()
+    steps = len(json.loads(chain[0])) if chain else 0
+    built = db.execute(
+        "SELECT 1 FROM datacards WHERE dataset_id = ? AND version = ?", (row["id"], version)
+    ).fetchone()
+    if built is None:
+        return None, steps
+    issues = db.execute(
+        "SELECT count(*) FROM issues WHERE dataset_id = ? AND version = ?", (row["id"], version)
+    ).fetchone()[0]
+    return issues, steps
 
 
 def _parse_options(raw: str | None) -> ImportOptions:
@@ -71,7 +95,7 @@ def _parse_options(raw: str | None) -> ImportOptions:
 
 @router.get("/datasets", response_model=list[Dataset])
 def list_datasets(user: User = Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
-    return [to_dataset(row) for row in datasets_repo.list_for_user(db, user.id)]
+    return [to_dataset(row, db) for row in datasets_repo.list_for_user(db, user.id)]
 
 
 @router.post("/datasets", response_model=Dataset, status_code=status.HTTP_201_CREATED)
@@ -90,7 +114,7 @@ def upload_dataset(
         raise ApiError(413, "too_large", f"This file is {shown} MB. The limit is {limit} MB.")
     row = import_csv(settings, db, user.id, file.file, file.filename or "upload.csv", _parse_options(options))
     request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
-    return to_dataset(row)
+    return to_dataset(row, db)
 
 
 @router.post("/datasets/sample", response_model=Dataset)
@@ -103,7 +127,7 @@ def sample_dataset(
     """The bundled Titanic file; returns the user's existing sample instead of a duplicate."""
     existing = datasets_repo.find_sample(db, user.id)
     if existing is not None:
-        return to_dataset(existing)
+        return to_dataset(existing, db)
     with SAMPLE_CSV.open("rb") as fh:
         row = import_csv(
             request.app.state.settings, db, user.id, fh, SAMPLE_CSV.name, ImportOptions(),
@@ -111,7 +135,7 @@ def sample_dataset(
         )
     request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
     response.status_code = status.HTTP_201_CREATED
-    return to_dataset(row)
+    return to_dataset(row, db)
 
 
 @router.get("/datasets/{dataset_id}/datacard")
@@ -129,4 +153,4 @@ def get_datacard(
 def get_dataset(row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)):
     """Opening a dataset records `last_opened_at`, which orders the library."""
     datasets_repo.mark_opened(db, row["id"])
-    return to_dataset(datasets_repo.get(db, row["user_id"], row["id"]))
+    return to_dataset(datasets_repo.get(db, row["user_id"], row["id"]), db)

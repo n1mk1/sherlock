@@ -1,10 +1,11 @@
 // The library (left panel, App Flow §2 and §14): your CSVs with live status, Upload, Try with sample.
-import { AlertCircle, Check } from "lucide-react";
+import { AlertCircle, Check, Settings } from "lucide-react";
 import { useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useDatasets, useSample } from "@/api/queries";
 import type { Dataset, JobProgressEvent } from "@/api/types";
+import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/state/ui";
@@ -15,19 +16,27 @@ export function LibraryPanel() {
   const { data: datasets, isLoading } = useDatasets();
   const { datasetId } = useParams();
   const progress = useUi((s) => s.progress);
+  const [, openSettings] = useSettingsOpen();
   return (
-    <nav aria-label="Your CSVs" className="flex h-full flex-col">
-      <div className="px-4 pb-2 pt-5">
-        <Link to="/" state={{ stay: true }} className="font-serif text-[22px] font-medium leading-none">
+    <nav aria-label="Your CSVs" className="flex h-full flex-col gap-3 p-4">
+      <div className="flex items-center justify-between">
+        <Link to="/" state={{ stay: true }} className="font-serif text-[20px] font-medium leading-none">
           Sherlock
         </Link>
+        <button
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() => openSettings(true)}
+          className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <Settings className="size-4" strokeWidth={1.75} />
+        </button>
       </div>
-      <h2 className="px-4 pb-2 pt-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-        Your CSVs
-      </h2>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
+      <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Your CSVs</h2>
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading ? null : !datasets?.length ? (
-          <p className="px-2 text-[13px] text-muted-foreground">No CSVs yet.</p>
+          <p className="text-[13px] text-muted-foreground">No CSVs yet.</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {datasets.map((d) => (
@@ -38,7 +47,7 @@ export function LibraryPanel() {
           </ul>
         )}
       </div>
-      <div className="flex flex-col gap-2 p-4">
+      <div className="flex flex-col gap-2">
         <UploadButton className="w-full" label="Upload CSV" />
         <SampleButton className="w-full" label="Try with sample" />
       </div>
@@ -52,11 +61,11 @@ function LibraryRow({ dataset, active, progress }: { dataset: Dataset; active: b
       to={`/d/${dataset.id}`}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "block rounded-lg border px-3 py-2.5 hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring",
+        "flex flex-col gap-0.5 rounded-md border px-2.5 py-2 hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring",
         active ? "border-border-strong bg-secondary" : "border-transparent",
       )}
     >
-      <span className="block truncate text-[14px]">{dataset.name}</span>
+      <span className="block truncate font-medium">{dataset.name}</span>
       <StatusBadge dataset={dataset} progress={progress} />
     </Link>
   );
@@ -69,8 +78,8 @@ export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?
   switch (dataset.status) {
     case "ready":
       return (
-        <span className="mt-0.5 flex items-center gap-1 text-[12px] text-success">
-          <Check className="size-3.5" aria-hidden /> ready · v{dataset.current_version}
+        <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-success">
+          <Check className="size-3.5" strokeWidth={1.75} aria-hidden /> ready · v{dataset.current_version}
         </span>
       );
     case "failed":
@@ -84,9 +93,15 @@ export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?
       return (
         <span className="mt-0.5 block text-[12px] text-muted-foreground">
           {dataset.status} {dataset.status === "cleaning" ? `${pct}%` : ""}
-          <span className="mt-1 block h-0.5 rounded bg-border" aria-hidden>
+          <span className="mt-1.5 block h-0.5 rounded bg-border" aria-hidden>
             <span className="block h-0.5 rounded bg-accent" style={{ width: `${pct}%` }} />
           </span>
+        </span>
+      );
+    case "offer":
+      return (
+        <span className="mt-0.5 block text-[12px] text-muted-foreground">
+          offer{dataset.issue_count != null && ` · ${dataset.issue_count} ${dataset.issue_count === 1 ? "issue" : "issues"}`}
         </span>
       );
     default:

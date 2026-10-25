@@ -82,3 +82,11 @@ def test_all_text_file_gets_no_typing_step(client):
     done = wait_status(client, ds["id"], "offer", "failed")
     assert done["current_version"] == 1
     assert client.get(f"{API}/datasets/{ds['id']}/steps").json() == []
+
+
+def test_dataset_reports_issue_and_step_counts(client):
+    ds = upload(client, b"name,age\n" + b"".join(f"P{i},{20 + i % 30}\n".encode() for i in range(40)) + b"Q,\n")
+    assert ds["issue_count"] is None and ds["step_count"] == 0  # nothing profiled yet
+    done = wait_status(client, ds["id"], "offer")
+    assert done["step_count"] == 1 and done["issue_count"] >= 1  # the typing step; the missing age
+    assert client.get(f"{API}/datasets").json()[0]["issue_count"] == done["issue_count"]

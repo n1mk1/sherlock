@@ -22,6 +22,19 @@ Three rules that decide most calls:
 
 Reference mockups of every screen in both modes, with an accent comparison board: the "Sherlock UI examples" design canvas (https://claude.ai/artifact/UoLRwYCQJG7AEgYutXFr48, private to the owner until shared).
 
+**The canvas is the owner's design** (confirmed 2026-10-24). Where it shows a detail this brief doesn't give, the canvas is the spec, and the detail is written into the section it belongs to (marked "as drawn").
+- **Boards, all at 1440 px wide, in light and dark:**
+  1. Empty library (§5.1)
+  2. Dashboard (§3, §4.3–§4.8, §5.5)
+  3. Cleaning in progress (§5.4)
+  4. CSV tab (§4.7, §5.6–§5.7)
+  5. Flow canvas (§5.10)
+  6. Export notebook dialog (§5.13)
+
+  Plus the accent options board (§2.1).
+- **PNG exports** of every board are in `docs/Sherlock UI examples-png/`.
+- **Theme helper.** Each board computes its colors from one theme helper that matches §2.1 exactly: the base tokens per mode, the five accents with a hover shade each, and `--info` switching to brass under Aether.
+
 ---
 
 ## 2. Design tokens
@@ -157,6 +170,11 @@ lucide-react, 16px in controls, 14px in chips, 1.75px stroke. Icon-only buttons 
 Two rows:
 1. The tab switcher, centred: a segmented control (CSV · Dashboard · Flow), 36px tall, active segment `--secondary` fill with `--foreground` text; inactive `--muted-foreground`.
 2. Context row: dataset name (title), version pill (mono, `--muted` fill, clickable), filter chips, then right-aligned actions for the tab.
+   - **As drawn:**
+     - The header has 12px top padding and 24px side padding.
+     - The tab row and the context row are 12px apart, and the context row has 12px under it.
+     - The version pill reads "v7 · 6 steps": the version, then the number of steps in its effective chain. It's 24px tall, 12px mono.
+     - A tab that isn't available yet (Dashboard and Flow during cleaning) is drawn at 40% opacity, with its reason as the tooltip.
 
 ### 3.3 Dashboard grid
 
@@ -261,7 +279,7 @@ Glide Data Grid themed from tokens:
 | Cell | body-sm; numbers mono right-aligned; text left; booleans as "true/false" in mono |
 | Selected cell | 2px `--accent` outline |
 | Selected range | `--accent-soft` fill, 1px `--accent` outline |
-| Changed by cleaning | `--changed` fill plus a 4px `--info` corner triangle (top right), so it does not rely on color alone |
+| Changed by cleaning | `--changed` fill plus a 2px `--info` line along the cell's top edge (as drawn on the CSV board, where the legend swatch carries the same top line), so it does not rely on color alone. This replaces the earlier 4px corner triangle |
 | Flagged | 1px dashed `--warning` outline (inset) |
 | Unsaved edit | `--unsaved` fill, 1px `--accent` outline, and a 4px `--accent` dot in the top-left corner so it differs from a selection by shape |
 | Predicted | `--predicted` fill, italic |
@@ -274,6 +292,9 @@ Row height 32px; header 56px. Editors open in place with the same height.
 ### 4.8 Chat bar and thread
 
 - Bar: max 680px wide, centred, `--card` surface, 1px `--border`, radius 14, 52px tall, input 14px, send button 40 × 40 primary. Context chip on the left when present. `/` hint on the right.
+  - **As drawn.** On dataset routes the bar sits at the bottom of the centre column (24px side and 20px bottom padding). On the empty library it sits in the centred column, 24px under the pitch.
+  - The send button is radius 10 with an arrow icon.
+  - Until chat exists (D4.3/D4.8), the input and send button are disabled and the placeholder names the state.
 - Thread: expands above the bar to at most 40% of the centre height, `--popover` surface, radius 16, with the drawer shadow. Messages: the user's in a `--secondary` bubble right-aligned (max 80%); Sherlock's as plain text left-aligned with number chips, tables, charts and action buttons inline.
 - Suggested questions: three ghost chips under the bar; they disappear once the thread has 3+ messages.
 - Status line while working: `--muted-foreground` italic with a 3-dot indicator.
@@ -307,6 +328,25 @@ Centred, max 420px wide: a 24px lucide icon in `--muted-foreground`, a title (ti
 
 ## 5. Screen specifications
 
+### 5.0 Library panel (left)
+
+As drawn on the Dashboard and Empty library boards:
+- 16px padding with 12px gaps.
+- The top row has "Sherlock" (serif 20px, weight 500) and, on the right, the Settings gear as a 32px ghost icon button.
+- Then the "Your CSVs" overline.
+- **Rows.** Each row has 8px × 10px padding and radius 8: the name (weight 500), then a 12px status line:
+  - `ready · v7` in `--success` with a check icon
+  - `cleaning 42%` with a 2px progress bar (an `--accent` fill on a `--border` track)
+  - `offer · 4 issues`, the issue count from the current version's data card
+  - `profiling`
+  - `failed` in `--destructive` with an alert icon
+
+  The open dataset's row has the `--secondary` fill and a 1px `--border-strong` outline. Other rows are borderless and take the `--secondary` fill on hover.
+- With no datasets it reads "No CSVs yet."
+- At the bottom: Upload CSV and Try with sample, both secondary and full width.
+
+The right panel (Stories), before there are cards, shows three 120px dashed placeholder cards (radius 16) and "Stories appear once the dashboard is built."
+
 ### 5.1 Library empty state (centre)
 
 Drop zone: 2px dashed `--border-strong`, radius 16, 320px tall, icon `upload`, "Drop a CSV anywhere", "or" divider, Upload (secondary) and Try with sample (secondary). Below, the one-sentence pitch in `--muted-foreground`. On drag-over: dashed border becomes `--accent`, fill `--accent-soft`.
@@ -320,6 +360,21 @@ Header "Import titanic3.csv · 61 KB". A row of four controls (delimiter, encodi
 A single `--card` panel, max 640px, centred vertically in the top third. Display title "Here's what I found". The summary as three lines with icons (missing, missing, flag). "All 7 issues" disclosure (a table: column · issue · count · proposed action). Three buttons in a row: Clean it for me (primary), Use as is (secondary), Go step by step (secondary, P1). Checkbox "Remember my choice".
 
 ### 5.4 Cleaning in progress (centre)
+
+As drawn:
+- **Layout.**
+  - The content is centred at most 1200px wide, with 32px × 24px padding and 20px between blocks.
+  - The step label and the elapsed time (mono) sit over a 4px progress bar.
+  - The log card (padding 8px × 16px) and the side column (300px or wider) wrap onto one column when the centre is narrow.
+  - The app switches columns on the centre panel's width (a container query), not the window's.
+- **Log entries.**
+  - Each entry is a grid of 56px (time, mono 12px), 24px (icon) and the rest, with 12px vertical padding and a hairline between entries.
+  - The text is the column (mono 12.5px), then "· " and the issue in `--foreground-2`.
+  - Candidate chips are 24px tall and 12px, and the chosen one is filled `--primary`.
+  - The gate line is 12px in the gate's color: `--success` committed, `--warning` flagged, muted skipped, `--accent` running.
+- **"So far".** Four tiles: values in mono 24px, labels in muted 12px, with the `--muted` fill and radius 8. The side cards use the 20px × 22px card padding.
+- **Side panels.** The board shows the centre alone. The app keeps both side panels on this screen, because App Flow §5 needs the library row (progress, switching datasets) and the story placeholders.
+
 
 Left 2/3: the live log card (`--card`), entries as a 3-column grid (mono time · icon · text), hairline between entries, auto-scroll. Candidate chips inside entries; the chosen one in `--primary` fill. Right 1/3: "So far" (2 × 2 stat tiles), "Checks" (list with ✓), budget line, and a dashed card "When cleaning finishes, the dashboard builds itself". Top: display title, subtitle, Stop (secondary), progress bar with step label and elapsed time.
 
@@ -350,6 +405,16 @@ Canvas background `--background` with a dot grid (`--border` dots, 22px spacing)
 Palette (right panel): search input, then rows (drag handle · name · "on canvas" / "not placed" in muted), then a "Try asking" card, then Export: Notebook (.ipynb) (P0) and Obsidian (.canvas) (P1).
 
 ### 5.11 Settings dialog
+
+As built (2026-10-24), with cut 1: four settings, each a segmented control with a help line.
+- Mode: Light · Dark · System.
+- Accent: each with a dot in its color for the active mode.
+- Chat bar: Pinned · Auto-hide · Hidden.
+  - Auto-hide fades the bar out until it's pointed at or focused.
+  - Hidden removes it.
+- After upload: Ask me · Always clean · Never clean.
+
+It opens from the library panel's gear, or with `?settings=1` in the URL. The other five settings and the "two per row" layout return when cut 1 is lifted.
 
 Title (display), × button. Nine labeled segmented controls in a single column (two per row for Default tab and Spotlight). The Accent control shows a dot of each accent's color beside its name. Help text under each in body-sm muted. Footer: "Saved to your Sherlock profile" (muted) and Done (primary).
 

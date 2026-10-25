@@ -567,6 +567,8 @@ export interface components {
             error?: string | null;
             /** Id */
             id: string;
+            /** Issue Count */
+            issue_count?: number | null;
             /** Last Opened At */
             last_opened_at: string | null;
             /** Last Tab */
@@ -580,6 +582,11 @@ export interface components {
              * @enum {string}
              */
             status: "profiling" | "offer" | "cleaning" | "building" | "ready" | "failed";
+            /**
+             * Step Count
+             * @default 0
+             */
+            step_count: number;
         };
         /** EditBatch */
         EditBatch: {

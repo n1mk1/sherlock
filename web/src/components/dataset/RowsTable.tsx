@@ -43,8 +43,8 @@ export function RowsTable({ datasetId, version }: { datasetId: string; version: 
           </thead>
           <tbody>
             {data.rows.map((r) => (
-              <tr key={r._row_id} className={cn(r.quarantined && "text-muted-foreground line-through decoration-warning/60")}>
-                <td className="border-b border-r border-border px-2 py-1 text-right font-mono text-[12px] text-muted-foreground">{r._row_id}</td>
+              <tr key={r._row_id} className={cn(r.quarantined && "opacity-60")} title={r.quarantined ? "Quarantined: left out of charts, models and stories" : undefined}>
+                <td className={cn("border-b border-r border-border bg-muted px-2 py-1 text-right font-mono text-[12px] text-muted-foreground", r.quarantined && "line-through")}>{r._row_id}</td>
                 {data.columns.map((c) => {
                   const mark = r.marks[c.name];
                   const v = r.cells[c.name];
@@ -55,9 +55,10 @@ export function RowsTable({ datasetId, version }: { datasetId: string; version: 
                       className={cn(
                         "max-w-[260px] truncate whitespace-nowrap border-b border-border px-3 py-1",
                         NUMERIC.test(c.type) && "text-right font-mono text-[12.5px]",
-                        mark === "changed" && "bg-changed",
-                        mark === "flagged" && "bg-warning/10",
-                        mark === "invalid" && "outline outline-1 -outline-offset-1 outline-destructive/60",
+                        // UI brief §4.7: never color alone; changed has a top marker, flagged a dashed outline.
+                        mark === "changed" && "bg-changed shadow-[inset_0_4px_0_-2px_var(--info)]",
+                        mark === "flagged" && "outline outline-1 -outline-offset-2 outline-dashed outline-warning",
+                        mark === "invalid" && "underline decoration-destructive decoration-1 underline-offset-4",
                       )}
                     >
                       {v === null || v === undefined ? <span className="text-muted-foreground">·</span> : String(v)}

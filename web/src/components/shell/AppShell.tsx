@@ -9,6 +9,7 @@ import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/state/ui";
+import { SettingsDialog } from "./SettingsDialog";
 import { StoriesPanel } from "./StoriesPanel";
 
 export function AppShell() {
@@ -33,6 +34,7 @@ export function AppShell() {
       </SidePanel>
       <DropOverlay />
       <ImportPreviewDialog />
+      <SettingsDialog />
     </div>
   );
 }

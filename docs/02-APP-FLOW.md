@@ -366,7 +366,7 @@ Failures: "Select at least two cards to make sense of them." · "I couldn't find
 
 ## 13. Settings overlay
 
-Opened from the gear or `?settings=1`. A centred dialog over a dimmed app. Contents per PRD §7.10 as segmented controls. Changes apply immediately and save to the server; "Done" closes. Esc or clicking outside closes. The mode and accent switches preview live behind the dialog.
+Opened from the gear or `?settings=1`. A centred dialog over a dimmed app. Contents per PRD §7.10 as segmented controls. Changes apply immediately and save to the server; "Done" closes. Esc or clicking outside closes. The mode and accent switches preview live behind the dialog. As built (2026-10-24, cut 1): mode, accent, chat bar and after upload (UI/UX brief §5.11).
 
 ---
 
