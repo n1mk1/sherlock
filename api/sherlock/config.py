@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     # Every user's model calls together, per UTC day (0 = no ceiling): the cap on spend that a client
     # dropping its cookie can't reset (TRD §15).
     app_token_budget: int = 10_000_000
-    new_users_per_ip_hour: int = 30  # 0 = no cap
+    new_users_per_ip_hour: int = 300  # 0 = no cap (30 at first; raised so testing by hand doesn't hit it)
     # X-Forwarded-For entries the host's own proxies append after the client's (Render: 1, checked live).
     trusted_proxy_hops: int = 1
 
