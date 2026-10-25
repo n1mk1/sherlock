@@ -19,7 +19,9 @@ from sherlock.errors import ApiError
 from sherlock.identity import current_user
 from sherlock.ingest.importer import import_csv
 from sherlock.ingest.options import ImportOptions
+from sherlock import sample_seed
 from sherlock.jobs.clean import queue_build
+from sherlock.jobs.events import emit
 from sherlock.jobs.runner import cancel_job
 from sherlock.ownership import check_dataset, owned_dataset
 from sherlock.profile import service as profile_service
@@ -131,10 +133,19 @@ def sample_dataset(
     user: User = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """The bundled Titanic file; returns the user's existing sample instead of a duplicate."""
+    """The bundled Titanic file; returns the user's existing sample instead of a duplicate. With the
+    cached seed (D9.1) it's a clone, ready at once, with its cleaning, dashboard, stories, analysis
+    and canvas; without it, the file is imported and goes through the pipeline live."""
     existing = datasets_repo.find_sample(db, user.id)
     if existing is not None:
         return to_dataset(existing, db)
+    seed = sample_seed.seed_dir(request.app.state.settings)
+    if seed is not None:
+        row = sample_seed.clone(request.app.state.settings, db, user.id, seed, SAMPLE_NAME)
+        emit(db, request.app.state.bus, row["id"], user.id, "dataset.status",
+             {"status": row["status"], "current_version": row["current_version"]})
+        response.status_code = status.HTTP_201_CREATED
+        return to_dataset(row, db)
     with SAMPLE_CSV.open("rb") as fh:
         row = import_csv(
             request.app.state.settings, db, user.id, fh, SAMPLE_CSV.name, ImportOptions(),

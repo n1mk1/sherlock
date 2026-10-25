@@ -262,3 +262,39 @@ def test_labels_and_brackets_read_naturally():
     runs = nr.to_runs([TextRun(text="The "), LabelRun(label="value:pclass:1"), TextRun(text=" group pays more ( "),
                        ChipRun(chip="top_value"), TextRun(text=" )")], FACTS, ["pclass"])
     assert "".join(r.get("value") or r.get("text") for r in runs) == "The pclass 1 group pays more (70.0%)."
+
+
+def test_the_overview_keeps_derived_facts_checkable():
+    """Its merged sheet prefixes a derived fact's `from` like its key, so verify can recompute it (D8.4)."""
+    from sherlock.stories.service import _Offline
+
+    facts = {"top_value": {"value": 0.6, "formatted": "60%", "label": "top"},
+             "bottom_value": {"value": 0.2, "formatted": "20%", "label": "bottom"},
+             "ratio_top_bottom": {"value": 3.0, "formatted": "3.0×", "label": "ratio", "from": ["top_value", "bottom_value"],
+                                  "formula": "a / b"}}
+    merged, _, by_model = nr.overview(_Offline(), None, [{"prefix": "w1", "title": "A", "facts": facts, "score": 1,
+                                                          "widget_id": "wdg_x"}], ["sex"])
+    assert not by_model and merged["w1.ratio_top_bottom"]["from"] == ["w1.top_value", "w1.bottom_value"]
+    assert fx.verify(duckdb.connect(), merged, ["w1.ratio_top_bottom"]) == []
+
+
+def test_a_run_that_finishes_before_the_first_card_still_gets_its_story(client):
+    """The race in the D9.1 seed: the build's stories job is running and no card exists yet when the
+    analysis's run finishes; its widget's story must still be queued."""
+    from sherlock.db.connection import connect
+    from sherlock.db.util import new_id, now_iso
+    from sherlock.widgets import service as ws
+    from tests.test_jobs import upload
+
+    ds = upload(client, b"a,b\n1,2\n")["id"]
+    db = connect(client.app.state.settings)
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        db.execute("INSERT INTO jobs (id, dataset_id, user_id, kind, status, params_json, created_at) "
+                   "VALUES (?, ?, ?, 'stories', 'running', '{}', ?)", (new_id("job"), ds, dataset["user_id"], now_iso()))
+        ws._stories(ws.Env(client.app.state.settings, db, None, None), dataset, ["wdg_analysis"])
+        queued = db.execute("SELECT params_json FROM jobs WHERE dataset_id = ? AND kind = 'stories' AND status = 'queued'",
+                            (ds,)).fetchone()
+        assert queued and "wdg_analysis" in queued["params_json"]
+    finally:
+        db.close()

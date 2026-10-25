@@ -5,7 +5,7 @@
     uv run sherlock eval ask [--sets titanic3.csv] the ask-anything eval (markdown table)
     uv run sherlock eval notebook [--sets a.csv,b.csv | all] export each file's notebook and run it in a fresh venv
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
-    uv run sherlock eval grounding
+    uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts and wording (markdown table)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
 
 Commands run the app in-process against the configured `DATA_DIR` and `DATABASE_URL` (the `.env`),
@@ -17,9 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-NOT_BUILT = {
-    "grounding": "D6 (story cards)",
-}
+NOT_BUILT: dict[str, str] = {}
 
 
 def _print(text: str) -> None:
@@ -116,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     p_clean.add_argument("source")
     p_clean.add_argument("--timeout", type=float, default=900)
     p_eval = sub.add_parser("eval", help="run a benchmark")
-    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", *NOT_BUILT])
+    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "grounding", *NOT_BUILT])
     p_eval.add_argument("--sets", default="", help="comma-separated benchmark sets (corruption) or sample files (ask)")
     p_export = sub.add_parser("export", help="export a dataset")
     p_export.add_argument("what", choices=["notebook"])
@@ -138,6 +136,11 @@ def main(argv: list[str] | None = None) -> int:
 
             sets = [s for s in args.sets.split(",") if s]
             _print(run_notebook(END_TO_END if sets == ["all"] else sets or None))
+            return 0
+        if args.which == "grounding":
+            from sherlock.eval.grounding import run as run_grounding
+
+            _print(run_grounding([s for s in args.sets.split(",") if s] or None))
             return 0
         if args.which == "ml":
             from sherlock.eval.planted import run as run_planted

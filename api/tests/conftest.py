@@ -14,6 +14,8 @@ TEST_MODELS = {
     # No job workers: an upload's profile job (and its typing step) would race the test's own commits.
     # Tests of jobs opt in with the run_jobs fixture.
     "JOB_WORKERS": "0",
+    # The sample goes through the live pipeline in tests; test_sample_seed.py turns the seed on.
+    "SAMPLE_SEED_DIR": "off",
 }
 
 

@@ -58,6 +58,10 @@ SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at 
 DATA_INTENTS = ("ask_data", "find_rows")
 INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help")
 DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
+# A significance test only when the message asks about one: live (D8.4 eval), Nano sent "what is the
+# overall survival rate?" and "what is the return rate?" to ask_stats.
+STATS_WORDS = re.compile(r"\b(significan\w*|p[- ]?values?|statistic\w*|tests?|chance|random|correlat\w*|relat\w*|"
+                         r"associat\w*|differen\w*|compare|versus|vs|between)\b", re.I)
 
 
 def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> dict:
@@ -232,6 +236,8 @@ class Agent:
         # widget for "survival rate by sex as a chart" next to the answer despite the route prompt.
         if "create_widget" in intents and len(intents) > 1 and not DASHBOARD_WORDS.search(question):
             intents.remove("create_widget")
+        if "ask_stats" in intents and not STATS_WORDS.search(question):
+            intents = list(dict.fromkeys("ask_data" if i == "ask_stats" else i for i in intents))
         steps = [(i, question) for i in intents]
         if route.multi_step:
             steps = self._plan(question, ctx_text, scope, TOOLS[tab]) or steps

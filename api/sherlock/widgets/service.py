@@ -188,10 +188,12 @@ def create(
 
 def _stories(env: Env, dataset: sqlite3.Row, widget_ids: list[str] | None, reason: str = "widget") -> None:
     """A widget added, changed or removed tells its story again (TRD §7.6), once the dashboard
-    has stories at all."""
+    has stories at all: a card, or a stories job that hasn't stored one yet. (Without the job check,
+    an analysis whose run finished before the first card was written never got its own card.)"""
     from sherlock.jobs.stories import queue_stories
 
-    if env.db.execute("SELECT 1 FROM cards WHERE dataset_id = ? LIMIT 1", (dataset["id"],)).fetchone():
+    if env.db.execute("SELECT 1 FROM cards WHERE dataset_id = ? UNION ALL SELECT 1 FROM jobs WHERE dataset_id = ? "
+                      "AND kind = 'stories' LIMIT 1", (dataset["id"], dataset["id"])).fetchone():
         queue_stories(env.db, dataset, widget_ids, reason)
 
 

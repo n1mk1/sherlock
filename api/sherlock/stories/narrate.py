@@ -198,7 +198,9 @@ def narrate(llm: LLMClient, scope: CallScope, *, title: str, widget_id: str, spe
 
 def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_columns: list[str]) -> tuple[dict, dict, bool]:
     """`widgets`: [{prefix, title, facts, score}]. Returns (merged facts, body, by_model)."""
-    merged = {f"{w['prefix']}.{k}": f for w in widgets for k, f in w["facts"].items()}
+    # A derived fact's `from` names keys on its widget's sheet; here they carry the same prefix.
+    merged = {f"{w['prefix']}.{k}": ({**f, "from": [f"{w['prefix']}.{x}" for x in f["from"]]} if f.get("from") else f)
+              for w in widgets for k, f in w["facts"].items()}
 
     def check(o: Overview) -> None:
         for b in o.bullets:

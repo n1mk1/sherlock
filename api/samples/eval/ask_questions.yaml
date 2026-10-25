@@ -9,7 +9,14 @@
 #   rows:  {key: value} pairs a table or chart in the answer must contain (keys compared as text)
 #   total: the number of rows a find-rows answer reports
 #   intent: the answer must come from this kind of answer (rows, widget)
+#   source: (D8.4) the answer must cite a source of this kind: sql, run, step, help, card, general
+#   text_any: (D8.4) the answer's text must hold one of these words (for answers that aren't numbers)
 # tol is relative (default 0.005, i.e. 0.5%).
+#
+# Extended on 2026-10-25 (Implementation Plan D8.4) to 50 questions, so every area of PRD ASK-2 has
+# at least one: data, statistics, drivers, rows, cleaning history, models, column meaning and app
+# help, plus a third file (reviews_text.csv). Widgets and story cards are covered by tests/test_chat.py
+# and tests/test_canvas.py, since their answers depend on the dashboard the builder picked.
 
 titanic3.csv:
   - q: How many passengers are there?
@@ -53,6 +60,22 @@ titanic3.csv:
     expect: {rows: {"1": 60.0, "2": 15.0458, "3": 8.05}}
   - q: How many men were in second class?
     expect: {value: 171}
+  - q: How many passengers have a cabin recorded?
+    expect: {value: 295}
+  - q: Average fare by port of embarkation
+    expect: {rows: {"C": 62.3363, "Q": 12.4090, "S": 27.4188}}
+  - q: Is fare significantly different between men and women?
+    expect: {source: sql, text_any: ["unlikely to be chance", "could be chance", "significant"]}
+  - q: What drives survival?
+    expect: {source: run, text_any: ["sex"]}
+  - q: How accurate is the model?
+    expect: {source: run, text_any: ["accuracy", "%"]}
+  - q: What does sibsp mean?
+    expect: {source: sql, text_any: ["sibling", "spouse"]}
+  - q: How do I undo a step?
+    expect: {source: help, text_any: ["undo"]}
+  - q: What did cleaning change?
+    expect: {source: step, text_any: ["typed"]}
 
 sales_dated.csv:
   - q: What is the total revenue?
@@ -86,3 +109,19 @@ sales_dated.csv:
   - q: and the revenue for the East region only?
     follow_up: true
     expect: {value: 198168.56}
+  - q: How many orders came from the West region?
+    expect: {value: 737}
+  - q: Average unit price by product
+    expect: {rows: {"Doohickey": 7.0351, "Gadget": 29.2074, "Gizmo": 53.7444, "Sprocket": 3.3105, "Widget": 12.1969}}
+
+reviews_text.csv:
+  - q: How many reviews are there?
+    expect: {value: 600}
+  - q: What is the average rating?
+    expect: {value: 3.42667}
+  - q: How many reviews are verified?
+    expect: {value: 419}
+  - q: Average rating by product
+    expect: {rows: {"Doohickey": 3.38793, "Gadget": 3.41739, "Gizmo": 3.50833, "Sprocket": 3.23967, "Widget": 3.57031}}
+  - q: Which reviews mention damaged packaging?
+    expect: {total: 167, intent: rows}

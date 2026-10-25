@@ -161,7 +161,9 @@ export interface paths {
         put?: never;
         /**
          * Sample Dataset
-         * @description The bundled Titanic file; returns the user's existing sample instead of a duplicate.
+         * @description The bundled Titanic file; returns the user's existing sample instead of a duplicate. With the
+         *     cached seed (D9.1) it's a clone, ready at once, with its cleaning, dashboard, stories, analysis
+         *     and canvas; without it, the file is imported and goes through the pipeline live.
          */
         post: operations["sample_dataset_api_v1_datasets_sample_post"];
         delete?: never;

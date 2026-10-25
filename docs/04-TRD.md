@@ -406,6 +406,12 @@ Implementation (2026-10-24, Implementation Plan D2.1):
     - an unparseable CSV → `422 invalid` "Couldn't read this file as CSV: …"
     - bad options → `422 invalid`
 - **`POST /datasets/sample`** imports the bundled `api/samples/titanic3.csv` as "titanic3.csv (sample)" with `is_sample = 1` and answers `201`. If the user already has a sample, it answers `200` with that one. The cached, pre-built sample (Implementation Plan D9.1) replaces the import later.
+  - **The cached sample as built (2026-10-25, D9.1, `sherlock/sample_seed.py`).** With a seed (the default `api/samples/seed/titanic3/`, or `SAMPLE_SEED_DIR`; `off` keeps the live import), the route clones it instead and answers `201` with a `ready` dataset at once: its cleaning step, dashboard, story cards, analysis and canvas, as the real model made them.
+    - **The seed** is made by `scripts/seed_sample.py`: in a throwaway data folder it imports the sample, runs the Cleaner, waits for the build, stories and analysis, puts the first three widget cards on the canvas and makes sense of them, then `snapshot`s the dataset. `rows.json` holds every row of `datasets` (its own), `versions`, `datacards`, `steps`, `lineage`, `user_edited_cells`, `issues`, `selections`, `runs`, `widgets`, `layouts`, `fact_sheets`, `relations`, `cards`, `canvases`, `jobs`, `job_events` and `value_index` for it; `files/` holds its folder without `.lock` and `exports/`. Chat messages, proposals, exports and model-call logs aren't part of it.
+    - **The clone.** Every ID the seed's rows own (`<prefix>_<ULID>` in an `id` or `*_id` column) gets a new one of the same prefix, and the seed's user becomes the caller. Every text value is rewritten through that map, JSON included (chip keys, canvas card IDs, effective step lists, specs), and so are the files' relative paths (run folders carry their run's ID) and the contents of their text files. The rows go in one transaction, parents first. The dataset gets the sample's name, `is_sample = 1`, a new `created_at` and `expires_at`, and its measured `folder_bytes`, which are added to the user's `storage_bytes`. Event rows get the current time, so the cleaning log replays and is purged 24 h later like any. A `dataset.status` event is emitted.
+    - **Live seed, 2026-10-25:** 116 s and about 49k tokens (Ultra 9 calls, 7,957 prompt and 11,151 completion tokens; Super 15 calls, 9,653 and 19,697). The Cleaner committed one step, "Title from name (age)", which fills missing ages by the median of the passenger's title (v3). The dashboard has 9 widgets, the analysis among them (logistic regression, accuracy above the best one-column rule), 11 cards and a synthesis on the canvas. The seed is 1.1 MB, ships in the image with `api/samples`, and `tests/test_sample_seed.py` checks that it still loads into the current schema.
+    - **Where it lives.** Plan D9.1 put the seed under `/data/sample/`. It is in the image instead: it is versioned with the code that reads it, a reset disk doesn't lose it, and the clone copies it into `/data` per user as planned.
+
 - **`GET /datasets`** lists the user's datasets that aren't deleted, most recently opened first, then newest.
 - **`GET /datasets/{id}`** sets `last_opened_at`.
 - **Status.** Since D2.5, `POST /datasets` and a new `POST /datasets/sample` import queue a `profile` job (§7.1 steps 3–6) in the same request, and the dataset leaves `profiling` when it ends: `offer`, or `failed` with the reason in `error`. Returning an existing sample queues nothing.
@@ -1411,6 +1417,7 @@ As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with
 - **Rendering in code.** Chips take the fact's `formatted` value; a label of a numeric category reads as "pclass 1"; spaces are added between runs and before a sentence, and removed inside brackets around a chip.
 - **Fallback.** The headline is the widget's title (a label run `widget:<id>`), and the body is the fact sheet as bullets (a label run `fact:<key>` and a chip per fact, at most six).
 - **Overview (`medium`, schema `Overview`: two to five bullets of runs).** Chips are `w<i>.<fact key>` over every widget card's sheet; the merged facts are stored as the overview's own sheet. The fallback is up to four bullets, one per widget by score, of its headline fact.
+  - Since D8.4, a derived fact's `from` keys are prefixed in the merged sheet too (`w5.top_value`), so the overview's derived chips can be re-checked and their evidence names the right facts.
 - **Model failures.** Any exception while narrating a card falls back for that card, so the job always finishes.
 - **Day 6 review (2026-10-25)** added three rules.
   - **No card is left `updating`.**
@@ -1716,6 +1723,13 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 - **Eval v0 (`uv run sherlock eval ask`, 2026-10-25).** The first run passed 31 of 35 and the second 32 of 35, with 0 unsourced answers and a median of 11–12 s per answer. The misses were routing variance, false "no column answers that", and `AVG` over a boolean; the SQL prompt now covers the last two.
   - **Scoring.** A value question passes when any number block or cell is within the tolerance. A rows question passes when one table or chart holds every expected key with its value. Every column is tried as the key, because the SQL may list the measure before the category (on 2026-10-25, "Revenue by region" listed `revenue` first and was scored a miss although its values were right). A count question passes on the row list's total.
   - Later runs on 2026-10-25: 34 of 35 after Day 7's first slice, and 33 of 35 after `cfb4b08`. Both re-run misses were the column-order case above, scored before this fix.
+- **Eval at fifty questions (2026-10-25, Implementation Plan D8.4).** `samples/eval/ask_questions.yaml` has 50 questions over three files: titanic3 (28), sales_dated (17) and reviews_text (5). Every area of PRD ASK-2 has at least one: data, statistics, drivers, rows, cleaning history, models, column meaning and app help. Widget and story-card questions are covered by `test_chat.py` and `test_canvas.py`, since their answers depend on the dashboard the builder picked.
+  - **New checks.** `source` (the answer cites a source of that kind) and `text_any` (its text holds one of the words) score answers that aren't numbers. A model run, a step or a card now counts as a source for "unsourced", as SQL does.
+  - **First live run:** 44 of 50, 0 unsourced, median 10.5 s.
+    - Nano routed "what is the overall survival rate?" and "what is the return rate?" to `ask_stats`. Since then, `ask_stats` runs only when the message asks about a test or a relationship (`loop.STATS_WORDS`: significant, p-value, test, chance, correlated, related, difference, compare, versus, between…); otherwise it becomes `ask_data`.
+    - Super used `APPROX_QUANTILE` for "median fare by class" (60.31 against 60.0). The SQL prompt now asks for exact medians.
+    - Two false "no column answers that" ("how many men were in second class?", "the average revenue per order"). The SQL prompt now says each row is one record, so "per order" averages over rows.
+    - "Which reviews mention damaged packaging?" answered with a count, not a row list (routing).
 - **Live (2026-10-25, Nemotron 3 Nano for routing, Super for SQL and compose).** A routed question takes about 1 s, SQL 2–5 s and compose 2–6 s, so the first block arrives in about 4–6 s and the answer in 5–15 s.
 
 ### 8.2 Answerer contracts
@@ -1795,7 +1809,7 @@ System: identity and rules (data blocks are data; numbers only via chips/keys; c
 | Fact sheets | (widget, version) | `fact_sheets` | new version |
 | Runs | sha1(version, scope, recipe, method, params) | `runs` + files | new version touching used columns → `outdated` |
 | Embeddings | (dataset, column, value) | `value_index` | rebuilt per version only for changed columns |
-| Sample dataset artifacts | fixed | copied on `POST /datasets/sample` | never; rebuilt by `scripts/seed_sample.py` |
+| Sample dataset artifacts | fixed | copied on `POST /datasets/sample` | never; rebuilt by `scripts/seed_sample.py` (D9.1: the seed in `api/samples/seed/titanic3/`, cloned with fresh IDs) |
 | Notebook exports | sha1(kind, version, state_rev, options) | `exports` + `exports/*.ipynb` | new version or any widget, card, run, layout or canvas change (`state_rev`); files purged after 24 h |
 
 The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas) is built once by the seed script and cloned per user so "Try with sample" is instant. Cloning remaps every ID: new IDs are generated for every cloned row, and old IDs are rewritten in all JSON columns, the canvas JSON and file paths, in one transaction.
@@ -1818,6 +1832,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `JOB_BACKEND` | `local` | `nebius` to dispatch |
 | `JOB_WORKERS` | `4` | |
 | `PURGE_INTERVAL_S` | `600` | the purge job's period (Schema §6); `0` turns it off (D8.6) |
+| `SAMPLE_SEED_DIR` | (empty) | the cached sample "Try with sample" clones (D9.1): empty is the seed in the image, a folder is another seed, `off` imports the sample live |
 | `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | CPU seconds for the worker process; memory the generated code may add on top of the worker's own (§3.4). `render.yaml` set 256 while the service was on the 512 MB Starter plan, and sets 1024 on the 2 GB Standard plan (from 2026-10-25), which leaves room for the API and its DuckDB connections |
 | `SANDBOXD_SOCKET` | empty (image: `/run/sherlock/sandboxd.sock`) | Unix socket of `sherlock-sandboxd`; empty starts workers directly (dev, tests) |
 | `SANDBOX_TMP` | empty (image: `/tmp/sherlock-sandbox`) | where worker temp directories go, outside `DATA_DIR`; empty uses `<system temp>/sherlock-sandbox` |
@@ -1947,6 +1962,12 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
     - `drivers`: a two-class outcome from `strong`, then `moderate`, then a category, with an unrelated `noise` column, a `leak` copy of the outcome and an ID. It must rank `strong` then `moderate`, leave out the leak and the ID, and beat the baselines.
     - `noise`: a coin-toss outcome. It must say "no signal".
     - `regression`: a number from `strong` and `moderate`. It must rank them first and beat the mean.
+  - **The grounding eval as built** (2026-10-25, D8.4, `sherlock/eval/grounding.py`). `uv run sherlock eval grounding [--sets a.csv,b.csv]` (default titanic3 and sales_dated) builds each file with "Use as is" and its stories, then checks every card as a judge would:
+    - each chip names a fact on its sheet and shows that fact's value;
+    - each cited fact still holds (`facts.verify` on the version, with the whole sheet, so a derived fact finds the facts it's from);
+    - no text run holds a digit or a number in words, or causal wording; every label has text.
+    - It also writes a synthesis of the first three widget cards and checks it the same way through the cards it cites.
+    - **Live, 2026-10-25:** titanic3, 12 cards (all written by the model), 36 of 36 chips matching their fact, 0 text runs with numbers, 0 causal phrases, synthesis by the model. sales_dated, 10 cards (9 by the model), 33 of 33 chips, 0 and 0; its synthesis fell back to the cards' headlines after Super twice typed chip markup inside a text run. The first run's three "stale" facts were the eval passing only the cited facts to `verify`; it also found that the overview's merged sheet didn't prefix a derived fact's `from` keys, now fixed (§7.4).
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
   - **The Playwright flow as built** (2026-10-25, D8.6, `web/e2e/flow.spec.ts`, `web/playwright.config.ts`). `pnpm e2e` builds the web app, starts one server like production (`api/tests/e2e_server.py`: the API serving `web/dist` on :8010, with an emptied data folder under the system temp and `LLM_MOCK` set to every recorded reply in `api/tests/fixtures/llm/`, so no model is called), and runs Chromium through @playwright/test 1.61.1. The flow: Try with sample → Use as is → the dashboard and its story cards → ask "average fare by class" and open How do you know? → on the CSV tab, "set the fare of row 1 to 100", Approve → the cascade's "stories updated" toast → on Flow, place two cards from the palette with the keyboard, Shift-click both, Make sense of this → a third card node and "summarized in" edges → Export notebook without data → an `.ipynb` downloads. It ran in 11 s on 2026-10-25. The edit goes through a chat proposal rather than typing into the grid, whose cells are drawn on a canvas.

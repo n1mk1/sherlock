@@ -33,6 +33,7 @@ export default defineConfig({
       WEB_DIST_DIR: path.join(root, "web", "dist"),
       JOB_WORKERS: "4",
       PURGE_INTERVAL_S: "0",
+      SAMPLE_SEED_DIR: "off", // the recorded replies match the live pipeline, not the cached sample
     },
   },
 });

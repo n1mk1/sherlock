@@ -78,6 +78,17 @@ def _key(v) -> str:
 
 
 def check(message: dict, expect: dict) -> tuple[bool, str]:
+    """Every criterion the expectation names must hold: a value, rows or a total (numbers), and since
+    D8.4 `source` (a source of that kind: sql, run, step, help, card, general) and `text_any` (the
+    answer's text holds one of these words), for answers that aren't numbers."""
+    if "source" in expect and not any(s.get("kind") == expect["source"] for s in message.get("sources") or []):
+        return False, f"no {expect['source']} source: " + ", ".join(s.get("kind", "?") for s in message.get("sources") or [])
+    if "text_any" in expect:
+        text = (message.get("text") or "").lower()
+        if not any(w.lower() in text for w in expect["text_any"]):
+            return False, (message.get("text") or "")[:80]
+    if not any(k in expect for k in ("value", "rows", "total")):
+        return True, (message.get("text") or "")[:60]
     blocks = message.get("blocks") or []
     tol = float(expect.get("tol", DEFAULT_TOL))
     if "value" in expect:
@@ -99,8 +110,9 @@ def check(message: dict, expect: dict) -> tuple[bool, str]:
 
 
 def unsourced(message: dict) -> bool:
+    """Data shown with nothing to trace it to: no query, model run, step or card behind it (PRD ASK-3)."""
     shows_data = any(b["type"] in ("number", "table", "chart") for b in message.get("blocks") or [])
-    return shows_data and not any(s.get("sql") for s in message.get("sources") or [])
+    return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step", "card") for s in message.get("sources") or [])
 
 
 def ask(client, ds_id: str, text: str) -> dict:
