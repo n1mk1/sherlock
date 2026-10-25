@@ -1556,6 +1556,7 @@ As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
 - **Helpers cell.** The used helpers (from each step's `helpers_used`) with the module's private functions and constants they rely on, then `output_select`, `keep_types` and `store_step`.
 - **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5.
 - **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
+  - As of 2026-10-25 (Day 5 review): the scan also refuses the file if the configured `LLM_API_KEY` or `TAVILY_API_KEY` value appears anywhere in it (cell sources, embedded outputs or metadata). Token Factory keys start `v1.`, which the generic secret pattern doesn't match.
 - **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
 
 - **Runs** (2026-10-25, D7.5):
