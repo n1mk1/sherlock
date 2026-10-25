@@ -3,7 +3,7 @@
 // browser. Below 1024px the side panels become slide-overs opened from the header.
 import { Menu, PanelRight } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { Outlet, useMatch } from "react-router-dom";
+import { Outlet, useLocation, useMatch } from "react-router-dom";
 import { useLibraryEvents } from "@/api/queries";
 import { ChangesPanel } from "@/components/csv/ChangesPanel";
 import { FlowPalette } from "@/components/flow/FlowPalette";
@@ -12,6 +12,8 @@ import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/state/ui";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { OfflineBanner } from "./OfflineBanner";
 import { SettingsDialog } from "./SettingsDialog";
 import { StoriesPanel } from "@/components/stories/StoriesPanel";
 
@@ -23,11 +25,12 @@ export function AppShell() {
   // The right panel is Changes on the CSV tab (App Flow §8.1), stories elsewhere.
   const csv = useMatch("/d/:datasetId/csv");
   const flow = useMatch("/d/:datasetId/flow"); // the palette on the Flow tab (App Flow §12.1)
+  const { pathname } = useLocation();
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} width={railed ? RAIL : leftWidth}
         onResize={railed ? undefined : (w) => setPanelWidth("left", w)}>
-        <LibraryPanel />
+        <ErrorBoundary label="library" resetKey={pathname}><LibraryPanel /></ErrorBoundary>
       </SidePanel>
       <main className="@container relative flex min-w-0 flex-1 flex-col">
         <div className="absolute left-2 top-3 z-20 flex gap-1 lg:hidden">
@@ -36,11 +39,14 @@ export function AppShell() {
         <div className="absolute right-2 top-3 z-20 flex gap-1 lg:hidden">
           <IconButton label="Show stories" onClick={() => setRightOpen(true)}><PanelRight /></IconButton>
         </div>
-        <Outlet />
+        <OfflineBanner />
+        <ErrorBoundary label="page" resetKey={pathname}><Outlet /></ErrorBoundary>
       </main>
       <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
         onResize={(w) => setPanelWidth("right", w)}>
-        {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
+        <ErrorBoundary label="side panel" resetKey={pathname}>
+          {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
+        </ErrorBoundary>
       </SidePanel>
       <DropOverlay />
       <ImportPreviewDialog />

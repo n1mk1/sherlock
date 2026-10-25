@@ -36,12 +36,18 @@ export function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, "internal", "Something went wrong on our side.");
 }
 
+/** A request that couldn't reach the server shows the offline banner (it clears itself). */
+function signalOffline() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("sherlock:offline"));
+}
+
 /** Unwraps an openapi-fetch result: the data, or throws the envelope as an ApiError. */
 export async function unwrap<T>(p: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   let result;
   try {
     result = await p;
   } catch {
+    signalOffline();
     throw new ApiError(0, "offline", "Couldn't reach Sherlock. Check your connection and try again.");
   }
   if (result.error !== undefined || !result.response.ok) throw toApiError(result.response.status, result.error);
@@ -60,6 +66,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   try {
     response = await fetch(path, init);
   } catch {
+    signalOffline();
     throw new ApiError(0, "offline", "Couldn't reach Sherlock. Check your connection and try again.");
   }
   if (response.status === 204) return undefined as T;

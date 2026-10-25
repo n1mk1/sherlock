@@ -3,7 +3,7 @@
 // Ask why. Hovering the card spotlights its widget; hovering its widget highlights the card. A card
 // the user edited keeps its text; when the data changes it shows the new narration as a suggestion
 // side by side (Accept · Edit · Dismiss).
-import { Database, Pencil, RefreshCw } from "lucide-react";
+import { Database, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { plainText, useCardActions } from "@/api/stories";
@@ -174,6 +174,13 @@ export function StoryCard({ card, title, onEvidence }: {
           </button>
           <span className="flex-1" />
           <Button size="sm" variant="ghost" onClick={() => setEditing("card")}>Edit</Button>
+          <Button size="sm" variant="ghost" aria-label="Delete this card" title="Delete this card"
+            onClick={() => actions.remove.mutate(card.id, {
+              onSuccess: () => toast("Card deleted", { duration: 10_000, action: { label: "Undo", onClick: () => actions.restore.mutate(card.id) } }),
+              onError: err,
+            })}>
+            <Trash2 />
+          </Button>
           {!overview && <Button size="sm" variant="ghost" onClick={askWhy}>Ask why</Button>}
         </div>
       )}

@@ -39,6 +39,14 @@ export function useCardActions(datasetId: string) {
       mutationFn: (id: string) => request("POST", `/api/v1/cards/${id}/refresh`),
       onSuccess: () => qc.invalidateQueries({ queryKey: cardsKey(datasetId) }),
     }),
+    remove: useMutation({
+      mutationFn: (id: string) => request("DELETE", `/api/v1/cards/${id}`),
+      onSuccess: () => qc.invalidateQueries({ queryKey: cardsKey(datasetId) }),
+    }),
+    restore: useMutation({
+      mutationFn: (id: string) => request<Card>("POST", `/api/v1/cards/${id}/restore`),
+      onSuccess: () => qc.invalidateQueries({ queryKey: cardsKey(datasetId) }),
+    }),
   };
 }
 

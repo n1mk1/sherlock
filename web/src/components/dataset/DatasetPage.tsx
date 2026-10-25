@@ -1,6 +1,6 @@
 // A dataset route (App Flow §1): `/d/:id/:tab`. Until the dataset is ready, the centre shows the
 // status screen for where it is (profiling, offer, cleaning, building, failed).
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { rememberTab, useDataset, useDatasetEvents, useMe } from "@/api/queries";
@@ -11,6 +11,7 @@ import { FlowActions } from "@/components/flow/FlowPalette";
 import { CenterHeader } from "@/components/shell/CenterHeader";
 import { ChatBar } from "@/components/shell/ChatBar";
 import { DatasetMenu } from "@/components/shell/DatasetMenu";
+import { ErrorBoundary } from "@/components/shell/ErrorBoundary";
 import { ExportDialog } from "@/components/shell/ExportDialog";
 import { JobTray } from "@/components/shell/JobTray";
 import { CleaningOffer } from "./CleaningOffer";
@@ -47,6 +48,8 @@ function Gone() {
 export function DatasetPage() {
   const { datasetId, tab: rawTab } = useParams();
   const { data: dataset, error } = useDataset(datasetId);
+  const scroller = useRef<HTMLDivElement>(null);
+  useRememberScroll(scroller, datasetId && rawTab ? `${datasetId}.${rawTab}` : null);
   if (error) return <Gone />;
   if (!dataset) return null;
   const tab = (TABS as string[]).includes(rawTab ?? "") ? (rawTab as Tab) : "dashboard";
@@ -82,12 +85,40 @@ export function DatasetPage() {
         }
       />
       <CascadeLine datasetId={dataset.id} />
-      <div className={(tab === "csv" || tab === "flow") && showTab ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
-        {showTab ? <TabContent dataset={dataset} tab={tab} /> : <StatusScreen dataset={dataset} />}
+      <div ref={scroller} className={(tab === "csv" || tab === "flow") && showTab ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
+        <ErrorBoundary label={tab === "csv" ? "CSV tab" : tab === "flow" ? "canvas" : "dashboard"} resetKey={`${dataset.id}:${tab}`}>
+          {showTab ? <TabContent dataset={dataset} tab={tab} /> : <StatusScreen dataset={dataset} />}
+        </ErrorBoundary>
       </div>
       <ChatBar dataset={dataset} tab={tab} placeholder={chatPlaceholder(dataset)} />
     </div>
   );
+}
+
+/** Remember where I was (PRD §7.11): the scroll position per dataset and tab, in this browser. It is
+ * restored once the content is tall enough to scroll there (the dashboard's widgets load after it). */
+function useRememberScroll(ref: React.RefObject<HTMLDivElement | null>, key: string | null) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !key) return;
+    const storeKey = `sherlock.scroll.${key}`;
+    let target = 0;
+    try { target = Number(localStorage.getItem(storeKey)) || 0; } catch { /* private mode */ }
+    let restoring = target > 0;
+    const tries = setInterval(() => {
+      if (!restoring) return clearInterval(tries);
+      if (el.scrollHeight - el.clientHeight >= target) { el.scrollTop = target; restoring = false; }
+    }, 150);
+    const stop = setTimeout(() => { restoring = false; }, 4000);
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      if (restoring) return;
+      clearTimeout(t);
+      t = setTimeout(() => { try { localStorage.setItem(storeKey, String(Math.round(el.scrollTop))); } catch { /* private mode */ } }, 200);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => { clearInterval(tries); clearTimeout(stop); clearTimeout(t); el.removeEventListener("scroll", onScroll); };
+  }, [ref, key]);
 }
 
 /** One event stream per open dataset; the cascade sets the "updating" state and ends with a toast. */

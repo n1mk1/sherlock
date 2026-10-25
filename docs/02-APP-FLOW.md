@@ -374,6 +374,13 @@ As built (2026-10-25, Implementation Plan D4.8):
 
 Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. 'average fare by pclass'." · "There's no column for nationality. The closest is home.dest; want that?" (button) · "That needs about 100 rows and this selection has 41."
 
+Quality of life as built (2026-10-25, Implementation Plan D8.3; the `?` sheet is cut 9):
+- **Toasts with Undo (10 s)** after deleting a widget, a dataset, a story card (new: the trash button on each card) or nodes on the canvas. Deleted rows are pending until Save, and a saved step has Undo in the Changes panel.
+- **Remember where I was**, per dataset in this browser: the last tab (server-side, since D2.10), the dashboard's scroll position (restored once its widgets are tall enough), the canvas's pan and zoom, and unsaved CSV edits.
+- **Empty states** say what goes there and offer one action: the library ("Drop a CSV anywhere", Try with sample), the dashboard ("No widgets yet", Add widget), the stories panel, the palette, the canvas.
+- **Error boundaries** around the page, each tab's content, the library and the side panel: a crash shows "Something went wrong showing the …" with Try again and Reload, and the rest keeps working.
+- **Offline banner** when the network or the server is unreachable; it clears itself.
+
 ### 10.3 Chat on each tab
 
 | Tab | Context | Typical actions |
