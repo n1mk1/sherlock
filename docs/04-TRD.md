@@ -184,6 +184,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - `owned(kind)` for bare-ID routes, which resolves through the table's `dataset_id`, except jobs, which carry `user_id`
 
     A soft-deleted dataset hides itself and its children. Not-owned and missing look the same: `404 not_found`.
+
+    `tests/test_ownership_routes.py` walks every route in the app and fails when one with a path parameter has neither dependency. A route that has to check in its body is listed there with its reason; today that's only `POST /datasets/{dataset_id}/restore`, which must find a soft-deleted dataset (`check_dataset(…, include_deleted=True)`) (added 2026-10-25, Day 1 review).
   - **Error envelope.** FastAPI's own errors are mapped onto it: validation errors → `422 invalid`, unknown routes → `404 not_found`, unhandled exceptions → `500 internal`.
   - **Database.** Routes get one SQLite connection per request through `get_db` (`sherlock/db/connection.py`). The identity middleware uses its own short-lived connection, in a worker thread. Migrations run in the lifespan, after the model-role check.
 
