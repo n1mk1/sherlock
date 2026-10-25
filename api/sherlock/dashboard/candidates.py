@@ -127,7 +127,7 @@ def generate(card: dict, keep: list[str] | None = None) -> list[Candidate]:
 
     for d in dims:
         qd = ident(d["name"])
-        order = "1" if d["type"] in ("int", "float", "bool") else "2 DESC"
+        order = "1" if d["type"] in ("int", "float", "bool") else "2 DESC, 1"
         if target:
             out.append(Candidate(
                 f"bar:rate:{target.name}:{d['name']}", "target_rate", "bar",
@@ -147,7 +147,7 @@ def generate(card: dict, keep: list[str] | None = None) -> list[Candidate]:
         view = "ring" if d["distinct"] <= 5 else "bar"
         out.append(Candidate(
             f"{view}:count:{d['name']}", "count_by_dim", view,
-            f"SELECT {qd}, COUNT(*) AS n FROM t {rows} AND {qd} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC",
+            f"SELECT {qd}, COUNT(*) AS n FROM t {rows} AND {qd} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1",
             f"Rows by {d['name']}", [d["name"]], x=d["name"], agg="count", options={"x": d["name"], "y": "n"}))
 
     for tcol in times:
@@ -181,7 +181,7 @@ def generate(card: dict, keep: list[str] | None = None) -> list[Candidate]:
         qi, qm = ident(idc["name"]), ident(m["name"])
         out.append(Candidate(
             f"table:top:{idc['name']}:{m['name']}", "top_table", "table",
-            f"SELECT {qi}, {qm} FROM t {rows} AND {qm} IS NOT NULL ORDER BY 2 DESC LIMIT 10",
+            f"SELECT {qi}, {qm} FROM t {rows} AND {qm} IS NOT NULL ORDER BY 2 DESC, 1 LIMIT 10",
             f"Top {idc['name']} by {m['name']}", [idc["name"], m["name"]], x=idc["name"], y=m["name"]))
     elif not meas:
         # No numbers: the most common values of each text column (App Flow §18, all-text files).

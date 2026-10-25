@@ -254,15 +254,17 @@ def test_undo_clears_user_edited_cells(setup):
     assert scalar(ctx, "SELECT count(*) FROM user_edited_cells WHERE dataset_id = ?", ds) == 0
 
 
-def test_undo_of_an_earlier_step_needs_replay(setup):
+def test_undo_of_an_earlier_step_asks_then_replays(setup):
     ctx, ds, client = setup
     first, _ = fill_age(ctx, ds)
-    spec = StepSpec(kind="clean", summary="Trimmed names", created_by="cleaner", notebook_code="result = df\ndf = result")
-    commit_step(ctx, ds, 2, spec, sql_step("SELECT * REPLACE (trim(name) AS name) FROM old"))
+    spec = StepSpec(kind="clean", summary="Upper-cased names", created_by="cleaner",
+                    notebook_code="result = df.assign(name=df['name'].str.upper())\ndf = result\n")
+    commit_step(ctx, ds, 2, spec, sql_step("SELECT * REPLACE (upper(name) AS name) FROM old"))
     ask = client.post(f"{API}/datasets/{ds}/steps/{first['id']}/undo", json={"base_version": 3}).json()
     assert ask == {"confirm_required": True, "replay_needed": [2], "warning": None}
     confirmed = client.post(f"{API}/datasets/{ds}/steps/{first['id']}/undo", json={"base_version": 3, "confirm": True})
-    assert confirmed.status_code == 409 and confirmed.json()["error"]["replay_needed"] == [2]
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["version"] == 4
 
 
 def test_undo_of_the_typing_step_warns_first(setup):

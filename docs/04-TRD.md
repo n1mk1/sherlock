@@ -146,6 +146,12 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - **Stores.** `src/state/filters.ts` holds the global filter per dataset. `src/state/ui.ts` adds the Edit layout toggle, the Add widget drawer, the focused widget and the chat thread, plus panel widths and the library rail, kept in `localStorage` under `sherlock.panels`.
     - **Chat.** `sendChat` (`src/api/queries.ts`) reads `POST /chat`'s SSE frames from a `fetch` stream.
     - **Dataset events.** The dashboard opens `GET /datasets/{id}/events` and refetches its widgets on `widget.updated`, `layout.updated` and `version.created`. Any `dataset.status` also refetches the widget list, so the builder's widgets appear when the dataset becomes ready.
+  - **Day 5 additions (2026-10-25, Implementation Plan D5):**
+    - **CSV grid.** `@glideapps/glide-data-grid` 6.0.3 with its peers `lodash`, `marked` and `react-responsive-carousel` (`src/components/csv/Grid.tsx`). Its cell editors open in the `<div id="portal">` in `index.html`. Canvas colors come from the tokens through `src/lib/tokens.ts`, which resolves each CSS variable to `rgba()` and re-resolves when the mode or accent changes.
+    - **Pending edits.** `src/state/edits.ts` (Zustand) holds the buffer per dataset and mirrors it to local storage (Schema §5).
+    - **Popovers.** `@radix-ui/react-popover` 1.1.15 under `src/components/ui/popover.tsx` (Clean with AI).
+    - **Right panel.** On `/d/:id/csv` the right panel is the Changes panel (`src/components/csv/ChangesPanel.tsx`); elsewhere it stays the stories panel.
+    - **One dataset stream.** `useDatasetEvents` (`src/api/queries.ts`) opens `GET /datasets/{id}/events` once per open dataset in `DatasetPage`, for every tab. It replaces the dashboard's own stream and adds `version.created` (dataset, steps, data card, jobs), `card.updated` and the cascade events.
   - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
@@ -220,6 +226,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - Its result is `{ version, widgets, candidates, curated_by: "model"|"fallback", columns_used? }`, with `columns_used` only for wide files.
     - A dataset that already has widgets keeps them. The job reports "Keeping the dashboard", and its result is `{ version, widgets, kept: true }`.
     - A failed or cancelled build still sets the dataset to `ready`, with whatever widgets were made.
+
+- **`cascade`** (2026-10-25, D5.5, `sherlock/jobs/cascade.py`). Every `version.created` queues one for a dataset that has live widgets (§7.6). **`export_notebook`** (D5.6, `sherlock/jobs/export.py`) builds and writes an export (§7.7).
 
 ### 3.4 Sandbox
 
@@ -390,6 +398,15 @@ As built (2026-10-24), `Dataset` adds two counts for the library row and the ver
 - `issue_count`: the issues on the current version's DataCard, or `null` until that card is built
 - `step_count`: the steps in the current version's effective chain
 
+Notebook export as implemented (2026-10-25, Implementation Plan D5.6, `sherlock/routers/exports.py`):
+- **`POST /datasets/{id}/exports/notebook`** answers `201` with `{ export_id, job_id, cached, status, version, counts, error, download_url? }`.
+  - It's `409` while the dataset is `profiling` or `failed`.
+  - The options (all but `up_to_step`) are stored as the user's `settings_json.notebook`.
+  - The cache key is `sha1("notebook", current_version, state_rev, options)`. A `done` export whose file still exists is returned with `cached: true` and its `download_url`; a `queued` or `running` one is returned as it is; a failed one, or one whose file is gone, is replaced by a new job.
+- **`GET /exports/{export_id}`** returns the same shape. **`GET /exports/{export_id}/download`** streams the file as `<name>-v<version>.ipynb` (the name's `.csv` and " (sample)" dropped, like `export.csv`); it's `409` until the export is done and `404` once its file is gone.
+- **`GET /datasets/{id}/exports/notebook/preview`** takes any of the options as query parameters and fills the rest from the remembered ones. It answers `{ version, notes, counts: { steps, widgets, runs, cards }, options }`.
+- **`PUT /me/settings`** keeps keys that aren't settings, such as `notebook`, when it saves.
+
 ### 4.3 Rows (CSV tab)
 
 | Method | Path | Body / Query | Response |
@@ -460,7 +477,9 @@ Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/router
   - A stale `base_version` is `409 conflict` with `current_version`.
   - A step that isn't in the effective chain, including an undo step or an already-undone step, is `409`.
   - The typing step (kind `clean`, created by `system`) with `confirm: false` answers `200 { confirm_required: true, replay_needed: [], warning: "typing" }`.
-  - Undo of an earlier step with `confirm: false` answers `confirm_required` with the step numbers to replay. Once confirmed, it's `409` with `replay_needed`, because replay is Implementation Plan D5.5.
+  - Undo of an earlier step with `confirm: false` answers `confirm_required` with the step numbers to replay. Once confirmed, the later steps are replayed (§7.8, D5.5, 2026-10-25) and it answers `{ step, version }`; the undo step carries `replayed_step_ids`.
+  - A replay that can't apply is `409` with `failed_step_id` and `reason` (for example "it edits row 1310, which no longer exists"), and nothing is written.
+  - An undo with both a replay and the typing warning reports both.
   - Otherwise it answers `{ step, version }`.
 - **Error extras.** Extra fields of a `409` (`current_version`, `replay_needed`, and later `failed_step_id`, `reason`) go inside the `error` object of the envelope (§4).
 
@@ -650,6 +669,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`,
 - **Emitted so far:**
   - `dataset.status`, `job.progress`, `job.log`, `job.done` and `job.failed`, from the runner and the profile job.
   - `version.created`, from `commit_step` and undo. Its `rows_removed` is the step's `impact.rows_deleted`.
+  - `cascade.started` and `cascade.done`, from the `cascade` job (2026-10-25, D5.5), and its `widget.updated` per widget. `cascade.done`'s `counts` is `{ widgets, errors, cards, runs }`.
 - **Wire format.**
   - A stream opens with `retry: 3000`.
   - Each event is `id`, `event` and one `data` line of compact JSON.
@@ -1178,6 +1198,12 @@ emit cascade.done
 
 Debounce: cascade jobs for the same dataset within 2 s coalesce. Cards for synthesis get `sources_changed` when any source card's material hash changed.
 
+Cascade v0 as implemented (2026-10-25, Implementation Plan D5.5, `sherlock/jobs/cascade.py`):
+- **Trigger.** `emit_version_created` (every commit and undo) queues a `cascade` job when the dataset has a live widget. A cascade that is queued, or running but still in its 2 s wait, absorbs the next one, so saves within 2 s cascade once. The job waits until 2 s after it was queued, then reads the dataset's current version.
+- **Work.** Every live widget re-runs its query on that version through the data cache, its `version_built` is set (status `ready`, or `error` with the reason), and `widget.updated` is emitted. `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
+- **Not yet.** Column-level dependencies, cards and runs come with D6 (cards, cut 6 applied: no material hash) and D7 (runs).
+- **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16).
+
 ### 7.7 Notebook exporter
 
 Job kind `export_notebook`, input `(dataset, version = current, NotebookOptions)`. Cache key `sha1(kind, version, datasets.state_rev, options)` → `exports` row; a hit returns the existing file unless it has been purged, in which case the export runs again.
@@ -1220,6 +1246,20 @@ Rules:
 - Size: embedded table outputs are capped at 50 rows per cell; the notebook stays under 5 MB without images.
 - `up_to_step` (the "Export up to step k" fallback): the effective chain stops before step k, the assertion checks that earlier version, and the first cell says so.
 
+As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
+- **Modules.** `exporter.py` (options, cache key, `build`, preview), `cells.py` (one renderer per cell kind, in one module rather than a `cells/` folder), `outputs.py` (embedded tables), `vendored_helpers.py` (the helpers cell), `scan.py` (the allowlist scan). Run reproduction (`repro_render.py`) comes with D7.5.
+- **Matching the app exactly.** The app stores every version as Parquet and each step reads the previous one back through DuckDB, which decides the column types. The notebook makes the same round trip, so it rebuilds identical values and dtypes:
+  - `keep_types(df, types)` casts each column to its DuckDB type in the app's version and reads it back. The load cell and every edit batch end with it (edit batches never change a column's type).
+  - `store_step(result, types)` stores a cleaning step's `result` with the sandbox's own `output_select` (vendored from `sherlock/sandbox/worker.py`: a column keeps its type where pandas only changed it in transit) and returns the new types. Every cleaning step's cell ends with it.
+  - The typing step runs its stored DuckDB statement and takes its types from the result.
+  - The notebook carries `types` from cell to cell; the assertion cell checks the row count, the column order and `types` against the version.
+- **Load cell.** It decodes `DATA_PATH` with the recorded encoding into `<stem>.utf8.csv`, reads it with the import's `read_csv` options (`all_varchar`, `null_padding`, delimiter, header, skip), names the columns as the import named them (from version 1's columns), and adds `_row_id` (1…n) and an empty `_quarantine_reason`.
+- **Scoped cleaning.** A step from a clean scoped to some rows, or that left hand-edited cells alone, now stores its scope in its `notebook_code`: `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`. `keep_outside_scope` is a cleaning helper, so the sandbox (for replay, §7.8) and the notebook apply the same restriction the Cleaner applied.
+- **Helpers cell.** The used helpers (from each step's `helpers_used`) with the module's private functions and constants they rely on, then `output_select`, `keep_types` and `store_step`.
+- **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5.
+- **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
+- **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
+
 ### 7.8 Undo and replay
 
 Undo applies only to steps in the current version's effective chain E; `undo` steps are never in E and have no Undo button (redo is P1). Undo of the last step in E: the new current version is the latest version whose effective chain equals E without that step (a new version row pointing at that version's Parquet, step kind `undo`); if no such version exists, it is rebuilt from v1 by replaying that chain. Undo of an earlier step k in E: confirm with the client; start from the latest version whose effective chain equals the part of E before k (rebuild from v1 if none exists), then re-apply the steps that follow k in E, in order (re-running their code or re-applying their edit lists by `_row_id`), so steps undone earlier never come back; if any re-application fails or its verifiers fail, abort and return `409` with the failing step; on success, write one `undo` step whose `to_version` is the replayed result and record `replayed_step_ids`. Every new version stores `effective_step_ids`: the parent's list plus the new step, or, for an undo of step k, the list without k. Replayed steps write fresh lineage rows under their own step ids for the new version. Lineage marks and cell history are read for the current version through its effective chain, using for each step only its rows with the greatest `version` not above the current version, so undone changes drop out and replays do not duplicate, and `user_edited_cells` rows whose step is undone are deleted.
@@ -1241,7 +1281,11 @@ Implementation (2026-10-24, Implementation Plan D2.3, `sherlock/steps/`):
 - **One transaction.** It writes the step (`no` = max + 1), the version (effective chain = the parent's plus the step), the lineage, and `user_edited_cells` for edit steps. It updates `current_version`, `row_count`, `column_count`, `next_row_id` (never lowered), `state_rev + 1`, `folder_bytes` and `users.storage_bytes`.
 - **Re-profile.** The new version's DataCard is then built and stored.
 - **Undo of the latest step** writes a version row that points at the Parquet of the latest version whose effective chain equals the chain without that step, so no data is rewritten. It also writes a `kind = 'undo'` step (`created_by = 'user'`, the comment `notebook_code`, `undone_step_id`), deletes the step's `user_edited_cells`, bumps `state_rev`, and re-profiles.
-- **Not yet.** Rebuilding from v1 and replaying later steps are Implementation Plan D5.5.
+- **Replay** (2026-10-25, Implementation Plan D5.5, `sherlock/steps/replay.py`, `undo.py`).
+  - The new chain is the current one without the step. If a version has exactly that chain, the undo points at its Parquet as before. Otherwise it starts from the latest version whose chain is the longest prefix of the new chain (version 1 at worst) and replays the rest into `versions/v<new>.parquet`.
+  - **Re-applying a step.** An edit batch re-applies its stored edit list by `_row_id`, typed to the columns as they are then; an edit to a row or column that no longer exists fails, and deleting a row that's already gone is skipped. The typing step re-runs its DuckDB statement. A cleaning step re-runs its notebook code (its code and, for a scoped clean, its scope) in the sandbox.
+  - **Checks.** Each replayed step must run, keep `_row_id` unique and non-null, and (cleaning steps) keep every row; else the replay stops with the step and the reason, and the undo is `409` with nothing written.
+  - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). The impact is the diff between the old current version and the new one.
 - **Edit batches.** `render_edit_batch` (`sherlock/steps/notebook.py`) renders an edit batch's `notebook_code` as the pandas in §6.7: `.loc` assignments grouped by column, quarantine restores, `pd.concat` for new rows, and `~isin` for deletions. Values are typed to the column's DuckDB type, and a test runs the rendered code on a DataFrame.
 
 ### 7.9 Lineage reads
@@ -1509,6 +1553,11 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.
+
+- **Notebook execution as built** (2026-10-25, D5.6).
+  - `tests/test_notebook.py` runs on every `uv run pytest`: on the sample it commits a sandboxed cleaning step (with helpers), two edit batches (cells, an invalid value, a new row, a deleted row) and an undo that replays the second, exports, executes the notebook with `nbclient` and a real kernel (the requirements cell skipped, since the test environment has the pins), and asserts (a) no cell errors, (b) the rebuilt DataFrame equals the version (`assert_frame_equal` with dtypes, by `_row_id`) and (c) each widget's table equals the app's widget data. (d) waits for runs (D7.5).
+  - `uv run sherlock eval notebook [--sets all]` does the same in a **fresh virtualenv per file**: `uv venv --seed`, only `nbclient` and `ipykernel` installed, and the notebook's own `%pip install` cell installs the pinned libraries. On 2026-10-25 titanic3, sales_dated, wide_messy and reviews_text all ran top to bottom and rebuilt their version after an undo with replay (77–93 s each). `broken_latin1.txt` needs header row 3 set at import, so the eval leaves it out.
+  - `api` dev dependencies add `nbclient` and `ipykernel`; `nbformat` and `matplotlib` (pinned to `NOTEBOOK_PINS`) are runtime dependencies, with `scikit-learn` and `statsmodels` for D7.
 
 ---
 

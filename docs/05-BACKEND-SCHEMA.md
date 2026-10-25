@@ -130,6 +130,8 @@ CREATE TABLE steps (
 CREATE INDEX steps_dataset ON steps(dataset_id, no DESC);
 ```
 
+As built (2026-10-25): a cleaning step from a scoped clean (some rows, or hand-edited cells kept) ends its `notebook_code` with `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`, so the notebook and a replay apply the same scope (TRD §7.7–§7.8). An undo step's `replayed_step_ids_json` lists the steps it replayed (D5.5).
+
 ### 2.6 lineage
 
 One row per changed cell per step per version that application of the step produced (a replay adds rows). For Titanic-scale data this is small; for 500k-row files it can be large, so it is append-only and indexed by `(dataset_id, row_id, column)`.
@@ -502,6 +504,8 @@ CREATE INDEX exports_dataset ON exports(dataset_id, created_at DESC);
 ```
 
 A new version does not delete older exports (they are still valid for their version); the purge job removes export files older than 24 h and their rows.
+
+As built (2026-10-25, D5.6): `version` is the version the notebook rebuilds (the current one, or the earlier one for `up_to_step`), set when the job finishes. The user's last options are kept in `users.settings_json.notebook`.
 
 ### 2.20 schema_migrations
 

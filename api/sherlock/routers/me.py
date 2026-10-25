@@ -64,5 +64,5 @@ def put_settings(
     current = users.get(conn, user.id)
     stored = current.settings if current else {}
     updated = effective_settings(stored | body.model_dump(exclude_unset=True))
-    users.save_settings(conn, user.id, updated.model_dump())
+    users.save_settings(conn, user.id, stored | updated.model_dump())  # keeps other keys, e.g. `notebook`
     return updated

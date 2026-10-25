@@ -298,8 +298,10 @@ export function useWidgetActions(datasetId: string) {
   };
 }
 
-/** The dataset stream (GET /datasets/{id}/events): widget and layout changes made elsewhere. */
-export function useDashboardEvents(datasetId: string) {
+/** The dataset stream (GET /datasets/{id}/events), one per open dataset: new versions refresh the
+ * dataset, its steps, rows and data card; widget and layout changes refresh the dashboard; the
+ * cascade (TRD §7.6) drives the "Updating n widgets" line and its summary toast. */
+export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "started" | "done"; data: Record<string, unknown> }) => void) {
   const qc = useQueryClient();
   useEventStream(`/api/v1/datasets/${datasetId}/events`, {
     "widget.updated": () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
@@ -307,6 +309,16 @@ export function useDashboardEvents(datasetId: string) {
     "version.created": () => {
       qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
+      qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
+      qc.invalidateQueries({ queryKey: ["datacard", datasetId] });
+      qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
+    },
+    "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
+    "cascade.started": (data) => onCascade({ type: "started", data: data as Record<string, unknown> }),
+    "cascade.done": (data) => {
+      onCascade({ type: "done", data: data as Record<string, unknown> });
+      qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
+      qc.invalidateQueries({ queryKey: ["widget-data"] });
     },
   });
 }

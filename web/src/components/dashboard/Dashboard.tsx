@@ -6,7 +6,7 @@ import "react-grid-layout/css/styles.css";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Responsive, type Layout as GridLayout, type Layouts } from "react-grid-layout";
 import { toast } from "sonner";
-import { useDashboardEvents, useDatacard, useWidgetActions, useWidgets } from "@/api/queries";
+import { useDatacard, useWidgetActions, useWidgets } from "@/api/queries";
 import type { Dataset, Layout, LayoutItem, Widget, WidgetData } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { useUi } from "@/state/ui";
@@ -19,7 +19,6 @@ const COLS = { lg: 12, md: 8, sm: 4 };
 type Bp = keyof typeof COLS;
 
 export function Dashboard({ dataset }: { dataset: Dataset }) {
-  useDashboardEvents(dataset.id);
   const { data, isLoading, error } = useWidgets(dataset.id);
   const card = useDatacard(dataset.id);
   const { saveLayout } = useWidgetActions(dataset.id);

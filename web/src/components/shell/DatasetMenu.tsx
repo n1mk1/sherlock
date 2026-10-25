@@ -1,6 +1,6 @@
-// The dataset menu (⋯, UI/UX brief §5.14), on every tab: Download CSV, Rename, Delete. Export notebook
-// joins it with the exporter (Implementation Plan D5.6). Delete confirms, then offers Undo for 10 s.
-import { Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+// The dataset menu (⋯, UI/UX brief §5.14), on every tab: Export notebook, Download CSV, Rename,
+// Delete. Delete confirms, then offers Undo for 10 s.
+import { BookOpen, Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,6 +9,8 @@ import type { Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { useUi } from "@/state/ui";
+import { exportBlocked } from "./ExportDialog";
 
 export function useDatasetCommands(dataset: Dataset) {
   const rename = useRenameDataset();
@@ -90,6 +92,8 @@ export function DatasetMenu({ dataset }: { dataset: Dataset }) {
   const cmd = useDatasetCommands(dataset);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const setExportOpen = useUi((s) => s.setExportOpen);
+  const blocked = exportBlocked(dataset);
   return (
     <>
       <MenuRoot>
@@ -103,6 +107,9 @@ export function DatasetMenu({ dataset }: { dataset: Dataset }) {
           </button>
         </MenuTrigger>
         <MenuContent>
+          <MenuItem onSelect={() => setExportOpen(true)} disabled={!!blocked}>
+            <BookOpen /> Export notebook<span className="ml-auto pl-4 font-mono text-[11px] text-muted-foreground">{blocked ?? "Ctrl+Shift+E"}</span>
+          </MenuItem>
           <MenuItem onSelect={cmd.downloadCsv} disabled={dataset.current_version === 0}><Download /> Download CSV</MenuItem>
           <MenuItem onSelect={() => setRenaming(true)}><Pencil /> Rename</MenuItem>
           <MenuSeparator />

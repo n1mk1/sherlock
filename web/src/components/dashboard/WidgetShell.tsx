@@ -70,7 +70,9 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
       { id: widget.id, body: { view: { type, options: widget.spec.view.options } } },
       { onError: (e) => toast.error((e as Error).message) },
     );
-  const updating = query.isFetching && !!query.data;
+  // Updating: a filter re-query, or the cascade re-running this widget after a new version (App Flow §16).
+  const inCascade = useUi((s) => s.cascade[widget.dataset_id]?.widgetIds.includes(widget.id) ?? false);
+  const updating = (query.isFetching && !!query.data) || inCascade;
 
   return (
     <article

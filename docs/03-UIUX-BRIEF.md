@@ -289,6 +289,8 @@ Glide Data Grid themed from tokens:
 
 Row height 32px; header 56px. Editors open in place with the same height.
 
+As built (2026-10-25, D5): Glide draws on a canvas, so each style is drawn in code from the resolved tokens. Changed: `--changed` fill and the 2px `--info` top line. Flagged: a dashed `--warning` inset outline. Invalid: a 1px `--destructive` underline. Unsaved: `--unsaved` fill, a 1px `--accent` outline and a 4px `--accent` dot. Find matches: `--accent-soft` fill. Quarantined and to-be-deleted rows: muted text and a struck-through row number. The header draws the name (600, with ↑/↓ when sorted), "type · n% missing" and a 14px mini histogram (numeric bins, or category counts) in `--chart-3`. Number and boolean cells are mono; numbers right-aligned.
+
 ### 4.8 Chat bar and thread
 
 - Bar: max 680px wide, centred, `--card` surface, 1px `--border`, radius 14, 52px tall, input 14px, send button 40 × 40 primary. Context chip on the left when present. `/` hint on the right.
@@ -418,9 +420,13 @@ As built (2026-10-25, Implementation Plan D4.4–D4.7):
 
 Toolbar (40px): Add row, Add column (P1), Find (opens an inline find bar under the toolbar), Filter (toggles header filter row), Clean with AI (secondary with sparkle icon), Download (ghost, opens a menu: CSV · Notebook (.ipynb)). Right: the legend (three swatches with labels, label size). Header line: dataset name, version pill, unsaved count in `--accent`, Discard (ghost), Review changes (link), Save changes (n) (primary; disabled at 0). Grid fills the rest. Status bar 28px: left "3 cells · sum 452 · avg 150.7 · min 2 · max 300", right "Row 9 · home.dest".
 
+As built (2026-10-25, cut 5): the toolbar holds Add row, Delete row, Restore (when it applies), Find, Clean with AI (secondary, sparkle icon), Download (ghost menu) and the legend on the right; the unsaved count, Discard and Save changes (n) (or "Rebase and save") are in the context row. The find bar is 40px under the toolbar: an input, Find, the match count, ×.
+
 ### 5.7 Changes panel (right, CSV tab)
 
 Title "Changes" with the version pill. "Unsaved (yours)" card with accent border when non-empty. "Steps" overline, then step cards: number (mono, muted) · summary (title-sm) · detail line (label, muted) · Undo (secondary, 28px). The latest step has a `--border-strong` outline. Expanding a step reveals a code block (mono, `--muted` fill, Shiki-highlighted) or the edit list, then the impact lines. Footer links: Full cleaning report · Export notebook · Export pipeline (P1).
+
+As built (2026-10-25): the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one.
 
 ### 5.8 ML setup (inside a widget)
 
@@ -459,6 +465,8 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 Centred dialog, max 520px. Title "Export notebook" (display). One body-sm sentence describing what will be rebuilt, with the counts in mono. Four checkboxes (shadcn Checkbox, label on the right, help text in muted under each). The Order segmented control (two segments; the disabled one carries a tooltip). Conditional notes in a `--muted` box with the warning icon (job running, unsaved edits) and, for unsaved edits, a secondary "Save and export" button inside the box. Footer: Cancel (ghost), Export (primary). The `notebook` lucide icon (`book-open`) is used for every Export notebook entry point; "Export notebook" is the label everywhere, never "Download .ipynb" alone.
 
 Progress: a toast "Preparing notebook…" with a 2px `--accent` progress line; on completion the toast reads "Notebook ready" with "Download again" (link). Export is never a blocking modal.
+
+As built (2026-10-25): the title is in the serif display face; the checkboxes are native, tinted with `--accent`; the Flow reading path segment is shown dimmed with its tooltip and can't be chosen. The progress is sonner's loading toast rather than a 2px line.
 
 ### 5.14 Dataset menu (⋯)
 

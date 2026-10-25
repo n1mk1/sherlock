@@ -39,6 +39,10 @@ interface UiState extends Panels {
   addWidgetOpen: boolean;     // the Add widget drawer
   focusedWidgetId: string | null; // the widget the chat's context chip names
   chatOpen: boolean;          // the thread above the chat bar
+  exportOpen: boolean;        // the Export notebook dialog (App Flow §17)
+  setExportOpen: (open: boolean) => void;
+  cascade: Record<string, { version: number; widgetIds: string[]; cardIds: string[] }>; // dataset_id → running cascade
+  setCascade: (datasetId: string, c: { version: number; widgetIds: string[]; cardIds: string[] } | null) => void;
   setEditLayout: (on: boolean) => void;
   setAddWidgetOpen: (open: boolean) => void;
   setFocusedWidget: (id: string | null) => void;
@@ -69,6 +73,16 @@ export const useUi = create<UiState>((set, get) => ({
   addWidgetOpen: false,
   focusedWidgetId: null,
   chatOpen: false,
+  exportOpen: false,
+  setExportOpen: (exportOpen) => set({ exportOpen }),
+  cascade: {},
+  setCascade: (datasetId, c) =>
+    set((s) => {
+      const cascade = { ...s.cascade };
+      if (c) cascade[datasetId] = c;
+      else delete cascade[datasetId];
+      return { cascade };
+    }),
   setEditLayout: (editLayout) => set({ editLayout }),
   setAddWidgetOpen: (addWidgetOpen) => set({ addWidgetOpen }),
   setFocusedWidget: (focusedWidgetId) => set({ focusedWidgetId }),

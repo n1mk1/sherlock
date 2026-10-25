@@ -27,7 +27,7 @@ _DATE_FORMATS = {
 __all__ = [
     "strip_sentinels", "parse_numbers", "parse_dates_smart", "normalize_whitespace_case",
     "canonicalize_categories", "extract_pattern", "fill_by_group", "flag_rows", "quarantine_rows",
-    "fix_encoding", "parse_failures",
+    "fix_encoding", "parse_failures", "keep_outside_scope",
 ]
 
 
@@ -227,3 +227,26 @@ def parse_failures(original: pd.Series, parsed: pd.Series) -> pd.Series:
     """Rows where `original` had a real value (not a placeholder) but the parse gave nothing."""
     had = original.notna() & ~_text(original).astype(str).str.lower().isin(SENTINELS)
     return had & parsed.isna()
+
+
+def keep_outside_scope(before: pd.DataFrame, after: pd.DataFrame, rows=None, cells=()) -> pd.DataFrame:
+    """`after` with its changes kept only where a scoped clean may make them: rows outside `rows`
+    (a list of `_row_id`s; None means every row is in scope) and the hand-edited `cells`
+    (`(_row_id, column)` pairs) take their values from `before` again. A hand-edited cell in a
+    column whose type the step changed keeps the new value, since its text can't be kept.
+    The Cleaner applies this to a scoped step, and the step's notebook code repeats it."""
+    if rows is None and not cells:
+        return after
+    out = after.set_index("_row_id")
+    b = before.set_index("_row_id")
+    if rows is not None:
+        allowed = set(int(i) for i in rows)
+        outside = [i for i in b.index if i not in allowed]
+        for c in [c for c in b.columns if c in out.columns]:
+            if outside:
+                out.loc[outside, c] = b.loc[outside, c]
+    for rid, col in cells:
+        if rid in out.index and col in out.columns and str(out.at[rid, col]) != str(b.at[rid, col]):
+            if out[col].dtype == b[col].dtype:
+                out.at[rid, col] = b.at[rid, col]
+    return out.reset_index()

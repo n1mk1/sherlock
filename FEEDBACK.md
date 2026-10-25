@@ -222,3 +222,13 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - Drag is restricted to a handle with `draggableHandle`, and `draggableCancel` keeps clicks on buttons and charts.
   - `WidthProvider` failed the re-measure check: it measured the container as 0 when the tab mounted and never measured again, so the grid stayed on its 4-column layout. The dashboard now measures its container with its own `ResizeObserver` and passes `width`.
   - `react-resizable`'s stylesheet isn't reachable under pnpm's strict layout, so the resize corner is styled in `index.css`.
+- **2026-10-25, Glide Data Grid check (Implementation Plan §2.0, before D5.1). It passed.**
+  - **Setup.** `@glideapps/glide-data-grid` 6.0.3 (the `latest` tag; 6.0.4 is still alpha), with its peers `lodash`, `marked` and `react-responsive-carousel`. It works with React 18.
+  - **Pass rules.**
+    - Editing: yes. The overlay editor needs a `<div id="portal">` in the page; without it double-click selects but no editor opens, and nothing says why.
+    - Range selection: yes (`rangeSelect="multi-rect"`, drag and Shift+click).
+    - Range paste: not shown. A synthetic `paste` event with a `DataTransfer` didn't reach the grid in the automated browser, so it wasn't verified. Cut 5 removes TSV paste, so it isn't needed.
+    - Theme from the CSS variables: yes, once each token is resolved to `rgba()` in code. The canvas can't read `var(--accent)` or `color-mix()`, so a helper reads the computed color through a probe element and a 1 × 1 canvas.
+    - 500,000 rows with a paged data source: yes. The scroll area is 17 M px tall, a jump to row 294,119 drew a loading cell and then the page, and `updateCells` redraws only the fetched page.
+  - **Fill handle** was turned on but not tried (cut 5).
+  - **Result.** No fallback was needed. The CSV tab uses Glide with a paged source of 200 rows a page.

@@ -64,6 +64,9 @@ def emit_version_created(ctx: Context, dataset: sqlite3.Row, step: dict, version
         "cells_changed": impact["cells_changed"], "rows_added": impact["rows_added"],
         "rows_removed": impact["rows_deleted"],
     }, job_id=step["job_id"])
+    from sherlock.jobs.cascade import queue_cascade
+
+    queue_cascade(ctx.db, dataset)  # the dashboard follows the new version (TRD §7.6)
 
 
 def conflict(message: str, **extra) -> ApiError:

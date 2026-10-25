@@ -3,8 +3,9 @@
 // browser. Below 1024px the side panels become slide-overs opened from the header.
 import { Menu, PanelRight } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useMatch } from "react-router-dom";
 import { useLibraryEvents } from "@/api/queries";
+import { ChangesPanel } from "@/components/csv/ChangesPanel";
 import { DropOverlay } from "@/components/library/DropOverlay";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
@@ -18,6 +19,8 @@ const RAIL = 56;
 export function AppShell() {
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen, setProgress, railed, leftWidth, rightWidth, setPanelWidth } = useUi();
   useLibraryEvents(setProgress);
+  // The right panel is Changes on the CSV tab (App Flow §8.1), stories elsewhere.
+  const csv = useMatch("/d/:datasetId/csv");
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} width={railed ? RAIL : leftWidth}
@@ -35,7 +38,7 @@ export function AppShell() {
       </main>
       <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
         onResize={(w) => setPanelWidth("right", w)}>
-        <StoriesPanel />
+        {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : <StoriesPanel />}
       </SidePanel>
       <DropOverlay />
       <ImportPreviewDialog />

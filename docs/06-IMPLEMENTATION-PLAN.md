@@ -144,6 +144,16 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 **Exit**: edit cells and add a row on Titanic, save → a new version (v8) appears, widgets re-query (cascade v0: all widgets), the step shows in Changes with Undo, and undo produces v9 with v7's data. **Export notebook → the `.ipynb` runs top to bottom in a fresh venv and rebuilds the current version, including after the undo.**
 
+**Done 2026-10-25, within cut 5** (as built, in the TRD, App Flow §8 and §17, and the UI/UX brief §4.7, §5.6–§5.7 and §5.13):
+- [x] D5.1 within cut 5: the paged Glide grid (the 1-hour check passed, `FEEDBACK.md`), header type, missing share and mini histogram, the changed, flagged, invalid and unsaved marks.
+- [x] D5.2 within cut 5: cell edits, add row, delete row, Save with conflicts ("Rebase and save", keep mine or theirs), Discard, the buffer in local storage.
+- [x] D5.3 within cut 5: Find, Clean with AI (whole dataset, selection, new rows; the pending-edits guard), the Download menu.
+- [x] D5.4: the Changes panel (unsaved lines, steps with code or edit list, impact and decisions, Undo with the replay and typing confirmations). Code is shown in a plain mono block: Shiki wasn't added.
+- [x] D5.5: undo with replay, cascade v0 (every widget re-queried after a commit), "Run cleaning on the n new rows" from the save toast.
+- [x] D5.6: notebook export v0 with the execution test (pytest) and the fresh-venv eval (`sherlock eval notebook`).
+- [x] D5.7 within cut 5: Restore for quarantined rows (select cells in them, then Restore).
+- Exit, checked: an edit and a new row saved as a new version, the widgets re-queried (toast), the step in Changes with Undo, the undo made the next version with the earlier data, and the exported notebook ran and rebuilt the current version after the undo, in a fresh venv for four sample files.
+
 ### Day 6 · Oct 25: stories and the cascade
 
 **Must**
@@ -217,7 +227,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts: verifiers, gate and helpers done 2026-10-24 (D3.1); the loop, prompts, `POST /clean`, `GET /report` and the `clean` job done 2026-10-24 (D3.2); the owner's two cleaning-quality decisions (missing values stay missing; reviewer concerns don't block a commit) applied 2026-10-24
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
-- [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay (D5.5) remains
+- [x] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay done 2026-10-25 (D5.5)
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets wait for D7
 - [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the driver widget is D7.2 and the custom-chart candidates are D6.5
@@ -226,7 +236,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [ ] `canvas/` model, persistence, pruning
-- [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test
+- [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3)
 - [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
 - [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`)
@@ -243,12 +253,12 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] cleaning: offer, in-progress (log, so-far, checks), report view
 - [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button and the outdated state (it comes with runs, D7)
 - [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom charts are D6.5, brushing is cut 8, the accessible summary comes with fact sheets (D6)
-- [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus
+- [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats)
 - [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells
 - [ ] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight
 - [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist
 - [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9
-- [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points
+- [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points: done 2026-10-25 (D5.6) but the Flow palette entry (D8) and the dialog's Save and export button (the note tells the user to save first)
 - [ ] Playwright flow test (ends with Export notebook → file downloaded)
 
 ---
@@ -260,7 +270,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Install | `cd api && uv sync` · `cd web && pnpm install` |
 | Run locally | `docker compose up` or `uv run uvicorn sherlock.main:app --reload` + `pnpm dev` |
 | Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` |
-| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-24 only `corruption` runs; the others answer that they come with D4, D5.6, D6 and D7, and exit 2 |
+| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-25 `corruption`, `ask` and `notebook` run (`notebook` takes `--sets a.csv,b.csv` or `all` for the end-to-end set); the others answer that they come with D6 and D7, and exit 2 |
 | Clean a file headless | `uv run sherlock clean <file.csv or sample>` (in `api/`): imports it, prints the live log and the report (D3.5) |
 | Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |
 | Export a notebook from the CLI | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |

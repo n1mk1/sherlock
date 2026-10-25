@@ -182,7 +182,7 @@ def test_cancel_running_job_and_log(client, monkeypatch):
 def test_kind_without_handler_fails(client):
     ds = upload(client)
     wait_status(client, ds["id"], "offer")
-    job_id = _start(client, ds["id"], "cascade")
+    job_id = _start(client, ds["id"], "purge")
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "failed" and j)
     assert "No handler" in job["error"]
 
@@ -362,3 +362,26 @@ def test_sse_heartbeat(live, monkeypatch):
 
 def test_runner_constants_match_trd():
     assert runner_mod.HEARTBEAT_S == 10 and runner_mod.STALE_S == 60 and streams.HEARTBEAT_S == 15
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_save_cascades_to_every_widget_once(client):
+    """Cascade v0 (TRD §7.6, D5.5): a commit re-queries every widget on the new version; saves
+    within the debounce window share one cascade."""
+    ds = client.post(f"{API}/datasets/sample").json()
+    wait_status(client, ds["id"], "offer")
+    client.post(f"{API}/datasets/{ds['id']}/use-as-is")
+    d = wait_status(client, ds["id"], "ready")
+    v = d["current_version"]
+    a = client.post(f"{API}/datasets/{ds['id']}/edits",
+                    json={"base_version": v, "edits": [{"row_id": 1, "column": "age", "value": "1"}]}).json()
+    client.post(f"{API}/datasets/{ds['id']}/edits",
+                json={"base_version": a["version"], "edits": [{"row_id": 2, "column": "age", "value": "2"}]})
+    jobs = wait_for(lambda: (js := [j for j in client.get(f"{API}/jobs?dataset_id={ds['id']}").json()
+                                    if j["kind"] == "cascade"]) and all(j["status"] == "done" for j in js) and js,
+                    timeout=30)
+    assert len(jobs) == 1 and jobs[0]["result"]["version"] == v + 2
+    widgets = client.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]
+    assert widgets and all(w["version_built"] == v + 2 for w in widgets)
+    types = [r[0] for r in db_rows("SELECT type FROM job_events WHERE dataset_id = ? AND type LIKE 'cascade.%' ORDER BY id", ds["id"])]
+    assert types == ["cascade.started", "cascade.done"]

@@ -230,6 +230,12 @@ As built (2026-10-25, Implementation Plan D4.6–D4.7):
 - Status bar (bottom of the grid): selection stats · row count · "Row 9, col home.dest".
 - Right panel: **Changes**.
 
+As built (2026-10-25, Implementation Plan D5, cut 5):
+- **Toolbar.** Add row · Delete row (the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (CSV · Notebook (.ipynb)) · the legend. Add column, the Filter row and quick views aren't there (P1 and cut 5).
+- **Header.** "n unsaved changes", Discard and Save changes (n) sit in the context row on the right, before the job tray, when there are pending edits. Review changes is cut (cut 5); the Changes panel's "Unsaved (yours)" list removes single lines instead.
+- **Grid.** A frozen first column shows `_row_id` ("new" for a pending row), struck through for quarantined rows and rows marked for deletion. New rows appear at the top until saved. A header click sorts by that column (ascending, descending, off); the status bar says the sort is a view only.
+- **Status bar.** The number of selected cells, the row count (and sort), the unsaved count, and the current cell ("Row 9 · home.dest"). Selection stats are cut (cut 5).
+
 ### 8.2 Editing flow
 
 1. The user edits cells, adds or deletes rows, pastes, fills, or uses find-and-replace. Each action creates **pending edits** (client-side buffer, mirrored to local storage keyed by dataset and version).
@@ -241,6 +247,8 @@ As built (2026-10-25, Implementation Plan D4.6–D4.7):
 7. **Discard** clears the buffer after confirmation.
 
 Conflicts: if a background job commits a new version while edits are pending (e.g. "Clean with AI" started from chat), the Save button becomes "Rebase and save" and the edits are reapplied on the new version by `_row_id`; edits to cells that the job also changed are listed for the user to resolve (keep mine / keep theirs).
+
+As built (2026-10-25): double-click, Enter or typing edits a cell in place with a text editor; a value that doesn't fit the column's type gets the invalid underline and can be kept. Typing a cell's original value back removes that edit. Undo/redo of pending edits and copy, paste and fill are cut (cut 5). A save whose base is stale is resent automatically when no edited cell changed in between; otherwise a dialog lists each conflict (row, column, yours, theirs) with Mine or Theirs, then "Rebase and save". The save toast's Undo undoes the step; a second toast offers "Clean them" for new rows.
 
 ### 8.3 Cell interactions
 
@@ -255,6 +263,8 @@ Conflicts: if a background job commits a new version while edits are pending (e.
 | Right-click a column header | Sort asc/desc · Filter… · Auto-fit · (P1) Rename · Change type · Hide · Delete · Add computed column. |
 | Select a range then type in chat | The chat context shows "n cells selected"; "clean this" or "standardize these" proposes "Clean n cells in <column>?"; Approve starts Clean with AI on that selection. |
 
+As built (2026-10-25): the provenance tooltip, right-click menus, jump to row and Ctrl+arrow are cut (cut 5); a step's changed cells are listed under the step in the Changes panel instead. **Find** (toolbar) searches every cell; the grid then shows only the matching rows, with the matching cells highlighted, until the find bar is closed (Esc or ×).
+
 ### 8.4 Clean with AI (any time)
 
 Clicking opens a small popover:
@@ -264,6 +274,8 @@ Clicking opens a small popover:
 - **Start**.
 
 It runs as a job with the same live log, shown in a slide-over on the right (the Changes panel) so the grid stays visible. Hand-edited cells are skipped and listed in the report with "Include these next time" as an option.
+
+As built (2026-10-25): the popover's selection scope uses the rows of the selected cells (saved as a selection). While the job runs, the Changes panel shows a "Cleaning…" card with its progress and Stop; each committed step appears in Steps. A whole-dataset clean also sets the dataset to `cleaning`, so the Dashboard tab shows the live log.
 
 ### 8.5 Changes panel
 
@@ -275,6 +287,8 @@ Sections, top to bottom:
 Undo of a non-latest step: a confirmation explains "This undoes step 3 and replays the later steps still in effect (4–7) on top. 2 later steps touch the same column and will be re-run." If a replay fails, the undo is aborted and the reason shown. Undoing the automatic typing step (step 1) also asks first, even when it is the latest step: "Undoing typing turns every column back into text; charts and models that need numbers will stop working."
 
 ---
+
+As built (2026-10-25): steps that aren't in the current data are dimmed and struck through ("undone"); undo steps have no Undo. The undo confirmation names the steps to replay; undoing the typing step gives the typing warning (and the replay sentence too when later steps follow). A failed replay shows its reason in a toast and changes nothing. "Full cleaning report" opens the last report in a drawer.
 
 ## 9. ML from a widget
 
@@ -435,6 +449,8 @@ Available from every tab in every status except `profiling` and `failed`.
 | Keyboard: Ctrl+Shift+E | Any tab |
 | `?export=notebook` | Deep link |
 
+As built (2026-10-25): the dataset menu (⋯, with the shortcut shown, disabled with its reason while profiling or failed), the CSV Download menu, the Changes panel link, Ctrl+Shift+E and `?export=notebook`. The Flow palette and chat entries come with D8.
+
 ### 17.2 The dialog
 
 Title "Export notebook". Body:
@@ -450,6 +466,8 @@ Title "Export notebook". Body:
 1. Export → the dialog closes; a toast "Preparing notebook…" with a progress bar (job in the tray).
 2. On completion the browser downloads `titanic3-v7.ipynb` and, if ticked, `titanic3-raw.csv` (two downloads; on browsers that block the second, the toast offers a link). The toast becomes "Notebook ready" with **Download again** for 1 minute.
 3. A repeat export with nothing changed (same version, same dataset state, same options) downloads instantly from the cache.
+
+As built (2026-10-25): the toast is a loading toast that becomes "Notebook ready" with Download again for 1 minute. The notebook downloads from `/exports/{id}/download`; with Include data the raw CSV follows 0.4 s later from `raw.csv`. The dialog's unsaved-edits note doesn't have the Save and export button yet: it asks the user to save first.
 
 ### 17.4 What's in the file, in order
 

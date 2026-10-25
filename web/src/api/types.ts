@@ -50,6 +50,8 @@ export interface ColumnCard {
   missing: number;
   missing_pct: number;
   distinct: number;
+  histogram?: { bins: number[]; counts: number[] } | null;
+  top_values?: { value: unknown; count: number }[] | null;
 }
 
 export interface DataCard {
@@ -92,6 +94,9 @@ export interface Step {
   impact: { cells_changed: number; quarantined: number; rows_added: number; rows_deleted: number };
   created_by: string;
   active: boolean;
+  column_targets?: string[];
+  flag_reason?: string | null;
+  undone_step_id?: string | null;
 }
 
 export interface CleaningReport {

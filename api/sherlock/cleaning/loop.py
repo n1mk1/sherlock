@@ -28,6 +28,7 @@ import pandas as pd
 
 from sherlock.cleaning import gate, prompts, verifiers
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
+from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
 from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobCancelled, JobContext
@@ -361,8 +362,8 @@ class Cleaner:
             flag_reason = f"{decision.reason}; the review noted: {critique.concerns[0]}"
         spec = StepSpec(
             kind="clean", summary=f"{best.label} ({column})" if column else best.label, created_by="cleaner",
-            notebook_code=best.code.rstrip() + "\ndf = result\n", code=best.code, column_targets=[column] if column else [],
-            helpers_used=[h for h in HELPER_NAMES if h + "(" in best.code], confidence=decision.confidence,
+            notebook_code=self._notebook_code(best.code), code=best.code, column_targets=[column] if column else [],
+            helpers_used=[h for h in HELPER_NAMES if h + "(" in self._notebook_code(best.code)], confidence=decision.confidence,
             gate=decision.gate, flag_reason=flag_reason, parse_failures=full_report.quarantined,
             decisions=[{"question": f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?",
                         "chosen": best.label, "alternatives": [c.label for c, *_ in scored if c is not best],
@@ -495,30 +496,37 @@ class Cleaner:
         return sorted(int(i) for i in df.loc[take, "_row_id"])
 
     def _restrict(self, before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
-        """Keep changes only to rows in scope and to cells nobody edited by hand."""
+        """Keep changes only to rows in scope and to cells nobody edited by hand
+        (`keep_outside_scope`, which the step's notebook code repeats)."""
         if self.allowed is None and not self.protected:
             return after
         out = after.set_index("_row_id")
         b = before.set_index("_row_id")
         out_of_scope = [i for i in b.index if self.allowed is not None and i not in self.allowed]
-        cols = [c for c in b.columns if c in out.columns]
-        for c in cols:
-            if not out_of_scope:
-                break
-            if out[c].dtype != b[c].dtype and not b.loc[out_of_scope, c].equals(out.loc[out_of_scope, c]):
-                raise ScopeError(f"it changes the type of {c}, which can't be done for only some rows")
-            out.loc[out_of_scope, c] = b.loc[out_of_scope, c]
-        kept = []
+        if out_of_scope:
+            for c in [c for c in b.columns if c in out.columns]:
+                if out[c].dtype != b[c].dtype and not b.loc[out_of_scope, c].equals(out.loc[out_of_scope, c]):
+                    raise ScopeError(f"it changes the type of {c}, which can't be done for only some rows")
         for rid, col in self.protected:
-            if rid in out.index and col in out.columns and str(out.at[rid, col]) != str(b.at[rid, col]):
-                if out[col].dtype != b[col].dtype:
-                    continue  # a retyped column can't keep the text; the hand edit's value is parsed with it
-                out.at[rid, col] = b.at[rid, col]
-                kept.append({"row_id": int(rid), "column": col})
-        for k in kept:
-            if k not in self.state.hand_edited_skipped:
-                self.state.hand_edited_skipped.append(k)
-        return out.reset_index()
+            if rid in out.index and col in out.columns and str(out.at[rid, col]) != str(b.at[rid, col])                     and out[col].dtype == b[col].dtype:
+                k = {"row_id": int(rid), "column": col}
+                if k not in self.state.hand_edited_skipped:
+                    self.state.hand_edited_skipped.append(k)
+        return keep_outside_scope(before, after, self._scope_rows(), self._scope_cells())
+
+    def _scope_rows(self) -> list[int] | None:
+        return sorted(self.allowed) if self.allowed is not None else None
+
+    def _scope_cells(self) -> list[tuple[int, str]]:
+        return sorted(self.protected)
+
+    def _notebook_code(self, code: str) -> str:
+        """The step's code for the exported notebook and for replay: a scoped run repeats its scope."""
+        lines = [code.rstrip()]
+        if self.allowed is not None or self.protected:
+            lines.append(f"result = keep_outside_scope(df, result, rows={self._scope_rows()!r}, "
+                         f"cells={[tuple(c) for c in self._scope_cells()]!r})")
+        return "\n".join(lines) + "\ndf = result\n"
 
 
 class ScopeError(Exception):
