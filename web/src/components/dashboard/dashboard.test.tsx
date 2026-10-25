@@ -7,7 +7,7 @@ import { formatCell, formatNumber, isPctColumn } from "@/lib/format";
 import { useFilters } from "@/state/filters";
 import { mockApi, renderAt } from "@/test/render";
 import { templateSpec } from "./AddWidgetDrawer";
-import { derive } from "./Dashboard";
+import { derive, toStored } from "./Dashboard";
 import { compatibleViews, WidgetShell } from "./WidgetShell";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -43,6 +43,16 @@ describe("dashboard helpers", () => {
     ];
     const sm = derive(lg, 4);
     expect(sm.map((i) => [i.i, i.x, i.y, i.w])).toEqual([["k1", 0, 0, 2], ["k2", 2, 0, 2], ["a", 0, 3, 4], ["b", 0, 10, 4]]);
+  });
+
+  it("keeps a collapsed widget's height when it collapses and when it expands", () => {
+    const stored = { lg: [{ i: "a", x: 0, y: 0, w: 6, h: 7 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }] };
+    const drawnCollapsed = { lg: [{ i: "a", x: 0, y: 0, w: 6, h: 1 }, { i: "b", x: 6, y: 0, w: 6, h: 7 }] };
+    const collapsing = toStored({ lg: stored.lg }, stored, new Set(), new Set(["a"]));
+    expect(collapsing.lg[0]).toEqual({ i: "a", x: 0, y: 0, w: 6, h: 7, collapsed: true });
+    const collapsedStored = { lg: [{ ...stored.lg[0], collapsed: true }, stored.lg[1]] };
+    const expanding = toStored(drawnCollapsed, collapsedStored, new Set(["a"]), new Set());
+    expect(expanding.lg.map((i) => [i.i, i.h, i.collapsed])).toEqual([["a", 7, undefined], ["b", 7, undefined]]);
   });
 
   it("lists the views that can draw a result", () => {
