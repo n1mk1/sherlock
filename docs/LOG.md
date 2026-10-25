@@ -205,3 +205,65 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - No PRD change was made. Within cuts 4 and 7, PRD ML-2's method selector, ML-4, ML-5's method checks, ML-6 and ML-7 are cut by plan §5 as approved. ML-1 to ML-3 and ML-8 to ML-10 are met for `driver_analysis`.
   - The P0 items that the cuts don't remove and that are still open are D7.3 (the answerers) and D7.4's confusion and ROC views and "Who did it get wrong?". If they won't be built, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
 - **Token Factory:** Day 7's live use was the browser check: one curation, 10 narrations and 5 overviews on Nemotron Super, about 12k prompt and 22k completion tokens, well under $0.05. Tests use recorded fixtures.
+
+## 2026-10-25 (Sun): overnight wrap-up, Days 5–7
+
+- **Done** (each slice tested, documented, committed to `main` and pushed; Render deployed by hand after each):
+  - **Day 5, within cut 5** (`79f07eb`; plan D5.1–D5.7 all checked).
+    - The CSV tab: the paged Glide grid with header type, missing share and mini histograms; the changed, flagged, invalid and unsaved marks; cell edits, add and delete row, sort, Find, Save with conflicts and Discard; Clean with AI; Restore for quarantined rows; the Download menu.
+    - The Changes panel with step detail and Undo. Undoing an earlier step replays the later ones (D5.5).
+    - Cascade v0: every commit re-queries the dashboard's widgets, debounced, with its progress line and toast.
+    - Notebook export v0 (D5.6): job, cache, preview, download, dialog, Ctrl+Shift+E. It's tested with a real kernel in pytest. `sherlock eval notebook --sets all` ran each of titanic3, sales_dated, wide_messy and reviews_text in a fresh venv after an edit and an undo with replay, and each rebuilt its version exactly (77–93 s per file).
+  - **Day 6, within cut 6** (`52cc5eb`, then the review fixes in `00fbe36`; plan D6.1–D6.6 all checked).
+    - Fact sheets in code per view type with their provenance, the chi², Kruskal-Wallis and Kendall tests, `verify`, relations, the narrator with the chip-only checks, the overview, and the `stories` job streaming `card.updated`.
+    - The cascade with column-level dependencies: only the widgets and cards that read a changed column update. Edited cards get a suggestion, and "Ask first" marks cards outdated.
+    - The story panel: cards, chips with the evidence drawer, related chips, two-way hover linking with the spotlight, badges, the TipTap editor with chip nodes and the `/` picker, suggestions, Ask why.
+    - Custom visx histogram, heatmap, box plot and scatter, with builder candidates for them.
+    - Story cards in the notebook, with evidence and unverified footnotes.
+    - **Live exit check on Render, scripted against the API.** The sample built 7 widgets and the model wrote 8 cards 48 s after upload. Every chip matches its fact. Editing one `fare` cell cascaded in 22 s and changed only the 3 cards that read `fare`. The review fixes (no stuck `updating` cards, numbers in words rejected, both heatmap categories named) were deployed and are live.
+  - **Day 7, ML within cuts 4 and 7** (`f0e13bc`; details in the entry above). `driver_analysis` with Auto, the runs API, the analysis UI, the model card and `repro.py`, and runs in the notebook.
+  - **Final `uv run sherlock eval ask`** (live Token Factory, 2026-10-25 after `f0e13bc`): **34 of 35**, up from 32 on Day 4, with 0 unsourced answers and a median of 11.8 s per answer.
+    - The one miss: "How many orders are there?" on `sales_dated.csv` answered "This file has no column that answers that.", although the file has `order_id`.
+  - **Live site:** `/healthz` ok (database, `/data` writable, SQLite lock, LLM reachable). Render deploy `dep-dbf0r8ivcj2c73eeiml0` of `f0e13bc` is live, and the served `assets/index-BAuGThCo.js` is the same file a fresh local `pnpm build` of `main` produces.
+- **Not done:**
+  - The "How many orders" miss above: counting rows when the user names an ID column.
+  - Answer time: the median is still 11.8 s against the ≤ 4 s target to the first block (TRD §13).
+  - **Day 5:** the export dialog's Save and export button (the dialog says to save first) and the Flow palette's Export entry (D8). The grid's range paste wasn't verified (TSV paste is cut 5).
+  - **Day 6:** relations don't yet weigh correlation between measures or ML dependencies (TRD §7.4). Gauges render as a KPI tile.
+  - **Day 7:** D7.3 (the answerers) and D7.4's confusion and ROC views and "Who did it get wrong?"; see "What needs you".
+  - Still open from earlier days: checkpoints for re-queued jobs (D8.6), error boundaries (D8 quality of life), and header detection for a preamble that uses the data's delimiter.
+- **Decisions made while you were offline:**
+  - **Glide passed its 1-hour check, so there's no fallback.** Editing, range selection, theming from the CSS variables and 500,000 paged rows all worked (`FEEDBACK.md`). Range paste wasn't verified, but cut 5 removes it.
+  - **The notebook mirrors the app's DuckDB round trip** (`keep_types` after the load cell and each edit batch, `store_step` after each cleaning step). The app reads every version back through DuckDB, which decides the types, so the notebook does the same to rebuild identical values and dtypes (TRD §7.7).
+  - **Scoped clean steps store `keep_outside_scope` in their `notebook_code`.** Then a replay in the sandbox and the notebook apply the same row and cell scope the Cleaner did (TRD §7.7, Schema §2.5).
+  - **The builder's SQL breaks ties deterministically** (equal values ordered by the category). The notebook test compares the notebook's results with the app's, which needs a stable order (TRD §7.3).
+  - **Narration runs on Super, not Nano.** Live, Nano typed chip markup into text runs, ran sentences together and timed out twice in thirteen calls. Super wrote valid cards, sometimes after one repair. This is the same move chat compose made on Day 4 (TRD §7.4, `FEEDBACK.md`).
+  - **A `MARKUP` check on text runs** (`stories/narrate.py`). It rejects braces, brackets, `chip`, `column:` and `value:` inside a text run, because strict decoding can't stop JSON inside a string and the no-digits check misses markup. After the review, numbers spelled out in words are rejected too (live, Super wrote "six").
+  - **The target counts as a shared column for relations.** Two widgets that both read the target are about the same outcome, so they link (TRD §7.4).
+  - **CSV Find shows only the matching rows,** with the matching cells highlighted, until the find bar closes, so every match is visible without paging through the grid (App Flow §8.3).
+  - **Shiki wasn't added.** Step code shows in a plain mono block (UI/UX brief §5.7): the highlighter's grammars and engine would add bundle weight for a cosmetic gain.
+  - **The CSV tab is lazy-loaded** (`React.lazy`), like the dashboard, so Glide loads only when the tab first opens and first load stays near 488 kB. The story card editor (TipTap) is lazy as well. Added today to TRD §2's code-splitting note, which named only the dashboard and the charts.
+  - Also: three Token Factory `529 System is overloaded` replies in one stories job were absorbed by the retry with backoff (`FEEDBACK.md`).
+- **Token Factory spend:** an estimate, from `llm_calls` since the run began (2026-10-25 05:18 UTC). The sources are `api/data/sherlock.db`, `api/data/day7/sherlock.db`, the three `sherlock-stories-*` throwaway databases in the system temp folder, and the final eval's throwaway database. That database was deleted when the eval finished, so its share is estimated from Day 4's per-question token counts.
+  - **Measured on disk:**
+    - Super: 60 calls, 37k prompt and 82k completion tokens, about $0.09 at $0.30 per 1M input and $0.90 per 1M output.
+    - Nano: 13 calls (the narration trial), 6k prompt and 30k completion tokens, about $0.01 at $0.06 per 1M input and $0.24 per 1M output.
+    - Ultra: no calls tonight. There was no cleaning run.
+  - **Estimated:**
+    - The final eval: 35 Nano routes plus SQL, compose and two dashboard builds on Super, about 70k prompt and 70k completion tokens, roughly $0.08.
+    - The live checks on Render (Day 6 exit and review, Day 7): roughly $0.05.
+  - **Total: about $0.25**, well under the $5 cap. Token Factory's console has the exact figure.
+- **What needs you:**
+  - **The stray API on :8000.** Another session's API (older code, same `api/data`) is still running and claims job kinds it doesn't know: it claimed and failed a cascade job tonight. Stop it, or point it at its own `DATA_DIR`. Until then, local runs use :8001 with their own data directory.
+  - **CI is blocked by GitHub billing.** No overnight commit ran in GitHub Actions; tests ran locally and Render was deployed by hand. Fix the billing, or keep deploying by hand.
+  - **PRD-level question from Day 7.** The P0 items that the cuts don't remove and that are still open are D7.3 (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`) and D7.4's confusion and ROC views and "Who did it get wrong?". The confusion views need out-of-fold predictions, which came with `predict` (cut 7). Decide whether they're built on Day 8. If not, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
+  - Review the overnight `docs/` additions: the as-built notes in TRD §7.3, §7.4 and §7.7, App Flow §7.4, §8, §9, §11 and §16, UI/UX brief §4.4–§4.7 and §5.6–§5.9, and Schema §2.5 and §2.13.
+- **Decision for tomorrow:**
+  - Day 8 within cuts 2, 3 and 9:
+    - the Flow canvas with "make sense of this" (no rewrite proposals, no "take it toward X", no direction nodes);
+    - chat completion;
+    - the quality-of-life list without the `?` sheet;
+    - checkpoints and the purge job;
+    - eval ask grown to about 50 questions, with the grounding eval;
+    - and D7.3 and the remaining D7.4 views if you keep them P0.
+  - Then the feature freeze. Day 9 ships.

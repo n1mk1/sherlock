@@ -142,6 +142,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - **Grid.** `react-grid-layout` 1.5.2, given the width of its container from a `ResizeObserver`.
     - **Code-splitting.** The Dashboard tab and the chart adapter are loaded with `React.lazy`. The dashboard loads when its tab first opens, and the charts with the first dashboard or chart answer. `ResultTable` lives apart from the adapter, so table answers don't pull the chart libraries in.
       - The first-load script went from 907 kB to 488 kB. The dashboard chunk is 90 kB and the charts 331 kB.
+      - The CSV tab (with Glide Data Grid) is also loaded with `React.lazy` when its tab first opens (since D5.1), and so is the story card editor (TipTap) when a card is first edited (since D6.3).
     - **Menus.** Radix dropdown menus come from `src/components/ui/menu.tsx`; an item's action runs a tick after the menu closes, so a dialog it opens keeps focus. Drawers come from `src/components/ui/drawer.tsx`.
     - **Stores.** `src/state/filters.ts` holds the global filter per dataset. `src/state/ui.ts` adds the Edit layout toggle, the Add widget drawer, the focused widget and the chat thread, plus panel widths and the library rail, kept in `localStorage` under `sherlock.panels`.
     - **Chat.** `sendChat` (`src/api/queries.ts`) reads `POST /chat`'s SSE frames from a `fetch` stream.
