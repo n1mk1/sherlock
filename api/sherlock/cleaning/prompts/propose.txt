@@ -1,0 +1,23 @@
+Write pandas code for up to three candidate fixes of this issue, one per approach, preferred approach first.
+
+Issue: {issue_line}
+Column: {column}
+Diagnosis: {cause}
+Approaches: {approaches}
+Columns and pandas dtypes of df: {dtypes}
+
+<data>
+Sample of the column's values: {samples}
+Examples of the issue: {examples}
+</data>
+
+How the code runs:
+- `df` is a pandas DataFrame with every column, plus `_row_id` (never change it) and `_quarantine_reason` (text; None for usable rows).
+- `pd`, `np` and these helpers are already in scope (no imports needed; `re`, `math` and `datetime` may be imported):
+{helpers}
+- The code must leave the cleaned DataFrame in a variable named `result`, with the same rows and columns as `df`.
+- No file, network, or system access; no `eval`, `exec`, `open`, `getattr`, dunder names, or `read_*`/`to_*` methods other than pd.to_datetime, pd.to_numeric and pd.to_timedelta.
+- Start from `result = df.copy()` and assign whole columns; keep the code short and plain.
+- When you parse values, quarantine the rows whose values failed: `result = quarantine_rows(result, parse_failures(df[col], parsed), "parse: <column>")`.
+
+For each candidate give a short label (like "Median by title in name"), the code, and its expected effect in one sentence.

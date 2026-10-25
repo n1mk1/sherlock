@@ -1,0 +1,17 @@
+Diagnose this data-quality issue.
+
+Issue: {issue_line}
+Detector: {detector}
+Column: {column}
+Dataset: {rows} rows; columns and types: {columns}
+
+<data>
+Column profile: {column_card}
+Sample of the column's values: {samples}
+Examples of the issue: {examples}
+Detector details: {details}
+</data>
+
+Earlier decisions on this dataset: {decisions}
+
+Give the likely cause in one sentence, two or three approach options (short phrases a person would recognise, most conservative first is fine), the index of the option you prefer, the risk of changing values that are actually right (low, medium or high), and whether the values should be left as they are.

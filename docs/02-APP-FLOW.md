@@ -143,7 +143,8 @@ If the setting is "Always clean", the offer is skipped and cleaning starts; a to
 
 **End of run.**
 - The centre shows the **report** for 3 seconds (counts and the first three steps) with "View full report", then transitions automatically to the dashboard build. The full report lives in the CSV tab's Changes panel.
-- On failure (server error, budget exceeded with zero steps): the centre shows the error and two buttons: **Build dashboard without cleaning** (uses the typed version) and **Try cleaning again**.
+- On failure (server error, budget exceeded with zero steps): the centre shows the error and two buttons: **Build dashboard without cleaning** (uses the typed version) and **Try cleaning again**. As built (2026-10-24), the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>", and the offer screen shows that line above its buttons, so "Use as is" and "Clean it for me" are those two buttons.
+- **Stop** (as built): the job is cancelled at its next check between candidates or issues, committed steps stay, the report covers what ran (`ended_by: stopped`), and the dashboard build starts.
 
 ---
 

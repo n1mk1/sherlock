@@ -79,6 +79,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/clean": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Clean
+         * @description Queue a clean job on the current version. Step-by-step mode is P1 (PRD CLEAN-10).
+         */
+        post: operations["start_clean_api_v1_datasets__dataset_id__clean_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/columns/{column}/values": {
         parameters: {
             query?: never;
@@ -197,6 +217,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report */
+        get: operations["report_api_v1_datasets__dataset_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/rows": {
         parameters: {
             query?: never;
@@ -266,6 +303,26 @@ export interface paths {
         put?: never;
         /** Undo */
         post: operations["undo_api_v1_datasets__dataset_id__steps__step_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/use-as-is": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use As Is
+         * @description Skip cleaning: build the dashboard on the current (typed) version.
+         */
+        post: operations["use_as_is_api_v1_datasets__dataset_id__use_as_is_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -459,6 +516,34 @@ export interface components {
             row_id: number;
             /** Value */
             value?: string | number | boolean | null;
+        };
+        /** CleanRequest */
+        CleanRequest: {
+            /**
+             * Include User Edited
+             * @default false
+             */
+            include_user_edited: boolean;
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "stepwise";
+            scope?: components["schemas"]["CleanScope"];
+        };
+        /** CleanScope */
+        CleanScope: {
+            /**
+             * Kind
+             * @default all
+             * @enum {string}
+             */
+            kind: "all" | "selection" | "new_rows";
+            /** Row Ids */
+            row_ids?: number[] | null;
+            /** Selection Id */
+            selection_id?: string | null;
         };
         /** CleaningProgress */
         CleaningProgress: {
@@ -769,6 +854,43 @@ export interface operations {
             };
         };
     };
+    start_clean_api_v1_datasets__dataset_id__clean_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CleanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     column_values_api_v1_datasets__dataset_id__columns__column__values_get: {
         parameters: {
             query?: {
@@ -983,6 +1105,41 @@ export interface operations {
             };
         };
     };
+    report_api_v1_datasets__dataset_id__report_get: {
+        parameters: {
+            query?: {
+                job_id?: string | null;
+            };
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_rows_api_v1_datasets__dataset_id__rows_get: {
         parameters: {
             query?: {
@@ -1109,6 +1266,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    use_as_is_api_v1_datasets__dataset_id__use_as_is_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

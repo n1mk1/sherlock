@@ -338,7 +338,7 @@ CREATE TABLE jobs (
   kind       TEXT NOT NULL,                    -- profile|clean|build_dashboard|stories|ml_run|cascade|undo|export_notebook|purge
   status     TEXT NOT NULL,                    -- queued|running|done|failed|cancelled
   params_json TEXT NOT NULL DEFAULT '{}',
-  state_json TEXT,                             -- checkpoint
+  state_json TEXT,                             -- checkpoint; a clean job keeps its run state here (TRD §7.2: from_version, ended_by, waited_for_model_s, attempted, skipped, hand_edited_skipped)
   progress_json TEXT,                          -- {step, of, label, pct}
   result_json TEXT,
   error      TEXT,

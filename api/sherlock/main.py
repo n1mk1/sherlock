@@ -13,12 +13,14 @@ from sherlock.db.connection import connect
 from sherlock.db.migrate import current_version, migrate
 from sherlock.errors import RequestIdMiddleware, install_error_handlers, not_found
 from sherlock.identity import IdentityMiddleware, current_user
-from sherlock.jobs import profile as _profile_job  # noqa: F401  (registers the job kind)
+from sherlock.jobs import build as _build_job  # noqa: F401  (each import registers a job kind)
+from sherlock.jobs import clean as _clean_job  # noqa: F401
+from sherlock.jobs import profile as _profile_job  # noqa: F401
 from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import datasets, jobs, me, rows, steps, streams
+from sherlock.routers import cleaning, datasets, jobs, me, rows, steps, streams
 from sherlock.storage import VersionConnections
 from sherlock.storage_check import check_storage
 
@@ -92,6 +94,7 @@ def create_app() -> FastAPI:
     api.include_router(datasets.router)
     api.include_router(steps.router)
     api.include_router(rows.router)
+    api.include_router(cleaning.router)
     api.include_router(jobs.router)
     api.include_router(streams.router)
     app.include_router(api)

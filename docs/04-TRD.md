@@ -199,7 +199,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - `check_cancel()` raises when `cancel_requested` is set.
   - **Endings.** A job that returns ends `done` with its return value as `result`. One that raises ends `failed` with the first line of the error (at most 500 characters). One cancelled ends `cancelled` with the error "Cancelled." `job.done` reports `done`; `job.failed` reports both `failed` and `cancelled`, and its `Job.status` tells them apart.
   - **Heartbeats and recovery.** A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so at startup every job still `running` is re-queued, whatever its heartbeat. A sweep every 30 s also re-queues a `running` job of another owner whose heartbeat is older than 60 s. Startup also queues a `profile` job for any `profiling` dataset that has none queued or running (datasets imported before jobs existed).
-  - **Not yet.** Checkpoints (`state_json`) come with D8.6; until then a re-queued job starts over, which is safe because kinds are idempotent (the profile job reads the cached DataCard). Killing the sandbox on cancel comes with the Cleaner, the first kind to use it. `JOB_BACKEND=nebius` is not built.
+  - **Not yet.** Checkpoints (`state_json`) come with D8.6; until then a re-queued job starts over, which is safe because kinds are idempotent (the profile job reads the cached DataCard). The Cleaner writes its run state to `state_json` for the report, but a re-queued clean job still starts over: issues already handled are fixed on the current version, so it finds fewer. Killing the sandbox on cancel is D3.5. `JOB_BACKEND=nebius` is not built.
+  - **`build_dashboard`** (D3.4, `sherlock/jobs/build.py`). Until the dashboard builder (D4.2) exists, the job reports one step, "Building the dashboard", and sets the dataset to `ready`. Its result is `{ version, widgets: 0 }`. If it fails or is cancelled, the dataset is still set to `ready`.
 
 ### 3.4 Sandbox
 
@@ -411,6 +412,16 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 | POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits; `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
+Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `sherlock/routers/cleaning.py`):
+- **`POST /clean`.**
+  - It answers `201` with the queued `Job`, and counts against the LLM rate limit.
+  - The body defaults to `{ mode: "auto", scope: { kind: "all" }, include_user_edited: false }`, and a `new_rows` scope may carry `row_ids`.
+  - It's refused with `422` for `mode: "stepwise"` (P1) or a selection scope without `selection_id`.
+  - It's refused with `409` while the dataset is `profiling`, `cleaning`, `building` or `failed`, or while a profile, clean or build job is queued or running.
+  - A whole-dataset clean sets the status to `cleaning`. A scoped one leaves the status alone.
+- **`POST /use-as-is`.** Only from `offer`: the status becomes `building`, a `build_dashboard` job is queued, and the answer is `201` with that `Job`.
+- **`POST /edits` with `run_cleaning_on_new_rows`.** It queues a clean job scoped to the new rows' IDs and returns it as `clean_job`.
+
 Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/routers/steps.py`):
 - **Step list.** `GET /datasets/{id}/steps` returns every step newest first (by `no`), each in the §6.2 shape plus `active`. `active` is whether the step is in the current version's effective chain: undone steps and undo steps are not.
 - **One step.** `GET /datasets/{id}/steps/{step_id}` returns one step with `active`. An unknown step is `404`.
@@ -543,7 +554,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 |---|---|---|
 | `dataset.status` | `{ status, current_version }` | status changes |
 | `job.progress` | `Job.progress` + `job_id`, `kind` | each step of any job |
-| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines |
+| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines. As built, the Cleaner also sends `detail` (the line under the entry: "committed · step 3", "committed with a flag · step 2 · confidence 0.72", "skipped", "checking candidates"), `issue_id`, and for commits `step_id`, `step_no`, `confidence` and `checks` (the hard verifier results). `icon` is `running`, `check`, `flag`, `skip`, `wait` ("Waiting for the model…") or `error` |
 | `job.done` / `job.failed` | `Job` | job ends |
 | `version.created` | `{ version, step_id, summary, cells_changed, rows_added, rows_removed }` | a step commits |
 | `cascade.started` | `{ version, widget_ids, card_ids, run_ids }` | cascade begins |
@@ -738,6 +749,8 @@ Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[d
 
 ### 6.8 Report, run and proposal shapes
 
+`CleaningReport` as built (2026-10-24) adds `status` (the job's), `attempted`, `counts.rows_deleted` (always 0), each step's `confidence` and `flag_reason`, and `error`. `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one.
+
 `CleaningReport` (built from `steps` and the `issues` table for one clean job): `{ job_id, from_version, to_version, ended_by: "done"|"steps"|"time"|"tokens"|"stopped"|"error", waited_for_model_s, counts: { found, fixed, flagged, skipped }, steps: [{ step_id, no, summary, gate, impact }], skipped: [{ issue_id, column, detector, reason }], hand_edited_skipped: [{ row_id, column }], decisions: [{ step_id, question, chosen, reason }] }`. The cleaner writes `issues.outcome`, `handled_by_step_id` and `skip_reason` as it goes.
 
 `Run`: `{ id, dataset_id, widget_id?, version, recipe, method, scope: Scope, params, status: "queued"|"running"|"done"|"failed"|"cancelled"|"outdated", job_id?, model_card?: ModelCard, fact_sheet_id?, error?, created_at, finished_at? }`. `Scope` is `WidgetSpec.scope` (§6.3).
@@ -880,6 +893,46 @@ report()
 Rules: any op that removes rows is rewritten to quarantine them (`df["_quarantine_reason"]`), never drop; parse ops must write failures to quarantine, not NaN; ambiguous choices (date order) are decided by sampling the diagnosis 3 times at temperature 0.7 and taking the majority, else the conservative option; the issue list excludes `boat`/`body`-style leakage from *fixing* (they are marked, not changed).
 
 Schemas as built (2026-10-24, `sherlock/llm/schemas.py`): `Diagnosis` adds two fields to `{cause, approach_options[2..3], risk}`: `preferred_option` (the index of the option the model would pick, which the three-sample ambiguity vote counts) and `leave_as_is` (true when the values are legitimate and shouldn't change, so the issue is skipped without proposing code). `Candidates` is `{candidates: [{label, code, expected_effect}]}` with one to three entries, and `Critique` is `{changed_something_it_shouldnt, concerns[≤ 5]}`.
+
+The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop.py`, `sherlock/jobs/clean.py`):
+- **Order of an issue.**
+  1. Diagnose (`large`). With `leave_as_is`, the issue is skipped as "Left as is: <cause>" and no code is proposed.
+  2. Candidates (`large`, up to 6,000 tokens).
+  3. Each candidate in the sandbox on the sample, scored by the verifiers.
+  4. The best one on the full data and verified again; a failure skips the issue ("Failed checks on the full data (…)").
+  5. The critic (`medium`).
+  6. The gate, using the real blast from the full run.
+  7. `commit_step`.
+
+  The full run comes before the gate (the pseudocode above has it after) so the gate's blast is the measured share of changed and quarantined cells, not an estimate from a stratified sample. A fix that changes nothing is skipped.
+- **The queue.** After every attempt, the next issue is the most severe one on the current version's card whose `detector|column` hasn't been attempted. Leakage and ID-candidate issues are never changed: they're logged as skipped ("Records the outcome, so it is marked as leakage and not changed", "Looks like an ID column, so it is left as is") with no model call, and they don't count against the 20-issue budget. The same goes for every other issue on a column in the card's `leakage_candidates` or `id_columns` ("body records the outcome, so it is not changed"). The first live run on Titanic, before this rule, imputed the missing `body` numbers and filled `boat`.
+- **The sample.** Datasets of up to 2,000 rows are used whole. A larger one gets up to 1,000 rows that have the issue (missing cells for `missing`, the issue's example values otherwise, its example `_row_id`s for row-level detectors) and fills the rest at random (seed 42). It's copied from the version's Parquet, so column types are the real ones.
+- **The vote.** `ambiguous_dates` diagnoses three times at temperature 0.7 and takes the majority `preferred_option`. With no majority it takes option 0, the most conservative by the prompt's ordering.
+- **Scope and hand-edited cells.**
+  - Scope `selection` limits changes to the selection's rows. `new_rows` limits them to `scope.row_ids`, or else the rows added by steps after the last cleaner step in the current chain.
+  - Hand-edited cells (`user_edited_cells`) keep their values unless `include_user_edited`, and are listed in the report's `hand_edited_skipped`.
+  - A candidate that changes a column's type can't be limited to some rows, so in a scoped clean it scores 0 ("it changes the type of …"). In a whole-dataset clean, a hand-edited cell in a column the step retypes is parsed with the rest of the column.
+- **The step.** Kind `clean`, `created_by` `cleaner`.
+  - The summary is "<candidate label> (<column>)".
+  - `notebook_code` is the code plus `df = result`.
+  - `helpers_used` lists the helpers the code calls.
+  - `parse_failures` is the rows the step quarantined.
+  - The one decision has the question "How to fix <issue> in <column>?", the chosen label, the other labels and the diagnosis's cause.
+  - `verifiers` is the full-data report.
+  - A `flag` step's `flag_reason` is the gate's reason, plus the critic's first concern when there was one.
+  - The issue's row gets `outcome` `fixed` or `flagged` and `handled_by_step_id`, or `skipped` and `skip_reason`.
+- **Endings.** `ended_by` is:
+  - `steps` at 20 attempted issues
+  - `time` after `CLEAN_MAX_SECONDS`
+  - `tokens` on `budget_exceeded`
+  - `stopped` on cancel
+  - `error` when the model service is unavailable
+  - `done` when the queue is empty
+
+  A whole-dataset clean that ends any of these ways, Stop included, sets the dataset to `building` and queues `build_dashboard`, since committed steps stay. If the model is unavailable before any step committed, the job fails and the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>" (App Flow §5).
+- **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys, `skipped` and `hand_edited_skipped`, written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
+- **Prompts** live in `sherlock/cleaning/prompts/*.txt`: one system message (the rules) and the diagnose, propose and critic templates. Values sit inside `<data>` blocks, and samples are capped at 20 values of 200 characters.
+- **Tests** use recorded replies (`api/tests/fixtures/llm/cleaner_messy.json`) through `LLM_MOCK`.
 
 Helpers available in the sandbox (`sherlock.cleaning.helpers`): `parse_dates_smart(s, order_hint=None)`, `parse_numbers(s, locale_hint=None)`, `strip_sentinels(s, extra=[])`, `normalize_whitespace_case(s, mode="title"|"lower"|"upper"|"keep")`, `canonicalize_categories(s, mapping=None)` (rapidfuzz clustering; mapping from the LLM when provided), `extract_pattern(s, regex, group)`, `fill_by_group(df, col, by, stat="median")`, `flag_rows(df, mask, reason)`, `quarantine_rows(df, mask, reason)`, `fix_encoding(s)`.
 

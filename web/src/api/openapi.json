@@ -65,6 +65,72 @@
     "title": "CellEdit",
     "type": "object"
    },
+   "CleanRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "include_user_edited": {
+      "default": false,
+      "title": "Include User Edited",
+      "type": "boolean"
+     },
+     "mode": {
+      "default": "auto",
+      "enum": [
+       "auto",
+       "stepwise"
+      ],
+      "title": "Mode",
+      "type": "string"
+     },
+     "scope": {
+      "$ref": "#/components/schemas/CleanScope"
+     }
+    },
+    "title": "CleanRequest",
+    "type": "object"
+   },
+   "CleanScope": {
+    "additionalProperties": false,
+    "properties": {
+     "kind": {
+      "default": "all",
+      "enum": [
+       "all",
+       "selection",
+       "new_rows"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "row_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Row Ids"
+     },
+     "selection_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selection Id"
+     }
+    },
+    "title": "CleanScope",
+    "type": "object"
+   },
    "CleaningProgress": {
     "properties": {
      "of": {
@@ -706,6 +772,61 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/clean": {
+   "post": {
+    "description": "Queue a clean job on the current version. Step-by-step mode is P1 (PRD CLEAN-10).",
+    "operationId": "start_clean_api_v1_datasets__dataset_id__clean_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CleanRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Start Clean Api V1 Datasets  Dataset Id  Clean Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Start Clean",
+    "tags": [
+     "cleaning"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/columns/{column}/values": {
    "get": {
     "description": "Distinct values with counts from the value index (dimension and target-like columns).",
@@ -1122,6 +1243,66 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/report": {
+   "get": {
+    "operationId": "report_api_v1_datasets__dataset_id__report_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "job_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Job Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Report Api V1 Datasets  Dataset Id  Report Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Report",
+    "tags": [
+     "cleaning"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/rows": {
    "get": {
     "description": "A page of rows with their cell marks. Quarantined rows are included and marked.",
@@ -1426,6 +1607,51 @@
     "summary": "Undo",
     "tags": [
      "steps"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/use-as-is": {
+   "post": {
+    "description": "Skip cleaning: build the dashboard on the current (typed) version.",
+    "operationId": "use_as_is_api_v1_datasets__dataset_id__use_as_is_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Use As Is Api V1 Datasets  Dataset Id  Use As Is Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Use As Is",
+    "tags": [
+     "cleaning"
     ]
    }
   },

@@ -1,0 +1,11 @@
+  strip_sentinels(s, extra=[]) -> Series: placeholders such as "N/A", "null", "?", "-", blank (plus `extra`, e.g. [-999]) become missing
+  parse_numbers(s, locale_hint=None) -> float Series: "$1,200", "(300)", "45%", "1.234,5" (locale_hint "comma") to numbers; failures NaN
+  parse_dates_smart(s, order_hint=None) -> datetime Series: order_hint "dmy", "mdy" or "ymd"; failures NaT
+  parse_failures(original, parsed) -> bool Series: rows whose real value did not parse (quarantine them)
+  normalize_whitespace_case(s, mode="keep") -> Series: trims, collapses spaces; mode "title", "lower", "upper", or "keep" (case variants take the most frequent spelling)
+  canonicalize_categories(s, mapping=None, threshold=90) -> Series: applies {variant: canonical}, or merges fuzzy spelling variants into the most frequent spelling
+  extract_pattern(s, regex, group=1) -> Series: the regex group of the first match, missing when no match
+  fill_by_group(df, col, by, stat="median") -> Series: fills missing values of `col` from the group's median, mean or mode (by = column or list)
+  flag_rows(df, mask, reason) -> DataFrame: marks rows for review without changing them
+  quarantine_rows(df, mask, reason) -> DataFrame: sets _quarantine_reason on masked rows (they stay in the data)
+  fix_encoding(s) -> Series: repairs mojibake such as "CafÃ©"

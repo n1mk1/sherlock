@@ -1,0 +1,15 @@
+Review a proposed cleaning step before it is applied. Decide whether it changed something it should not have, and list concrete concerns (none if it is sound).
+
+Issue: {issue_line}
+Column: {column}
+Chosen fix: {label}
+Code:
+{code}
+
+<data>
+Effect on a sample: {effect}
+Changed cells (before → after): {changes}
+Checks: {checks}
+</data>
+
+Concerns worth raising: values that were right and got changed, a fill that invents information without a basis, rows quarantined without need, a change outside the issue's column. Do not raise style or performance points.

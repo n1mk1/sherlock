@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from sherlock.db.connection import get_db
 from sherlock.errors import not_found
+from sherlock.jobs.runner import to_job
 from sherlock.ownership import owned_dataset
 from sherlock.rows import query as rq
 from sherlock.rows.edits import EditBatch, save
@@ -130,7 +131,13 @@ def post_edits(
 ) -> dict:
     """One Save: one `edit` step and one new version, or `409` with the conflicts."""
     ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
-    return save(ctx, dataset, body)
+    result = save(ctx, dataset, body)
+    if body.run_cleaning_on_new_rows and result["new_row_ids"]:
+        # Clean with AI on just the new rows (App Flow §8.2 step 6).
+        params = {"mode": "auto", "include_user_edited": False,
+                  "scope": {"kind": "new_rows", "selection_id": None, "row_ids": sorted(result["new_row_ids"].values())}}
+        result["clean_job"] = to_job(request.app.state.jobs.enqueue(db, dataset["user_id"], dataset["id"], "clean", params))
+    return result
 
 
 @router.get("/datasets/{dataset_id}/find")
