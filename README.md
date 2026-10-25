@@ -32,6 +32,10 @@ Every model call goes to **NVIDIA Nemotron on Nebius Token Factory** (its OpenAI
 - **Nebius services used by the deployed app:** Token Factory only. The app is hosted on Render because the account's Nebius AI Cloud tenant was suspended; the same image runs as a Nebius Serverless Endpoint with `scripts/deploy.sh` (see Deploy).
 - **Structured output.** Every structured call uses Token Factory's strict `response_format` JSON schema, validated again in code, with one repair round that sends the error back.
 
+![Architecture: the browser, the Sherlock API on Render, Nemotron on Nebius Token Factory, the persistent disk, DuckDB, the sandbox and the exported notebook](docs/architecture.png)
+
+The same flow as a diagram GitHub draws (`scripts/architecture.py` renders the image above):
+
 ```mermaid
 flowchart LR
   B[Browser<br/>React · Bklit charts · Glide grid · React Flow] -- REST + SSE, same origin --> A[FastAPI on Render<br/>job runner · chat agent]
@@ -62,7 +66,8 @@ flowchart LR
 | Notebook: export each end-to-end file and run it top to bottom in a fresh virtualenv | 5 of 5 files rebuild their version after an undo with replay (78–116 s each, 2026-10-25) | `uv run sherlock eval notebook --sets all` |
 | The deployed site from fresh browsers: the instant sample, isolation, rate limits, a sourced answer, the cascade, then the five files uploaded, built (two cleaned live), exported and their notebooks run | 31 of 31 checks (2026-10-25) | `uv run --project api python scripts/live_check.py --files all` |
 | End-to-end browser flow (Playwright, recorded model replies) | sample → dashboard → ask → approved edit → story update → Flow synthesis → notebook download, 11 s | `pnpm e2e` |
-| User tests and the baseline comparison (three questions by hand versus with Sherlock) | not run yet; they go in `docs/USER-TESTS.md` | |
+| Baseline: three questions on `titanic3.csv`, with Sherlock versus by hand in a spreadsheet | With Sherlock (live, 2026-10-25): about 31 s and 4 steps in all, 3 of 3 answers traceable to their SQL. The by-hand half needs a person with a stopwatch and isn't measured yet | [`docs/USER-TESTS.md`](docs/USER-TESTS.md) |
+| Cold-start user test (three people who have never seen Sherlock) | not run yet; the protocol and the results table are in [`docs/USER-TESTS.md`](docs/USER-TESTS.md) | |
 
 ## Known limitations
 
