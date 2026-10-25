@@ -313,6 +313,7 @@ As built (2026-10-25, D5): Glide draws on a canvas, so each style is drawn in co
       - charts 220px tall with "Pin to dashboard", or "Open the widget" when chat made one
       - text with number chips (§4.6)
     - "How do you know?" is a `<details>` disclosure listing each source's label and its SQL.
+    - An empty thread shows one muted line of what to ask, with placeholders rather than column names so it fits any file: "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), or ask for a widget (“add a chart of … by … to the dashboard”)." (Day 9 review, 2026-10-25: it used to suggest Titanic's "average fare by class" on every file.)
     - Suggested questions are cut (Implementation Plan §2.0, cut 9).
 - Thread: expands above the bar to at most 40% of the centre height, `--popover` surface, radius 16, with the drawer shadow. Messages: the user's in a `--secondary` bubble right-aligned (max 80%); Sherlock's as plain text left-aligned with number chips, tables, charts and action buttons inline.
 - Suggested questions: three ghost chips under the bar; they disappear once the thread has 3+ messages.
