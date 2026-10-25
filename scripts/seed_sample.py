@@ -61,13 +61,20 @@ def retell(client, ds: str) -> None:
         assert r.status_code == 200, r.text
     print("running the analyses and telling the cards again…", flush=True)
     wait(lambda: all_done(client, ds), "the runs and stories")
-    syntheses = [c["id"] for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "synthesis"]
-    for cid in syntheses:
-        r = client.post(f"{API}/cards/{cid}/refresh")
-        assert r.status_code == 201, r.text
-    wait(lambda: all_done(client, ds), "the synthesis")
-    for cid in syntheses:  # Refresh marks a card "changed", which every clone would show
-        client.post(f"{API}/cards/{cid}/dismiss-badge")
+    retell_syntheses(client, ds)
+
+
+def retell_syntheses(client, ds: str, tries: int = 3) -> None:
+    """Write each synthesis card again, up to `tries` times until the model writes it: the seed is what
+    every visitor sees first, and the fallback only lists the cards' headlines."""
+    for cid in [c["id"] for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "synthesis"]:
+        for _ in range(tries):
+            r = client.post(f"{API}/cards/{cid}/refresh")
+            assert r.status_code == 201, r.text
+            wait(lambda: all_done(client, ds), "the synthesis")
+            if client.get(f"{API}/cards/{cid}").json()["narrated_by"]:
+                break
+        client.post(f"{API}/cards/{cid}/dismiss-badge")  # Refresh marks a card "changed", which every clone would show
 
 
 def main() -> int:

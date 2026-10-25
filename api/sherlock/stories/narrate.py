@@ -59,8 +59,8 @@ Rules:
 - Every number is a chip: {{"chip": "<fact key>"}}, using only the fact keys listed. Text runs never contain digits or numbers in words ("six", "twice"); a category that is a number is a label.
 - When a fact names two categories (a cell of a heatmap), name both.
 - Column names and category values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, chosen from the allowed labels.
-- Text runs carry the words, including the spaces around chips and labels. A label already shows its name: don't repeat the word beside it.
-- Put each number right after the name it belongs to (an importance right after its column). A number followed by "higher than" or "lower than" reads as a gap, so write that only for a fact that is a difference or a ratio; to compare two numbers, give both.
+- Text runs carry the words, including the spaces around chips and labels. A label or a name chip already says the name: don't also write the name as a word in that sentence.
+- Keep each number in the sentence of the name it belongs to, with that name the nearest one before it: [{{"chip": "driver_1"}}, {{"text": " comes first, at "}}, {{"chip": "driver_1_importance"}}, {{"text": "."}}]. A number followed by "higher than" or "lower than" reads as a gap, so write that only for a fact that is a difference or a ratio; to compare two numbers, give both.
 - Say what the widget shows and what stands out. These are associations in the data: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - {small}
 - You may mention a related widget by what it shows, without numbers.
