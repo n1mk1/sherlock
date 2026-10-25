@@ -179,8 +179,10 @@ def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Resul
         if not a.prose:
             raise ValueError("write one to three sentences of prose")
         if a.prose:
-            if not any(isinstance(r, TextRun) and any(ch.isalpha() for ch in r.text) for r in a.prose):
-                raise ValueError("the prose needs words, not only chips")
+            # One text run of at least two words, so bare names ("class", "avg_fare") don't pass for a sentence.
+            if not any(isinstance(r, TextRun) and sum(any(ch.isalpha() for ch in w) for w in r.text.split()) >= 2
+                       for r in a.prose):
+                raise ValueError("the prose needs a sentence in words around the chips, not only chips or names")
         if a.shape == "number":
             if not a.number:
                 raise ValueError("shape number needs the chip of the value in `number`")

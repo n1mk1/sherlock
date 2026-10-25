@@ -10,6 +10,7 @@ Budgets per message: 8 answerer and action calls, `MESSAGE_TOKEN_BUDGET` tokens,
 """
 
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Callable
@@ -40,6 +41,7 @@ NOT_YET = {
     "update_widget": "Changing a widget from chat isn't built yet; use the widget's menu.",
 }
 DATA_INTENTS = ("ask_data", "find_rows")
+DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
 
 
 def to_message(row: sqlite3.Row) -> dict:
@@ -194,7 +196,12 @@ class Agent:
         blocks, sources, results, actions, notes, streamed = [], [], [], [], [], []
         focus_out = {"question": question, "intents": list(route.intents), "selection_id": rows_scope.selection_id}
 
-        for n, intent in enumerate(dict.fromkeys(route.intents[:2]), 1):
+        intents = list(dict.fromkeys(route.intents[:2]))
+        # Adding to the dashboard is an action, so it needs the user to ask for it: live, Nano added a
+        # widget for "survival rate by sex as a chart" next to the answer despite the route prompt.
+        if "create_widget" in intents and len(intents) > 1 and not DASHBOARD_WORDS.search(question):
+            intents.remove("create_widget")
+        for n, intent in enumerate(intents, 1):
             if kit.calls[0] >= MAX_CALLS or time.monotonic() - self.started > WALL_S:
                 notes.append("I stopped early to stay within this answer's budget.")
                 break

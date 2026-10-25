@@ -140,6 +140,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
       - `adapter.tsx` turns a widget's view and data into a chart, a KPI tile or a table.
       - Our edits to the copied code: `Bar` takes `getFill`/`isDimmed`, and `line.tsx` has a React 18 ref type.
     - **Grid.** `react-grid-layout` 1.5.2, given the width of its container from a `ResizeObserver`.
+    - **Code-splitting.** The Dashboard tab and the chart adapter are loaded with `React.lazy`. The dashboard loads when its tab first opens, and the charts with the first dashboard or chart answer. `ResultTable` lives apart from the adapter, so table answers don't pull the chart libraries in.
+      - The first-load script went from 907 kB to 488 kB. The dashboard chunk is 90 kB and the charts 331 kB.
     - **Menus.** Radix dropdown menus come from `src/components/ui/menu.tsx`; an item's action runs a tick after the menu closes, so a dialog it opens keeps focus. Drawers come from `src/components/ui/drawer.tsx`.
     - **Stores.** `src/state/filters.ts` holds the global filter per dataset. `src/state/ui.ts` adds the Edit layout toggle, the Add widget drawer, the focused widget and the chat thread, plus panel widths and the library rail, kept in `localStorage` under `sherlock.panels`.
     - **Chat.** `sendChat` (`src/api/queries.ts`) reads `POST /chat`'s SSE frames from a `fetch` stream.
@@ -1282,7 +1284,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
   - The previous assistant message's focus gives the previous question and its SQL, so "and for women only?" works.
   - The last six messages are listed.
   - There is no running summary of older messages yet (D8.5).
-- **Route.** `small` with reasoning off, the one purpose that may turn it off (§3.5). The prompt makes `ask_data` the default. `create_widget` is only for requests to add something to the dashboard ("as a chart" stays `ask_data`). A route that fails twice is treated as a single `ask_data`, and duplicate intents run once.
+- **Route.** `small` with reasoning off, the one purpose that may turn it off (§3.5). The prompt makes `ask_data` the default. `create_widget` is only for requests to add something to the dashboard ("as a chart" stays `ask_data`). A route that fails twice is treated as a single `ask_data`, and duplicate intents run once. When `create_widget` comes with another intent, it runs only if the message says "dashboard", "widget" or "pin". Live, Nano added a widget for "survival rate by sex as a chart" despite the prompt. A message routed to `create_widget` alone still runs it.
 - **Clarification.** An ambiguous route with a clarification is saved as a message with `clarification` and no blocks, and the thread waits for the choice.
 - **Resolution (`resolve.py`).**
   - Columns: exact, then ignoring case, spaces, dots and underscores, then whole-string fuzzy (`rapidfuzz` ratio ≥ 85). It's whole-string because partial matching read "average fare" as `age`.
@@ -1312,7 +1314,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
     - The prompt gets each result's query, columns and up to 30 rows, plus a worked example of the run shape written with placeholders, not data.
   - The validator rejects:
     - a chip or label that names nothing
-    - prose with no words
+    - prose with no text run of at least two words (live, bare column names "classavg_fare" passed an earlier "any word" rule)
     - empty prose
     - a number shape without its chip, or with digits in its label
     - a chart with fewer than two rows

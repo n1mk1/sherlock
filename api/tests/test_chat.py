@@ -119,6 +119,14 @@ def test_create_widget_from_chat_and_from_the_add_drawer(client, ready):
     assert r.json()["widget"]["spec"]["view"]["type"] == "kpi" and r.json()["widget"]["created_by"] == "user"
 
 
+def test_a_chart_answer_doesnt_add_a_widget_unasked(client, ready):
+    before = len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"])
+    _, msg = send(client, ready["id"], "survival rate by sex as a chart")  # routed to ask_data and create_widget
+    assert blocks_of(msg, "chart") and not any(a["kind"] == "open_widget" for a in msg["actions"])
+    assert len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"]) == before
+    assert not db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'widget'", ready["id"])
+
+
 def test_clarification_then_the_choice(client, ready):
     _, ask = send(client, ready["id"], "compare the groups")
     assert ask["clarification"] == {"question": "Which groups?", "options": ["men and women", "the three classes"]}

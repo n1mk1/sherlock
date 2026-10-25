@@ -1,11 +1,10 @@
 // A dataset route (App Flow §1): `/d/:id/:tab`. Until the dataset is ready, the centre shows the
 // status screen for where it is (profiling, offer, cleaning, building, failed).
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { rememberTab, useDataset, useMe } from "@/api/queries";
 import type { Dataset, Tab } from "@/api/types";
-import { Dashboard } from "@/components/dashboard/Dashboard";
 import { DashboardActions, FilterChip } from "@/components/dashboard/DashboardActions";
 import { CenterHeader } from "@/components/shell/CenterHeader";
 import { ChatBar } from "@/components/shell/ChatBar";
@@ -19,6 +18,8 @@ import { RowsTable } from "./RowsTable";
 import { BuildingScreen, FailedScreen, ProfilingScreen } from "./StatusScreens";
 
 const TABS: Tab[] = ["csv", "dashboard", "flow"];
+// The dashboard (grid and chart libraries) loads when its tab first opens.
+const Dashboard = lazy(() => import("@/components/dashboard/Dashboard").then((m) => ({ default: m.Dashboard })));
 
 export function DatasetRedirect() {
   const { datasetId } = useParams();
@@ -101,7 +102,13 @@ function StatusScreen({ dataset }: { dataset: Dataset }) {
 
 function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {
   if (tab === "csv") return <RowsTable datasetId={dataset.id} version={dataset.current_version} />;
-  if (tab === "dashboard") return <Dashboard dataset={dataset} />;
+  if (tab === "dashboard") {
+    return (
+      <Suspense fallback={<div className="m-6 h-[300px] animate-pulse rounded-[16px] border border-border bg-card" aria-label="Loading the dashboard" />}>
+        <Dashboard dataset={dataset} />
+      </Suspense>
+    );
+  }
   return (
     <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-6 p-8">
       <div className="flex flex-col items-center gap-2 text-center">

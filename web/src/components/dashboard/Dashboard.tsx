@@ -153,7 +153,7 @@ function toGrid(layout: Layout | undefined, collapsed: Set<string>, editing: boo
       const c = collapsed.has(i.i);
       return {
         i: i.i, x: i.x, y: i.y, w: i.w, h: c ? 1 : i.h,
-        minW: 3, minH: c ? 1 : isKpi ? 3 : 5, isResizable: editing && !c,
+        minW: Math.min(3, i.w), minH: c ? 1 : isKpi ? 3 : 5, isResizable: editing && !c, // sm KPI tiles are 2 wide
       };
     });
   }

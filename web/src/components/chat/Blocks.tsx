@@ -1,10 +1,14 @@
 // Answer blocks (App Flow §10.2, UI/UX brief §4.8): a number with its label, a table of up to 20 rows
 // with "Open all n rows in CSV", a chart with Pin to dashboard, and text whose numbers are chips.
 import { Pin } from "lucide-react";
+import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import type { AnswerBlock, CardBody, Run } from "@/api/types";
-import { ResultTable, WidgetChart } from "@/components/charts/adapter";
+import { ResultTable } from "@/components/charts/ResultTable";
 import { Button } from "@/components/ui/button";
+
+// The chart libraries load with the first chart answer, not with the page.
+const WidgetChart = lazy(() => import("@/components/charts/adapter").then((m) => ({ default: m.WidgetChart })));
 
 export function RunsView({ body }: { body: CardBody }) {
   return (
@@ -77,7 +81,9 @@ export function BlockView({ block, datasetId, onPin, pinning }: {
       return (
         <div className="flex flex-col gap-1.5">
           <div className="h-[220px] rounded-lg border border-border bg-card p-2">
-            <WidgetChart spec={block.spec} data={block.data} compact />
+            <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
+              <WidgetChart spec={block.spec} data={block.data} compact />
+            </Suspense>
           </div>
           {block.widget_id ? (
             <Link to={`/d/${datasetId}/dashboard?widget=${block.widget_id}`} className="text-[13px] text-accent hover:underline">

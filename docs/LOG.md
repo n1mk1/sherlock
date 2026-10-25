@@ -146,10 +146,22 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - The builder's scoring gives bars only η²: a target's bars count in full, measures' bars are halved when the file has a target, and count bars get a quarter of their unevenness. Outlier and correlation credit waits for the D6 chart types.
   - With no `LLM_BASE_URL` and no `LLM_MOCK`, model calls fail at once, so tests and bare runs use the fallbacks without retrying.
   - Answers stream their table first, then the prose.
+- **Later the same morning:**
+  - **Upload → offer → clean → dashboard, checked in the browser** with a generated messy file. The offer found the case variants and the money stored as text. The live log streamed, and the dashboard built itself on v4.
+  - **Deploy.** CI can't start because of GitHub billing, so on the owner's instruction Render was deployed by hand (`d188d19`). It was live after about 90 s.
+  - **The Day 4 exit, checked on the live site.**
+    - The sample built 8 widgets.
+    - "average fare by class" answered with the table and its SQL in 14 s.
+    - "add a chart of fare by port to the dashboard" made the widget in 5 s.
+  - **Fixes from those runs:**
+    - The prose check now needs one text run of at least two words; live, "classavg_fare" had passed.
+    - `create_widget` alongside another intent needs the message to say "dashboard", "widget" or "pin"; Nano had added a widget for "… as a chart".
+    - The web bundle is code-split, 907 kB → 488 kB on first load.
+    - Derived small-screen KPI tiles no longer trip react-grid-layout's minimum-width warning.
 - **Not done:**
   - Prose fails twice for some answers, which then fall back to the table with its SQL.
-  - Median answer time is 11–12 s, against the ≤ 4 s target to the first block; the first table arrives in about 4–6 s.
-  - The web bundle is 907 kB and needs code-splitting.
+  - Median answer time is 11–12 s, against the ≤ 4 s target to the first block (TRD §13); the first table arrives in about 4–6 s.
+  - CI hasn't run on any Day 4 commit (GitHub billing); Render deploys need a manual trigger until it does.
   - The Filter builder button and the shared hover between widgets (D6).
 - **Note on local dev:** another session's API was running on :8000 with the same `api/data` database. Two job runners on one database can claim each other's jobs, so for this session the API ran on :8001 with Vite on :5174 (`.claude/launch.json`, `web-8001`).
 - **Decision for tomorrow:**

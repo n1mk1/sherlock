@@ -3,8 +3,8 @@
 // active on this chart, the clicked element keeps the accent and the others fade. Clicking a bar or a
 // slice reports its category (click-to-filter, PRD DASH-5).
 import { useRef, useState } from "react";
-import type { Highlight, WidgetData, WidgetSpec } from "@/api/types";
-import { formatCell, formatPeriod, isPctColumn } from "@/lib/format";
+import type { WidgetData, WidgetSpec } from "@/api/types";
+import { formatCell, isPctColumn } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AreaChart, Area } from "./area-chart";
 import { Bar } from "./bar";
@@ -17,6 +17,9 @@ import { PieChart } from "./pie-chart";
 import { PieSlice } from "./pie-slice";
 import { ChartTooltip } from "./tooltip";
 import { XAxis } from "./x-axis";
+import { ResultTable } from "./ResultTable";
+
+export { ResultTable };
 
 export interface ChartProps {
   spec: WidgetSpec;
@@ -177,35 +180,6 @@ function Kpi({ spec, data }: { spec: WidgetSpec; data: WidgetData }) {
       {si >= 0 && (
         <span className="text-[12px] text-muted-foreground">of {formatCell(data.rows[0]?.[si])} rows</span>
       )}
-    </div>
-  );
-}
-
-export function ResultTable({ data, highlight, compact, limit }: { data: WidgetData | { columns: WidgetData["columns"]; rows: unknown[][] }; highlight?: Highlight; compact?: boolean; limit?: number }) {
-  const pct = data.columns.map((c, i) => isPctColumn(c.name, data.rows.map((r) => r[i])));
-  const rows = limit ? data.rows.slice(0, limit) : data.rows;
-  return (
-    <div className="h-full overflow-auto">
-      <table className={cn("w-full border-collapse text-[13px]", compact && "text-[12px]")}>
-        <thead className="sticky top-0 bg-card">
-          <tr>
-            {data.columns.map((c) => (
-              <th key={c.name} className="border-b border-border px-2 py-1.5 text-left font-semibold">{c.name}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className={cn(highlight && String(r[0]) === highlight.key && "bg-accent-soft")}>
-              {r.map((v, j) => (
-                <td key={j} className={cn("border-b border-border px-2 py-1", typeof v === "number" && "text-right font-mono")}>
-                  {data.columns[j]?.type === "DATE" ? formatPeriod(v) : formatCell(v, pct[j])}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
