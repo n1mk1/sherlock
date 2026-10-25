@@ -224,6 +224,19 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - **Day 7, ML within cuts 4 and 7** (`f0e13bc`; details in the entry above). `driver_analysis` with Auto, the runs API, the analysis UI, the model card and `repro.py`, and runs in the notebook.
   - **Final `uv run sherlock eval ask`** (live Token Factory, 2026-10-25 after `f0e13bc`): **34 of 35**, up from 32 on Day 4, with 0 unsourced answers and a median of 11.8 s per answer.
     - The one miss: "How many orders are there?" on `sales_dated.csv` answered "This file has no column that answers that.", although the file has `order_id`.
+  - **Follow-up: the rest of Day 7** (`cfb4b08`, the same morning, within cuts 4 and 7).
+    - **D7.3, the answerers.**
+      - `ask_stats`: the test is chosen by the column types (Welch's t and Mann-Whitney, Kruskal-Wallis, chi-square, Pearson and Spearman), with effect sizes.
+      - `ask_why`: answers from the driver run, cached or waited for.
+      - `ask_model`: answers from the model card, and "who did the model get wrong?" answers with those rows.
+      - `ask_meaning`: what the data says, with general knowledge in a labelled box.
+      - `app_help`: retrieval over `docs/help/*.md`.
+      - **Tool exposure by tab:** `create_widget` only on the Dashboard tab, `ask_story` only on Flow.
+      - Every number is a chip on a computed cell.
+    - **D7.4.**
+      - The out-of-fold predictions are saved with each classification run. From them come the confusion matrix and ROC views (a view switcher on the widget and both in the model card), and "Who did it get wrong?", which opens those rows in the CSV tab via `?rows=`.
+      - Checked in the browser on Titanic: 710 and 343 right, 256 wrong, AUC 0.859, "256 rows selected".
+    - **Tests and fixtures.** The new model calls were recorded live into `chat_titanic.json`. 310 API tests pass, as do 47 web tests and the build.
   - **Live site:** `/healthz` ok (database, `/data` writable, SQLite lock, LLM reachable). Render deploy `dep-dbf0r8ivcj2c73eeiml0` of `f0e13bc` is live, and the served `assets/index-BAuGThCo.js` is the same file a fresh local `pnpm build` of `main` produces.
 - **Not done:**
   - The "How many orders" miss above: counting rows when the user names an ID column.
@@ -231,6 +244,10 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - **Day 5:** the export dialog's Save and export button (the dialog says to save first) and the Flow palette's Export entry (D8). The grid's range paste wasn't verified (TSV paste is cut 5).
   - **Day 6:** relations don't yet weigh correlation between measures or ML dependencies (TRD §7.4). Gauges render as a KPI tile.
   - **Day 7:** D7.3 (the answerers) and D7.4's confusion and ROC views and "Who did it get wrong?"; see "What needs you".
+    - **Follow-up (`cfb4b08`):** these are now built, so Day 7 is complete within cuts 4 and 7.
+    - Still cut: `predict`, the predictions table, predicted cells and explain-row (cut 7), and the method chooser, coefficients, residuals and Compare with Auto (cut 4). `ask_model` says so when asked about one row.
+    - `sherlock eval ask` wasn't re-run after the route prompt began listing intents per tab. Its routing fixtures and the chat tests pass.
+    - The follow-up's live use was about 15k prompt and 20k completion tokens on Super, plus 10 Nano routes: about $0.03, which brings the night to about $0.28.
   - Still open from earlier days: checkpoints for re-queued jobs (D8.6), error boundaries (D8 quality of life), and header detection for a preamble that uses the data's delimiter.
 - **Decisions made while you were offline:**
   - **Glide passed its 1-hour check, so there's no fallback.** Editing, range selection, theming from the CSS variables and 500,000 paged rows all worked (`FEEDBACK.md`). Range paste wasn't verified, but cut 5 removes it.
@@ -256,7 +273,7 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **What needs you:**
   - **The stray API on :8000.** Another session's API (older code, same `api/data`) is still running and claims job kinds it doesn't know: it claimed and failed a cascade job tonight. Stop it, or point it at its own `DATA_DIR`. Until then, local runs use :8001 with their own data directory.
   - **CI is blocked by GitHub billing.** No overnight commit ran in GitHub Actions; tests ran locally and Render was deployed by hand. Fix the billing, or keep deploying by hand.
-  - **PRD-level question from Day 7.** The P0 items that the cuts don't remove and that are still open are D7.3 (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`) and D7.4's confusion and ROC views and "Who did it get wrong?". The confusion views need out-of-fold predictions, which came with `predict` (cut 7). Decide whether they're built on Day 8. If not, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
+  - **PRD-level question from Day 7: resolved by the follow-up (`cfb4b08`).** Everything below is now built, so no PRD change is needed. The P0 items that the cuts don't remove and that are still open are D7.3 (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`) and D7.4's confusion and ROC views and "Who did it get wrong?". The confusion views need out-of-fold predictions, which came with `predict` (cut 7). Decide whether they're built on Day 8. If not, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
   - Review the overnight `docs/` additions: the as-built notes in TRD §7.3, §7.4 and §7.7, App Flow §7.4, §8, §9, §11 and §16, UI/UX brief §4.4–§4.7 and §5.6–§5.9, and Schema §2.5 and §2.13.
 - **Decision for tomorrow:**
   - Day 8 within cuts 2, 3 and 9:
