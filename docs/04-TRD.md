@@ -1413,6 +1413,12 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   - **Port and health.** `PORT=8080` makes Render route to the image's port. The health check is `/healthz`. TLS ends at Render's edge, and `X-Forwarded-Proto: https` gives the identity cookie its `Secure` flag (§3.1).
   - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint.
   - **Deploys.** `autoDeployTrigger: checksPass` with a `buildFilter` on `api/**`, `web/**` and `render.yaml`, so a push to `main` redeploys only after CI passes, and only when the app changed.
+    - **By hand, from 2026-10-25 (owner's decision).** GitHub won't start the Actions jobs because of the account's billing, so CI never passes and nothing auto-deploys. Until that changes, a deploy goes like this:
+      1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
+      2. Push to `main`.
+      3. Trigger a deploy of service `srv-dbeiuafb9u1s739sfht0`, from the Render dashboard's "Manual Deploy" or the Render API.
+      4. Check `/healthz` and that the site serves the new build.
+    - `render.yaml` keeps `checksPass`, so automatic deploys come back on their own once CI runs again.
   - **Exit check.** The `/data` check below runs the same way on Render: a redeploy restarts the container on the same disk.
     - **Passed on 2026-10-24** for service `sherlock` (`srv-dbeiuafb9u1s739sfht0`, https://sherlock-anw3.onrender.com):
       - `boots` went 1 → 2 after a redeploy, and `first_boot_at` stayed `2026-10-24T22:21:47.990Z`.
