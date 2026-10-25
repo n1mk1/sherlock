@@ -85,9 +85,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
     - The Dashboard tab shows "Last cleaning report" until the builder (D4.2).
   - **Benchmark scoring.** A placeholder's recovery counts if the cell is missing or holds the original value; yes/no compares equal to booleans.
   - **Samples.** `titanic_blanks.csv` isn't generated (cut 7 removed `predict`).
-- **Token Factory spend:** about 0.65 M tokens this run (about 0.55 M on Ultra, mostly reasoning), across five Titanic cleans and three benchmark runs. At Token Factory's listed per-token rates that's well under the $5 cap. This is an estimate from `llm_calls`: please confirm against the Token Factory balance.
+- **Token Factory spend:** about 0.65 M tokens this run (about 0.55 M on Ultra, mostly reasoning), across five Titanic cleans and three benchmark runs. At Token Factory's listed per-token rates that's well under the $5 cap. This is an estimate from `llm_calls`.
+  - **Confirmed by the owner's console** (2026-10-24, after the run): the trial credit went from $0.94 to $0.00 and the $25.00 account balance is untouched, so the run cost at most $0.94.
+  - A live call still succeeded afterwards, with the trial credit at $0.00.
+  - The console's "Post-trial preference" says the account stops usage when the 30-day trial ends (29 days left) unless it's switched to paid usage.
 - **What needs you:**
-  - Confirm the Token Factory balance.
+  - Switch Token Factory to paid usage (console → Post-trial preference) before the trial ends in 29 days. Otherwise the deployed app loses the model mid-judging (PRD §9: availability through judging). It's a billing setting, so it's yours to change.
   - The two judgement calls on cleaning quality before the demo:
     - Should "missing values" in text columns stay missing rather than become `'Unknown'`? The detector's proposal currently suggests "keep as Unknown".
     - Should the critic's concerns lower confidence less, so fills like "Median by title" commit outright?

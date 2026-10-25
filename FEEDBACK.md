@@ -50,6 +50,11 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - One candidate called `df.insert` on a column that already existed and failed in the sandbox; the other candidates covered it.
 - **Suggestion:** a `seed` parameter honoured end to end (with reasoning on) on Token Factory would make agent pipelines like this reproducible for tests and for judges re-running a demo. It would help anyone building evaluation harnesses on Nemotron.
 
+**Cost:** the night's work (five Titanic cleans, three benchmark runs and a few live checks, about 0.65M tokens, mostly Ultra) used the remaining $0.94 of the $1.00 trial credit. The $25 account balance was untouched, and calls kept working once the trial credit read $0.00.
+
+- **Problem:** the console doesn't say what happens at $0.00 trial credit. Calls went on working, and we couldn't tell whether they were drawing on the account balance or on some grace allowance. Separately, the "Post-trial preference" defaults to stopping usage when the 30-day trial ends. A hackathon app deployed in the trial's first week would lose its model during judging unless the owner finds that setting.
+- **Suggestion:** show, in the balance panel, which balance the next call draws from. Email a warning a week before a trial with a live API key stops usage. This would help every team whose judging period runs past their trial.
+
 **Corruption benchmark** (`uv run sherlock eval corruption`, 2026-10-24): the clean sets are damaged in known ways and the Cleaner runs on each with the real models.
 
 | Set | Rows | Damaged cells | Recovered | Harm | Row loss | Quarantined | Steps | Time |
