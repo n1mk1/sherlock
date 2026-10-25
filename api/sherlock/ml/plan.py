@@ -17,6 +17,7 @@ from sherlock.errors import ApiError
 from sherlock.rows.query import ident
 
 MIN_ROWS = 100           # supervised recipes refuse below this (PRD ML-10)
+FOLDS = 5                # the default number of cross-validation folds (core.FOLDS)
 SAMPLE_ROWS = 50_000     # larger scopes are sampled, stratified, with the seed (TRD §6.7)
 HIGH_CARDINALITY = 50
 SEED = 42
@@ -55,11 +56,12 @@ def load_scope(conn: duckdb.DuckDBPyConnection, rows_sql: str) -> pd.DataFrame:
 
 
 def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: list[str] | None = None,
-              forced: list[str] | None = None) -> Plan:
+              forced: list[str] | None = None, n_folds: int = FOLDS) -> Plan:
     """Frame the task and pick the features. `chosen` is the setup form's chips when the user changed
     them (None: every column is a candidate); a column left out of it is excluded as "turned off in the
     setup". `forced` re-includes columns the checks excluded (the form warns first; the model card
-    keeps a warning)."""
+    keeps a warning). Each outcome needs a row in every fold (`n_folds`), or held-out scores such as
+    AUC can't be computed."""
     cols = {c["name"]: c for c in card["columns"]}
     if target not in cols:
         raise ApiError(422, "invalid", f"There's no column {target!r} to explain.")
@@ -71,6 +73,11 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
     classes = sorted(y.dropna().unique().tolist(), key=str) if task == "classification" else None
     if task == "classification" and len(classes) < 2:
         raise ApiError(422, "invalid", f"{target} has a single value in these rows, so there's nothing to explain.")
+    if task == "classification":
+        counts = y.dropna().astype(str).value_counts()
+        if counts.iloc[-1] < n_folds:
+            raise ApiError(422, "invalid", f"Each value of {target} needs at least {n_folds} rows, one per fold of the "
+                                           f"cross-validation; {counts.index[-1]!r} has {int(counts.iloc[-1])}.")
     metric = "r2" if task == "regression" else ("accuracy" if len(classes) == 2 else "macro_f1")
 
     leak = {lc["column"]: lc["reason"] for lc in card.get("leakage_candidates") or [] if lc.get("target") in (None, target)}

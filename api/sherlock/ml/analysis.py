@@ -46,7 +46,7 @@ def analyze(df: pd.DataFrame, card: dict, rows_sql: str, target: str, *, feature
     progress(1, 6, "preparing data")
     data = scope_frame(df, rows_sql)
     progress(2, 6, "checking for leakage")
-    plan = make_plan(data, card, rows_sql, target, features, forced)
+    plan = make_plan(data, card, rows_sql, target, features, forced, n_folds)
     data = data[data[target].notna()]
     if plan.sample:
         data = data.sample(n=plan.sample["n"], random_state=core_seed()).sort_values("_row_id")

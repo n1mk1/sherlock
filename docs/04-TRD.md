@@ -656,6 +656,7 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/rout
   - `scope.columns.target`: filled in with the best guess when it's missing.
   - `scope.columns.features`: `null` means every column is a candidate. A list is exactly the chips the user left on. A listed column that a check would exclude is "forced in" and gets a model-card warning; a column left out of the list is excluded as "turned off in the setup".
   - The target and the minimum rows (100 with the target filled in, PRD ML-10) are checked before anything is queued, so a refusal is `422` with the count.
+  - (Day 7 review, 2026-10-25) A category target needs at least `cv_folds` rows of each value, one per fold, or a fold's held-out rows can lack a class and its AUC can't be computed. The preview refuses with `422` ("Each value of fraud needs at least 5 rows, one per fold of the cross-validation; '1' has 3."), so the setup form can't start the run. A run started without the preview (the builder's widget, `ask_why`) fails with the same message.
   - `params` are checked against the manifest: `cv_folds` from 3 to 10, `time_budget_s` from 10 to 300.
 - **`POST /datasets/{id}/runs`.** It returns the full `Run` (with `model_card` when cached). With `widget_id`, the widget *becomes* the analysis:
   - Its spec is replaced by the ML spec (`view: importance`), and its chart spec is kept as `prev_spec_json` for Undo ("Plain chart (SQL)").

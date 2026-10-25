@@ -78,6 +78,17 @@ def test_a_short_target_name_leaves_out_only_columns_named_after_it():
     assert "outcome_score" in {e["column"] for e in plan.excluded}  # a long name still matches anywhere
 
 
+def test_an_outcome_rarer_than_the_folds_is_refused():
+    df = planted.drivers(n=300)
+    df["outcome"] = 0
+    df.loc[:2, "outcome"] = 1  # three rows of 1: two of five folds would hold none
+    with pytest.raises(ApiError) as err:
+        make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
+    assert err.value.status == 422 and "at least 5 rows" in err.value.message and "'1' has 3" in err.value.message
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome", n_folds=3)
+    assert plan.task == "classification"
+
+
 def test_a_forced_column_is_used_with_a_warning_and_turned_off_columns_are_listed():
     df = planted.drivers()
     chosen = ["strong", "moderate", "leak"]
