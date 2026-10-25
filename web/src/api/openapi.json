@@ -3838,6 +3838,95 @@
     ]
    }
   },
+  "/api/v1/proposals/{id}": {
+   "get": {
+    "operationId": "get_proposal_api_v1_proposals__id__get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Proposal Api V1 Proposals  Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Proposal",
+    "tags": [
+     "chat"
+    ]
+   }
+  },
+  "/api/v1/proposals/{id}/approve": {
+   "post": {
+    "description": "`{ step, version }` for cell edits, the clean `Job` for a selection; `409` when the data moved on\n(the proposal expires) or it was already decided. `edited_code` is for P1 code proposals.",
+    "operationId": "approve_api_v1_proposals__id__approve_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "additionalProperties": true,
+          "type": "object"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Approve Api V1 Proposals  Id  Approve Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Approve",
+    "tags": [
+     "chat"
+    ]
+   }
+  },
+  "/api/v1/proposals/{id}/reject": {
+   "post": {
+    "operationId": "reject_api_v1_proposals__id__reject_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Reject",
+    "tags": [
+     "chat"
+    ]
+   }
+  },
   "/api/v1/recipes": {
    "get": {
     "description": "Every recipe's manifest with `compatible` and, when not, the `reason` (PRD ML-1). Rows are\ncounted in the scope (quarantine excluded).",

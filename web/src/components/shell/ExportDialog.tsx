@@ -24,7 +24,7 @@ interface Options {
 interface Preview {
   version: number;
   notes: string[];
-  counts: { steps: number; widgets: number; runs: number; cards: number };
+  counts: { steps: number; widgets: number; runs: number; cards: number; notes?: number };
   options: Options;
 }
 interface ExportState {
@@ -75,6 +75,7 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
   const [params, setParams] = useSearchParams();
   const pending = pendingCount(useEdits((s) => s.buffers[dataset.id]));
   const [options, setOptions] = useState<Options | null>(null);
+  const preset = useUi((s) => s.exportPreset);
   const blocked = exportBlocked(dataset);
 
   // Ctrl+Shift+E from any tab, and the ?export=notebook deep link (App Flow §17.1).
@@ -106,11 +107,15 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
     },
   });
   useEffect(() => {
-    if (open && preview.data && !options) setOptions(preview.data.options);
-  }, [open, preview.data, options]);
+    // The remembered options, with what chat asked for on top ("export a notebook without the data").
+    if (open && preview.data && !options) setOptions({ ...preview.data.options, ...(preset ?? {}) });
+  }, [open, preview.data, options, preset]);
   useEffect(() => {
-    if (!open) setOptions(null);
-  }, [open]);
+    if (!open) {
+      setOptions(null);
+      if (preset) useUi.setState({ exportPreset: null });
+    }
+  }, [open, preset]);
 
   const o = options ?? preview.data?.options;
   const c = preview.data?.counts;
@@ -131,7 +136,8 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
           from the raw file{c ? (
             <>: <span className="font-mono">{c.steps}</span> {c.steps === 1 ? "step" : "steps"}, <span className="font-mono">{c.widgets}</span>{" "}
               {c.widgets === 1 ? "widget" : "widgets"}, <span className="font-mono">{c.runs}</span> model {c.runs === 1 ? "run" : "runs"},{" "}
-              <span className="font-mono">{c.cards}</span> story {c.cards === 1 ? "card" : "cards"}.</>
+              <span className="font-mono">{c.cards}</span> story {c.cards === 1 ? "card" : "cards"}
+              {c.notes ? <>, <span className="font-mono">{c.notes}</span> canvas {c.notes === 1 ? "note" : "notes"}</> : null}.</>
           ) : "."}
         </DialogDescription>
         {o && (

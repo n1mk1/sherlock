@@ -1,0 +1,58 @@
+[
+ {
+  "purpose": "route",
+  "match": ["<data>\nset the fare of row 1 to 100\n</data>"],
+  "content": {"intents": ["edit_cells"], "ambiguous": false, "clarification": null, "multi_step": false,
+              "entities": [{"text": "fare", "kind": "column"}]}
+ },
+ {
+  "purpose": "edits",
+  "match": ["set the fare of row 1 to 100"],
+  "content": {"reading": "row 1, fare → 100", "edits": [{"row_id": 1, "column": "fare", "value": "100"}]}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\nset the fare of row 999999 to 5\n</data>"],
+  "content": {"intents": ["edit_cells"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}
+ },
+ {
+  "purpose": "edits",
+  "match": ["set the fare of row 999999 to 5"],
+  "content": {"reading": "row 999999, fare → 5", "edits": [{"row_id": 999999, "column": "fare", "value": "5"}]}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\nclean these rows\n</data>"],
+  "content": {"intents": ["clean_selection"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\nmake it a pie chart\n</data>"],
+  "content": {"intents": ["update_widget"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}
+ },
+ {
+  "purpose": "update_widget",
+  "match": ["make it a pie chart"],
+  "content": {"reading": "same query, shown as a pie", "title": "Average fare by sex",
+              "sql": "SELECT sex, AVG(fare) AS avg_fare FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1", "view": "pie",
+              "x": "sex", "y": "avg_fare"}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\naverage fare by class, and what does pclass mean?\n</data>"],
+  "content": {"intents": ["ask_data", "ask_meaning"], "ambiguous": false, "clarification": null, "multi_step": true,
+              "entities": [{"text": "pclass", "kind": "column"}]}
+ },
+ {
+  "purpose": "plan",
+  "match": ["average fare by class, and what does pclass mean?"],
+  "content": {"steps": [{"intent": "ask_data", "question": "average fare by class"},
+                        {"intent": "ask_meaning", "question": "what does pclass mean?"}]}
+ },
+ {
+  "purpose": "compose",
+  "match": ["average fare by class, and what does pclass mean?"],
+  "content": {"prose": [{"text": "First class paid the most on average, "}, {"chip": "r1:0:1"}, {"text": "."}],
+              "shape": "text", "number": null, "label": null, "chart": null}
+ }
+]

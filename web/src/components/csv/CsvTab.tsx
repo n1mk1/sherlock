@@ -17,7 +17,7 @@ import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { Grid, type GridHandle, type GridSelectionInfo } from "./Grid";
 
-const NO_SELECTION: GridSelectionInfo = { rowIds: [], newRows: [], cells: 0, current: null, quarantined: [] };
+const NO_SELECTION: GridSelectionInfo = { rowIds: [], columns: [], newRows: [], cells: 0, current: null, quarantined: [] };
 
 export function CsvTab({ dataset }: { dataset: Dataset }) {
   const version = dataset.current_version;
@@ -31,6 +31,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   const [found, setFound] = useState<{ q: string; selection: string; count: number; rows: number; matches: Set<string> } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [selection, setSelection] = useState<GridSelectionInfo>(NO_SELECTION);
+  useEffect(() => () => useUi.getState().setCsvSelection(null), []); // leaving the tab clears the chat's context
   const [shape, setShape] = useState<{ total: number; columns: Column[] }>({ total: 0, columns: [] });
   const setExportOpen = useUi((s) => s.setExportOpen);
 
@@ -127,7 +128,11 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         card={card.data?.version === version ? card.data.columns : card.data?.columns ?? []}
         buffer={buffer}
         onEdit={onEdit}
-        onSelection={setSelection}
+        onSelection={(s) => {
+          setSelection(s);
+          // The selected cells are the chat's context on this tab ("set these to 0", "clean these rows").
+          useUi.getState().setCsvSelection(s.rowIds.length ? { row_ids: s.rowIds.slice(0, 500), columns: s.columns } : null);
+        }}
         onLoaded={setShape}
       />
       <StatusBar total={shape.total} pending={pendingCount(buffer)} selection={selection} sort={sort} />

@@ -23,6 +23,7 @@ type Row = RowsPage["rows"][number];
 
 export interface GridSelectionInfo {
   rowIds: number[];          // server rows touched by the selection
+  columns: string[];         // the user columns it spans (the chat's context, TRD §4.9 selected_cells)
   newRows: string[];         // pending rows touched by it (temp ids)
   cells: number;             // selected cells (user columns)
   current: { rowId: number | null; tempId: string | null; column: string | null } | null;
@@ -278,7 +279,7 @@ export const Grid = forwardRef<GridHandle, {
   const onSelectionChange = (s: GridSelection) => {
     setSel(s);
     const r: Rectangle | undefined = s.current?.range;
-    const info: GridSelectionInfo = { rowIds: [], newRows: [], cells: 0, current: null, quarantined: [] };
+    const info: GridSelectionInfo = { rowIds: [], columns: [], newRows: [], cells: 0, current: null, quarantined: [] };
     if (r) {
       for (let row = r.y; row < r.y + r.height; row++) {
         const at = rowAt(row);
@@ -290,6 +291,7 @@ export const Grid = forwardRef<GridHandle, {
         }
       }
       info.cells = r.height * Math.max(0, Math.min(r.x + r.width, gridCols.length) - Math.max(r.x, 1));
+      for (let col = Math.max(r.x, 1); col < Math.min(r.x + r.width, gridCols.length); col++) info.columns.push(gridCols[col]?.id as string);
       const [cc, cr] = s.current!.cell;
       const at = rowAt(cr);
       info.current = {

@@ -49,6 +49,10 @@ interface UiState extends Panels {
   sendChat: (text: string | null) => void;
   exportOpen: boolean;        // the Export notebook dialog (App Flow §17)
   setExportOpen: (open: boolean) => void;
+  exportPreset: Record<string, boolean> | null; // options chat asked for ("export a notebook without the data")
+  openExport: (preset: Record<string, boolean> | null) => void;
+  csvSelection: { row_ids: number[]; columns: string[] } | null; // the CSV grid's selection, the chat's context there
+  setCsvSelection: (s: { row_ids: number[]; columns: string[] } | null) => void;
   cascade: Record<string, { version: number; widgetIds: string[]; cardIds: string[] }>; // dataset_id → running cascade
   setCascade: (datasetId: string, c: { version: number; widgetIds: string[]; cardIds: string[] } | null) => void;
   setEditLayout: (on: boolean) => void;
@@ -91,6 +95,10 @@ export const useUi = create<UiState>((set, get) => ({
   sendChat: (chatOutbox) => set({ chatOutbox }),
   exportOpen: false,
   setExportOpen: (exportOpen) => set({ exportOpen }),
+  exportPreset: null,
+  openExport: (exportPreset) => set({ exportPreset, exportOpen: true }),
+  csvSelection: null,
+  setCsvSelection: (csvSelection) => set({ csvSelection }),
   cascade: {},
   setCascade: (datasetId, c) =>
     set((s) => {

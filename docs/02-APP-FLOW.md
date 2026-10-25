@@ -366,6 +366,11 @@ As built (2026-10-25, Implementation Plan D4.8):
 - A clarification shows its options as buttons, which work on the latest message only.
 - Plans and proposals arrive with D8.5.
 - Row answers link to the CSV tab with `?rows=<selection>`. The interim table there shows a "n rows selected" chip and "Show all rows".
+- **Since D8.5 (2026-10-25):**
+  - A plan shows as a checklist above the answer (○ waiting, ◌ running, ✓ done, × failed) and stays on the saved message.
+  - On the CSV tab, selected cells are the context: the chip reads "3 rows selected". "Set this age to 1" or "make these empty" answers "Nothing has changed yet. Approve to apply this, or reject it." with a dashed proposal card listing each cell (row, column, now struck through, after). **Approve** saves it as a new version ("Saved as v3. Undo it from the Changes panel."), and the card then reads Approved. **Reject** reads Rejected. A proposal whose data moved on reads "Expired: the data changed since". "Clean these rows" proposes Clean with AI on the selected rows; approving starts it.
+  - On the Dashboard, with a widget clicked (the context chip names it), "make it a pie chart" changes that widget at once, shows it, and offers **Undo**.
+  - "Export a notebook without the data" opens the export dialog with Include data off, and the answer keeps an **Export notebook** button.
 
 Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. 'average fare by pclass'." · "There's no column for nationality. The closest is home.dest; want that?" (button) · "That needs about 100 rows and this selection has 41."
 

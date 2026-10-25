@@ -72,6 +72,7 @@ class Entity(Strict):
 INTENTS = Literal[
     "ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats",
     "ask_model", "ask_meaning", "app_help", "create_widget", "update_widget", "ask_story",
+    "edit_cells", "clean_selection",
 ]
 
 
@@ -166,3 +167,26 @@ class Meaning(Strict):
         if not self.general.strip():
             raise ValueError("the meaning can't be empty")
         return self
+
+
+# --- Chat completion, D8.5 (TRD §8.1 step 4, §8.2 actions) ------------------------------------
+
+
+class CellDraft(Strict):
+    row_id: int = Field(description="the _row_id of the row to change")
+    column: str = Field(description="the column to change, exactly as named in the file")
+    value: str | None = Field(description="the new value as text, or null to empty the cell")
+
+
+class EditsDraft(Strict):
+    reading: str = Field(description="which rows and columns the request means, and the new values, in a few words")
+    edits: list[CellDraft] = Field(min_length=1, max_length=200)
+
+
+class PlanStep(Strict):
+    intent: INTENTS
+    question: str = Field(description="this step's own question, complete on its own")
+
+
+class Plan(Strict):
+    steps: list[PlanStep] = Field(min_length=2, max_length=5)

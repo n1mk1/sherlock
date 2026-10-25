@@ -318,6 +318,7 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
     "version.created": () => {
       qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
+      qc.invalidateQueries({ queryKey: keys.datasets, exact: true }); // the library row's "v3"
       qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
       qc.invalidateQueries({ queryKey: ["datacard", datasetId] });
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });

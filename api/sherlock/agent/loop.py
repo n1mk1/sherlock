@@ -16,6 +16,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
+from sherlock.agent import actions as acts
 from sherlock.agent import flow, insight, prompts
 from sherlock.agent.answerers import CantAnswer, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
@@ -23,7 +24,7 @@ from sherlock.agent.resolve import resolve
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
-from sherlock.llm.schemas import Route
+from sherlock.llm.schemas import Plan, Route
 from sherlock.profile import service as profile_service
 from sherlock.widgets import compile as wc
 from sherlock.widgets import service as ws
@@ -32,29 +33,35 @@ MAX_CALLS = 8
 WALL_S = 90.0
 HISTORY = 6
 CARD_CHARS = 16_000  # about 4k tokens
-NOT_YET = {
-    "update_widget": "Changing a widget from chat isn't built yet; use the widget's menu.",
-}
+NOT_YET: dict[str, str] = {}
 # Tool exposure by tab (TRD §8.2): the answerers everywhere, actions where they belong.
 ANSWERERS = ("ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats", "ask_model",
              "ask_meaning", "app_help")
 TOOLS = {
     "dashboard": ANSWERERS + ("create_widget", "update_widget"),
-    "csv": ANSWERERS,
+    "csv": ANSWERERS + ("edit_cells", "clean_selection"),
     "flow": ANSWERERS + ("ask_story",),
 }
 ELSEWHERE = {
     "create_widget": "Adding a widget works from the Dashboard tab; ask there, or use Add widget.",
     "update_widget": "Changing a widget works from the Dashboard tab.",
     "ask_story": "Questions about the story cards work from the Flow tab.",
+    "edit_cells": "Changing cells from chat works from the CSV tab, where you can see them.",
+    "clean_selection": "Cleaning from chat works from the CSV tab; select rows there, or use Clean with AI.",
 }
+STEP_LABELS = {"ask_data": "Query the data", "find_rows": "Find the rows", "explain_widget": "Explain the widget",
+               "ask_history": "Look at the history", "ask_why": "Find what drives it", "ask_stats": "Run a test",
+               "ask_model": "Read the model card", "ask_meaning": "Look at the column", "app_help": "Look in the help",
+               "create_widget": "Add a widget", "update_widget": "Change the widget", "ask_story": "Read the cards",
+               "edit_cells": "Propose the edits", "clean_selection": "Propose a clean"}
+SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at a time (TRD §8.1 step 1)
 DATA_INTENTS = ("ask_data", "find_rows")
 INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help")
 DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
 
 
-def to_message(row: sqlite3.Row) -> dict:
-    """A message in the TRD §4.9 `Message` shape."""
+def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> dict:
+    """A message in the TRD §4.9 `Message` shape (with its proposal when `db` is given)."""
     out = {
         "id": row["id"], "role": row["role"], "text": row["text"], "blocks": json.loads(row["blocks_json"]),
         "sources": json.loads(row["sources_json"]), "created_at": row["created_at"],
@@ -67,6 +74,10 @@ def to_message(row: sqlite3.Row) -> dict:
     focus = json.loads(row["focus_json"]) if row["focus_json"] else {}
     if focus.get("actions"):
         out["actions"] = focus["actions"]
+    if row["proposal_id"] and db is not None:
+        p = db.execute("SELECT * FROM proposals WHERE id = ?", (row["proposal_id"],)).fetchone()
+        if p:
+            out["proposal"] = acts.to_proposal(p)
     return out
 
 
@@ -94,16 +105,17 @@ class Agent:
     # --- persistence --------------------------------------------------------------------------
 
     def _save(self, mid: str, role: str, text: str, *, blocks=(), sources=(), context=None, focus=None,
-              clarification=None, clarification_of=None, route=None, tokens=0) -> dict:
+              clarification=None, clarification_of=None, route=None, tokens=0, plan=None, proposal_id=None) -> dict:
         self.db.execute(
             "INSERT INTO messages (id, dataset_id, role, text, blocks_json, sources_json, context_json, focus_json, "
-            "clarification_json, clarification_of, route_json, tokens_used, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "clarification_json, clarification_of, route_json, tokens_used, plan_json, proposal_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (mid, self.dataset["id"], role, text, json.dumps(list(blocks), default=str), json.dumps(list(sources)),
              json.dumps(context) if context is not None else None, json.dumps(focus, default=str) if focus else None,
              json.dumps(clarification) if clarification else None, clarification_of,
-             json.dumps(route) if route else None, tokens, now_iso()),
+             json.dumps(route) if route else None, tokens, json.dumps(plan) if plan else None, proposal_id, now_iso()),
         )
-        return to_message(self.db.execute("SELECT * FROM messages WHERE id = ?", (mid,)).fetchone())
+        return to_message(self.db.execute("SELECT * FROM messages WHERE id = ?", (mid,)).fetchone(), self.db)
 
     def _history(self) -> tuple[list[sqlite3.Row], dict | None]:
         rows = self.db.execute(
@@ -148,6 +160,9 @@ class Agent:
                 prev += f"\nIts query: {focus['sql']}"
             parts.append("Use this only if the message is incomplete on its own and continues it (like \"and for women "
                          "only?\"); a message that makes sense by itself is a new question:\n" + data_block(prev))
+        summary = self.db.execute("SELECT summary FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
+        if summary:
+            parts.append("Earlier in this conversation (a summary):\n" + data_block(summary["summary"]))
         recent = [f"{r['role']}: {r['text'][:300]}" for r in history if r["text"]]
         if recent:
             parts.append("Recent messages:\n" + data_block("\n".join(recent)))
@@ -191,6 +206,8 @@ class Agent:
         base_context = self._context(card, rows_scope, history, focus, None, context)
 
         tab = context.get("tab") if context.get("tab") in TOOLS else "dashboard"
+        if acts.EXPORT.search(question):
+            return self._export(mid, question, context, scope)
         if tab == "flow" and flow.MAKE_SENSE.search(question):
             # "Make sense of this" on the canvas is the synthesis action; no routing call is needed.
             route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
@@ -215,17 +232,29 @@ class Agent:
         # widget for "survival rate by sex as a chart" next to the answer despite the route prompt.
         if "create_widget" in intents and len(intents) > 1 and not DASHBOARD_WORDS.search(question):
             intents.remove("create_widget")
-        for n, intent in enumerate(intents, 1):
+        steps = [(i, question) for i in intents]
+        if route.multi_step:
+            steps = self._plan(question, ctx_text, scope, TOOLS[tab]) or steps
+        plan = [{"text": f"{STEP_LABELS.get(i, i)}: {q}" if q != question else STEP_LABELS.get(i, i), "status": "pending"}
+                for i, q in steps] if len(steps) > 1 else None
+        if plan:
+            self.emit("plan", {"steps": plan})
+        proposal = None
+        for n, (intent, q) in enumerate(steps, 1):
             if kit.calls[0] >= MAX_CALLS or time.monotonic() - self.started > WALL_S:
                 notes.append("I stopped early to stay within this answer's budget.")
                 break
             kit.calls[0] += 1
+            if plan:
+                plan[n - 1]["status"] = "running"
+                self.emit("plan.step", {"index": n - 1, "status": "running"})
+            before = (len(blocks), len(results), len(notes))
             try:
                 if intent not in TOOLS[tab]:
                     raise CantAnswer(ELSEWHERE.get(intent, "I can't do that here."))
                 if intent in INSIGHT:
                     rid = f"r{len(results) + len(computed) + 1}"
-                    reply = self._insight(intent, kit, question, resolved, card, context, focus, rid)
+                    reply = self._insight(intent, kit, q, resolved, card, context, focus, rid)
                     blocks += reply.blocks
                     sources += reply.sources
                     actions += reply.actions
@@ -236,7 +265,7 @@ class Agent:
                 if intent in ("ask_data", "find_rows"):
                     self.emit("status", {"text": "Running a query" if intent == "ask_data" else "Finding rows"})
                     rid = f"r{len(results) + len(computed) + 1}"
-                    res = kit.ask_data(question, rid) if intent == "ask_data" else kit.find_rows(question, rid, columns)
+                    res = kit.ask_data(q, rid) if intent == "ask_data" else kit.find_rows(q, rid, columns)
                     results.append(res)
                     streamed.append(table_block(res))
                     self.emit("block", streamed[-1])  # the first block, before the prose is written
@@ -246,7 +275,7 @@ class Agent:
                         actions.append({"kind": "open_rows", "selection_id": res.selection_id})
                 elif intent == "create_widget":
                     self.emit("status", {"text": "Building a widget"})
-                    w = kit.create_widget(question)
+                    w = kit.create_widget(q)
                     data = ws.data(self.env, dataset, w, [])
                     spec = json.loads(w["spec_json"])
                     blocks.append(text_block([{"type": "text", "text": "I added "},
@@ -274,7 +303,7 @@ class Agent:
                     actions.append({"kind": "open_widget", "widget_id": w["id"]})
                 elif intent == "ask_story":
                     selected = [c for c in (context.get("selected_card_ids") or []) if isinstance(c, str)]
-                    if flow.MAKE_SENSE.search(question):
+                    if flow.MAKE_SENSE.search(q):
                         self.emit("status", {"text": "Reading the selected cards"})
                         made, cited, card_out = flow.make_sense(self.db, self.env.bus, self.llm, scope, dataset, selected, columns)
                         blocks += made
@@ -282,16 +311,16 @@ class Agent:
                         focus_out["card_id"] = card_out["id"]
                     else:
                         self.emit("status", {"text": "Reading the story cards"})
-                        made, cited = flow.ask_story(self.db, self.llm, scope, dataset, question, selected, columns)
+                        made, cited = flow.ask_story(self.db, self.llm, scope, dataset, q, selected, columns)
                         blocks += made
                         sources += cited
                 elif intent == "ask_history":
                     vrow = ws.version_row(self.db, dataset["id"], dataset["current_version"])
-                    steps = ask_history(self.db, dataset["id"], question, json.loads(vrow["effective_step_ids_json"]))
-                    if not steps:
+                    found = ask_history(self.db, dataset["id"], q, json.loads(vrow["effective_step_ids_json"]))
+                    if not found:
                         raise CantAnswer("Nothing has changed this file yet.")
                     runs = []
-                    for s in steps:
+                    for s in found:
                         runs.append({"type": "label", "ref": f"step:{s['id']}",
                                      "text": f"Step {s['no']}: {s['summary']}" + ("" if s["active"] else " (undone)")})
                         why = next((d.get("reason") for d in s["decisions"] if d.get("reason")), None)
@@ -299,7 +328,38 @@ class Agent:
                             runs.append({"type": "label", "ref": f"step:{s['id']}:reason", "text": f" — {why}"})
                         runs.append({"type": "text", "text": "\n"})
                     blocks.append({"type": "text", "body": {"blocks": [{"type": "bullets", "runs": runs}]}})
-                    sources += [{"kind": "step", "step_id": s["id"], "label": f"Step {s['no']}"} for s in steps]
+                    sources += [{"kind": "step", "step_id": s["id"], "label": f"Step {s['no']}"} for s in found]
+                elif intent == "update_widget":
+                    wid = context.get("focused_widget_id") or next(iter(resolved["widgets"].values()), None) or (focus or {}).get("widget_id")
+                    w = self.db.execute("SELECT * FROM widgets WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL",
+                                        (wid, dataset["id"])).fetchone() if wid else None
+                    if w is None:
+                        raise CantAnswer("Which widget? Click one on the dashboard (it becomes the chat's context), or name it.")
+                    self.emit("status", {"text": "Changing the widget"})
+                    w = kit.update_widget(q, w)
+                    spec = json.loads(w["spec_json"])
+                    blocks.append(text_block([{"type": "text", "text": "I changed "},
+                                              {"type": "label", "ref": f"widget:{w['id']}", "text": w["title"]},
+                                              {"type": "text", "text": " on the dashboard. Undo puts it back."}]))
+                    data = ws.data(self.env, dataset, w, [])
+                    blocks.append({"type": "chart", "spec": spec, "data": data, "widget_id": w["id"]}
+                                  if spec["view"]["type"] not in ("table", "kpi") else
+                                  {"type": "table", "columns": data["columns"], "rows": data["rows"][:20], "total": data["row_count"],
+                                   "widget_id": w["id"]})
+                    sources.append({"kind": "sql", "sql": ws.explain(self.env, dataset, w, [])["sql"],
+                                    "label": w["title"] + (f", reading {kit.reading}" if kit.reading else "")})
+                    actions += [{"kind": "open_widget", "widget_id": w["id"]}, {"kind": "undo_widget", "widget_id": w["id"]}]
+                    focus_out["widget_id"] = w["id"]
+                elif intent in ("edit_cells", "clean_selection"):
+                    if proposal is not None:
+                        raise CantAnswer("One change at a time: approve or reject the proposal above first.")
+                    self.emit("status", {"text": "Working out the change"})
+                    proposal = (acts.propose_edits(kit, q, context, types) if intent == "edit_cells"
+                                else acts.propose_clean(self.db, dataset, context, mid))
+                    self.emit("proposal", proposal)
+                    blocks.append(text_block([{"type": "text", "text": "Nothing has changed yet. Approve to apply this, "
+                                               "or reject it." if intent == "edit_cells" else
+                                               "Approve to start Clean with AI; each fix it makes is a step you can undo."}]))
                 else:
                     raise CantAnswer(NOT_YET.get(intent, "I can't do that yet."))
             except CantAnswer as exc:
@@ -311,6 +371,11 @@ class Agent:
                 if exc.code in ("llm_unavailable", "budget_exceeded"):
                     raise
                 notes.append(exc.message)
+            finally:  # also after an insight step's `continue`
+                if plan:
+                    ok = (len(blocks), len(results)) != before[:2] and len(notes) == before[2]
+                    plan[n - 1]["status"] = "done" if ok else "failed"
+                    self.emit("plan.step", {"index": n - 1, "status": plan[n - 1]["status"]})
 
         if results:
             self.emit("status", {"text": "Writing the answer"})
@@ -359,10 +424,66 @@ class Agent:
                 unique.append(a)
         actions = unique
         focus_out["actions"] = actions
+        if proposal and not text:
+            text = proposal["summary"]
         out = self._save(mid, "assistant", text, blocks=blocks, sources=sources, context=context, focus=focus_out,
-                         route=route.model_dump(), tokens=scope.message_tokens[0])
+                         route=route.model_dump(), tokens=scope.message_tokens[0], plan={"steps": plan} if plan else None,
+                         proposal_id=proposal["id"] if proposal else None)
+        self.emit("message", out)
+        self._summarize(scope)
+        return out
+
+    def _export(self, mid: str, question: str, context: dict, scope: CallScope) -> dict:
+        """"Export a notebook" (App Flow §17.1): the dialog, with the options the wording asks for."""
+        options = acts.export_options(question)
+        said = {"include_data": "without the data", "include_cards": "without the story cards",
+                "include_notes": "with the canvas notes", "include_runs": "without the analyses"}
+        extra = [said[k] for k in options]
+        text = "Here's the notebook export" + (f", {' and '.join(extra)}" if extra else "") + \
+               ". Check the options and press Export; it downloads when it's ready."
+        out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], context=context,
+                         focus={"question": question, "intents": ["open_export"],
+                                "actions": [{"kind": "open_export", "options": options}]})
         self.emit("message", out)
         return out
+
+    def _plan(self, question: str, context: str, scope: CallScope, tools) -> list[tuple[str, str]] | None:
+        """A message that asks for several things becomes two to five steps (TRD §8.1 step 4)."""
+        intents = "\n".join(f"- {prompts.INTENT_LINES[i]}" for i in tools)
+        messages = [{"role": "system", "content": prompts.SYSTEM},
+                    {"role": "user", "content": prompts.PLAN.format(intents=intents, context=context, message=data_block(question))}]
+        try:
+            plan = self.llm.structured("medium", messages, Plan, purpose="plan", scope=scope).value
+        except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
+            return None
+        steps = [(s.intent, s.question.strip() or question) for s in plan.steps if s.intent in tools]
+        if "create_widget" in [i for i, _ in steps] and not DASHBOARD_WORDS.search(question):
+            steps = [(i, q) for i, q in steps if i != "create_widget"]
+        return steps[:5] if len(steps) >= 2 else None
+
+    def _summarize(self, scope: CallScope) -> None:
+        """Fold older messages into the running summary, ten at a time, with `small` (TRD §8.1 step 1).
+        Best effort: a failure keeps the old summary."""
+        row = self.db.execute("SELECT * FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
+        after = row["up_to_message_id"] if row else ""
+        older = self.db.execute(
+            "SELECT id, role, text FROM messages WHERE dataset_id = ? AND id > ? ORDER BY created_at, id",
+            (self.dataset["id"], after)).fetchall()[:-HISTORY]  # the latest six stay in the context as they are
+        if len(older) < SUMMARY_EVERY:
+            return
+        lines = "\n".join(f"{m['role']}: {m['text'][:300]}" for m in older)
+        prompt = prompts.SUMMARY.format(previous=data_block(row["summary"] if row else "none"), messages=data_block(lines))
+        try:
+            c = self.llm.complete("small", [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": prompt}],
+                                  purpose="summary", scope=scope, max_tokens=600)
+        except Exception:  # noqa: BLE001 - the summary is never worth failing an answer
+            return
+        summary = (c.text or "").strip()[:1500]
+        if summary:
+            self.db.execute("INSERT INTO thread_summaries (dataset_id, summary, up_to_message_id, updated_at) VALUES (?, ?, ?, ?) "
+                            "ON CONFLICT(dataset_id) DO UPDATE SET summary = excluded.summary, "
+                            "up_to_message_id = excluded.up_to_message_id, updated_at = excluded.updated_at",
+                            (self.dataset["id"], summary, older[-1]["id"], now_iso()))
 
     def _insight(self, intent: str, kit: Toolkit, question: str, resolved: dict, card: dict, context: dict,
                  focus: dict | None, rid: str) -> "insight.Reply":

@@ -158,6 +158,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
   - **Identity first** (2026-10-25, D8.2). The app renders nothing but the theme until `GET /me` answers. On a first visit there is no identity cookie, and the page's first requests (the library, the user-level event stream, `/me`) used to go out at once, each creating its own anonymous user. The browser kept one cookie, while the stream listened to another user, so a first visit never saw its dataset's status change. Seen live: four users in 11 ms.
   - **Flow** (D8.2). `src/api/canvas.ts` reads and saves the canvas and merges three ways: this tab's changes since the last copy both sides agreed on, applied to the server's newer copy (a card is kept once). Saves are debounced 500 ms and carry the etag. A `409` refetches, merges and saves again. `canvas.updated` refetches unless its etag is one this tab wrote. The chat bar sends `selected_card_ids` on the Flow tab, and `useUi.sendChat` lets the canvas send "Make sense of this" through it.
+  - **Chat completion** (D8.5). On the CSV tab the grid's selection (rows and the columns it spans) is the chat's `selected_cells`, shown as "3 rows selected" and cleared when the tab closes. The thread shows a plan as a checklist that ticks off while it streams, a proposal as a dashed card with the edits (row, column, now, after) and Approve and Reject, Undo for a changed widget, and Export notebook. An `open_export` answer opens the export dialog itself, with its options over the remembered ones (`useUi.openExport`). `version.created` also refreshes the library list.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
 - **Local dev:** `docker-compose.yml` runs the API from the `uv` Python 3.12 image and the web app from `node:24`, and Vite proxies `/api` and `/healthz` to the API. `.env` is optional for compose but required for model calls.
 
@@ -484,6 +485,22 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 | POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits; `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
+Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/actions.py`, `sherlock/routers/proposals.py`):
+- **`edit_cells`.** `medium` (schema `EditsDraft`: `reading`, one to 200 `edits` of `{ row_id, column, value }`, purpose `edits`) reads the request with the selected cells' current values (`ChatContext.selected_cells`, up to 60 cells) in a data block.
+  - Columns must be the file's own; `_row_id` and `_quarantine_reason` can't be edited (a violation gets the validator's repair).
+  - Every row must exist in the current version, else the answer says "Row n isn't in this version of the file".
+  - Edits to a cell already holding the value (numbers compared as numbers) are dropped; if none are left, the answer says there's nothing to change.
+  - The payload is `{ summary, edits: [{ row_id, column, value, before }], impact: { cells_changed, rows_affected } }`. The summary is written by code ("Change 1 cell in 1 row: age"), because model wording could carry numbers the user never typed.
+- **`clean_selection`** has no model call before approval. Its scope is the context's `selection_id`, else a selection saved from the selected cells' rows, else the whole file. The payload is `{ summary: "Clean with AI on the 3 selected rows", scope: { kind, selection_id }, impact }`.
+- **Approve.**
+  - A proposal that isn't `pending` is `409` ("This proposal was already approved.").
+  - A `base_version` that is no longer current marks it `expired` and answers `409` with `current_version`.
+  - `edit_cells` commits one edit batch through the same `rows.edits.save` as the CSV tab's Save, and answers `{ step, version }` with `result_step_id` stored.
+  - `clean_selection` queues the clean job under the same rules as `POST /clean` and answers the `Job`.
+- **Reject** marks a pending proposal `rejected`; it is always `204`.
+- **`GET /proposals/{id}`** answers the `Proposal`. Every proposal route resolves through its dataset (`owned("proposal")`).
+- **`Proposal` as built:** the §6.8 shape plus `result_step_id`; `edits` items carry `before`, and `scope` is set for `clean_selection`. The message that made it carries it as `proposal`, read fresh from the table, so the thread shows its current status.
+
 Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `sherlock/routers/cleaning.py`):
 - **`POST /clean`.**
   - It answers `201` with the queued `Job`, and counts against the LLM rate limit.
@@ -807,6 +824,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`,
 As built (D4.3):
 - **How it runs.** The loop runs in a worker thread with its own SQLite connection, and the stream reads its events from a queue.
 - **Events sent.** `status`, `block`, `clarification`, `sources`, `message` and `error`. `plan`, `plan.step` and `proposal` come with multi-step plans and proposals (D8.5), and prose isn't streamed as `text.delta`.
+- **Since D8.5:** `plan` (`{ steps }`), `plan.step` (`{ index, status }`) and `proposal` (the `Proposal`) are sent as described in §8.1 and §4.4. A `Message` adds `plan` (`{ steps }` with final statuses) and `proposal`, and its `actions` may hold `undo_widget` (`widget_id`) and `open_export` (`options`).
 - **Order.** Each query's results go out as a `table` block as soon as the query has run, before the prose is written. Then come the final blocks that weren't already sent, then `sources`. The final `message` holds the answer's blocks in their order, which the client renders in place of what streamed.
 - **Ending.** The stream always ends with `message`. When the model is unavailable or over budget it is preceded by `error` (`{ code, message }`), and the message says so. An unexpected failure ends with `error` alone.
 
@@ -1681,6 +1699,15 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
   - The fallback after one repair is the raw results: a single cell as a number, otherwise a table.
 - **Verify.** Every value in a block or chip is read from a result cell by code, and text runs can't contain digits (schema validator). So the check in step 7 holds by construction, and the eval counts unsourced answers.
 - **Not yet:** the multi-step planner (step 4), the thread summary, and `update_widget`, `edit_cells` and `clean_selection` proposals (D8.5). Suggested questions are cut (Implementation Plan §2.0, cut 9).
+- **Built with D8.5 (2026-10-25, `sherlock/agent/actions.py`, `loop.py`):**
+  - **Plans (step 4).** A route with `multi_step` asks `medium` for a `Plan` (purpose `plan`, schema: two to five steps, each an intent the tab exposes and its own complete question). Steps the tab doesn't expose are dropped, and `create_widget` needs "dashboard", "widget" or "pin" in the message, as for routing. Fewer than two steps left, or a failed call, falls back to the routed intents with the whole question.
+    - With two or more steps the answer emits `plan` (`{ steps: [{ text, status: "pending" }] }`); a step's text is its kind ("Query the data") and its question.
+    - Each step emits `plan.step` `{ index, status: "running" }`, then `done` or `failed`. A step is done when it added a block or a result and no note.
+    - The steps share the eight-call and 90 s budgets. The message stores the plan with the final statuses (`plan_json`), and compose sees the whole question with every step's results.
+  - **Running summary (step 1).** After each answer, once ten or more messages older than the latest six aren't covered by the summary, `small` folds them into it (purpose `summary`, plain text, at most 1,500 characters, the previous summary included). It is stored in `thread_summaries` with the last folded message's ID, and the context gives it as "Earlier in this conversation (a summary)". A failed call keeps the old summary.
+  - **`update_widget`** (Dashboard tab). The widget is the focused one, else one named in the message, else the previous answer's. Without one, the answer is "Which widget? Click one on the dashboard (it becomes the chat's context), or name it." `medium` returns the whole new widget (schema `WidgetDraft`, purpose `update_widget`) from its current title, SQL, view and columns, with one repair on a failing query. It applies at once through the widgets service, like an edit in the widget's menu: the old spec goes to `prev_spec_json` and the story is told again. The answer shows the widget, its query as the source, and the actions `open_widget` and `undo_widget`. Analysis widgets are refused (their settings change them).
+  - **`edit_cells` and `clean_selection`** (CSV tab) make proposals; see §4.4. One proposal per message.
+  - **"Export a notebook."** A message that asks to export, download or save a notebook (`actions.EXPORT`) is answered without a model call: one sentence and the action `open_export` with the options the wording asks for ("without the data" → `include_data: false`; "without the cards", "with the canvas notes", "without the models"). The web app opens the export dialog with those options on top of the remembered ones.
 - **Eval v0 (`uv run sherlock eval ask`, 2026-10-25).** The first run passed 31 of 35 and the second 32 of 35, with 0 unsourced answers and a median of 11–12 s per answer. The misses were routing variance, false "no column answers that", and `AVG` over a boolean; the SQL prompt now covers the last two.
   - **Scoring.** A value question passes when any number block or cell is within the tolerance. A rows question passes when one table or chart holds every expected key with its value. Every column is tried as the key, because the SQL may list the measure before the category (on 2026-10-25, "Revenue by region" listed `revenue` first and was scored a miss although its values were right). A count question passes on the row list's total.
   - Later runs on 2026-10-25: 34 of 35 after Day 7's first slice, and 33 of 35 after `cfb4b08`. Both re-run misses were the column-order case above, scored before this fix.
@@ -1715,6 +1742,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
 - **Tool exposure by tab (`loop.py::TOOLS`).**
   - Every tab exposes the answerers: `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help`.
   - Dashboard adds `create_widget` and `update_widget`, and Flow adds `ask_story`. CSV adds nothing yet: `clean_selection` and `edit_cells` are D8.5.
+  - Since D8.5, CSV adds `edit_cells` and `clean_selection`. Asked for on another tab, they answer "Changing cells from chat works from the CSV tab, where you can see them." or the cleaning equivalent.
   - The route prompt lists only the exposed intents, one line each (`prompts.INTENT_LINES`). An intent routed on a tab that doesn't expose it gets a sentence saying where it works.
   - `run_recipe` is `ask_why`.
 - **Grounding.** Every number is computed in code. `ask_stats`, `ask_why`, `ask_meaning` and "who did it get wrong?" write their prose in code, with each number a chip naming a cell of a result. `ask_model` hands the model card to the composer as results (rows of measures and values, with per-cell formats so rates read as percentages), and the composer cites their cells as for `ask_data`.

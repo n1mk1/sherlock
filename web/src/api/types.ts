@@ -222,11 +222,30 @@ export interface Source {
 }
 
 export interface MessageAction {
-  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export" | "open_model_card";
+  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export" | "open_model_card" | "undo_widget";
   block_index?: number;
   run_id?: string;
   widget_id?: string;
   selection_id?: string;
+  options?: Partial<Record<"include_data" | "include_cards" | "include_notes" | "include_runs", boolean>>;
+}
+
+/** A change chat proposed (TRD §6.8): nothing applies until it's approved. */
+export interface Proposal {
+  id: string;
+  kind: "edit_cells" | "clean_selection" | "clean_step" | "card_edit" | "computed_column";
+  base_version: number;
+  status: "pending" | "approved" | "rejected" | "expired";
+  summary: string;
+  edits?: { row_id: number; column: string; value: string | null; before: unknown }[];
+  scope?: { kind: "all" | "selection"; selection_id: string | null };
+  impact: { cells_changed: number; rows_affected: number };
+  result_step_id?: string | null;
+}
+
+export interface PlanStep {
+  text: string;
+  status: "pending" | "running" | "done" | "failed";
 }
 
 export interface Message {
@@ -238,6 +257,8 @@ export interface Message {
   clarification?: { question: string; options: string[] };
   clarification_of?: string | null;
   actions?: MessageAction[];
+  proposal?: Proposal;
+  plan?: { steps: PlanStep[] };
   created_at: string;
 }
 

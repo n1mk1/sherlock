@@ -9,8 +9,9 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { request } from "@/api/client";
 import { filterParam, keys, sendChat, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
-import type { AnswerBlock, Dataset, Message, Source, Tab } from "@/api/types";
+import type { AnswerBlock, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,7 @@ interface Pending {
   text: string;
   status: string;
   blocks: AnswerBlock[];
+  plan?: PlanStep[];
 }
 
 function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; placeholder: string }) {
@@ -80,6 +82,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   const [pending, setPending] = useState<Pending | null>(null);
   const focused = widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
   const selectedCards = useFlow((s) => s.selectedCardIds);
+  const csvSelection = useUi((s) => s.csvSelection);
+  const openExport = useUi((s) => s.openExport);
 
   // `/` focuses the bar when nothing editable has focus (PRD §7.11).
   useEffect(() => {
@@ -104,6 +108,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         ...(tab === "dashboard" && filter ? { global_filter: JSON.parse(filterParam(filter)) } : {}),
         ...(tab === "dashboard" && focused ? { focused_widget_id: focused.id } : {}),
         ...(tab === "flow" ? { selected_card_ids: selectedCards } : {}),
+        ...(tab === "csv" && csvSelection ? { selected_cells: csvSelection } : {}),
       },
       ...extra,
     };
@@ -113,11 +118,19 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
       await sendChat(dataset.id, body, ({ type, data }) => {
         if (type === "status") setPending((p) => p && { ...p, status: String(data.text) });
         else if (type === "block") setPending((p) => p && { ...p, blocks: [...p.blocks, data as unknown as AnswerBlock] });
-        else if (type === "message") {
-          qc.setQueryData<Message[]>(keys.chat(dataset.id), (list) => [...(list ?? []), data as unknown as Message]);
-          if ((data as unknown as Message).actions?.some((a) => a.kind === "open_widget")) {
+        else if (type === "plan") setPending((p) => p && { ...p, plan: data.steps as PlanStep[] });
+        else if (type === "plan.step") {
+          const { index, status } = data as { index: number; status: PlanStep["status"] };
+          setPending((p) => (p?.plan ? { ...p, plan: p.plan.map((s, i) => (i === index ? { ...s, status } : s)) } : p));
+        } else if (type === "message") {
+          const m = data as unknown as Message;
+          qc.setQueryData<Message[]>(keys.chat(dataset.id), (list) => [...(list ?? []), m]);
+          if (m.actions?.some((a) => a.kind === "open_widget")) {
             qc.invalidateQueries({ queryKey: keys.widgets(dataset.id) });
           }
+          // "Export a notebook": the dialog opens with the options the message asked for (App Flow §17.1).
+          const exp = m.actions?.find((a) => a.kind === "open_export");
+          if (exp) openExport(exp.options ?? null);
         }
       });
     } catch (e) {
@@ -143,6 +156,9 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     void send(message);
   };
 
+  const csvChip = tab === "csv" && csvSelection
+    ? `${csvSelection.row_ids.length.toLocaleString()} ${csvSelection.row_ids.length === 1 ? "row" : "rows"} selected`
+    : null;
   const chip = tab === "dashboard" && (filter || focused)
     ? { label: filter ? `${filter.col} = ${String(filter.value)}` : focused!.title, clear: () => (filter ? clearFilter(dataset.id) : setFocusedWidget(null)) }
     : null;
@@ -175,8 +191,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
           </button>
         ) : (
           <span className={cn("ml-1 inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[12px]",
-            flowChip && selectedCards.length ? "border-accent text-accent" : "border-border text-muted-foreground")}>
-            {flowChip ?? "All rows"}
+            (flowChip && selectedCards.length) || csvChip ? "border-accent text-accent" : "border-border text-muted-foreground")}>
+            {flowChip ?? csvChip ?? "All rows"}
           </span>
         )}
         <label className="sr-only" htmlFor="chat-input">Ask Sherlock</label>
@@ -242,6 +258,7 @@ function Thread({ dataset, messages, pending, onClose, onChoice }: {
           <>
             <UserBubble text={pending.text} />
             <div className="flex flex-col gap-3">
+              {pending.plan && <PlanView steps={pending.plan} />}
               {pending.blocks.map((b, i) => <BlockView key={i} block={b} datasetId={dataset.id} />)}
               <p className="text-[13px] italic text-muted-foreground">
                 {pending.status}<span className="ml-1 inline-block animate-pulse">···</span>
@@ -272,6 +289,8 @@ function MessageView({ message, dataset, onChoice }: {
   if (message.role === "user") return <UserBubble text={message.text} />;
   const pinnable = new Set((message.actions ?? []).filter((a) => a.kind === "pin").map((a) => a.block_index));
   const addable = new Set((message.actions ?? []).filter((a) => a.kind === "add_to_flow").map((a) => a.block_index));
+  const undoWidget = (message.actions ?? []).find((a) => a.kind === "undo_widget");
+  const exportAction = (message.actions ?? []).find((a) => a.kind === "open_export");
   const modelCard = (message.actions ?? []).find((a) => a.kind === "open_model_card");
   return (
     <div className="flex flex-col gap-3">
@@ -285,6 +304,7 @@ function MessageView({ message, dataset, onChoice }: {
           </div>
         </div>
       )}
+      {message.plan && <PlanView steps={message.plan.steps} />}
       {message.blocks.map((b, i) => (
         <div key={i} className="flex flex-col gap-1.5">
           <BlockView
@@ -308,14 +328,111 @@ function MessageView({ message, dataset, onChoice }: {
           )}
         </div>
       ))}
+      {message.proposal && <ProposalView proposal={message.proposal} dataset={dataset} />}
       {modelCard?.run_id && (
         <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>
+      )}
+      {(undoWidget || exportAction) && (
+        <div className="flex gap-2">
+          {undoWidget?.widget_id && <UndoWidget widgetId={undoWidget.widget_id} datasetId={dataset.id} />}
+          {exportAction && (
+            <Button size="sm" className="self-start" onClick={() => useUi.getState().openExport(exportAction.options ?? null)}>
+              Export notebook
+            </Button>
+          )}
+        </div>
       )}
       {message.sources.length > 0 && <Sources sources={message.sources} />}
       {modelCard && card && (
         <Suspense fallback={null}><ModelCardDrawer datasetId={dataset.id} runId={card} onClose={() => setCard(null)} /></Suspense>
       )}
     </div>
+  );
+}
+
+/** A multi-step answer's plan (PRD ASK-7): each step with its state as the answer streams. */
+function PlanView({ steps }: { steps: PlanStep[] }) {
+  const mark = { pending: "○", running: "◌", done: "✓", failed: "×" } as const;
+  return (
+    <ol aria-label="Plan" className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-[13px]">
+      {steps.map((s, i) => (
+        <li key={i} className={cn("flex gap-2", s.status === "pending" && "text-muted-foreground", s.status === "failed" && "text-warning")}>
+          <span aria-hidden className={cn("w-3 text-center", s.status === "done" && "text-accent", s.status === "running" && "animate-pulse")}>
+            {mark[s.status]}
+          </span>
+          <span>{s.text}</span>
+          <span className="sr-only">({s.status})</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** A proposed change (PRD ASK-10): what would change, with Approve and Reject. Nothing applies before. */
+function ProposalView({ proposal, dataset }: { proposal: Proposal; dataset: Dataset }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const decide = async (what: "approve" | "reject") => {
+    setBusy(what);
+    try {
+      const out = await request<{ version?: number; kind?: string }>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
+      if (what === "approve") toast(proposal.kind === "edit_cells" ? `Saved as v${out?.version}. Undo it from the Changes panel.` : "Clean with AI started.");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+      qc.invalidateQueries({ queryKey: keys.chat(dataset.id) });
+      qc.invalidateQueries({ queryKey: keys.jobs(dataset.id) });
+    }
+  };
+  const edits = proposal.edits ?? [];
+  const label = { pending: null, approved: "Approved", rejected: "Rejected", expired: "Expired: the data changed since" }[proposal.status];
+  return (
+    <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]">
+      <p className="font-medium">{proposal.summary}</p>
+      {edits.length > 0 && (
+        <table className="w-full text-left text-[12px]">
+          <thead className="text-muted-foreground">
+            <tr><th className="font-normal">Row</th><th className="font-normal">Column</th><th className="font-normal">Now</th><th className="font-normal">After</th></tr>
+          </thead>
+          <tbody className="font-mono">
+            {edits.slice(0, 20).map((e) => (
+              <tr key={`${e.row_id}:${e.column}`}>
+                <td>{e.row_id}</td><td className="font-sans">{e.column}</td>
+                <td className="text-muted-foreground line-through">{e.before === null ? "empty" : String(e.before)}</td>
+                <td>{e.value === null ? "empty" : e.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {edits.length > 20 && <p className="text-muted-foreground">and {edits.length - 20} more</p>}
+      {proposal.status === "pending" ? (
+        <div className="flex gap-2">
+          <Button size="sm" variant="primary" loading={busy === "approve"} disabled={!!busy} onClick={() => void decide("approve")}>Approve</Button>
+          <Button size="sm" variant="ghost" loading={busy === "reject"} disabled={!!busy} onClick={() => void decide("reject")}>Reject</Button>
+        </div>
+      ) : (
+        <p className={cn("text-[12px]", proposal.status === "approved" ? "text-accent" : "text-muted-foreground")}>{label}</p>
+      )}
+    </div>
+  );
+}
+
+function UndoWidget({ widgetId, datasetId }: { widgetId: string; datasetId: string }) {
+  const qc = useQueryClient();
+  const [done, setDone] = useState(false);
+  return (
+    <Button size="sm" className="self-start" disabled={done} onClick={async () => {
+      try {
+        await request("POST", `/api/v1/widgets/${widgetId}/undo`);
+        setDone(true);
+        qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
+        toast("The widget is back as it was.");
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    }}>{done ? "Undone" : "Undo"}</Button>
   );
 }
 

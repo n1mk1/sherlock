@@ -161,16 +161,47 @@ class Toolkit:
                 raise CantAnswer("I couldn't build a working query for that widget. Try naming the columns, "
                                  "e.g. 'a bar chart of average fare by embarked'.") from None
 
-    def _save_widget(self, draft: WidgetDraft, created_by: str) -> sqlite3.Row:
+    def _spec(self, draft: WidgetDraft, selection_id: str | None) -> dict:
         options = {k: v for k, v in (("x", draft.x), ("y", draft.y)) if v}
         if draft.view == "kpi" and draft.y:
             options = {"value": draft.y}
-        spec = {
+        return {
             "scope": {"columns": {"x": draft.x, "y": draft.y},
-                      "rows": {"predicate": None, "selection_id": self.rows.selection_id, "inherit_global_filters": True}},
+                      "rows": {"predicate": None, "selection_id": selection_id, "inherit_global_filters": True}},
             "op": {"type": "sql", "sql": draft.sql},
             "view": {"type": draft.view, "options": options},
         }
+
+    # --- update_widget (D8.5) ----------------------------------------------------------------
+
+    def update_widget(self, request: str, widget: sqlite3.Row) -> sqlite3.Row:
+        """Change a SQL widget as asked: `medium` returns the whole new widget (schema `WidgetDraft`),
+        applied at once like an edit in the widget's menu, with its old spec kept for Undo."""
+        spec = json.loads(widget["spec_json"])
+        if spec["op"]["type"] != "sql":
+            raise CantAnswer("That widget is an analysis; change it from its settings, or ask for a plain chart.")
+        cols = (spec.get("scope") or {}).get("columns") or {}
+        now = json.dumps({"title": widget["title"], "sql": spec["op"]["sql"], "view": spec["view"]["type"],
+                          "x": cols.get("x"), "y": cols.get("y")})
+        messages = self._messages(prompts.UPDATE_WIDGET.format(widget=data_block(now), context=self.context,
+                                                                message=data_block(request)))
+        selection = ((spec.get("scope") or {}).get("rows") or {}).get("selection_id")
+        draft = self.llm.structured("medium", messages, WidgetDraft, purpose="update_widget", scope=self.scope).value
+        for attempt in range(2):
+            try:
+                row = ws.update(self.env, self.dataset, widget, self._spec(draft, selection), draft.title.strip() or None)
+                self.reading = draft.reading.strip()[:200]
+                return row
+            except ApiError as exc:
+                if attempt:
+                    raise CantAnswer("I couldn't build a working query for that change. Try naming the columns.") from None
+                repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
+                          {"role": "user", "content": prompts.SQL_REPAIR.format(error=exc.message)}]
+                draft = self.llm.structured("medium", repair, WidgetDraft, purpose="update_widget", scope=self.scope).value
+        raise AssertionError("unreachable")
+
+    def _save_widget(self, draft: WidgetDraft, created_by: str) -> sqlite3.Row:
+        spec = self._spec(draft, self.rows.selection_id)
         row = ws.create(self.env, self.dataset, spec, title=draft.title.strip() or None, created_by=created_by)
         self.reading = draft.reading.strip()[:200]
         saved = wl.stored(self.env.db, self.dataset["id"])

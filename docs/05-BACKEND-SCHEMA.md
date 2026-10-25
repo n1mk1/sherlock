@@ -437,6 +437,8 @@ CREATE TABLE proposals (
 );
 ```
 
+As built (2026-10-25, D8.5): `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection`; `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
+
 ### 2.16 selections
 
 ```sql

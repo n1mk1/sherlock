@@ -21,6 +21,8 @@ INTENT_LINES = {
     "ask_model": "ask_model: questions about the model of an analysis that already ran (\"how accurate is the model?\", \"why was boat left out?\", \"what did it compare against?\", \"who did the model get wrong?\")",
     "ask_meaning": "ask_meaning: what a column or a code in it means (\"what does pclass mean?\", \"what is sibsp?\")",
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I export a notebook?\")",
+    "edit_cells": "edit_cells: change values in particular cells or rows (\"set the fare of row 12 to 30\", \"make these empty\", \"fix the typo in Smith's name\")",
+    "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file (\"clean these rows\", \"clean up the selection\")",
     "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about class?\", \"make sense of this\")",
 }
 
@@ -113,6 +115,52 @@ Rules:
 
 Question:
 {message}"""
+
+EDITS = """Turn the request into cell edits for this file. Nothing changes until the user approves them.
+
+Rules:
+- Each edit names a row by its _row_id, an exact column name, and the new value as text (null empties the cell).
+- Use only rows and columns that exist. When the request is about the selected cells, edit exactly those.
+- Never edit _row_id or _quarantine_reason. At most two hundred edits.
+
+{context}
+{cells}
+Request:
+{message}"""
+
+UPDATE_WIDGET = """Change this dashboard widget as the user asks, and return the whole new widget.
+
+Rules:
+""" + READING + """
+- One DuckDB query over table t that filters its rows with WHERE {{{{rows}}}} (exactly that placeholder; add your own conditions with AND).
+- Keep what the user didn't ask to change: the same columns, grouping and title unless the request changes them.
+- view: bar (categories), line or area (time), pie or ring (a few shares), kpi (one value), table (rows or a list). x and y name result columns.
+
+The widget now:
+{widget}
+
+{context}
+
+Request:
+{message}"""
+
+PLAN = """This message asks for several things. Split it into two to five steps, each one intent with its own complete question, in the order they should run.
+
+Intents:
+{intents}
+
+{context}
+
+Message:
+{message}"""
+
+SUMMARY = """Summarize this conversation about a data file in at most five short sentences, for the assistant's own memory: what the user asked about, which columns and filters were involved, and what was found or changed. Write plain sentences, no lists.
+
+Earlier summary:
+{previous}
+
+Messages:
+{messages}"""
 
 MEANING = """Say what the column {column} most likely records, from general knowledge about data like this file ({file}).
 
