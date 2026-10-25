@@ -204,6 +204,10 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - Direct workers are killed by the API.
     - With `sherlock-sandboxd`, the API closes its connection, and the daemon, which watches the connection while the worker runs, kills the worker.
   - **`build_dashboard`** (D3.4, `sherlock/jobs/build.py`). Until the dashboard builder (D4.2) exists, the job reports one step, "Building the dashboard", and sets the dataset to `ready`. Its result is `{ version, widgets: 0 }`. If it fails or is cancelled, the dataset is still set to `ready`.
+    - Since D4.2 it runs the dashboard builder (§7.3) and reports three steps: "Choosing charts", "Picking the story", and "Adding widgets · i of n".
+    - Its result is `{ version, widgets, candidates, curated_by: "model"|"fallback", columns_used? }`, with `columns_used` only for wide files.
+    - A dataset that already has widgets keeps them. The job reports "Keeping the dashboard", and its result is `{ version, widgets, kept: true }`.
+    - A failed or cancelled build still sets the dataset to `ready`, with whatever widgets were made.
 
 ### 3.4 Sandbox
 
@@ -275,6 +279,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - `LLMClient.structured(role, messages, Schema, *, purpose, scope, validate=None)` returns the validated value. `validate` adds checks beyond the schema, such as the no-digits rule.
     - A `CallScope` names the `user_id`, `dataset_id`, `job_id` and `message_id` a call is logged and budgeted against, plus an `on_wait` callback.
     - **Transport.** The `openai` SDK with `max_retries=0`, so the client's own retry rule is the only one.
+      - The SDK client is made on the first call, so a process without a key still starts.
+      - With no `LLM_BASE_URL` and no `LLM_MOCK` (tests, a bare local run), a call fails at once with `llm_unavailable`, with no retries and no `llm_calls` row, and callers apply their fallbacks (since D4.2).
       - Retryable: timeouts, connection errors, `429` and `5xx`.
       - Any other error fails at once with `llm_unavailable`, which is HTTP `503`.
     - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
@@ -1034,6 +1040,45 @@ Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
 6. Layout: KPIs first row (3 × 3 each), then widgets in score order with default sizes (§UI brief 3.3), packed left-to-right.
 7. Persist widgets and layout; emit `widget.updated` per widget; enqueue the stories job.
 8. Soft cap: `create_widget` and `POST /widgets` return the widget plus a `warning` when the dataset already has 20 or more widgets (DASH-10).
+
+As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
+- **Candidates (`candidates.py`), until D6.5 widens the views:**
+  - **KPIs:** a row count; the rate of a two-valued target; and per measure a sum (when its name reads like an amount, such as revenue, units or total) or a mean.
+  - **Bars:**
+    - the target's rate by each category
+    - each measure by each category
+    - row counts by each category, as a ring when it has five or fewer values
+  - **Trends:** row counts as an area, and each measure and the target's rate as a line, by month, week or day depending on the time column's span.
+  - **Tables:** the top ten IDs by the first measure. For a file with no measures, the most common values of up to three text columns.
+  - **Rules for all of them:**
+    - A category is charted only with 2–12 values.
+    - The target is never its own category.
+    - Rows with an empty category are left out of that chart.
+    - A target "rate" needs exactly two values: a numeric or yes/no target is averaged, and a text one counts its "yes"-like value or else its rarer value.
+- **Scoring (`scoring.py`).**
+  - Each candidate's query runs on the full version, which validates it (step 4). Candidates that fail or return no rows are dropped.
+  - The statistics run on a reservoir sample of up to 200,000 usable rows (seed 42).
+  - Which parts apply per chart:
+    - target-rate bars: η² of the target
+    - measure bars: η² of the measure, halved when the file has a target, so the target's breakdowns come first
+    - count bars: a quarter of their unevenness
+    - measure KPIs: skew and outlier share
+    - rate KPIs: half of how far the rate is from 0 or 1
+    - trends: Kendall τ
+    - every chart: coverage
+
+    Correlation and outlier share for charts belong to the scatter, histogram and box candidates (D6.5).
+  - Fact candidates are each chart's top and bottom element and its first 20 element keys. The accent ("the point") is the top element: `bar` for bars and rings, `point` for lines and areas, `cell` for tables.
+  - **Wide files** (more than 30 usable columns) keep the target, time columns and the first ID column. The rest are ranked on a 20,000-row sample, by how much each explains the target, or without a target by spread (measures) and evenness (categories).
+- **Curation (`builder.py`).**
+  - The shortlist is the 14 best by score, with up to three KPI tiles always among them: the row count first, then the rate.
+  - The model gets the columns and the shortlist inside a data block. Its picks are checked: indices in range, each used once, and 6–10 of them, or all if fewer are listed. A failure triggers one repair.
+  - A pick's `point` must be one of the candidate's listed elements, otherwise the computed accent stays.
+  - KPIs are moved first in the order.
+  - The fallback, after the repair or when the model is unavailable or over budget, is the reserved KPIs plus the best charts, eight in all, with templated titles.
+- **Persisting.** Each pick is created through the widgets service, which runs it once more. The layout is packed (§4.5) and saved, and the dataset becomes `ready`.
+- **Not yet.** The `driver_analysis` widget (step 5) is added with the ML recipes (Implementation Plan D7.2). Enqueuing the stories job (step 7) comes with D6.1.
+- **Live check (2026-10-24, Nemotron 3 Super):** Titanic got seven widgets ("Survival rate", "Passenger count", "Survival by sex", "Fare by class", "Survival by class", "Passengers by port", plus average fare), and `sales_dated.csv` got eight.
 
 ### 7.4 Storyteller
 

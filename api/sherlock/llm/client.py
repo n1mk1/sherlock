@@ -98,13 +98,14 @@ class Transport:
 
 class OpenAITransport(Transport):
     def __init__(self, settings: Settings) -> None:
-        from openai import OpenAI
-
-        self._client = OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key, max_retries=0)
+        self.settings = settings
+        self._client = None  # made on first use, so a process without a key can still start
 
     def create(self, *, model, messages, timeout, purpose, **kwargs) -> dict:
         import openai
 
+        if self._client is None:
+            self._client = openai.OpenAI(base_url=self.settings.llm_base_url, api_key=self.settings.llm_api_key, max_retries=0)
         try:
             resp = self._client.chat.completions.create(model=model, messages=messages, timeout=timeout, **kwargs)
         except (openai.APITimeoutError, openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as exc:
@@ -215,6 +216,10 @@ class LLMClient:
 
     # --- calls --------------------------------------------------------------------------------
 
+    def _unconfigured(self) -> bool:
+        inner = getattr(self.transport, "inner", self.transport)
+        return isinstance(inner, OpenAITransport) and not self.settings.llm_base_url
+
     def model_for(self, role: str) -> str:
         if role not in ROLES:
             raise ValueError(f"unknown chat role {role!r}")
@@ -239,6 +244,9 @@ class LLMClient:
         if not reasoning and purpose not in REASONING_OFF_OK:
             raise ValueError(f"reasoning can't be turned off for {purpose!r}")
         model = self.model_for(role)
+        if self._unconfigured():
+            # No endpoint and no fixtures (tests, a bare local run): fail at once rather than retry.
+            raise LLMUnavailable("LLM_BASE_URL is not set")
         self._check_budgets(scope)
         kwargs: dict = {"temperature": temperature, "max_tokens": max_tokens}
         if schema is not None:

@@ -43,6 +43,19 @@ class Critique(Strict):
     concerns: list[str] = Field(max_length=5)
 
 
+# --- Dashboard curation (TRD §7.3 step 3) -----------------------------------------------------
+
+
+class Pick(Strict):
+    candidate: int = Field(ge=0, description="index of the candidate in the list")
+    title: str = Field(description="plain-words title for the widget, no digits")
+    point: str | None = Field(description="the element to accent, one of the candidate's listed elements, or null")
+
+
+class Curation(Strict):
+    picks: list[Pick] = Field(min_length=1, max_length=10, description="6 to 10 widgets in dashboard order")
+
+
 # --- Chat routing (TRD §8.1) ------------------------------------------------------------------
 
 

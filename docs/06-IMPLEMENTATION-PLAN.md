@@ -220,7 +220,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay (D5.5) remains
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets wait for D7
-- [ ] `dashboard/` candidates, scoring, curation, validation, layout, job
+- [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the driver widget is D7.2 and the custom-chart candidates are D6.5
 - [ ] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions
