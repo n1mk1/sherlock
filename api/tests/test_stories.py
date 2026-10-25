@@ -380,3 +380,42 @@ def test_a_unit_the_chip_shows_is_not_said_twice_and_a_label_after_a_full_stop_g
     assert shown([TextRun(text="The model says "), ChipRun(chip="verdict")]) == "The model says Beats the rule."
     assert shown([TextRun(text="It shows fare for each sex."), LabelRun(label="column:sex"), TextRun(text=" leads.")]) \
         == "It shows fare for each sex. sex leads."
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_ask_first_marks_the_affected_cards_outdated_without_narrating(mocked, client):
+    """Day 6 review: "Story updates: Ask first" (TRD §7.6) had no test of its own for cards."""
+    ds = _ready_with_stories(client)
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
+    before = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
+    widgets = {w["id"]: w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
+    fare = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "sql" and "fare" in w["spec"]["op"]["sql"]}
+    ml = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "ml"}  # its run reads fare: outdated, card too
+    narrated = len(db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'narrate'", ds))
+    v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+    client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": 1, "column": "fare", "value": "500"}]})
+    done = wait_for(lambda: next((j for j in client.get(f"{API}/jobs?dataset_id={ds}").json()
+                                  if j["kind"] == "cascade" and j["status"] in ("done", "failed")), None), timeout=60)
+    assert done["status"] == "done" and done["result"]["outdated"] == len(fare) + len(ml) and done["result"]["cards"] == 0, done
+    after = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
+    for wid in fare | ml:
+        assert after[wid]["status"] == "outdated" and after[wid]["body"] == before[wid]["body"], widgets[wid]["title"]
+    assert all(after[wid]["status"] == "ready" for wid in after if wid not in fare and widgets[wid]["spec"]["op"]["type"] == "sql")
+    assert len(db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'narrate'", ds)) == narrated
+
+
+def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
+    """Rule 2 (Day 6 review): synthesis and `ask_story` ran the narrator's checks without the allowed
+    labels, so any `value:` label was shown as written."""
+    from sherlock.stories import synthesis
+
+    facts = {"c1.top_value": {"value": 0.7, "formatted": "70.0%", "label": "rate"}}
+    values = synthesis._values(["column:sex", "value:sex:female"])
+    ok = [TextRun(text="Survival was highest for "), LabelRun(label="value:sex:female"), TextRun(text=" passengers, at "),
+          ChipRun(chip="c1.top_value")]
+    synthesis._check([ok], facts, ["sex", "fare"], values)
+    for bad in ([TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"), TextRun(text=" while survival was "),
+                 ChipRun(chip="c1.top_value")],
+                [TextRun(text="Over XLV passengers survived, at "), ChipRun(chip="c1.top_value")]):
+        with pytest.raises(ValueError):
+            synthesis._check([bad], facts, ["sex", "fare"], values)

@@ -126,14 +126,20 @@ def _rekey(runs: list[dict], alias: dict, part: str) -> list[dict]:
     return runs
 
 
-def _check(runs_list: list[list], facts: dict, columns: list[str]) -> None:
+def _values(labels: list[str]) -> set[str]:
+    """The value labels the model may use: those the cards already use (a value label is shown as
+    written, so any other could carry a number the model made up)."""
+    return {lab for lab in labels if lab.startswith("value:")}
+
+
+def _check(runs_list: list[list], facts: dict, columns: list[str], values: set[str]) -> None:
     for runs in runs_list:
-        nr.to_runs(runs, facts, columns)
+        nr.to_runs(runs, facts, columns, values=values)
         if not nr._words(runs):
             raise ValueError("write words around the chips and labels")
         text = nr.plain(runs)
-        if nr.NUMBER_WORDS.search(text):
-            raise ValueError(f"a number in words ({nr.NUMBER_WORDS.search(text).group(0)!r}); use a fact chip")
+        if nr.number_in_words(text):
+            raise ValueError(f"a number in words ({nr.number_in_words(text)!r}); use a fact chip")
         if nr.CAUSAL.search(text):
             raise ValueError(f"causal wording ({nr.CAUSAL.search(text).group(0)!r}); describe an association instead")
 
@@ -162,7 +168,7 @@ def synthesize(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: 
     listing, facts, alias, labels = _listing(db, cards)
 
     def check(s: Story) -> None:
-        _check([s.headline, s.body], facts, columns)
+        _check([s.headline, s.body], facts, columns, _values(labels))
 
     prompt = SYNTHESIS.format(cards=data_block(listing), labels=data_block("\n".join(labels) or "none"))
     try:
@@ -171,8 +177,8 @@ def synthesize(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: 
     except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
         h, b = fallback(db, cards)
         return h, b, False
-    headline = nr.body(_rekey(nr.to_runs(s.headline, facts, columns), alias, "h"))
-    body = nr.body(_rekey(nr.to_runs(s.body, facts, columns), alias, "b"))
+    headline = nr.body(_rekey(nr.to_runs(s.headline, facts, columns, values=_values(labels)), alias, "h"))
+    body = nr.body(_rekey(nr.to_runs(s.body, facts, columns, values=_values(labels)), alias, "b"))
     return headline, body, True
 
 
@@ -205,13 +211,13 @@ def answer(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: list
     listing, facts, alias, labels = _listing(db, cards)
 
     def check(a: StoryAnswer) -> None:
-        _check([a.prose], facts, columns)
+        _check([a.prose], facts, columns, _values(labels))
 
     prompt = QUESTION.format(cards=data_block(listing), labels=data_block("\n".join(labels) or "none"),
                              question=data_block(question))
     a = llm.structured("medium", [{"role": "system", "content": nr.SYSTEM}, {"role": "user", "content": prompt}],
                        StoryAnswer, purpose="ask_story", scope=scope, validate=check).value
-    return _rekey(nr.to_runs(a.prose, facts, columns), alias, "a")
+    return _rekey(nr.to_runs(a.prose, facts, columns, values=_values(labels)), alias, "a")
 
 
 # --- keeping synthesis cards honest (TRD §7.4.1) ---------------------------------------------------
