@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dataset } from "@/api/types";
 import { useUi } from "@/state/ui";
@@ -25,5 +25,27 @@ describe("export dialog", () => {
     useUi.setState({ exportOpen: true });
     renderAt(<ExportDialog dataset={DATASET} />);
     expect(await screen.findByText(/no story cards yet/)).toBeInTheDocument();
+  });
+
+  it("asks the preview again when an option changes, without sending unset options", async () => {
+    const asked: string[] = [];
+    mockApi({
+      "GET /api/v1/datasets/ds_1/exports/notebook/preview": (url: URL) => {
+        asked.push(url.search);
+        const cards = url.searchParams.get("include_cards") === "false" ? 0 : 10;
+        return {
+          version: 4, notes: [], counts: { steps: 2, widgets: 6, runs: 0, cards },
+          options: { include_data: true, include_cards: true, include_notes: false, include_runs: true,
+                     order: "steps_dashboard", up_to_step: null },
+        };
+      },
+    });
+    useUi.setState({ exportOpen: true });
+    renderAt(<ExportDialog dataset={DATASET} />);
+    await waitFor(() => expect(document.body.textContent).toContain("10 story cards"));
+    fireEvent.click(screen.getByLabelText(/Include story cards/));
+    await waitFor(() => expect(asked.some((q) => q.includes("include_cards=false"))).toBe(true));
+    expect(asked.every((q) => !q.includes("null"))).toBe(true);
+    await waitFor(() => expect(document.body.textContent).toContain("0 story cards"));
   });
 });

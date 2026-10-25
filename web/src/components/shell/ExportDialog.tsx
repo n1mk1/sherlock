@@ -101,7 +101,9 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
     enabled: open && !blocked,
     placeholderData: (prev) => prev,
     queryFn: () => {
-      const q = options ? `?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}` : "";
+      // Unset options (the preview answers `up_to_step: null`) are left out: "null" isn't a number, so it was a 422.
+      const set = options ? Object.entries(options).filter(([, v]) => v !== null && v !== undefined) : [];
+      const q = set.length ? `?${new URLSearchParams(set.map(([k, v]) => [k, String(v)]))}` : "";
       return request<Preview>("GET", `/api/v1/datasets/${dataset.id}/exports/notebook/preview${q}`);
     },
   });
