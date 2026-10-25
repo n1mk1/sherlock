@@ -338,3 +338,18 @@ def test_rows_behind_a_widget_have_its_columns_filled_and_cte_names_are_not_colu
     hist = ("WITH b AS (SELECT MIN(fare) AS lo, (MAX(fare) - MIN(fare)) / 20 AS w FROM t WHERE 1=1) "
             "SELECT b.lo + b.w * FLOOR((fare - b.lo) / b.w) AS bin_start, COUNT(*) AS n FROM t, b WHERE fare IS NOT NULL GROUP BY 1")
     assert fx.depends_on({"scope": {"columns": {"x": "fare"}}}, hist) == ["fare"]
+
+
+def test_a_unit_the_chip_shows_is_not_said_twice_and_a_label_after_a_full_stop_gets_its_space():
+    facts = {"rate": {"value": 0.382, "formatted": "38.2%", "label": "rate"}, "ratio": {"value": 3.8, "formatted": "3.8×", "label": "r"},
+             "verdict": {"value": "Beats the rule.", "formatted": "Beats the rule.", "label": "v"}}
+
+    def shown(runs):
+        return "".join(r.get("value") or r.get("text") for r in nr.to_runs(runs, facts, ["sex"]))
+
+    assert shown([TextRun(text="Survival rate was "), ChipRun(chip="rate"), TextRun(text="%.")]) == "Survival rate was 38.2%."
+    assert shown([TextRun(text="Women were "), ChipRun(chip="ratio"), TextRun(text=" times as likely, at "), ChipRun(chip="rate"),
+                  TextRun(text=" percent overall.")]) == "Women were 3.8× as likely, at 38.2% overall."
+    assert shown([TextRun(text="The model says "), ChipRun(chip="verdict")]) == "The model says Beats the rule."
+    assert shown([TextRun(text="It shows fare for each sex."), LabelRun(label="column:sex"), TextRun(text=" leads.")]) \
+        == "It shows fare for each sex. sex leads."

@@ -136,6 +136,13 @@ def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str
             item = {"type": "text", "text": SPLICE.sub(r"\1 ", run.text)}
         if out:
             prev = out[-1]
+            # A unit the chip already shows isn't said twice: "38.2%", not "38.2% %"; "3.8× more", not "3.8× times more".
+            if item["type"] == "text" and prev["type"] == "chip":
+                twice = {"%": r"\s*(%|percent\b|per cent\b)", "×": r"\s*(×|times\b)", ".": r"\.(?!\.)"}.get(prev["value"][-1:])
+                if twice:
+                    item["text"] = re.sub("^" + twice, "", item["text"], count=1)
+                    if not item["text"]:
+                        continue
             # No space inside brackets or before punctuation around a chip: "(33.3%)", not "( 33.3% )".
             if item["type"] != "text" and prev["type"] == "text" and prev["text"].endswith(("( ", "[ ")):
                 prev["text"] = prev["text"][:-1]
@@ -145,12 +152,14 @@ def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str
                 item["text"] = " " + item["text"]
             elif item["type"] == "text" and prev["type"] == "text" and prev["text"].rstrip()[-1:] in ".!?"                     and item["text"][:1].isalnum():
                 item["text"] = " " + item["text"]
-            elif item["type"] != "text" and prev["type"] == "text" and prev["text"][-1:].isalnum():
-                prev["text"] += " "
+            elif item["type"] != "text" and prev["type"] == "text" and (prev["text"][-1:].isalnum() or prev["text"][-1:] in ".!?,;:"):
+                prev["text"] += " "  # "for each sex. female", not "sex.female"
             elif item["type"] != "text" and prev["type"] != "text":
                 out.append({"type": "text", "text": ", " if item["type"] == prev["type"] == "chip" else " "})
         out.append(item)
-    if out and not (out[-1]["type"] == "text" and out[-1]["text"].rstrip().endswith((".", "!", "?"))):
+    last = out[-1] if out else None
+    if last and not (last["type"] == "text" and last["text"].rstrip().endswith((".", "!", "?"))) \
+            and not (last["type"] == "chip" and last["value"].endswith((".", "!", "?"))):
         out.append({"type": "text", "text": "."})
     return out
 
