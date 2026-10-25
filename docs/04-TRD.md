@@ -1392,6 +1392,12 @@ As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with
     - When the widget has no facts, the card goes back to `ready` with its text unchanged.
   - **Numbers in words count as numbers.** Text runs may not spell numbers: two to twelve, the tens, hundred, thousand, million, billion, dozen, twice, thrice, doubled, tripled and halved. Such a story is repaired like one with a digit. In the live check, Super wrote "six parents or children" for a category value to get around the digit rule.
   - **A heatmap names both categories of its cell.** The allowed labels add the series column's value of the highest cell (`value:<series>:<max_y>`), and the prompt asks for both. Live, the story said "highest for pclass 1, at 96.5%" for the pclass 1 × female cell.
+- **Day 6 review, second pass (2026-10-25)** closed four ways a model-written number could reach a card (Rule 2):
+  - **Value labels are checked against the allowed labels.** Before, a `value:<column>:<value>` label was accepted for any column of the file and any value, and its text is shown as written, so `value:fare:512.33` put "fare 512.33" on a card. Now a story's `value:` label must be one of its allowed labels (the category values its facts name), and an overview bullet's must be one of its widgets' allowed labels; the overview prompt lists them ("Allowed value labels"). A `column:` label may still name any column of the file: the name is the file's, not the model's.
+  - **More numbers in words.** Also refused: zero, thirteen to nineteen, trillion, quadrupled, quintupled, half and halves, twofold to tenfold, hundredfold and thousandfold, "one in" and "one out of", "a third / a quarter / a fifth / a tenth of", and Roman numerals in capitals ("XLV", two letters or more).
+  - **Any Unicode number is a digit.** The no-digits rule (`llm/text.py::has_digits`, shared with chat's `TextRun`) also refuses characters of Unicode category N: superscripts ("²"), fractions ("½"), circled ("①") and Roman numeral characters ("Ⅻ").
+  - **HTML entities are markup.** A text run with `&…;` ("&half;") is refused like chip markup, since the notebook's Markdown would render it as a number.
+  - Still let through, by design or as known gaps: ordinals ("first", "third"), which also name periods and classes; archaic and non-English number words ("fourscore", "drei"); letters spaced apart.
 
 ### 7.5 ML runner
 

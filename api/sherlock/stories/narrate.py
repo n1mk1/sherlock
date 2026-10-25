@@ -16,13 +16,25 @@ from sherlock.llm.schemas import ChipRun, LabelRun, Run, Story, Strict, TextRun
 from sherlock.stories.facts import small_sample
 
 CAUSAL = re.compile(r"\b(cause[sd]?|causing|because|leads? to|led to|results? in|resulted in|drives?|driven by|due to)\b", re.I)
-MARKUP = re.compile(r"[{}\[\]]|\bchip\b|\b(column|value):", re.I)
+# An HTML entity ("&frac34;") is markup too: the notebook's Markdown renders it as a number.
+MARKUP = re.compile(r"[{}\[\]]|\bchip\b|\b(column|value):|&#?\w+;", re.I)
 NUMERIC_VALUE = re.compile(r"^-?\d+(\.\d+)?$")
 SPLICE = re.compile(r"([.!?])(?=[A-Z])")
 SMALL = re.compile(r"\b(small|few|limited|only a handful)\b", re.I)
 # Numbers spelled out are still numbers the model wrote ("six", "twice"): they must be chips too.
-NUMBER_WORDS = re.compile(r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|(?:twen|thir|for|fif|six|seven|eigh|nine)ty"
-                          r"|hundreds?|thousands?|millions?|billions?|dozens?|twice|thrice|tripled?|doubled?|halved)\b", re.I)
+NUMBER_WORDS = re.compile(r"\b(zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+                          r"|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty"
+                          r"|hundreds?|thousands?|millions?|billions?|trillions?|dozens?|twice|thrice|tripled?|doubled?"
+                          r"|quadrupled?|quintupled?|halved|half|halves|(?:two|three|four|five|ten|hundred|thousand)fold"
+                          r"|one (?:in|out of)|an? (?:third|quarter|fifth|tenth) of)\b", re.I)
+# So are Roman numerals ("XLV passengers"): upper case, two letters or more.
+ROMAN = re.compile(r"\b(?=[MDCLXVI]{2,}\b)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})\b")
+
+
+def number_in_words(text: str) -> str | None:
+    """The first number the text spells out, if any."""
+    m = NUMBER_WORDS.search(text) or ROMAN.search(text)
+    return m.group(0) if m else None
 
 SYSTEM = """You are Sherlock, a data analyst who writes short story cards for dashboard widgets.
 Every number you mention is a chip naming a fact that code computed; you never type a digit.
@@ -53,12 +65,14 @@ OVERVIEW = """Pick the three to five most important findings across this dashboa
 
 Rules:
 - Every number is a chip: {{"chip": "<widget>.<fact key>"}}, using only the keys listed. Text runs never contain digits.
-- Column names and values are labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}.
+- Column names and values are labels: {{"label": "column:<name>"}}, or a category value as {{"label": "value:<column>:<value>"}} chosen from the allowed value labels.
 - Associations only: never say causes, because, leads to, results in, drives or due to.
 - Each bullet is a list of runs, for example [{{"text": "Survival was highest for "}}, {{"label": "value:sex:female"}}, {{"text": " passengers, at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
 Widgets and their facts:
-{widgets}"""
+{widgets}
+Allowed value labels:
+{values}"""
 
 
 class Overview(Strict):
@@ -83,12 +97,16 @@ def allowed_labels(columns: list[str], facts: dict, spec: dict) -> list[str]:
     return out
 
 
-def label_text(ref: str, dataset_columns: list[str]) -> str:
+def label_text(ref: str, dataset_columns: list[str], values: set[str] | None = None) -> str:
+    """The text code shows for a label. With `values`, a `value:` label must be one of them: a value
+    label is shown as written, so one the facts don't name could carry a number the model made up."""
     kind, _, rest = ref.partition(":")
     if kind == "column" and rest in dataset_columns:
         return rest
     if kind == "value":
         col, _, val = rest.partition(":")
+        if values is not None and ref not in values:
+            raise ValueError(f"label {ref!r} is not one of the allowed labels; use a chip for a number")
         if col in dataset_columns and val:
             # A bare number reads badly as a name ("the 1 group"): say which column it is.
             return f"{col} {val}" if NUMERIC_VALUE.match(val) else val
@@ -99,8 +117,10 @@ def _words(runs: list) -> bool:
     return any(isinstance(r, TextRun) and sum(any(ch.isalpha() for ch in w) for w in r.text.split()) >= 2 for r in runs)
 
 
-def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str = "") -> list[dict]:
-    """Runs with values filled in by code, spaced so chips and labels don't run into the words."""
+def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str = "",
+            values: set[str] | None = None) -> list[dict]:
+    """Runs with values filled in by code, spaced so chips and labels don't run into the words.
+    `values`: the `value:` labels allowed (all, when None)."""
     out: list[dict] = []
     for i, run in enumerate(runs):
         if isinstance(run, ChipRun):
@@ -109,7 +129,7 @@ def to_runs(runs: list, facts: dict, dataset_columns: list[str], key_prefix: str
                 raise ValueError(f"chip {run.chip!r} names no fact")
             item = {"type": "chip", "id": f"c{i}", "key": key_prefix + run.chip, "value": f["formatted"], "unverified": False}
         elif isinstance(run, LabelRun):
-            item = {"type": "label", "ref": run.label, "text": label_text(run.label, dataset_columns)}
+            item = {"type": "label", "ref": run.label, "text": label_text(run.label, dataset_columns, values)}
         else:
             if MARKUP.search(run.text):
                 raise ValueError(f"a text run holds chip or label markup ({run.text[:40]!r}); make it a separate chip or label run")
@@ -166,21 +186,22 @@ def narrate(llm: LLMClient, scope: CallScope, *, title: str, widget_id: str, spe
             widget_columns: list[str], dataset_columns: list[str], related: list[str]) -> tuple[dict, dict, bool]:
     """(headline, body, by_model). Falls back to the bullets when the model can't write a valid story."""
     small = small_sample(facts)
+    labels = allowed_labels(widget_columns, facts, spec)
+    values = {lab for lab in labels if lab.startswith("value:")}
 
     def check(s: Story) -> None:
-        to_runs(s.headline, facts, dataset_columns)
-        to_runs(s.body, facts, dataset_columns)
+        to_runs(s.headline, facts, dataset_columns, values=values)
+        to_runs(s.body, facts, dataset_columns, values=values)
         if not _words(s.headline) or not _words(s.body):
             raise ValueError("the headline and the body each need words around the chips, not only chips or names")
         text = plain(s.headline) + " " + plain(s.body)
-        if NUMBER_WORDS.search(text):
-            raise ValueError(f"a number in words ({NUMBER_WORDS.search(text).group(0)!r}); use a fact chip, or a label for a category")
+        if number_in_words(text):
+            raise ValueError(f"a number in words ({number_in_words(text)!r}); use a fact chip, or a label for a category")
         if CAUSAL.search(text):
             raise ValueError(f"causal wording ({CAUSAL.search(text).group(0)!r}); describe an association instead")
         if small and not SMALL.search(text):
             raise ValueError("the widget has fewer than thirty rows: say the sample is small")
 
-    labels = allowed_labels(widget_columns, facts, spec)
     prompt = STORY.format(
         title=data_block(title), facts=data_block(fact_lines(facts)), labels=data_block("\n".join(labels)),
         related=data_block("\n".join(related) or "none"),
@@ -193,19 +214,22 @@ def narrate(llm: LLMClient, scope: CallScope, *, title: str, widget_id: str, spe
     except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
         h, b = fallback(title, widget_id, facts)
         return h, b, False
-    return body(to_runs(s.headline, facts, dataset_columns)), body(to_runs(s.body, facts, dataset_columns)), True
+    return (body(to_runs(s.headline, facts, dataset_columns, values=values)),
+            body(to_runs(s.body, facts, dataset_columns, values=values)), True)
 
 
 def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_columns: list[str]) -> tuple[dict, dict, bool]:
-    """`widgets`: [{prefix, title, facts, score}]. Returns (merged facts, body, by_model)."""
+    """`widgets`: [{prefix, title, facts, score, spec?, columns?}]. Returns (merged facts, body, by_model)."""
     merged = {f"{w['prefix']}.{k}": f for w in widgets for k, f in w["facts"].items()}
+    values = list(dict.fromkeys(lab for w in widgets for lab in allowed_labels(w.get("columns") or [], w["facts"], w.get("spec") or {})
+                                if lab.startswith("value:")))
 
     def check(o: Overview) -> None:
         for b in o.bullets:
-            to_runs(b, merged, dataset_columns)
+            to_runs(b, merged, dataset_columns, values=set(values))
             if not _words(b):
                 raise ValueError("each bullet needs words around its chips")
-            if NUMBER_WORDS.search(plain(b)):
+            if number_in_words(plain(b)):
                 raise ValueError("a number in words; use a fact chip, or a label for a category")
             if CAUSAL.search(plain(b)):
                 raise ValueError("causal wording; describe an association instead")
@@ -213,9 +237,11 @@ def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_colu
     listing = "\n\n".join(f"{w['prefix']} · {w['title']}\n{fact_lines(w['facts'], w['prefix'] + '.')}" for w in widgets)
     try:
         o = llm.structured("medium", [{"role": "system", "content": SYSTEM},
-                                      {"role": "user", "content": OVERVIEW.format(widgets=data_block(listing))}],
+                                      {"role": "user", "content": OVERVIEW.format(
+                                          widgets=data_block(listing), values=data_block("\n".join(values) or "none"))}],
                            Overview, purpose="overview", scope=scope, validate=check).value
-        return merged, {"blocks": [{"type": "bullets", "runs": to_runs(b, merged, dataset_columns)} for b in o.bullets]}, True
+        return merged, {"blocks": [{"type": "bullets", "runs": to_runs(b, merged, dataset_columns, values=set(values))}
+                                   for b in o.bullets]}, True
     except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
         pass
     blocks = []

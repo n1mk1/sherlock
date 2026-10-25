@@ -262,3 +262,57 @@ def test_labels_and_brackets_read_naturally():
     runs = nr.to_runs([TextRun(text="The "), LabelRun(label="value:pclass:1"), TextRun(text=" group pays more ( "),
                        ChipRun(chip="top_value"), TextRun(text=" )")], FACTS, ["pclass"])
     assert "".join(r.get("value") or r.get("text") for r in runs) == "The pclass 1 group pays more (70.0%)."
+
+
+def test_no_number_reaches_a_card_by_another_way():
+    """Rule 2 (Day 6 review): a value label the facts don't name, a number spelled another way,
+    a Unicode number or an HTML entity is refused like a digit."""
+    class Fake:
+        def __init__(self, story):
+            self.story = story
+
+        def structured(self, role, messages, schema, *, purpose, scope, validate):
+            from sherlock.llm.client import StructuredOutputError
+
+            try:
+                validate(self.story)
+            except ValueError as exc:
+                raise StructuredOutputError(str(exc)) from exc
+            return type("S", (), {"value": self.story})()
+
+    facts = {**FACTS, "n": {"value": 200, "formatted": "200", "label": "rows"},
+             "top_group": {"value": "female", "formatted": "female", "label": "sex with the highest rate"}}
+    spec = {"scope": {"columns": {"x": "sex", "y": "survived"}}}
+
+    def told(body):
+        story = Story(headline=[TextRun(text="Women fared better than men here")], body=body)
+        return nr.narrate(Fake(story), None, title="t", widget_id="w1", spec=spec, facts=facts,
+                          widget_columns=["sex", "survived"], dataset_columns=["sex", "survived", "fare"], related=[])[2]
+
+    rate = [TextRun(text="The rate for "), LabelRun(label="value:sex:female"), TextRun(text=" was "), ChipRun(chip="top_value"),
+            TextRun(text=" overall.")]
+    assert told(rate)  # an allowed value label still passes
+    for label in ("value:fare:512.33", "value:sex:three quarters"):
+        assert not told([TextRun(text="Passengers paid about "), LabelRun(label=label), TextRun(text=" against "),
+                         ChipRun(chip="top_value"), TextRun(text=" survival.")])
+    for words in ("Seventeen men survived, against ", "About half of men survived, against ", "Over XLV men survived, against ",
+                  "Survival quadrupled for women, at ", "One in a few men survived, against ", "A third of men survived, against ",
+                  "Roughly &half; of women survived, at "):
+        assert not told([TextRun(text=words), ChipRun(chip="top_value"), TextRun(text=" for women.")]), words
+    for text in ("x²", "½ of men", "class ①", "Ⅻ cases"):
+        with pytest.raises(ValueError):
+            TextRun(text=text)
+
+    # The overview takes only the value labels its widgets' facts name.
+    widgets = [{"prefix": "w1", "title": "Survival by sex", "facts": facts, "score": 1, "widget_id": "w1", "spec": spec,
+                "columns": ["sex", "survived"]}]
+
+    class Over(Fake):
+        pass
+
+    good = nr.Overview(bullets=[[TextRun(text="Survival was highest for "), LabelRun(label="value:sex:female"),
+                                 TextRun(text=" passengers, at "), ChipRun(chip="w1.top_value")]] * 2)
+    assert nr.overview(Over(good), None, widgets, ["sex", "survived", "fare"])[2]
+    bad = nr.Overview(bullets=[[TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"),
+                                TextRun(text=" while survival was "), ChipRun(chip="w1.top_value")]] * 2)
+    assert not nr.overview(Over(bad), None, widgets, ["sex", "survived", "fare"])[2]

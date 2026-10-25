@@ -324,7 +324,7 @@ def tell_overview(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite
         sheet = get_sheet(db, r["fact_sheet_id"]) if r else None
         if sheet and sheet["facts"]:
             widgets.append({"prefix": f"w{i}", "title": w["title"], "facts": sheet["facts"], "score": w["score"],
-                            "widget_id": w["id"]})
+                            "widget_id": w["id"], "spec": json.loads(w["spec_json"]), "columns": sheet["depends_columns"]})
     if not widgets:
         return None
     try:
