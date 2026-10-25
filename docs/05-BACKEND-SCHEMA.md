@@ -151,6 +151,8 @@ CREATE INDEX lineage_cell ON lineage(dataset_id, row_id, column);
 
 Row-level events (added, deleted, quarantined, restored) are stored with `column = '_row'` and `new_value` ∈ `added|deleted|quarantined|restored`.
 
+Flags as written (2026-10-24, TRD §7.9): `quarantined` on a cell that lost its value in a row the same step quarantined (the original text stays in `old_value`); `flagged` on every changed cell of a step with gate `flag`; `invalid` on an edited cell whose value didn't parse as the column's type (the cell is NULL in the version and `new_value` keeps the typed text).
+
 ### 2.7 user_edited_cells
 
 Tracks cells the user edited by hand so "Clean with AI" can skip them. Written by `commit_step` for edit batches; rows whose step is undone are deleted.

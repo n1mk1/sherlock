@@ -2,7 +2,8 @@
 
 A cell counts as changed only if its value changed: when a column's type changed (the typing
 step), the old value is cast to the new type before comparing, so `'22'` → `22` is not a change,
-while a value that fails the cast is.
+while a value that fails the cast (or a sentinel that became NULL) is. A cell that lost its value
+in a row the same step quarantined gets the flag `quarantined`: its original text is kept here.
 """
 
 from dataclasses import dataclass, field
@@ -64,13 +65,17 @@ def diff_versions(old: Path, new: Path) -> Diff:
             if old_types[col] != new_types[col]:
                 old_expr = f"TRY_CAST(o.{_ident(col)} AS {new_types[col]})"
             rows = conn.execute(
-                f"SELECT o._row_id, o.{_ident(col)}::VARCHAR, n.{_ident(col)}::VARCHAR "
+                f"SELECT o._row_id, o.{_ident(col)}::VARCHAR, n.{_ident(col)}::VARCHAR, "
+                "o._quarantine_reason IS NULL AND n._quarantine_reason IS NOT NULL "
                 f"FROM o JOIN n USING (_row_id) WHERE {old_expr} IS DISTINCT FROM n.{_ident(col)} "
+                f"OR (o.{_ident(col)} IS NOT NULL AND n.{_ident(col)} IS NULL) "
                 "ORDER BY o._row_id"
             ).fetchall()
             if rows:
                 diff.changed_columns.append(col)
-                diff.lineage += [(r[0], col, r[1], r[2], None) for r in rows]
+                diff.lineage += [
+                    (r[0], col, r[1], r[2], "quarantined" if r[3] and r[2] is None else None) for r in rows
+                ]
         diff.cells_changed = len(diff.lineage)
 
         quarantined = conn.execute(

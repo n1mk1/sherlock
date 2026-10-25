@@ -44,6 +44,9 @@ class StepSpec:
     verifiers: dict = field(default_factory=dict)
     parse_failures: int = 0
     job_id: str | None = None
+    # (row_id, column) → (new_value, flag) replacing the diff's lineage row, e.g. an edit whose
+    # value didn't parse as the column's type: the cell is NULL, lineage keeps the text, flag `invalid`.
+    cell_overrides: dict[tuple[int, str], tuple[str | None, str | None]] = field(default_factory=dict)
 
 
 @dataclass
@@ -146,6 +149,7 @@ def _write(ctx, dataset, parent, new_version, relative, spec, diff, rows, max_ro
         "before_after": diff.before_after,
     }
     targets = spec.column_targets or diff.changed_columns
+    lineage = _lineage_rows(diff.lineage, spec)
     user_columns = [c for c in columns if c["name"] not in ("_row_id", "_quarantine_reason")]
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -169,12 +173,12 @@ def _write(ctx, dataset, parent, new_version, relative, spec, diff, rows, max_ro
         db.executemany(
             "INSERT INTO lineage (dataset_id, step_id, row_id, column, old_value, new_value, flag, version) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [(dataset["id"], step_id, r[0], r[1], r[2], r[3], r[4], new_version) for r in diff.lineage],
+            [(dataset["id"], step_id, r[0], r[1], r[2], r[3], r[4], new_version) for r in lineage],
         )
         if spec.kind == "edit":
             db.executemany(
                 "INSERT OR REPLACE INTO user_edited_cells (dataset_id, row_id, column, step_id) VALUES (?, ?, ?, ?)",
-                [(dataset["id"], r[0], r[1], step_id) for r in diff.lineage if r[1] != "_row"],
+                [(dataset["id"], r[0], r[1], step_id) for r in lineage if r[1] != "_row"],
             )
         size = folder_bytes(folder)
         db.execute(
@@ -191,6 +195,25 @@ def _write(ctx, dataset, parent, new_version, relative, spec, diff, rows, max_ro
         db.execute("ROLLBACK")
         raise
     return load_step(db, step_id)
+
+
+def _lineage_rows(rows: list[tuple], spec: StepSpec) -> list[tuple]:
+    """The diff's lineage with the step's overrides applied; cells of a flagged step get `flagged`."""
+    out = []
+    seen = set()
+    for row_id, column, old, new, flag in rows:
+        key = (row_id, column)
+        if key in spec.cell_overrides:
+            new, flag = spec.cell_overrides[key]
+            seen.add(key)
+        elif flag is None and column != "_row" and spec.gate == "flag":
+            flag = "flagged"
+        out.append((row_id, column, old, new, flag))
+    # An override for a cell the diff didn't see (an invalid edit of a cell that was already NULL).
+    for (row_id, column), (new, flag) in spec.cell_overrides.items():
+        if (row_id, column) not in seen:
+            out.append((row_id, column, None, new, flag))
+    return out
 
 
 def _schema(path: Path) -> list[tuple[str, str]]:

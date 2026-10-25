@@ -217,7 +217,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
 - [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
-- [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; replay (D5.5) and lineage queries (D2.6) remain
+- [ ] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay (D5.5) remains
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain
 - [ ] `dashboard/` candidates, scoring, curation, validation, layout, job
@@ -228,7 +228,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `canvas/` model, persistence, pruning
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test
 - [ ] `chat/` threads, messages, proposals
-- [ ] `routers/*` for every endpoint in TRD §4
+- [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
 - [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything
 - [ ] `scripts/` smoke_llm, seed_sample, deploy
 - [ ] tests: unit, integration (mocked LLM), fixtures

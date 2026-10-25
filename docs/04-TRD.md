@@ -96,6 +96,7 @@ sherlock/
         vendored_helpers.py    the subset of cleaning helpers emitted into the notebook
       chat/                    threads, messages, proposals
       routers/                 one file per API area
+      rows/                    row pages (paging, sort, filter, views) and edit batches
       eval/                    benchmark + eval harnesses (also CLI)
     tests/
     samples/                   titanic3.csv (or fetch script), eval questions, corrupted sets
@@ -331,6 +332,33 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 | GET | `/datasets/{id}/columns/{column}/values` | `?prefix&limit` | `{ values: [{ value, count }] }` from `value_index`, for dropdowns and autocomplete |
 
 `EditBatch`: `{ base_version, edits: [{ row_id, column, value }], new_rows: [{ temp_id, cells }], restore_row_ids: number[] (clears `_quarantine_reason`), deleted_row_ids: number[], run_cleaning_on_new_rows: bool }`. Filter JSON: `{ "and": [ { "col": "pclass", "op": "eq"|"neq"|"in"|"gt"|"gte"|"lt"|"lte"|"contains"|"empty"|"notempty", "value": ... } ] }`.
+
+Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers/rows.py`, `sherlock/rows/`):
+- **`GET /rows`.**
+  - It reads the version through the cached in-memory DuckDB connection. Every column name in `sort` and `filter` is checked against the version's columns and quoted, and every value is a bound parameter. An unknown column, operator or view is `422 invalid`, and an unknown version is `404`.
+  - `sort` items are `col` or `col:asc|desc`, with `NULLS LAST`; `_row_id` breaks ties, and it's the default order.
+  - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `empty` also matches blank text.
+  - `view=changed` is rows with any cell mark. `flagged` is quarantined rows plus rows with a `flagged` or `invalid` cell. `missing` is rows with any empty user cell.
+  - `selection` reads a `selections` row: its `row_ids_json`, else its stored, already validated predicate.
+  - The response adds `columns: [{name, type}]` (DuckDB types) and, per row, `quarantine_reason`.
+  - Cell values are JSON: dates and timestamps as ISO strings, NaN and infinities as `null`.
+  - The `predicted` mark comes from run results (D7) and isn't produced yet.
+- **`GET /cells/{row_id}/{column}/history`.** `?version=` defaults to the current one. Each entry adds `flag`.
+- **`POST /edits`.** It answers `201` with `{ step, version, new_row_ids: { temp_id: _row_id } }`.
+  - Values are typed to the column's DuckDB type. A blank value is NULL.
+  - A value that doesn't parse as that type, such as `abc` in a `DOUBLE` column or `3.5` in a `BIGINT` one, is saved as NULL. Its lineage row keeps the text as `new_value` with flag `invalid` (App Flow §8.2: "invalid values are saved but flagged"), and its `notebook_code` assigns `None`.
+  - The step has kind `edit`, `created_by` `user` and gate `user`. Its summary reads like "Edited 3 cells, added 1 row, deleted 1 row by hand". `edits_json` stores the batch with each new row's assigned `_row_id`.
+  - It's refused with `422 invalid`, and writes nothing, when the batch is empty, names an unknown column or a row not in the version, or edits a row it also deletes.
+  - **Conflicts.** A stale `base_version` is always `409 conflict`, with `current_version` and `conflicts: [{ row_id, column, mine, theirs }]`: the edited cells whose value differs between the base version and the current one, which may be none. The client reapplies the edits on the new version ("Rebase and save", App Flow §8.2) and sends them again with the new `base_version`.
+  - `run_cleaning_on_new_rows` is accepted; it queues a Clean with AI job scoped to the new rows once the Cleaner exists (D3.2).
+- **`GET /find`.**
+  - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`).
+  - `column` limits it to one column, and `selection` to a selection's rows.
+  - Matches come in row order, then column order. `first_matches` holds the first 100. With `all=true`, it holds up to 10,000, each with its `value`.
+- **`GET /columns/{column}/values`.** It answers from `value_index`, most frequent first; `prefix` is a case-sensitive prefix and `limit` is 1–500 (default 50).
+- **`GET /export.csv`.**
+  - It returns the version (`?version=`, default current) as UTF-8 CSV, named `<name>-v<version>.csv`.
+  - It has the user columns only, every row the grid shows (quarantined rows too), in `_row_id` order.
 
 ### 4.4 Cleaning and steps
 
@@ -932,7 +960,19 @@ Implementation (2026-10-24, Implementation Plan D2.3, `sherlock/steps/`):
 
 ### 7.9 Lineage reads
 
-Lineage marks and cell history are not read yet (the rows API, Implementation Plan D2.6).
+Implemented 2026-10-24 (Implementation Plan D2.6, `sherlock/steps/lineage.py`):
+- **The chain.** A version's effective chain gives its steps. For each, only the lineage rows with the greatest `version` not above the version being read count, so undone steps drop out and a replayed step counts once. The rows API and cell history read lineage this way.
+- **Marks.** Per cell, the latest step in the chain that touched it decides:
+  - lineage flag `quarantined` or `invalid` → `invalid` (the value didn't parse, and its text is kept in lineage)
+  - flag `flagged` → `flagged`
+  - anything else → `changed`
+
+  Row-level events (`column = '_row'`) give no cell mark. A quarantined row is reported by `quarantined: true` instead.
+- **Flags written at commit** (`sherlock/steps/diff.py`, `commit_step`):
+  - A cell that lost its value (non-null → NULL), in a row the same step quarantined, gets `quarantined`. This is how a failed cast keeps its original text.
+  - Every changed cell of a step with gate `flag` gets `flagged`.
+  - A step can override a cell's lineage row (`StepSpec.cell_overrides`). Edit batches use it to keep an invalid value's text with flag `invalid`.
+- **Diff rule.** A cell whose value went from non-null to NULL counts as changed even when the old value can't be cast to the new type. Before this, a failed cast (old text → NULL) compared NULL with NULL and was missed.
 
 ---
 
