@@ -349,8 +349,9 @@ class Cleaner:
         except StructuredOutputError:
             critique, review_ok = None, False
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
-        decision = gate.decide([s for _, s, *_ in scored], review_ok,
-                               full_report.cells_changed + full_report.quarantined, len(before) * max(len(user_cols), 1))
+        total_cells = len(before) * max(len(user_cols), 1)
+        affected = gate.cells_affected(full_report.cells_changed, full_report.quarantined, len(user_cols), total_cells)
+        decision = gate.decide([s for _, s, *_ in scored], review_ok, affected, total_cells)
         if decision.gate == "skip":
             return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
         restricted = full_out

@@ -131,6 +131,18 @@ def test_gate(scores, clean, changed, expected):
     assert d.confidence == pytest.approx(0.6 * max(scores) + 0.2 * gate.agreement(scores) + 0.2 * clean)
 
 
+def test_quarantined_rows_count_as_all_their_cells_in_the_blast():
+    # The live Titanic run (2026-10-25): a step quarantined 1,020 of 1,309 rows × 14 columns. Counted
+    # as one cell each that was a 5.6% blast; it is 78% of the data.
+    total = 1309 * 14
+    affected = gate.cells_affected(0, 1020, 14, total)
+    assert affected == 1020 * 14
+    d = gate.decide([0.95, 0.9], True, affected, total)
+    assert d.gate == "flag" and d.reason == "changes more than a fifth of the data"
+    assert gate.cells_affected(120, 1, 4, 480) == 124
+    assert gate.cells_affected(480, 120, 4, 480) == 480  # capped
+
+
 # --- helpers inside the sandbox ----------------------------------------------------------------
 
 
