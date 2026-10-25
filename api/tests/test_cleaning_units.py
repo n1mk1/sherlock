@@ -181,3 +181,18 @@ def test_reviewer_concerns_alone_do_not_block_a_commit():
     # The loop passes review_ok = not changed_something_it_shouldnt; concerns don't enter it.
     assert gate.decide([0.9, 0.85], True, 10, 1000).gate == "commit"
     assert gate.decide([0.9, 0.85], False, 10, 1000).gate == "flag"  # "changed something it shouldn't"
+
+
+def test_cleaner_prompts_carry_nothing_from_the_sample_dataset():
+    # CLAUDE.md Rule 4: no tuning to Titanic. The propose prompt's example label was "Median by
+    # title in name", and live runs proposed exactly that as a candidate.
+    import re
+    from pathlib import Path
+
+    from sherlock.cleaning import prompts
+
+    header = (Path(__file__).parents[1] / "samples" / "titanic3.csv").read_text(encoding="utf-8").splitlines()[0]
+    columns = {c.strip('"').lower() for c in header.split(",")} - {"name", "age", "sex"}  # plain English words
+    text = "\n".join([prompts.SYSTEM, prompts.DIAGNOSE, prompts.PROPOSE, prompts.CRITIC, prompts.HELPERS]).lower()
+    found = {w for w in columns | {"titanic", "passenger", "title in name"} if re.search(rf"\b{re.escape(w)}\b", text)}
+    assert not found
