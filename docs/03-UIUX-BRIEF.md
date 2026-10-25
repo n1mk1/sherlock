@@ -438,9 +438,39 @@ As built (2026-10-25): the "Unsaved (yours)" card has the `--accent` border and 
 
 Stacked sections with overlines: Target (select), Features (chip wrap; excluded chips struck through in muted with a tooltip), Rows (scope chip + "Use selection" link when a brush exists), Method (segmented: Auto · Linear · Logistic; disabled segments with tooltips), More (disclosure with the manifest's params as labeled inputs), Baselines (a 3-row mini table: everyone-majority, best one-column rule, model [pending]). Footer: estimate text ("about 10 s"), Cancel (ghost), Run (primary).
 
+As built (2026-10-25, `web/src/components/ml/MlSetup.tsx`, within cuts 4 and 7):
+- **Layout.** The sections stack inside the widget body (scrolling when the widget is short), with 11px uppercase overlines.
+- **Target.** A native select of the recipe's `targets`, with a muted line ("Categories: scored by Accuracy.").
+- **Features.** 24px pill chips: used in `--border-strong` on `--card`; excluded struck through on `--muted` with "Left out: <reason>" as the tooltip; forced-in with a `--warning` border and a warning icon. Re-including one shows a `--warning` line with the reason.
+- **Rows.** The scope chip ("All rows · 1,309 with survived", plus the filter when used) and an "Only the filtered rows" checkbox when a dashboard filter is active.
+- **Method.** No segmented control (cut 4): a line, "Auto: tries logistic regression, gradient boosting and a random forest on the same folds and keeps the best."
+- **More.** A native disclosure with the manifest's integer params as labeled number inputs.
+- **Baselines.** A two-row table plus "Model: pending".
+- **Footer.** Estimate, Cancel (ghost) and Run (primary). Run is disabled while the preview has an error, and that error replaces the baselines.
+
+The analysis dropdown is a 28px flask icon button left of the widget menu. Its menu has the group overlines, disabled items with their reason in an 11px line, then "Plain chart (SQL)" as a check item.
+
 ### 5.9 Model card drawer
 
 Sections: Verdict (headline-sm serif), Data (rows, version, scope), Excluded columns (list with reasons), Method (name, params), Baselines vs model (table with intervals; the model row bold), Metrics (per method: coefficients table with CI and p; or importance list), Warnings (warning chips with suggestions), Actions: Compare with Auto (secondary), Who did it get wrong? (link), Re-run (secondary when outdated).
+
+As built (2026-10-25, `web/src/components/ml/ModelCardDrawer.tsx`): the 420px drawer titled "Model card".
+- **Verdict.** In 20px serif semibold. When outdated, a `--warning` bordered row follows with Re-run.
+- **Data.** Target, task, version, scope, rows used of the total, and rows without the target. Plus the sample when there is one.
+- **Excluded columns.** Mono and struck through, each with its reason.
+- **Method.** "Auto picked <model> by 5-fold stratified cross-validation (seed 42)", the other models with their scores, and the params.
+- **Baselines vs model.** Columns: the metric and the 95% interval. The model row is bold, followed by AUC or MAE.
+- **Importance.** A list with values.
+- **Warnings.** Bordered `--warning` boxes with the suggestion under the text.
+- **Limits.** As specified.
+- **Show the code.** It reveals `repro.py` in a mono block.
+- **Not built.** Compare with Auto (cut 4), Who did it get wrong? (cut 7) and the coefficients table (cut 4).
+
+The analysis widget's body follows App Flow §9 steps 3–5:
+- **While running.** The progress line, a 4px `--accent` bar, and the steps with check and spinner icons.
+- **The result.** The verdict line (in `--warning` for no signal). Then up to twelve importance rows: the name, a 12px bar in `--chart-1` (the top factor or the open one in `--chart-accent`) and the value in mono.
+- **Partial dependence.** A 64px SVG mini chart in a bordered figure under its bar: a line for numbers, bars for categories, with an accessible label listing the points.
+- **Footer.** It adds "Model card", and "Outdated" with a small Re-run in `--warning`.
 
 ### 5.10 Flow canvas
 

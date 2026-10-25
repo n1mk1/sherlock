@@ -623,6 +623,30 @@ JSON Canvas nodes: `{ id, type: "text"|"file"|"link"|"group", x, y, width, heigh
 
 `RunRequest`: `{ recipe, method: "auto"|"linear_regression"|"logistic_regression"|..., scope: Scope, params: object, widget_id? }`
 
+As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/routers/runs.py`, `sherlock/ml/runner.py`):
+- **Recipes and methods.** Only `driver_analysis` with `method: "auto"` runs. Any other method is `422` ("Only Auto is available in this release"). A disabled recipe is `422` with its reason.
+- **`GET /recipes?dataset_id&scope`.** It returns every manifest (§6.5) with `compatible` and `reason`. Rows are counted in the scope (quarantine excluded). `driver_analysis` also carries `targets`: the columns it can explain, the DataCard's target candidates first.
+- **`RunRequest` additions:**
+  - `filters` (optional): the dashboard's filter clauses. They are folded into `scope.rows.predicate`, and a run always has `inherit_global_filters: false`. Its rows are fixed by its scope and are part of the cache key.
+  - `scope.columns.target`: filled in with the best guess when it's missing.
+  - `scope.columns.features`: `null` means every column is a candidate. A list is exactly the chips the user left on. A listed column that a check would exclude is "forced in" and gets a model-card warning; a column left out of the list is excluded as "turned off in the setup".
+  - The target and the minimum rows (100 with the target filled in, PRD ML-10) are checked before anything is queued, so a refusal is `422` with the count.
+  - `params` are checked against the manifest: `cv_folds` from 3 to 10, `time_budget_s` from 10 to 300.
+- **`POST /datasets/{id}/runs`.** It returns the full `Run` (with `model_card` when cached). With `widget_id`, the widget *becomes* the analysis:
+  - Its spec is replaced by the ML spec (`view: importance`), and its chart spec is kept as `prev_spec_json` for Undo ("Plain chart (SQL)").
+  - It is titled "What drives <target>?", and its chart title is kept in `view.options.chart_title`.
+  - Changing an analysis's settings keeps the chart it replaced.
+- **`POST /datasets/{id}/runs/preview`.** It returns `{ target, targets, task, metric, columns, features, excluded, forced, rows, sample, baselines, estimate_s, scope, params, cached }`, where `cached` is the done run's id for the same request. Baselines are computed on up to 5,000 rows of the scope.
+- **`GET /runs/{rid}/results?view=`:**
+  - `importance`: `feature`, `importance`.
+  - `baselines`: the baselines plus a `model:` row with its interval.
+  - `partial_dependence&feature=`: `value`, `prediction`, plus `of` and `kind`. Without `feature`, every point of the top five factors.
+  - Results are `409` until the run is done or outdated.
+- **`GET /runs/{rid}/model-card`** is `409` until there is one. `GET /runs/{rid}/code` serves `repro.py` once it's written.
+- **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6).
+- **`GET /widgets/{wid}/data` for an analysis widget** returns its run's importance plus `run` (the `Run` summary), so the widget can show progress, the verdict or "Outdated". An analysis ignores the dashboard's filter.
+- **Not built:** `explain-row` and `predictions` (cut 7), and `compare-auto` (cut 4).
+
 ### 4.9 Chat
 
 | Method | Path | Body / Query | Response |
@@ -697,7 +721,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 | `cascade.started` | `{ version, widget_ids, card_ids, run_ids }` | cascade begins |
 | `widget.updated` | `Widget` | a widget's data or status changed |
 | `card.updated` | `Card` | a card changed |
-| `run.updated` | `Run` summary | a run's status changed |
+| `run.updated` | `Run` summary | a run's status changed. As built: the `Run` without `model_card`, with `summary` and `progress` (§6.8); the widgets showing the run follow with `widget.updated`. ML progress comes as `job.progress` with `kind: "ml_run"` |
 | `cascade.done` | `{ version, counts }` | cascade ends |
 | `layout.updated` | `Layout` | another tab saved the layout |
 | `canvas.updated` | `{ etag }` | another tab saved the canvas |
@@ -896,6 +920,12 @@ As implemented (2026-10-25, D6.1, `sherlock/stories/facts.py`):
 
 The dropdown, the setup form and the agent's `run_recipe` tool schema are all generated from manifests. P1 recipes are registered as stubs that always return `compatible: false` with a reason (for example "needs a date column"), so the dropdown shows them disabled.
 
+As built (2026-10-25, `sherlock/ml/registry.py`, cuts 4 and 7):
+- **`driver_analysis`.** It lists only the `auto` method, its `params` carry a `title` for the setup form's More section, and its `outputs` are `importance`, `partial_dependence` and `model_card`.
+- **Targets.** `targets` is added per dataset: columns typed bool, category, int or float that aren't IDs, free text, empty or time. Categories need 2–20 values.
+- **Disabled recipes.** `predict` ("Not in this release", cut 7), `kmeans`, `anomalies` and `forecast` ("Coming later"; Forecast says "needs a date column" when there is none) come back with `compatible: false` and no methods.
+- **Not built.** The agent's `run_recipe` tool is not built (D7.3).
+
 ### 6.6 ModelCard
 
 ```json
@@ -919,9 +949,39 @@ The dropdown, the setup form and the agent's `run_recipe` tool schema are all ge
 }
 ```
 
+As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherlock/ml/runner.py`):
+- **Fields.** `run_id`, `recipe`, `method: "auto"`, `chosen_model` (`logistic_regression`, `ridge`, `gradient_boosting` or `random_forest`), `task`, `target`, `features_used` and `excluded`.
+- **`rows`.** `{ total, with_target, blank_target, used, train }`.
+- **`split`.** `{ kind: "stratified_kfold"|"kfold", folds, seed: 42 }`.
+- **`baselines`.** "everyone gets the most common outcome" (or "predict the average"), and "best one-column rule: <column>" with its `column`.
+- **`model`.** `{ metric: "accuracy"|"macro_f1"|"r2", value, ci, folds, lift_over_best_baseline, auc? (two classes), mae? (regression) }`. `ci` is mean ± 1.96·sd/√folds.
+- **`alternatives`.** The other models Auto tried, with their CV score.
+- **`verdict` and `verdict_text`:**
+  - `beats_baseline`: a lift of at least 2 points, or 0.05 in R².
+  - `weak`: any smaller lift.
+  - `no_signal`: no lift. When a one-column rule carries the signal, the text names it ("No better than boat alone (97.6%)…").
+- **`importance`.** Permutation importance, scaled so the strongest is 1.
+- **`warnings`:**
+  - `class_imbalance`: more than 70% share one outcome.
+  - `small_sample`: fewer than 300 rows.
+  - `high_cardinality`: target-encoded columns.
+  - `forced_in`: a column put back in although a check excluded it.
+- **`limits`, `sample`.** As above.
+- **Run context.** `version`, `scope`, `params`, `artifact_path`, `fact_sheet_id`, and `repro: { libraries: { pandas, numpy, duckdb, scikit-learn }, code_path }`.
+- **Not built.** `coefficients` and the method checks (cut 4), and `calibration` (no predictions are served, cut 7).
+
 ### 6.7 Reproduction code (runs and edit batches)
 
 Every run writes `repro.py` at completion: a self-contained function `def reproduce(df, seed=42):` that selects the scope by applying the stored SQL predicate with DuckDB on the DataFrame, drops quarantined rows, reapplies the recorded sample (a stratified sample drawn with the stored `seed`, `stratify_column` and `n`, written into the cell) when the run was sampled to 50k rows, lists the features and the exclusions with their reasons as comments, builds the same `Pipeline`/`ColumnTransformer`, performs the same split with the same seed, fits the chosen method (for Auto: the winning model only, with a comment naming the others), computes baselines and metrics, and returns `{ "metrics": ..., "importance" | "coefficients": DataFrame }`. It imports only pandas, numpy, duckdb, scikit-learn, statsmodels. The notebook exporter inlines it; `GET /runs/{rid}/code` serves it.
+
+As built for runs (2026-10-25, `sherlock/ml/repro.py`):
+- **What `repro.py` holds.** A header naming the run, the version and the models Auto tried. Then `import duckdb`, and the imports, `FOLDS` and functions of `sherlock/ml/core.py`, copied verbatim with `ast`. Then `reproduce(df, seed=42)`:
+  - it selects `SELECT * FROM t WHERE <the run's WHERE clause> ORDER BY _row_id` with `t = df`, and drops rows without the target;
+  - it reapplies the sample when there was one;
+  - it lists the features and every exclusion with its reason as comments;
+  - it returns `run(...)` for the winning model: `{ metrics, baselines, importance (DataFrame), rows }`.
+- **One code path.** The runner gets the model card's numbers by executing this same text on the version's data (`repro.execute`), so the notebook, which runs it on the rebuilt DataFrame, reports the same metrics.
+- **Imports.** pandas, numpy, duckdb and scikit-learn; statsmodels isn't needed with Auto only.
 
 Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[df._row_id == <id>, "<col>"] = <value>`, grouped by column; new rows as a `pd.concat` with explicit `_row_id`s; deleted rows as `df = df[~df._row_id.isin([...])]` (user deletions are real deletions, unlike quarantine). Values are rendered with `repr` and typed to the column's dtype.
 
@@ -932,6 +992,13 @@ Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[d
 `CleaningReport` (built from `steps` and the `issues` table for one clean job): `{ job_id, from_version, to_version, ended_by: "done"|"steps"|"time"|"tokens"|"stopped"|"error", waited_for_model_s, counts: { found, fixed, flagged, skipped }, steps: [{ step_id, no, summary, gate, impact }], skipped: [{ issue_id, column, detector, reason }], hand_edited_skipped: [{ row_id, column }], decisions: [{ step_id, question, chosen, reason }] }`. The cleaner writes `issues.outcome`, `handled_by_step_id` and `skip_reason` as it goes.
 
 `Run`: `{ id, dataset_id, widget_id?, version, recipe, method, scope: Scope, params, status: "queued"|"running"|"done"|"failed"|"cancelled"|"outdated", job_id?, model_card?: ModelCard, fact_sheet_id?, error?, created_at, finished_at? }`. `Scope` is `WidgetSpec.scope` (§6.3).
+
+As built (2026-10-25), a `Run` adds:
+- `target`;
+- `summary`: `{ verdict, verdict_text, metric, value, best_baseline, chosen_model, chosen_label, rows, excluded }` once there is a model card, for the widget's verdict line;
+- `progress`: the job's `{ step, of, label, pct }` while queued or running.
+
+`model_card` comes only from `GET /runs/{rid}` and `POST …/runs` (not in `run.updated` or widget data).
 
 `Proposal`: `{ id, kind: "clean_step"|"clean_selection"|"edit_cells"|"card_edit"|"computed_column", base_version, summary, code?, edits?, card_id?, card_text?: CardBody, impact: { cells_changed, rows_affected }, status: "pending"|"approved"|"rejected"|"expired" }`. A proposal expires when its `base_version` is no longer current.
 
@@ -1200,6 +1267,11 @@ As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
   - The fallback, after the repair or when the model is unavailable or over budget, is the reserved KPIs plus the best charts, eight in all, with templated titles.
 - **Persisting.** Each pick is created through the widgets service, which runs it once more. The layout is packed (§4.5) and saved, and the dataset becomes `ready`.
 - **Not yet.** The `driver_analysis` widget (step 5) is added with the ML recipes (Implementation Plan D7.2). Enqueuing the stories job (step 7) comes with D6.1.
+- **The driver widget (step 5, 2026-10-25, `builder.py::driver_widget`).**
+  - When the DataCard has a target candidate and at least 100 rows, the build adds "What drives <target>?": an `importance` view of `driver_analysis` with Auto on the first candidate, after the curated widgets.
+  - Its run is queued (`ml_run`) and the widget shows the progress until the importance arrives. Its story is told when the run finishes.
+  - A request the runner refuses (for example fewer than 100 rows with the target filled in) adds no widget.
+  - The build's `widgets` count includes it: Titanic builds 8 charts plus the driver widget on the fallback path.
 - **Live check (2026-10-24, Nemotron 3 Super):** Titanic got seven widgets ("Survival rate", "Passenger count", "Survival by sex", "Fare by class", "Survival by class", "Passengers by port", plus average fare), and `sales_dated.csv` got eight.
 
 Custom-chart candidates (2026-10-25, D6.5, `dashboard/candidates.py::_distributions`, `scoring.py`):
@@ -1262,6 +1334,51 @@ Common path (`ml.common`):
 
 Run as a job; progress labels: "preparing data", "checking for leakage", "setting baselines", "testing models" (per fold), "explaining", "writing the model card".
 
+As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analysis` with Auto only):
+- **Modules (`sherlock/ml/`), split by what they do rather than as `common.py` and `recipes/`:**
+  - `plan.py`: scope, framing and leakage (steps 1–3).
+  - `core.py`: self-contained scikit-learn code for steps 4–8. It is copied into `repro.py`.
+  - `repro.py`: renders and executes the reproduction code.
+  - `analysis.py`: the Auto search, partial dependence, the verdict and the model card.
+  - `registry.py`: the manifests.
+  - `runner.py`: requests, the cache, the `ml_run` job, artifacts, the fact sheet, reads and outdating.
+- **Step 1.** `SELECT * FROM t WHERE <quarantine excluded, predicate, selection> ORDER BY _row_id`. Rows without the target are dropped. More than 50,000 rows are sampled with seed 42.
+- **Step 2.** As specified: AUC for two classes, MAE for regression.
+- **Step 3, leakage.** These are excluded with their reason:
+  - empty columns, IDs, free text and dates (dates aren't features yet);
+  - the DataCard's `leakage_candidates` for this target;
+  - names containing the target's name;
+  - numbers with |correlation| above 0.98;
+  - a category that settles a categorical outcome by itself: at least 98% of the rows of each of its values share one outcome while the outcome alone is under 95% predictable. This purity check stands in for "mutual information near max".
+- **Step 4.** `StratifiedKFold` (classification) or `KFold` (regression), 5 folds by default, seed 42. The `TimeSeriesSplit` and `GroupKFold` choices are not built.
+- **Step 5.** Numbers: median impute and standard scale. Categories with up to 50 values: missing becomes "(missing)", then one-hot with `min_frequency=10` and `handle_unknown="infrequent_if_exist"`. More than 50 values: `TargetEncoder` inside the folds.
+- **Step 6.** As specified: depth-1 trees per column on the same folds.
+- **Step 7, Auto.** `LogisticRegression(C=1)` or `Ridge`, `HistGradientBoosting`, then `RandomForest` (200 trees), on the same folds. The best mean CV score wins. When `time_budget_s` has passed, the remaining models are skipped (at least one always runs).
+  - **Decision:** classifiers are not calibrated. Calibration matters for predicted probabilities, and no predictions are served (cut 7). The `calibration` field is left out of the model card.
+- **Step 8, explain.** Permutation importance on each held-out fold (10 repeats, the task's scorer), averaged, clipped at 0 and scaled so the strongest is 1.
+  - **Decision:** no SHAP. It isn't a dependency, and permutation importance is model-agnostic and reproducible in the notebook with scikit-learn alone.
+  - Partial dependence covers the top five factors on the winner refitted on all rows. Numbers use ten quantiles from 5% to 95%; categories use their ten most common values. Two-class targets are shown as the probability of the second class in sorted order.
+- **Step 9 (predict).** Not built (cut 7).
+- **Step 10, artifacts.** `runs/<id>/`:
+  - `repro.py`, `model.joblib` (the refitted winner) and `model_card.json`;
+  - `results/importance.json` and `results/partial_dependence.json`. These are JSON because pyarrow isn't a dependency.
+  - Run columns: `features_json` (the features used), `target`, `artifact_dir`, `repro_path`, `sample_json`, `libraries_json`.
+  - **Fact sheet** (§6.4): `model_score`, `best_baseline`, `lift` (points or R²), `rows`, `verdict`, `auc` and `driver_1…3` with their importance. Each carries `run_id` and a `formula` naming the held-out metric. Stored in `fact_sheets` with `run_id`, and copied for the widget's card.
+- **The cache.** The key is sha1(version, scope, recipe, method, params). A done, queued or running run with the same key is returned as it is. A failed or cancelled one starts again under the same id.
+- **Events.** `run.updated` (the `Run` without its model card) follows every status change, then `widget.updated` for each live widget showing the run. A widget's status follows its run's: queued or running is `building`, done is `ready`, outdated is `outdated`, failed or cancelled is `error`. Cancel is `POST /runs/{rid}/cancel`, checked between models.
+- **Settling.** A run that finishes after newer versions exist checks what changed since its version, as the cascade does (cascades skip runs that are still going). It is then outdated, and re-run for its widgets unless the user chose "Story updates: Ask first".
+- **Speed.** Titanic (1,309 rows, 10 features) takes about 16 s locally. A cached repeat answers at once (PRD ML-8).
+- **Tests.**
+  - `tests/test_ml.py`:
+    - planted truth: drivers found in order, the leak and the ID left out, noise reported as "no signal", regression;
+    - minimum rows;
+    - forced columns;
+    - repro equality;
+    - the runs API end to end with the cache;
+    - a widget becoming an analysis, going outdated, Re-run and Undo;
+    - the builder's driver widget.
+  - `uv run sherlock eval ml` prints the planted cases as a table.
+
 ### 7.6 Cascade
 
 Triggered by `version.created`, widget create/update/delete, and run completion.
@@ -1297,6 +1414,11 @@ Cascade with cards (2026-10-25, Implementation Plan D6.2, cut 6 applied; `sherlo
 - **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
 - **Widgets added, changed or deleted** queue a `stories` job for that widget (deleted: the overview only), once the dataset has cards.
 - **Restoring a deleted widget** brings its card back and queues the overview, so the overview counts the widget again (Day 6 review, 2026-10-25).
+- **Runs (2026-10-25, D7).**
+  - Each done run of an earlier version is checked against the changes since *its own* version. It is outdated (`run.updated`) when they meet its target, its features or the columns its row predicate names, or when everything changed.
+  - Its analysis widgets are affected. With "Story updates: Automatic" they re-run on the new version (a new run, linked at once). With "Ask first" they stay `outdated` with Re-run, and their cards are marked outdated.
+  - Runs that read none of the changed columns stay done on their version: their result still holds.
+  - `cascade.started` lists `run_ids`, and `counts.runs` counts the outdated runs. An analysis widget's card is told again when its new run finishes, not during the cascade.
 - **Two job runners on one database.** A runner from an older build that lacks a job kind fails that kind's jobs ("No handler…"). Locally, a second API on the same `api/data` did this to a cascade during the 2026-10-25 browser check; production runs one process.
 
 ### 7.7 Notebook exporter
@@ -1355,6 +1477,15 @@ As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
 - **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
 - **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
 
+- **Runs** (2026-10-25, D7.5):
+  - **An analysis widget** is emitted in dashboard order via its run (done or outdated): a Markdown header, then the run's `repro.py` inlined and called on `df`, then the chart.
+    - The header has the title, the target, the scope, the model Auto picked with its folds and seed, the verdict, the excluded columns with reasons, and an outdated note.
+    - The code cell is `run_result = reproduce(df)`, a printed metrics line, `display` of the baselines and the importance table. Its embedded outputs come from the run: the metrics line, the baselines and the importance table.
+    - The chart is `plot(run_result["importance"].head(15), "importance", …)`.
+  - An analysis that hasn't finished gets a one-line note instead.
+  - With Include analyses (`include_runs`), finished runs that no live widget shows follow, newest first, at most ten. A widget's earlier runs are left out.
+  - `counts.runs` and the preview count them.
+  - The execution test (`tests/test_notebook.py`) runs the notebook and checks that each run cell's metric is within 0.5 points of its model card, after edits, a clean step and an undo with replay. They match exactly.
 - **Story cards** (2026-10-25, D6.6): with Include story cards, the overview follows the load cell as a `##` section, and each widget's card follows its widget as a `###` headline, its body (chips as their current fact-sheet values; bullets as a list), a "Related:" line, and the SQL of its chips in a closed `<details><summary>Evidence</summary>` block. Unverified numbers get `*` and the footnote "Typed by hand in Sherlock, not computed." With no cards yet, the first cell says so. `counts.cards` counts the cards included.
 
 ### 7.8 Undo and replay
@@ -1647,6 +1778,10 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
       - Quarantined rows are counted apart.
       - Values compare as numbers within 1e-6, dates by day, yes/no text as booleans (the typing step casts such columns), and text exactly.
     - **Output.** `uv run sherlock eval corruption [--sets a,b]` prints the summary table and a per-damage breakdown. The first numbers are in `FEEDBACK.md`.
+  - **The planted-truth ML cases as built** (2026-10-25, D7, `sherlock/eval/planted.py`). `uv run sherlock eval ml` runs three seeded frames of 800 rows through the analysis and prints a table. All three pass:
+    - `drivers`: a two-class outcome from `strong`, then `moderate`, then a category, with an unrelated `noise` column, a `leak` copy of the outcome and an ID. It must rank `strong` then `moderate`, leave out the leak and the ID, and beat the baselines.
+    - `noise`: a coin-toss outcome. It must say "no signal".
+    - `regression`: a number from `strong` and `moderate`. It must rank them first and beat the mean.
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.

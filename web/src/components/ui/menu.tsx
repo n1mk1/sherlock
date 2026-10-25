@@ -21,12 +21,12 @@ export function MenuContent({ children, align = "end" }: { children: ReactNode; 
   );
 }
 
-export function MenuItem({ children, onSelect, destructive, disabled }: {
-  children: ReactNode; onSelect: () => void; destructive?: boolean; disabled?: boolean;
+export function MenuItem({ children, onSelect, destructive, disabled, className }: {
+  children: ReactNode; onSelect: () => void; destructive?: boolean; disabled?: boolean; className?: string;
 }) {
   return (
     // Deferred a tick so the menu has closed (and returned focus) before a dialog the item opens takes it.
-    <Menu.Item disabled={disabled} onSelect={() => setTimeout(onSelect, 0)} className={cn(item, destructive && "data-[highlighted]:text-destructive")}>
+    <Menu.Item disabled={disabled} onSelect={() => setTimeout(onSelect, 0)} className={cn(item, destructive && "data-[highlighted]:text-destructive", className)}>
       {children}
     </Menu.Item>
   );
@@ -57,3 +57,8 @@ export function MenuCheck({ checked, children, onSelect }: { checked: boolean; c
 }
 
 export const MenuSeparator = () => <Menu.Separator className="my-1 h-px bg-border" />;
+
+/** A group's overline inside a menu (the analysis dropdown's Explain · Predict · …). */
+export const MenuLabel = ({ children }: { children: ReactNode }) => (
+  <Menu.Label className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{children}</Menu.Label>
+);

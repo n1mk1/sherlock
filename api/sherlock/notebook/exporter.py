@@ -148,14 +148,25 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
 
     progress(2, 3, f"Writing {len(rows)} widgets")
     env = widgets.Env(settings, db, cache, None)
-    emitted = 0
-    if rows:
-        nb.cells.append(nbformat.v4.new_markdown_cell("## The dashboard\n\nEach widget's query runs on the rebuilt data."))
+    emitted, emitted_runs = 0, []
+    extra = _extra_runs(db, dataset["id"], rows) if options.include_runs and options.up_to_step is None else []
+    if rows or extra:
+        intro = "## The dashboard\n\nEach widget's query runs on the rebuilt data; each analysis runs its reproduction code."
+        nb.cells.append(nbformat.v4.new_markdown_cell(intro))
         nb.cells.append(nbformat.v4.new_code_cell(cells.PLOT_HELPERS))
     for w in rows:
         spec = json.loads(w["spec_json"])
         if spec["op"]["type"] != "sql":
-            continue  # analysis widgets come with their runs (Implementation Plan D7.5)
+            run = _finished_run(db, w["run_id"])
+            if run is None:
+                nb.cells.append(nbformat.v4.new_markdown_cell(
+                    f"## {w['title']}\n\n*This analysis hadn't finished when the notebook was exported, so it's left out.*"))
+                continue
+            nb.cells += _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
+            emitted_runs.append(run["id"])
+            if w["id"] in cards:
+                nb.cells += cells.card(*cards[w["id"]])
+            continue
         sql = widgets.compiled(env, dataset, spec, version, [])
         data = widgets.data(env, dataset, w, [], version)
         point = json.loads(w["point_json"])["key"] if w["point_json"] else None
@@ -163,13 +174,54 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
         emitted += 1
         if w["id"] in cards:
             nb.cells += cells.card(*cards[w["id"]])
+    for run in extra:  # include_runs: finished runs no widget shows
+        nb.cells += _run_cells(settings, dataset, run, f"What drives {run['target']}?")
+        emitted_runs.append(run["id"])
     nb.cells += cells.closing()
 
     progress(3, 3, "Checking the notebook")
     nbformat.validate(nb)
     scan(nb)
-    counts = {"steps": len(chain), "widgets": emitted, "runs": 0, "cards": len(cards)}
+    counts = {"steps": len(chain), "widgets": emitted, "runs": len(emitted_runs), "cards": len(cards)}
     return Built(nb, version, counts, notes)
+
+
+MAX_EXTRA_RUNS = 10
+
+
+def _finished_run(db, run_id: str | None) -> sqlite3.Row | None:
+    if not run_id:
+        return None
+    return db.execute("SELECT * FROM runs WHERE id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL",
+                      (run_id,)).fetchone()
+
+
+def _extra_runs(db, dataset_id: str, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+    """Finished runs that no live widget shows, newest first (at most ten). A widget's earlier runs
+    (before a re-run or a change of settings) are left out: the widget is emitted with its current one."""
+    live = {w["id"] for w in rows}
+    shown = {w["run_id"] for w in rows if w["run_id"] and json.loads(w["spec_json"])["op"]["type"] == "ml"}
+    out = db.execute("SELECT * FROM runs WHERE dataset_id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL "
+                     "ORDER BY finished_at DESC", (dataset_id,)).fetchall()
+    return [r for r in out if r["id"] not in shown and r["widget_id"] not in live][:MAX_EXTRA_RUNS]
+
+
+def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title: str) -> list:
+    """The run's `repro.py` inlined (TRD §6.7) with its metrics, baselines and importance embedded
+    from the run itself."""
+    from nbformat.v4 import new_output
+
+    from sherlock.ml import runner as ml
+
+    card = json.loads(run["model_card_json"])
+    code = (ml.run_folder(settings, dataset, run["id"]) / "repro.py").read_text(encoding="utf-8")
+    metrics = new_output("stream", name="stdout", text=cells.metrics_text(card))
+    names = ["name", "metric", "value"] + (["column"] if any("column" in b for b in card["baselines"]) else [])
+    base = outputs.table([{"name": n} for n in names], [[b.get(n) for n in names] for b in card["baselines"]])
+    imp = ml.results(settings, None, dataset, run, "importance")
+    return cells.run(title, card, code, run["status"] == "outdated", metrics,
+                     new_output("display_data", data=base["data"]),
+                     outputs.table(imp["columns"], imp["rows"], imp["row_count"]))
 
 
 def _cards(db, dataset_id: str) -> dict:
@@ -193,10 +245,13 @@ def _helpers_used(db, step_id: str) -> list[str]:
 def preview(db: sqlite3.Connection, dataset: sqlite3.Row, options: NotebookOptions) -> dict:
     """What the dialog's sentence and notes need (TRD §4.2 preview), without building anything."""
     chain, target, notes = _chain(db, dataset, options)
-    widgets = [w for w in _widgets(db, dataset["id"]) if json.loads(w["spec_json"])["op"]["type"] == "sql"]
+    rows = _widgets(db, dataset["id"])
+    widgets = [w for w in rows if json.loads(w["spec_json"])["op"]["type"] == "sql"]
+    runs = [w for w in rows if json.loads(w["spec_json"])["op"]["type"] == "ml" and _finished_run(db, w["run_id"])]
+    runs += _extra_runs(db, dataset["id"], rows) if options.include_runs else []
     return {"version": target["version"], "notes": notes,
             "counts": {"steps": len(chain), "widgets": len(widgets) if options.up_to_step is None else 0,
-                       "runs": 0, "cards": len(_cards(db, dataset["id"])) if options.include_cards and options.up_to_step is None else 0}}
+                       "runs": len(runs) if options.up_to_step is None else 0, "cards": len(_cards(db, dataset["id"])) if options.include_cards and options.up_to_step is None else 0}}
 
 
 def export_path(settings: Settings, dataset: sqlite3.Row, key: str) -> tuple[Path, str]:

@@ -1,0 +1,143 @@
+"""The common path of an ML run before any model (TRD §7.5 steps 1–3, PRD ML-3): the scope's rows,
+the task, the features and every exclusion with its reason.
+
+Everything here is code over the version's data and its DataCard; the model never chooses a
+feature. A run's plan is stored with the run and rendered into its `repro.py`, so the notebook
+selects exactly the same rows and columns.
+"""
+
+import re
+from dataclasses import dataclass, field
+
+import duckdb
+import numpy as np
+import pandas as pd
+
+from sherlock.errors import ApiError
+from sherlock.rows.query import ident
+
+MIN_ROWS = 100           # supervised recipes refuse below this (PRD ML-10)
+SAMPLE_ROWS = 50_000     # larger scopes are sampled, stratified, with the seed (TRD §6.7)
+HIGH_CARDINALITY = 50
+SEED = 42
+
+
+@dataclass
+class Plan:
+    target: str
+    task: str                     # classification | regression
+    metric: str                   # accuracy | macro_f1 | r2
+    rows_sql: str                 # the WHERE clause of the scope (quarantine excluded)
+    features: list[str]
+    numeric: list[str]
+    categorical: list[str]        # one-hot (≤ 50 values)
+    high_card: list[str]          # target-encoded inside the folds (> 50 values)
+    excluded: list[dict] = field(default_factory=list)  # [{column, reason}]
+    rows: dict = field(default_factory=dict)            # {total, with_target, blank_target, used}
+    sample: dict | None = None    # {seed, stratify_column, n} when sampled
+    classes: list | None = None
+    forced: list[dict] = field(default_factory=list)    # [{column, reason}] put back in by the user despite a check
+
+    def json(self) -> dict:
+        return {k: getattr(self, k) for k in ("target", "task", "metric", "rows_sql", "features", "numeric", "categorical",
+                                              "high_card", "excluded", "rows", "sample", "classes", "forced")}
+
+
+def task_for(series: pd.Series, col_type: str) -> str:
+    """bool/category/text → classification; numbers with more than 20 values → regression, else classification."""
+    if col_type in ("int", "float") and series.dropna().nunique() > 20:
+        return "regression"
+    return "classification"
+
+
+def load_scope(conn: duckdb.DuckDBPyConnection, rows_sql: str) -> pd.DataFrame:
+    return conn.execute(f"SELECT * FROM t WHERE {rows_sql} ORDER BY _row_id").df()
+
+
+def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: list[str] | None = None,
+              forced: list[str] | None = None) -> Plan:
+    """Frame the task and pick the features. `chosen` is the setup form's chips when the user changed
+    them (None: every column is a candidate); a column left out of it is excluded as "turned off in the
+    setup". `forced` re-includes columns the checks excluded (the form warns first; the model card
+    keeps a warning)."""
+    cols = {c["name"]: c for c in card["columns"]}
+    if target not in cols:
+        raise ApiError(422, "invalid", f"There's no column {target!r} to explain.")
+    y = df[target]
+    with_target = int(y.notna().sum())
+    if with_target < MIN_ROWS:
+        raise ApiError(422, "invalid", f"This needs at least {MIN_ROWS} rows with {target} filled in; the scope has {with_target}.")
+    task = task_for(y, cols[target]["type"])
+    classes = sorted(y.dropna().unique().tolist(), key=str) if task == "classification" else None
+    if task == "classification" and len(classes) < 2:
+        raise ApiError(422, "invalid", f"{target} has a single value in these rows, so there's nothing to explain.")
+    metric = "r2" if task == "regression" else ("accuracy" if len(classes) == 2 else "macro_f1")
+
+    leak = {lc["column"]: lc["reason"] for lc in card.get("leakage_candidates") or [] if lc.get("target") in (None, target)}
+    stem = re.sub(r"[^a-z0-9]", "", target.lower())
+    excluded, features, kept_anyway = [], [], []
+    forced = set(forced or [])
+    yn = pd.to_numeric(y, errors="coerce") if task == "regression" or (classes and all(isinstance(c, (int, float, bool, np.bool_)) for c in classes)) else None
+    for name, c in cols.items():
+        if name == target or name not in df.columns:
+            continue
+        reason = None
+        if c["role"] == "empty":
+            reason = "has no values"
+        elif c["role"] == "id" or c["type"] == "id":
+            reason = "ID-like: unique per row"
+        elif c["role"] == "free_text":
+            reason = "free text"
+        elif c["type"] in ("date", "datetime"):
+            reason = "a date (dates aren't used as features yet)"
+        elif name in leak:
+            reason = f"records the outcome (leakage): {leak[name]}"
+        elif stem and stem in re.sub(r"[^a-z0-9]", "", name.lower()):
+            reason = f"derived from {target} (its name contains it)"
+        elif task == "classification" and c["type"] not in ("int", "float") and _pure(df[name], y):
+            reason = f"each of its values goes with one {target} value (leakage)"
+        elif yn is not None and c["type"] in ("int", "float"):
+            x = pd.to_numeric(df[name], errors="coerce")
+            ok = x.notna() & yn.notna()
+            if ok.sum() > 10 and x[ok].std() > 0 and yn[ok].std() > 0 and abs(float(x[ok].corr(yn[ok]))) > 0.98:
+                reason = f"tracks {target} almost exactly (|correlation| above 0.98)"
+        if chosen is not None and name not in chosen and name not in forced:
+            excluded.append({"column": name, "reason": reason or "turned off in the setup"})
+        elif reason and name not in forced:
+            excluded.append({"column": name, "reason": reason})
+        else:
+            features.append(name)
+            if reason:
+                kept_anyway.append({"column": name, "reason": reason})
+    if not features:
+        raise ApiError(422, "invalid", "No column is left to explain it with after the checks.")
+    numeric = [f for f in features if cols[f]["type"] in ("int", "float") and cols[f]["role"] == "measure"]
+    rest = [f for f in features if f not in numeric]
+    high = [f for f in rest if df[f].nunique(dropna=True) > HIGH_CARDINALITY]
+    categorical = [f for f in rest if f not in high]
+    rows = {"total": int(len(df)), "with_target": with_target, "blank_target": int(len(df) - with_target),
+            "used": min(with_target, SAMPLE_ROWS)}
+    sample = {"seed": SEED, "stratify_column": target if task == "classification" else None, "n": SAMPLE_ROWS} \
+        if with_target > SAMPLE_ROWS else None
+    return Plan(target, task, metric, rows_sql, features, numeric, categorical, high, excluded, rows, sample, classes,
+                kept_anyway)
+
+
+def _pure(x: pd.Series, y: pd.Series) -> bool:
+    """A category that settles the outcome by itself: on rows with both, each of its (fewer than
+    one per ten rows) values goes with a single outcome at least 98% of the time, while the outcome
+    alone is far from that predictable."""
+    ok = x.notna() & y.notna()
+    if ok.sum() < 20 or x[ok].nunique() > max(2, ok.sum() // 10):
+        return False
+    counts = pd.crosstab(x[ok].astype(str), y[ok].astype(str))
+    purity = counts.max(axis=1).sum() / counts.values.sum()
+    majority = counts.sum(axis=0).max() / counts.values.sum()
+    return purity >= 0.98 and majority < 0.95
+
+
+def scope_sql(rows_sql: str) -> str:
+    return f"SELECT * FROM t WHERE {rows_sql} ORDER BY _row_id"
+
+
+__all__ = ["Plan", "make_plan", "load_scope", "scope_sql", "ident", "MIN_ROWS"]

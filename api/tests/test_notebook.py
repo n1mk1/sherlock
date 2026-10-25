@@ -1,7 +1,8 @@
 """Notebook export (TRD §7.7, §14; PRD NB-1–NB-11). The execution test runs the exported notebook
 top to bottom with a real kernel (the requirements cell is skipped: this environment already has the
 pinned libraries) and checks that it rebuilds the current version exactly, after edits and an undo
-with replay, and that each widget's table equals the app's widget data."""
+with replay, that each widget's table equals the app's widget data, and that each analysis's
+reproduction code gives its model card's metrics (within 0.5 points)."""
 
 import json
 import math
@@ -87,8 +88,9 @@ def _norm(v):
     return str(v)
 
 
-def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame, list]:
-    """Run the notebook with a kernel; returns the final `df` and each widget cell's result rows."""
+def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame, list, list]:
+    """Run the notebook with a kernel; returns the final `df`, each widget cell's result rows and
+    each run cell's metrics."""
     from nbclient import NotebookClient
 
     shutil.copyfile(raw, workdir / data_file)
@@ -100,9 +102,11 @@ def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame,
         cells.append(cell)
         if cell.cell_type == "code" and cell.source.startswith("# The dashboard's global filter"):
             cells.append(new_code_cell("_results = globals().get('_results', []) + [result.values.tolist()]"))
+        if cell.cell_type == "code" and cell.source.startswith("# Reproduces Sherlock run"):
+            cells.append(new_code_cell("_runs = globals().get('_runs', []) + [run_result['metrics']]"))
     cells.append(new_code_cell(
         "import pickle\n"
-        "pickle.dump((df, globals().get('_results', [])), open('out.pkl', 'wb'))"
+        "pickle.dump((df, globals().get('_results', []), globals().get('_runs', [])), open('out.pkl', 'wb'))"
     ))
     run.cells = cells
     NotebookClient(run, timeout=180, kernel_name="python3", resources={"metadata": {"path": str(workdir)}}).execute()
@@ -185,7 +189,7 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     folder = dataset_dir(settings, user_id, ds)
     work = tmp_path / "run"
     work.mkdir()
-    df, results = execute(nb, work, folder / "raw.csv", "titanic3-raw.csv")
+    df, results, runs = execute(nb, work, folder / "raw.csv", "titanic3-raw.csv")
 
     expected = _version_frame(folder / parquet)
     got = df.sort_values("_row_id").reset_index(drop=True)
@@ -196,7 +200,15 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
     order = {it["i"]: (it["y"], it["x"]) for it in client.get(f"{API}/datasets/{ds}/widgets").json()["layout"]["lg"]}
     widgets = sorted(widgets, key=lambda w: order.get(w["id"], (10**9, 0)))
+    analyses = [w for w in widgets if w["spec"]["op"]["type"] == "ml"]  # emitted via their runs (TRD §7.7)
+    widgets = [w for w in widgets if w not in analyses]
     assert len(results) == len(widgets) > 0
+    assert len(runs) == len(analyses) == 1 and pre["counts"]["runs"] == 1
+    for w, metrics in zip(analyses, runs):  # PRD NB-5: the notebook reproduces each run's metrics
+        card = client.get(f"{API}/runs/{w['run_id']}/model-card").json()
+        assert metrics["metric"] == card["model"]["metric"]
+        assert abs(metrics["value"] - card["model"]["value"]) <= 0.005, (metrics, card["model"])
+        assert "# Reproduces Sherlock run" in text and card["verdict_text"] in text
     for w, rows in zip(widgets, results):
         app_rows = client.get(f"{API}/widgets/{w['id']}/data").json()["rows"]
         assert [[_norm(v) for v in r] for r in rows] == [[_norm(v) for v in r] for r in app_rows], w["title"]

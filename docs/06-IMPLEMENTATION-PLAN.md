@@ -201,6 +201,30 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 **Exit**: brush 3rd class → "What drives this?" → importance and a model card showing baselines; switch to logistic regression → odds ratios (pair only: cut 4 if solo); "predict survived" fills blank cells on a copy of Titanic with blanks introduced (pair only: cut 7 if solo); the exported notebook reproduces every run made (one if solo).
 
+**Done 2026-10-25, within cuts 4 and 7** (as built in TRD §4.8, §5, §6.5–§6.8, §7.3, §7.5–§7.7, §14; App Flow §9; UI/UX brief §5.8–§5.9; Schema §2.13, §4):
+- [x] D7.1:
+  - `sherlock/ml/`: scope → DataFrame, framing, leakage (with a purity check for categories), stratified or plain k-fold, the preprocessing `Pipeline`, baselines (majority or mean, and the best one-column rule), CV, permutation importance and partial dependence.
+  - Planted-truth tests pass: drivers found in order, the leak and the ID excluded, noise reported as "no signal". `uv run sherlock eval ml` prints them.
+  - **Not built:** predictions, OOD and calibration. They serve `predict`, which is cut 7; the decision is recorded in TRD §7.5. Time-series and group splits are not built either.
+- [x] D7.2 within cuts 4 and 7:
+  - `driver_analysis` with Auto (logistic or ridge, gradient boosting and a random forest, chosen by CV within `time_budget_s`), and the registry with the other recipes disabled with their reason.
+  - `GET /recipes`, the runs API (`/runs`, `/runs/preview`, `/runs/{rid}`, `/results?view=`, `/model-card`, `/code`, `/cancel`, plus `POST /widgets/{wid}/rerun`), the cache, and `run.updated`.
+  - The cascade outdates runs, and the builder adds "What drives <target>?" when rows ≥ 100.
+- [ ] D7.3: the answerers `ask_why`, `ask_stats`, `ask_model` (with explain-row), `ask_meaning` and `app_help` are not built.
+- [x] D7.4 within cuts 4 and 7, except two items:
+  - **Built:** the analysis dropdown with disabled reasons; the setup form from the manifest (target, feature chips with exclusions struck through and reasons on hover, the scope chip, More); run progress; the importance view with the partial-dependence mini chart on a factor bar; the model card drawer; Outdated with Re-run; "Plain chart (SQL)".
+  - **Not built:** the confusion and ROC views, and "Who did it get wrong?". Both need out-of-fold predictions.
+- [x] D7.5:
+  - `repro.py` for Auto, written at completion; the model card's metrics come from executing it. `GET /runs/{rid}/code` serves it.
+  - Run cells in the notebook: the analysis widgets via their run, and `include_runs`, with embedded metrics, baselines and importance.
+  - The execution test asserts the metrics are within 0.5 points of the model card, and they match exactly.
+- Exit, checked in the browser on the sample (API on :8001 with its own data folder):
+  - The built dashboard has "What drives survived?". Gradient boosting scores accuracy 80.4% against 78.0% for the best one-column rule (sex), with sex, then age, ticket and pclass. The model card shows the baselines, and boat, body and name are excluded with their reasons.
+  - "What drives this?" on "Survival by Sex" opened the setup. Putting `boat` back in warned on the form and in the model card, and the verdict named boat alone as the rule the model can't beat.
+  - An `age` edit with "Ask first" marked both analyses outdated, Re-run re-ran one on v3, and "Plain chart (SQL)" brought the bar chart back.
+  - Brushing is cut 8, so the scope comes from a filter.
+  - The exported notebook reproduces the sample's run (the execution test).
+
 ### Day 8 · Oct 27: Flow, polish, freeze
 
 **Must**
@@ -251,17 +275,17 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
 - [x] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay done 2026-10-25 (D5.5)
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
-- [ ] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets wait for D7
-- [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the custom-chart candidates done 2026-10-25 (D6.5); the driver widget is D7.2
+- [x] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets done 2026-10-25 (D7: a widget becomes an analysis, its data is its run's importance)
+- [x] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the custom-chart candidates done 2026-10-25 (D6.5); the driver widget done 2026-10-25 (D7.2)
 - [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash: done 2026-10-25 (D6) without the material hash (cut 6)
-- [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto
+- [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto: done 2026-10-25 within cuts 4 and 7 (plan, core, analysis, repro, registry, runner, artifacts: `driver_analysis` with Auto); explain-row, predictions and compare-auto are cut
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [ ] `canvas/` model, persistence, pruning
-- [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3)
+- [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5)
 - [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
-- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`)
+- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`); planted-truth done 2026-10-25 (D7, `uv run sherlock eval ml`)
 - [ ] `scripts/` smoke_llm, seed_sample, deploy
 - [ ] tests: unit, integration (mocked LLM), fixtures
 
@@ -273,10 +297,10 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the settings dialog with the four cut-1 settings done 2026-10-24 (matching the owner's design canvas); the rail, resizing and job tray are D4.4, done 2026-10-25 (the shortcuts sheet is cut 9)
 - [x] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10); rename and delete with Undo done 2026-10-25 (D4.5)
 - [ ] cleaning: offer, in-progress (log, so-far, checks), report view
-- [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button and the outdated state (it comes with runs, D7)
+- [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button; the outdated state done 2026-10-25 with runs (D7)
 - [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom histogram, heatmap and box plot (and scatter) done 2026-10-25 (D6.5), each with an accessible summary as its label; brushing is cut 8
 - [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats)
-- [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells
+- [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells: done 2026-10-25 (D7.4) within cuts 4 and 7 (importance with partial dependence; no confusion or ROC views, no predicted cells)
 - [x] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight: done 2026-10-25 (D6.3)
 - [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist
 - [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9

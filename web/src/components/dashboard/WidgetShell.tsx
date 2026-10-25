@@ -1,14 +1,20 @@
 // The widget shell (UI/UX brief §4.3, App Flow §7.2): header (handle, title, scope chip, menu), body
 // (chart or table), footer (version, "How do you know?", status). States: loading (skeleton), ready,
 // updating (dimmed with a progress line while a filter re-queries), error (message, Retry, Show
-// query), collapsed (header only).
+// query), collapsed (header only). The analysis dropdown flips the body into the ML setup; an analysis
+// widget shows its run (progress, importance, "Outdated" with Re-run, the model card) (App Flow §9).
 import { ChevronDown, ChevronUp, Copy, GripVertical, LayoutGrid, MoreHorizontal, Table2, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { filterParam, useWidgetActions, useWidgetData } from "@/api/queries";
 import { useCards } from "@/api/stories";
 import type { FilterClause, ViewType, Widget, WidgetData } from "@/api/types";
+import { useRun, useRunActions } from "@/api/ml";
 import { WidgetChart } from "@/components/charts/adapter";
+import { AnalysisMenu } from "@/components/ml/AnalysisMenu";
+import { MlResult } from "@/components/ml/MlResult";
+import { MlSetup } from "@/components/ml/MlSetup";
+import { ModelCardDrawer } from "@/components/ml/ModelCardDrawer";
 import { Button } from "@/components/ui/button";
 import { MenuCheck, MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuTrigger, SubMenu } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
@@ -17,7 +23,7 @@ import { useUi } from "@/state/ui";
 
 const VIEW_LABELS: Record<string, string> = {
   bar: "Bar", line: "Line", area: "Area", pie: "Pie", ring: "Ring", kpi: "KPI tile", table: "Table",
-  histogram: "Histogram", heatmap: "Heatmap", box: "Box plot", scatter: "Scatter",
+  histogram: "Histogram", heatmap: "Heatmap", box: "Box plot", scatter: "Scatter", importance: "Importance",
 };
 
 /** Views that can draw this result (the menu's Change view). */
@@ -54,9 +60,14 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
   // others fade (UI/UX brief §4.4).
   const ownFilter = !!filter && filter.col === specSource;
   const applied = inherits && !ownFilter ? filter : null;
-  const query = useWidgetData(widget, filterParam(applied), version);
+  const isMl = widget.spec.op.type === "ml";
+  const query = useWidgetData(widget, filterParam(applied), version, !isMl);
   const actions = useWidgetActions(widget.dataset_id);
+  const runActions = useRunActions(widget.dataset_id);
+  const run = useRun(isMl ? widget.run_id : null).data;
   const [asTable, setAsTable] = useState(false);
+  const [setup, setSetup] = useState<string | null>(null); // the recipe being set up
+  const [cardOpen, setCardOpen] = useState(false);
   const data = query.data;
 
   const source = specSource ?? (data && columns.includes(data.columns[0]?.name) ? data.columns[0].name : undefined);
@@ -79,6 +90,8 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
   // Updating: a filter re-query, or the cascade re-running this widget after a new version (App Flow §16).
   const inCascade = useUi((s) => s.cascade[widget.dataset_id]?.widgetIds.includes(widget.id) ?? false);
   const updating = (query.isFetching && !!query.data) || inCascade;
+  const outdated = isMl && run?.status === "outdated";
+  const rerun = () => runActions.rerun.mutate(widget.id, { onError: (e) => toast.error((e as Error).message) });
 
   return (
     <article
@@ -101,7 +114,8 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
           <GripVertical className="size-4" strokeWidth={1.75} />
         </span>
         <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold">{widget.title}</h3>
-        <ScopeChip widget={widget} filter={applied} /> {/* the filter it actually applies */}
+        <ScopeChip widget={widget} filter={isMl ? null : applied} /> {/* the filter it actually applies */}
+        <AnalysisMenu widget={widget} onChoose={(recipe) => setSetup(recipe)} />
         <MenuRoot>
           <MenuTrigger asChild>
             <button
@@ -114,7 +128,7 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
           </MenuTrigger>
           <MenuContent>
             <SubMenu label="Change view" icon={<LayoutGrid />}>
-              {compatibleViews(data).map((v) => (
+              {(isMl ? ["importance", "table"] : compatibleViews(data)).map((v) => (
                 <MenuCheck key={v} checked={widget.spec.view.type === v} onSelect={() => changeView(v)}>
                   {VIEW_LABELS[v] ?? v}
                 </MenuCheck>
@@ -142,7 +156,11 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
             {updating && <div className="absolute inset-y-0 left-0 w-1/2 animate-pulse bg-accent" aria-hidden />}
           </div>
           <div className={cn("min-h-0 flex-1 px-3 pb-1", updating && "opacity-60")} data-no-drag>
-            {query.isLoading ? (
+            {setup ? (
+              <MlSetup widget={widget} recipe={setup} onCancel={() => setSetup(null)} onStarted={() => setSetup(null)} />
+            ) : isMl ? (
+              <MlResult widget={widget} run={run} asTable={asTable || widget.spec.view.type === "table"} />
+            ) : query.isLoading ? (
               <div className="h-full w-full animate-pulse rounded-lg bg-muted" aria-label="Loading" />
             ) : query.error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
@@ -157,15 +175,28 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
             ) : null}
           </div>
           <footer className="flex h-7 shrink-0 items-center gap-2 px-3 text-[12px] text-muted-foreground">
-            <span className="font-mono">v{data?.version ?? version}</span>
+            <span className="font-mono">v{isMl ? run?.version ?? widget.version_built : data?.version ?? version}</span>
             <span aria-hidden>·</span>
             <button type="button" className="text-accent hover:underline" onClick={() => onExplain(widget, data)}>
               How do you know?
             </button>
+            {isMl && run?.model_card && (
+              <>
+                <span aria-hidden>·</span>
+                <button type="button" className="text-accent hover:underline" onClick={() => setCardOpen(true)}>Model card</button>
+              </>
+            )}
+            {outdated && (
+              <span className="ml-auto inline-flex items-center gap-2 text-warning">
+                Outdated
+                <Button size="sm" variant="secondary" onClick={rerun} loading={runActions.rerun.isPending}>Re-run</Button>
+              </span>
+            )}
             {data?.truncated && <span className="ml-auto">first 2,000 rows</span>}
           </footer>
         </>
       )}
+      {isMl && <ModelCardDrawer widget={widget} runId={cardOpen ? widget.run_id ?? null : null} onClose={() => setCardOpen(false)} />}
     </article>
   );
 }

@@ -246,9 +246,10 @@ export function useWidgets(datasetId: string) {
   });
 }
 
-export function useWidgetData(widget: Widget, filter: string, version: number) {
+export function useWidgetData(widget: Widget, filter: string, version: number, enabled = true) {
   return useQuery({
     queryKey: keys.widgetData(widget.id, filter, version),
+    enabled,
     queryFn: () =>
       request<WidgetData>("GET", `/api/v1/widgets/${widget.id}/data${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
     placeholderData: (prev) => prev, // keep the old chart while a filter re-queries ("updating")
@@ -290,6 +291,13 @@ export function useWidgetActions(datasetId: string) {
       mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/duplicate`),
       onSuccess: refresh,
     }),
+    undo: useMutation({
+      mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/undo`),
+      onSuccess: () => {
+        refresh();
+        qc.invalidateQueries({ queryKey: ["widget-data"] });
+      },
+    }),
     saveLayout: useMutation({
       mutationFn: (layout: Layout) => request<Layout>("PUT", `/api/v1/datasets/${datasetId}/layout`, layout),
       onSuccess: (layout) =>
@@ -314,6 +322,15 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
     },
     "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
+    // A run's status (TRD §5): its widget re-reads the run; ML progress refreshes the running ones.
+    "run.updated": (data) => {
+      const run = data as { id: string };
+      qc.invalidateQueries({ queryKey: ["run", run.id] });
+      qc.invalidateQueries({ queryKey: ["model-card", run.id] });
+    },
+    "job.progress": (data) => {
+      if ((data as { kind?: string }).kind === "ml_run") qc.invalidateQueries({ queryKey: ["run"] });
+    },
     "cascade.started": (data) => onCascade({ type: "started", data: data as Record<string, unknown> }),
     "cascade.done": (data) => {
       onCascade({ type: "done", data: data as Record<string, unknown> });

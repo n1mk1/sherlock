@@ -167,3 +167,41 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **Decision for tomorrow:**
   - Day 5: the CSV tab within cut 5, and the notebook export v0 (D5.6).
   - Then D3.6's leftovers and Day 6 within cut 6.
+
+## 2026-10-25 (Sun): Day 7, ML within cuts 4 and 7
+
+- **Done** (tested, documented, committed and pushed in one slice):
+  - **D7.1, `sherlock/ml/`.**
+    - Framing and leakage, including a purity check for categories.
+    - Stratified or plain 5-fold CV with seed 42, the preprocessing `Pipeline`, and the baselines (majority or mean, and the best one-column rule).
+    - Permutation importance and partial dependence.
+    - Planted truth passes: drivers found in order, the leak and the ID left out, noise reported as "no signal". `uv run sherlock eval ml` prints it.
+  - **D7.2.**
+    - `driver_analysis` with Auto (logistic or ridge, gradient boosting and a random forest, chosen by CV within the time budget); the other recipes are listed disabled with their reason.
+    - The runs API (recipes, preview, runs, results, model card, code, cancel, and widget Re-run), the cache, and `run.updated`.
+    - The cascade outdates runs. The builder adds "What drives <target>?" at 100 rows or more.
+  - **D7.4.**
+    - The analysis dropdown with reasons.
+    - The setup form from the manifest, with chips struck through and their reasons, a warning when a chip is put back in, the scope chip and More.
+    - Live progress, the importance view with a partial-dependence mini chart per factor, the model card drawer, Outdated with Re-run, and "Plain chart (SQL)".
+  - **D7.5.**
+    - `repro.py` per run; the model card's numbers come from executing it.
+    - The notebook emits analyses via their runs. The execution test matches the model card exactly (the requirement is within 0.5 points).
+  - **Browser check** on the sample (API on :8001 with its own `data/day7`): Titanic's driver widget shows Gradient boosting at 80.4% against 78.0% for sex alone, with sex, then age, ticket and pclass. Boat, body and name are excluded with their reasons.
+- **Not done:**
+  - D7.3, the answerers (`ask_why`, `ask_stats`, `ask_model` with explain-row, `ask_meaning`, `app_help`).
+  - The confusion and ROC views, and "Who did it get wrong?" (D7.4). They need out-of-fold predictions, which came with `predict` (cut 7).
+  - Calibration (TRD §7.5 step 7), and the time-series and group splits.
+- **Decisions made while you were offline:**
+  - **No SHAP.** It isn't a dependency, and permutation importance is model-agnostic and reproduces in the notebook with scikit-learn alone.
+  - **No calibration.** It only matters for served probabilities, and no predictions are served (cut 7).
+  - **JSON artifacts.** Run results are JSON (`results/importance.json`, `partial_dependence.json`), because pyarrow isn't a dependency.
+  - **Analyses ignore the dashboard filter.** With a filter active, the setup's "Only the filtered rows" folds it into the run's own rows, so the cache key and the notebook see it.
+  - **A chart becomes the analysis.** Running "What drives this?" from a chart turns it into the analysis titled "What drives <target>?". "Plain chart (SQL)" (widget Undo) brings the chart and its title back. The narrator wrote a poor card while the analysis still had the chart's title.
+  - **Late runs settle themselves.** A run that finishes after the data changed checks itself like the cascade would (cascades skip runs still going). The notebook test caught a run left done on stale data.
+  - **Undo tells the story again.** Widget Undo now re-tells the widget's story.
+  - **`POST /widgets/{wid}/rerun` added** for the Outdated footer (TRD §4.8).
+- **What needs you:**
+  - No PRD change was made. Within cuts 4 and 7, PRD ML-2's method selector, ML-4, ML-5's method checks, ML-6 and ML-7 are cut by plan §5 as approved. ML-1 to ML-3 and ML-8 to ML-10 are met for `driver_analysis`.
+  - The P0 items that the cuts don't remove and that are still open are D7.3 (the answerers) and D7.4's confusion and ROC views and "Who did it get wrong?". If they won't be built, dropping them needs a PRD change by you (plan §2.0: nothing is left to cut).
+- **Token Factory:** Day 7's live use was the browser check: one curation, 10 narrations and 5 overviews on Nemotron Super, about 12k prompt and 22k completion tokens, well under $0.05. Tests use recorded fixtures.

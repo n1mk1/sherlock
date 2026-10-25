@@ -145,6 +145,7 @@ export interface Widget {
   title: string;
   status: "ready" | "outdated" | "error" | "building";
   error: string | null;
+  run_id?: string | null; // an analysis widget's run (op.type = ml)
   created_by: "builder" | "user" | "chat";
   version_built: number;
   score: number | null;

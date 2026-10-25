@@ -7,6 +7,9 @@ stories up to date, touching only what depends on what changed.
 - **Widgets.** An affected widget (one whose scope or query names a changed column) re-runs its
   query on the new version, records `version_built` and emits `widget.updated`. The others only
   record the new version.
+- **Runs.** A finished run of an earlier version whose target, features or row predicate meet the
+  changed columns is marked outdated (PRD ML-9). Its widgets show "Outdated" with Re-run under
+  "Story updates: Ask first", and re-run on the new version otherwise.
 - **Cards.** The affected widgets' cards are narrated again (cut 6: no material-change check), an
   edited card gets a suggestion, and with "Story updates: Ask first" they're marked outdated
   instead; then the overview.
@@ -81,6 +84,7 @@ def _cascade(ctx: JobContext) -> dict:
     from sherlock.llm.client import CallScope, LLMClient
     from sherlock.routers.me import effective_settings
     from sherlock.db import users
+    from sherlock.ml import runner as ml
     from sherlock.stories import facts as fx
     from sherlock.stories import service as stories
     from sherlock.widgets import service as widgets
@@ -98,9 +102,23 @@ def _cascade(ctx: JobContext) -> dict:
     since = min((r["version_built"] for r in stale), default=version)
     changed, everything = changes(ctx.db, dataset["id"], since, version)
     env = widgets.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
+    memo: dict[int, tuple[set[str], bool]] = {}
+
+    def since_version(v: int) -> tuple[set[str], bool]:
+        if v not in memo:
+            memo[v] = changes(ctx.db, dataset["id"], v, version)
+        return memo[v]
+
+    outdated_runs = set(ml.outdate(ctx.db, ctx.bus, dataset, since_version, ctx.id))
+    user = users.get(ctx.db, dataset["user_id"])
+    ask = effective_settings(user.settings if user else {}).story_updates == "ask"
     affected = []
     for r in stale:
         spec = json.loads(r["spec_json"])
+        if spec["op"]["type"] == "ml":
+            if r["run_id"] in outdated_runs:
+                affected.append(r)
+            continue
         try:
             deps = set(fx.depends_on(spec, widgets.compiled(env, dataset, spec, version, []))) if spec["op"]["type"] == "sql" else set()
         except ApiError:
@@ -113,11 +131,22 @@ def _cascade(ctx: JobContext) -> dict:
         f"SELECT id FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND widget_id IN ({','.join('?' * len(affected))})",
         (dataset["id"], *[r["id"] for r in affected])).fetchall()] if affected else []
     ctx.emit("cascade.started", {"version": version, "widget_ids": [r["id"] for r in affected], "card_ids": cards,
-                                 "run_ids": [], "columns": sorted(changed), "all": everything})
+                                 "run_ids": sorted(outdated_runs), "columns": sorted(changed), "all": everything})
     errors = 0
     for i, row in enumerate(stale, 1):
         ctx.check_cancel()
         ctx.progress(i, len(stale) + 1, f"Updating {len(affected)} widget{'s' if len(affected) != 1 else ''}")
+        if json.loads(row["spec_json"])["op"]["type"] == "ml":
+            if row in affected and not ask:
+                try:
+                    ml.rerun_widget(env, dataset, row)  # "Story updates: Automatic" re-runs it on the new version
+                except ApiError as exc:
+                    ctx.db.execute("UPDATE widgets SET status = 'error', error = ? WHERE id = ?", (exc.message, row["id"]))
+                    errors += 1
+                ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
+            elif row not in affected:
+                ctx.db.execute("UPDATE widgets SET version_built = ? WHERE id = ?", (version, row["id"]))
+            continue  # an outdated one keeps its run's version and shows "Outdated" with Re-run
         status, error = "ready", None
         if row in affected and json.loads(row["spec_json"])["op"]["type"] == "sql":
             try:
@@ -133,14 +162,12 @@ def _cascade(ctx: JobContext) -> dict:
                   if ctx.db.execute("SELECT 1 FROM cards WHERE widget_id = ? AND deleted_at IS NULL", (r["id"],)).fetchone()]
     if with_cards:
         ctx.progress(len(stale) + 1, len(stale) + 1, f"Updating {len(with_cards)} {'story' if len(with_cards) == 1 else 'stories'}")
-        user = users.get(ctx.db, dataset["user_id"])
-        ask = effective_settings(user.settings if user else {}).story_updates == "ask"
         scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
                           on_wait=lambda text: ctx.log(text, icon="wait"))
         told = stories.tell(env, LLMClient(ctx.settings), scope, dataset, with_cards, reason="cascade", ask_first=ask,
                             check_cancel=ctx.check_cancel)
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
-              "outdated": told.get("outdated", 0), "runs": 0}
+              "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
     ctx.emit("cascade.done", {"version": version, "counts": counts})
     return {"version": version, **counts}
 

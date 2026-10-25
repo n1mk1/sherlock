@@ -148,6 +148,9 @@ def _ready_with_stories(client):
     wait_status(client, ds["id"], "ready")
     wait_for(lambda: any(j["kind"] == "stories" and j["status"] == "done"
                          for j in client.get(f"{API}/jobs?dataset_id={ds['id']}").json()), timeout=60)
+    # The driver widget's run (TRD §7.3 step 5) queues its own story when it finishes.
+    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled")
+                         for j in client.get(f"{API}/jobs?dataset_id={ds['id']}").json()), timeout=120)
     return ds["id"]
 
 
@@ -181,7 +184,8 @@ def test_the_cascade_retells_only_the_cards_that_depend_on_the_change(mocked, cl
     ds = _ready_with_stories(client)
     cards = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
     widgets = {w["id"]: w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
-    fare = {wid for wid, w in widgets.items() if "fare" in w["spec"]["op"]["sql"]}
+    fare = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "sql" and "fare" in w["spec"]["op"]["sql"]}
+    ml = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "ml"}  # the driver widget uses fare too
     sex_card = next(c for c in cards.values() if "Survival rate" == widgets[c["widget_id"]]["title"])
     client.patch(f"{API}/cards/{sex_card['id']}", json={"headline": {"blocks": [{"type": "paragraph", "runs": [
         {"type": "text", "text": "My own headline"}]}]}})
@@ -195,7 +199,9 @@ def test_the_cascade_retells_only_the_cards_that_depend_on_the_change(mocked, cl
     done = wait_for(lambda: next((j for j in client.get(f"{API}/jobs?dataset_id={ds}").json()
                                   if j["kind"] == "cascade" and j["status"] in ("done", "failed")), None), timeout=60)
     assert done["status"] == "done", done
-    assert done["result"]["widgets"] == len(fare) and done["result"]["cards"] == len(fare)
+    # The driver widget's run is outdated and re-runs ("Story updates: Automatic"); its card waits for the new run.
+    assert done["result"]["widgets"] == len(fare) + len(ml) and done["result"]["cards"] == len(fare)
+    assert done["result"]["runs"] == len(ml) == 1
     after = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
     for wid, c in after.items():
         assert c["changed_badge"] == (wid in fare), widgets[wid]["title"]

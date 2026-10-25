@@ -75,6 +75,17 @@
   "completion_tokens": 1270
  },
  {
+  "purpose": "narrate",
+  "match": [
+   "Widget: <data>\nWhat drives survived?\n</data>"
+  ],
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "content": "{\"headline\": [{\"text\": \"The model beats the best simple rule by \"}, {\"chip\": \"lift\"}, {\"text\": \" points on held-out rows.\"}], \"body\": [{\"text\": \"Its accuracy is \"}, {\"chip\": \"model_score\"}, {\"text\": \" against \"}, {\"chip\": \"best_baseline\"}, {\"text\": \" for the best simple rule, and \"}, {\"label\": \"column:sex\"}, {\"text\": \" is the strongest factor across \"}, {\"chip\": \"rows\"}, {\"text\": \" passengers.\"}]}",
+  "tool_calls": [],
+  "prompt_tokens": 900,
+  "completion_tokens": 120
+ },
+ {
   "purpose": "overview",
   "match": [],
   "model": "nvidia/nemotron-3-super-120b-a12b",

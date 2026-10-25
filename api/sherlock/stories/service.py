@@ -40,7 +40,13 @@ def build_sheet(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, version:
     """Compute, verify and store a widget's fact sheet on `version`."""
     spec = json.loads(widget["spec_json"])
     if spec["op"]["type"] != "sql":
-        return _store_sheet(env.db, dataset["id"], widget["id"], version, {}, [])
+        # An analysis widget tells its run's facts (from the model card, TRD §7.5 step 10).
+        run = env.db.execute("SELECT fact_sheet_id FROM runs WHERE id = ? AND status IN ('done', 'outdated')",
+                             (widget["run_id"],)).fetchone() if widget["run_id"] else None
+        sheet = get_sheet(env.db, run["fact_sheet_id"]) if run else None
+        if sheet is None:
+            return _store_sheet(env.db, dataset["id"], widget["id"], version, {}, [])
+        return _store_sheet(env.db, dataset["id"], widget["id"], version, sheet["facts"], sheet["depends_columns"])
     sql = ws.compiled(env, dataset, spec, version, [])
     data = ws.data(env, dataset, widget, [], version)
     src = fx.Source(sql=sql, rows_sql=rows_sql(env, dataset, spec, version), spec=spec, title=widget["title"],
@@ -197,7 +203,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
     version = dataset["current_version"]
     rows = db.execute("SELECT * FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL ORDER BY order_no",
                       (dataset["id"],)).fetchall()
-    chosen = [r for r in rows if widget_ids is None or r["id"] in widget_ids]
+    chosen = [r for r in rows if (widget_ids is None or r["id"] in widget_ids) and not _waiting_for_run(db, r)]
     card = _datacard(env, dataset)
     dataset_columns = [c["name"] for c in card["columns"]]
     target = (card.get("target_candidates") or [None])[0]
@@ -270,6 +276,15 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
     tell_overview(env, llm, scope, dataset, rows, dataset_columns, changed=reason == "cascade")
     _bump(db, dataset["id"])
     return {"cards": done, "widgets": len(chosen)}
+
+
+def _waiting_for_run(db: sqlite3.Connection, widget: sqlite3.Row) -> bool:
+    """An analysis widget without a finished run has nothing to tell yet; its run's completion queues
+    its story."""
+    if json.loads(widget["spec_json"])["op"]["type"] != "ml":
+        return False
+    run = db.execute("SELECT status FROM runs WHERE id = ?", (widget["run_id"],)).fetchone() if widget["run_id"] else None
+    return run is None or run["status"] not in ("done", "outdated")
 
 
 class _Offline:

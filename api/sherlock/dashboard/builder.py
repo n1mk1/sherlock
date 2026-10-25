@@ -98,6 +98,22 @@ def curate(llm: LLMClient, scope: CallScope, card: dict, short: list[Candidate])
     return kpis + [x for x in picks if x[0].view != "kpi"], True
 
 
+def driver_widget(env: ws.Env, dataset: sqlite3.Row, card: dict) -> sqlite3.Row | None:
+    """"What drives this?" on the top target candidate when there are enough rows (TRD §7.3 step 5).
+    Its run is queued; the widget shows the progress until the importance arrives."""
+    from sherlock.ml.plan import MIN_ROWS
+
+    targets = card.get("target_candidates") or []
+    if not targets or (card.get("row_count") or 0) < MIN_ROWS:
+        return None
+    spec = {"scope": {"columns": {"target": targets[0]}}, "op": {"type": "ml", "recipe": "driver_analysis"},
+            "view": {"type": "importance"}}
+    try:
+        return ws.create(env, dataset, spec, title=f"What drives {targets[0]}?", created_by="builder")
+    except ApiError:
+        return None  # e.g. fewer than 100 rows with the target filled in
+
+
 def build(ctx: JobContext) -> dict:
     dataset = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (ctx.dataset_id,)).fetchone()
     if dataset is None or dataset["deleted_at"]:
@@ -134,6 +150,9 @@ def build(ctx: JobContext) -> dict:
         except ApiError:
             continue  # validation (TRD §7.3 step 4): a widget whose query fails is dropped
         ctx.check_cancel()
+    driver = driver_widget(env, dataset, card)  # TRD §7.3 step 5
+    if driver is not None:
+        made.append(driver)
     wl.save(ctx.db, dataset["id"], wl.pack([(r["id"], json.loads(r["spec_json"])["view"]["type"]) for r in made]))
     ctx.set_dataset_status("ready")
     if made:

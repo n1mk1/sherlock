@@ -111,10 +111,14 @@ def test_build_job_on_the_sample(client):
     job = client.post(f"{API}/datasets/{ds['id']}/use-as-is").json()
     assert wait_status(client, ds["id"], "ready")["status"] == "ready"
     done = wait_for(lambda: (j := client.get(f"{API}/jobs/{job['id']}").json())["status"] == "done" and j)
-    assert done["result"]["curated_by"] == "fallback" and done["result"]["widgets"] == 8
+    assert done["result"]["curated_by"] == "fallback" and done["result"]["widgets"] == 9  # 8 charts + "What drives survived?"
 
     out = client.get(f"{API}/datasets/{ds['id']}/widgets").json()
     widgets = out["widgets"]
+    driver = [w for w in widgets if w["spec"]["op"]["type"] == "ml"]  # TRD §7.3 step 5
+    assert len(driver) == 1 and driver[0]["spec"]["scope"]["columns"]["target"] == "survived" and driver[0]["run_id"]
+    assert driver[0]["status"] in ("building", "ready")
+    widgets = [w for w in widgets if w not in driver]
     assert 6 <= len(widgets) <= 10 and all(w["created_by"] == "builder" and w["status"] == "ready" for w in widgets)
     views = [w["spec"]["view"]["type"] for w in widgets]
     assert views[:3] == ["kpi"] * 3 and "kpi" not in views[3:]
@@ -130,7 +134,7 @@ def test_build_job_on_the_sample(client):
     db.close()
     kept = wait_for(lambda: (j := client.get(f"{API}/jobs/{second['id']}").json())["status"] == "done" and j)
     assert kept["result"]["kept"] is True
-    assert len(client.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]) == len(widgets)
+    assert len(client.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]) == len(widgets) + 1
 
 
 @pytest.fixture
@@ -146,7 +150,7 @@ def test_build_job_with_the_model(mocked, client):
     client.post(f"{API}/datasets/{ds['id']}/use-as-is")
     wait_status(client, ds["id"], "ready")
     widgets = client.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]
-    assert len(widgets) == 6
+    assert len(widgets) == 7 and sum(w["spec"]["op"]["type"] == "ml" for w in widgets) == 1  # six picks + the driver widget
     assert "Survival by sex" in [w["title"] for w in widgets]
     calls = db_rows("SELECT purpose, role FROM llm_calls WHERE dataset_id = ?", ds["id"])
     assert [(c["purpose"], c["role"]) for c in calls if c["purpose"] == "curate"] == [("curate", "medium")]

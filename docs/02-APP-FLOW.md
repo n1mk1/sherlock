@@ -309,6 +309,21 @@ As built (2026-10-25): steps that aren't in the current data are dimmed and stru
 
 "Compare with Auto" in the model card runs Auto with the same setup and shows both model cards side by side.
 
+As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7):
+- **Step 1.** The dropdown is a flask button in each widget's header. Its groups and options come from `GET /recipes`. Disabled options show their reason under the label: Predict "Not in this release", Find groups and Find unusual rows "Coming later", Forecast "needs a date column" on Titanic. "Plain chart (SQL)" is checked on a chart. On an analysis it goes back to the chart the analysis replaced (widget Undo), with its title. An analysis the builder made has no chart, so that says so.
+- **Step 2.** "What drives this?" flips the body into the setup.
+  - The target is pre-filled with the analysis's own target, else the chart's measure or category when it can be explained, else the best guess.
+  - The feature chips come from the preview. Re-including a struck-through column shows a warning line, and the model card keeps a warning.
+  - The rows chip shows the widget's rows and the count with the target. With a dashboard filter active, "Only the filtered rows" (on by default) runs on those rows (cut 8: ML scope comes from a filter or the whole dataset).
+  - Method shows Auto alone with what it tries (cut 4). More holds Folds and Time budget.
+  - The baselines come from the preview, with "Model: pending" (or "already run" when the same request is cached), and the estimate is "about N s".
+  - Run turns the widget into the analysis, titled "What drives <target>?".
+- **Step 3.** The widget shows "What drives <target>: <label>…", a progress bar and the steps ticked off, with Cancel. The job tray lists the `ml_run` job.
+- **Step 4.** The widget shows the verdict line ("Beats the best simple rule by 2.4 points. Gradient boosting: Accuracy 80.4% vs 78.0%."), then the importance bars, with the top factor in the accent. The footer has "Model card" (the drawer) and "How do you know?" (the run's reproduction code). Its story card is narrated from the run's fact sheet when the run finishes. On a fresh dashboard the builder's "What drives <target>?" widget does the same by itself.
+- **Step 5.** Clicking a factor bar opens its partial-dependence mini chart (the probability or prediction as the factor varies) under the bar. "Who did it get wrong?" and predicted cells are not built: they need out-of-fold predictions, which came with `predict` (cut 7).
+- **Step 6.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first". Under "Automatic" it re-runs by itself and shows the progress again.
+- **Compare with Auto** is not built (cut 4: Auto is the only method). A failed or cancelled run says why, with Re-run.
+
 ---
 
 ## 10. Chat (ask anything)

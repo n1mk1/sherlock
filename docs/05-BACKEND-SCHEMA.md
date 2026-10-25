@@ -334,6 +334,16 @@ CREATE TABLE runs (
 CREATE INDEX runs_dataset ON runs(dataset_id, status);
 ```
 
+As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`; no migration, migration 001 already had the table):
+- **On request.** A run row is written with `status = queued`, `scope_json` (target filled in, any dashboard filter folded into the predicate, `inherit_global_filters: false`), `params_json` (manifest defaults filled in), `target` and `cache_key`. `job_id` is the `ml_run` job's.
+- **Identity.** The `UNIQUE (dataset_id, cache_key)` makes a repeat request return the same row. A failed or cancelled run's row is reset to `queued` and reused.
+- **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json` (the features used), `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json`, `libraries_json` and `finished_at`.
+- **Outdated.** The cascade, or the run itself when it finishes on an earlier version, sets `status = outdated`.
+- **`widget_id`.** The last widget that asked for the run. `widgets.run_id` is the link a widget shows, and a cached run can back more than one widget.
+- **`created_by`.** `builder` for the dashboard's driver widget, otherwise `user`.
+- **`fact_sheets.run_id`** is set on the run's own sheet. An analysis widget's sheet is a copy with its `widget_id`.
+- **`widgets.spec_json`.** An analysis that replaced a chart keeps the chart's title in `view.options.chart_title`, for Undo.
+
 ### 2.14 jobs and job_events
 
 ```sql
@@ -554,7 +564,10 @@ Queries from widgets and answerers run on that in-memory connection after extern
       runs/<run_id>/
         model.joblib
         repro.py                    reproduction code (TRD §6.7)
+        model_card.json             the ModelCard (as built, D7)
         results/*.parquet           predictions, importance, pdp, coefficients
+                                    (as built, D7: results/importance.json and results/partial_dependence.json;
+                                    JSON because pyarrow isn't a dependency; no predictions or coefficients, cuts 4 and 7)
       exports/
         notebook_<cache_key>.ipynb  generated notebooks (ephemeral, 24 h)
         *.csv, *.py                 other generated exports (ephemeral)

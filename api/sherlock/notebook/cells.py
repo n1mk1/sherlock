@@ -259,3 +259,40 @@ def card(c: dict, facts: dict, level: str = "###") -> list:
             lines += ["```sql", s, "```", ""]
         lines.append("</details>")
     return [new_markdown_cell("\n".join(lines).strip())]
+
+
+def run(title: str, card: dict, code: str, outdated: bool, metrics_output, baselines_output, importance_output) -> list:
+    """An analysis (TRD §6.7, §7.7): a Markdown header with the excluded columns and their reasons,
+    the run's `repro.py` inlined and called on the rebuilt `df` (its metrics and tables embedded from
+    the run), and the importance chart."""
+    from sherlock.ml.core import MODEL_LABELS
+
+    lines = [f"## {title}", "",
+             f"What drives **{card['target']}** · {scope_text({'scope': card.get('scope') or {}})} · "
+             f"Auto picked {MODEL_LABELS.get(card['chosen_model'], card['chosen_model'])} by {card['split']['folds']}-fold "
+             f"cross-validation (seed {card['split']['seed']}).", "", f"**{card['verdict_text']}**", ""]
+    if card["excluded"]:
+        lines += ["Left out, with the reason:", ""] + [f"- `{e['column']}`: {e['reason']}" for e in card["excluded"]] + [""]
+    if outdated:
+        lines.append(f"*Outdated: the data changed after this ran on version {card['version']}. The numbers below are "
+                     "from that run; running the cell on this data can give different ones.*")
+    md = new_markdown_cell("\n".join(lines).strip())
+    call = (f"{code.rstrip()}\n\n\n"
+            "from IPython.display import display\n\n"
+            "run_result = reproduce(df)\n"
+            "m = run_result[\"metrics\"]\n"
+            "print(f\"{m['metric']}: {m['value']:.3f} (95% interval {m['ci'][0]:.3f} to {m['ci'][1]:.3f}) "
+            "on {run_result['rows']:,} rows\")\n"
+            "display(pd.DataFrame(run_result[\"baselines\"]))\n"
+            "run_result[\"importance\"]\n")
+    cell = new_code_cell(call)
+    cell.outputs = [metrics_output, baselines_output, importance_output]
+    chart = new_code_cell(f"plot(run_result[\"importance\"].head(15), \"importance\", x=\"feature\", y=\"importance\", "
+                          f"title={title!r})\n")
+    return [md, cell, chart]
+
+
+def metrics_text(card: dict) -> str:
+    m = card["model"]
+    return (f"{m['metric']}: {m['value']:.3f} (95% interval {m['ci'][0]:.3f} to {m['ci'][1]:.3f}) "
+            f"on {card['rows']['train']:,} rows\n")

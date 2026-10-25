@@ -75,7 +75,7 @@ def selection_sql(db: sqlite3.Connection, dataset_id: str, selection_id: str) ->
 def compiled(env: Env, dataset: sqlite3.Row, spec: dict, version: int, filters: list[dict]) -> str:
     """The exact SQL a SQL widget runs on `version` under the global filter."""
     if spec["op"]["type"] != "sql":
-        raise ApiError(422, "invalid", "Analysis widgets run with the analysis menu, which isn't built yet.")
+        raise ApiError(422, "invalid", "An analysis widget has no query; its numbers come from its run.")
     types = user_types(env, dataset, version)
     rows = spec["scope"]["rows"]
     predicate = wc.validate_predicate(rows["predicate"], list(types)) if rows.get("predicate") else None
@@ -138,6 +138,10 @@ def templated_title(spec: dict) -> str:
     return "Query result"
 
 
+def analysis_title(spec: dict) -> str:
+    return f"What drives {spec['scope']['columns'].get('target')}?"
+
+
 def _agg_word(agg: str | None) -> str:
     return {"avg": "Average", "sum": "Total", "count": "Count of", "min": "Lowest", "max": "Highest",
             "median": "Median", "rate": "Rate of"}.get(agg or "", "Average")
@@ -151,7 +155,13 @@ def create(
     `422` (nothing saved)."""
     spec = parse_spec(spec)
     version = dataset["current_version"]
-    if check:
+    prepared = None
+    if spec["op"]["type"] == "ml":
+        from sherlock.ml import runner as ml
+
+        prepared = ml.prepare(env, dataset, ml.request_from_spec(spec))  # checks the request; 422 saves nothing
+        spec = {**ml.ml_spec(prepared, spec["view"]["type"]), "view": spec["view"]}
+    elif check:
         run_spec(env, dataset, spec, version)
     now = now_iso()
     order_no = env.db.execute(
@@ -164,6 +174,10 @@ def create(
         (widget_id, dataset["id"], (title or templated_title(spec))[:200], json.dumps(spec), spec_hash(spec), version,
          score, json.dumps(point) if point else None, created_by, order_no, now, now),
     )
+    if prepared is not None:
+        from sherlock.ml import runner as ml
+
+        ml.link(env.db, widget_id, ml.launch(env, dataset, prepared, created_by, widget_id))
     bump_state(env.db, dataset["id"])
     row = get_row(env.db, widget_id)
     if emit_event:
@@ -184,12 +198,28 @@ def _stories(env: Env, dataset: sqlite3.Row, widget_ids: list[str] | None, reaso
 def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, title: str | None) -> sqlite3.Row:
     """A new spec and/or title. The old spec goes to `prev_spec_json` for `POST /widgets/{wid}/undo`."""
     sets, params = ["updated_at = ?"], [now_iso()]
+    prepared = None
     if spec is not None:
         spec = parse_spec(spec)
-        run_spec(env, dataset, spec, dataset["current_version"])
+        old = json.loads(row["spec_json"])
+        if spec["op"]["type"] == "ml":
+            from sherlock.ml import runner as ml
+
+            prepared = ml.prepare(env, dataset, ml.request_from_spec(spec))
+            spec = {**ml.ml_spec(prepared, spec["view"]["type"]), "view": spec["view"]}
+            # A chart that becomes an analysis is titled for it; its own title is kept for "Plain chart".
+            chart_title = (old["view"].get("options") or {}).get("chart_title") if old["op"]["type"] == "ml" else row["title"]
+            if chart_title:
+                spec["view"]["options"] = {**(spec["view"].get("options") or {}), "chart_title": chart_title}
+            if old["op"]["type"] != "ml" and title is None:
+                title = analysis_title(spec)
+        else:
+            run_spec(env, dataset, spec, dataset["current_version"])
+        # Undo goes back to the chart: changing an analysis's settings keeps the chart it replaced.
+        prev = row["prev_spec_json"] if old["op"]["type"] == "ml" and spec["op"]["type"] == "ml" else row["spec_json"]
         sets += ["spec_json = ?", "spec_hash = ?", "prev_spec_json = ?", "version_built = ?", "status = 'ready'", "error = NULL"]
-        params += [json.dumps(spec), spec_hash(spec), row["spec_json"], dataset["current_version"]]
-        if spec["view"]["type"] != json.loads(row["spec_json"])["view"]["type"]:
+        params += [json.dumps(spec), spec_hash(spec), prev, dataset["current_version"]]
+        if spec["view"]["type"] != old["view"]["type"]:
             sets.append("point_json = NULL")  # the accent belongs to the old view's elements
     if title is not None:
         if not title.strip():
@@ -197,6 +227,10 @@ def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, 
         sets.append("title = ?")
         params.append(title.strip()[:200])
     env.db.execute(f"UPDATE widgets SET {', '.join(sets)} WHERE id = ?", (*params, row["id"]))  # noqa: S608
+    if prepared is not None:
+        from sherlock.ml import runner as ml
+
+        ml.link(env.db, row["id"], ml.launch(env, dataset, prepared, "user", row["id"]))
     bump_state(env.db, dataset["id"])
     new = get_row(env.db, row["id"])
     _emit(env, dataset, new)
@@ -209,13 +243,26 @@ def undo(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> sqlite3.Row:
     """Swap the spec with the one before the last change, so a second undo puts it back."""
     if not row["prev_spec_json"]:
         raise ApiError(409, "conflict", "This widget has no earlier version to go back to.")
+    current, prev = json.loads(row["spec_json"]), json.loads(row["prev_spec_json"])
+    title = row["title"]
+    if current["op"]["type"] == "ml" and prev["op"]["type"] == "sql":
+        title = (current["view"].get("options") or {}).get("chart_title") or title  # back to the chart's own title
+    elif current["op"]["type"] == "sql" and prev["op"]["type"] == "ml":
+        title = analysis_title(prev)
     env.db.execute(
-        "UPDATE widgets SET spec_json = ?, spec_hash = ?, prev_spec_json = ?, point_json = NULL, updated_at = ? WHERE id = ?",
-        (row["prev_spec_json"], spec_hash(json.loads(row["prev_spec_json"])), row["spec_json"], now_iso(), row["id"]),
+        "UPDATE widgets SET spec_json = ?, spec_hash = ?, prev_spec_json = ?, point_json = NULL, status = 'ready', "
+        "error = NULL, title = ?, updated_at = ? WHERE id = ?",
+        (row["prev_spec_json"], spec_hash(prev), row["spec_json"], title, now_iso(), row["id"]),
     )
+    run = env.db.execute("SELECT * FROM runs WHERE id = ?", (row["run_id"],)).fetchone() if row["run_id"] else None
+    if run is not None and json.loads(row["prev_spec_json"])["op"]["type"] == "ml":
+        from sherlock.ml import runner as ml
+
+        ml.link(env.db, row["id"], run)  # back to the analysis: its status is its run's again
     bump_state(env.db, dataset["id"])
     new = get_row(env.db, row["id"])
     _emit(env, dataset, new)
+    _stories(env, dataset, [row["id"]])  # its card tells the spec it has now
     return new
 
 
@@ -245,6 +292,10 @@ def data(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, filters: list[dict], 
     """`WidgetData` (TRD §4.5) for a widget on a version (default current), through the cache."""
     version = version or dataset["current_version"]
     spec = json.loads(row["spec_json"])
+    if spec["op"]["type"] == "ml":
+        from sherlock.ml import runner as ml
+
+        return ml.widget_data(env, dataset, row)  # an analysis ignores the dashboard's filter (its rows are its scope)
     sql = compiled(env, dataset, spec, version, filters)
     key = cache_key(row["spec_hash"], version, sql)
     hit = CACHE.get(env.db, dataset["id"], key)
