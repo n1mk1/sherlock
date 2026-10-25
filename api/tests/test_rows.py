@@ -56,6 +56,9 @@ def test_page_sort_and_filter(client, ds):
     assert [r["_row_id"] for r in rows(client, ds["id"], filter=f)["rows"]] == [4]
     f = json.dumps({"and": [{"col": "name", "op": "contains", "value": "e"}]})
     assert [r["cells"]["name"] for r in rows(client, ds["id"], filter=f)["rows"]] == ["Dee"]
+    for literal in ("%", "_", "\\"):  # a substring, not a LIKE pattern
+        f = json.dumps({"and": [{"col": "name", "op": "contains", "value": literal}]})
+        assert rows(client, ds["id"], filter=f)["total"] == 0
     f = json.dumps({"and": [{"col": "name", "op": "in", "value": ["Ann", "Cy"]}]})
     assert rows(client, ds["id"], filter=f)["total"] == 2
     assert rows(client, ds["id"], view="missing")["total"] == 2

@@ -424,7 +424,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 - **`GET /rows`.**
   - It reads the version through the cached in-memory DuckDB connection. Every column name in `sort` and `filter` is checked against the version's columns and quoted, and every value is a bound parameter. An unknown column, operator or view is `422 invalid`, and an unknown version is `404`.
   - `sort` items are `col` or `col:asc|desc`, with `NULLS LAST`; `_row_id` breaks ties, and it's the default order.
-  - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `empty` also matches blank text.
+  - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `contains` looks for its value as a plain substring: `%`, `_` and `\` in it are literal characters, as in find (review of Day 2, 2026-10-25). `empty` also matches blank text.
   - `view=changed` is rows with any cell mark. `flagged` is quarantined rows plus rows with a `flagged` or `invalid` cell. `missing` is rows with any empty user cell.
   - `selection` reads a `selections` row: its `row_ids_json`, else its stored, already validated predicate.
   - The response adds `columns: [{name, type}]` (DuckDB types) and, per row, `quarantine_reason`.
