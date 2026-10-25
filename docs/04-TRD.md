@@ -936,6 +936,9 @@ As implemented (2026-10-25, D6.1, `sherlock/stories/facts.py`):
 - **Per view:** every sheet has `n` (rows behind the widget). KPIs: `value`. Categories (bar, pie, ring): `groups`, `top_group`, `top_value`, `bottom_group`, `bottom_value`, `ratio_top_bottom`; for a rate with `n`: `overall`, `significance` (chi² on the groups' counts) and `effect` (Cramér's V); for an average, median or sum by category: `significance` (Kruskal-Wallis on the rows). Time series: `first_period`/`first_value`, `last_period`/`last_value`, `peak_period`/`peak_value`, `periods`, `change`, and from four periods `trend` (rising, falling or flat by Kendall's τ at 0.05) with `trend_significance`. Histogram: `median`, `mean`, `min`, `max`, `outlier_share` (1.5 IQR). Scatter: `correlation`, `direction`. Box: `top_group`, `top_median`, `bottom_group`, `bottom_median`. Heatmap: `max_x`, `max_y`, `max_value`.
 - **Stored** in `fact_sheets` with `depends_columns_json` (the scope's columns and every column the query names, by sqlglot). `material_hash` is stored empty: cut 6 removed the material-change check.
 - **Labels** contain no digits, so the code-written fallback can show them as text.
+- **Day 6 review (2026-10-25):**
+  - **`n` counts the rows with the widget's columns filled** (its scope's `x`, `series` and `y`, where they are columns of the data), within its rows. Before, it counted every row, so a card read "Average fare across 1,309 passengers" for an average over the 1,308 that have a fare, while the KPI tile said "of 1,308 rows".
+  - **`depends_on` reads only the data's columns:** a column qualified by another table, such as a histogram's `b.lo` and `b.w` from its own CTE, is left out. Before, every histogram "read" `lo` and `w`, so two histograms of different measures were related through them.
 
 ### 6.5 RecipeManifest
 

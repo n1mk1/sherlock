@@ -316,3 +316,25 @@ def test_no_number_reaches_a_card_by_another_way():
     bad = nr.Overview(bullets=[[TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"),
                                 TextRun(text=" while survival was "), ChipRun(chip="w1.top_value")]] * 2)
     assert not nr.overview(Over(bad), None, widgets, ["sex", "survived", "fare"])[2]
+
+
+def test_rows_behind_a_widget_have_its_columns_filled_and_cte_names_are_not_columns():
+    """Day 6 review: "Average fare across 1,309 passengers" for an average over the 1,308 with a fare,
+    and a histogram that "read" its own CTE's `lo` and `w`."""
+    df = pd.DataFrame({"_quarantine_reason": [None] * 5, "fare": [1.0, 2.0, None, 4.0, 8.0], "sex": ["f", "m", "f", None, "m"]})
+    conn = conn_with(df)
+    rows = "_quarantine_reason IS NULL AND (1=1)"
+    kpi = fx.Source(sql=f"SELECT AVG(fare) AS value, COUNT(fare) AS n FROM t WHERE {rows}", rows_sql=rows,
+                    spec={"scope": {"columns": {"y": "fare", "agg": "avg"}}, "view": {"type": "kpi", "options": {"value": "value"}}},
+                    title="Average fare", columns=[{"name": "value", "type": "DOUBLE"}, {"name": "n", "type": "BIGINT"}],
+                    rows=[[3.75, 4]])
+    f = fx.compute(conn, kpi)
+    assert f["n"]["value"] == 4 and fx.verify(conn, f, ["n"]) == []
+    by_sex = fx.Source(sql=f"SELECT sex, AVG(fare) AS v FROM t WHERE {rows} AND sex IS NOT NULL GROUP BY 1", rows_sql=rows,
+                       spec={"scope": {"columns": {"x": "sex", "y": "fare", "agg": "avg"}}, "view": {"type": "bar", "options": {"y": "v"}}},
+                       title="Fare by sex", columns=[{"name": "sex", "type": "VARCHAR"}, {"name": "v", "type": "DOUBLE"}],
+                       rows=[["f", 1.0], ["m", 5.0]])
+    assert fx.compute(conn, by_sex)["n"]["value"] == 3
+    hist = ("WITH b AS (SELECT MIN(fare) AS lo, (MAX(fare) - MIN(fare)) / 20 AS w FROM t WHERE 1=1) "
+            "SELECT b.lo + b.w * FLOOR((fare - b.lo) / b.w) AS bin_start, COUNT(*) AS n FROM t, b WHERE fare IS NOT NULL GROUP BY 1")
+    assert fx.depends_on({"scope": {"columns": {"x": "fare"}}}, hist) == ["fare"]
