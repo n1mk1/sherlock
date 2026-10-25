@@ -307,7 +307,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5)
 - [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5; proposals done 2026-10-25 (D8.5, `agent/actions.py`, `routers/proposals.py`)
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
-- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`); planted-truth done 2026-10-25 (D7, `uv run sherlock eval ml`)
+- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`); planted-truth done 2026-10-25 (D7, `uv run sherlock eval ml`); grounding done 2026-10-25 (Day 6 review, `uv run sherlock eval grounding`, TRD §14)
 - [ ] `scripts/` smoke_llm, seed_sample, deploy
 - [ ] tests: unit, integration (mocked LLM), fixtures
 
@@ -338,7 +338,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 | Install | `cd api && uv sync` · `cd web && pnpm install` |
 | Run locally | `docker compose up` or `uv run uvicorn sherlock.main:app --reload` + `pnpm dev` |
 | Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` (`pnpm e2e` builds the web app first; D8.6) |
-| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-25 `corruption`, `ask` and `notebook` run (`notebook` takes `--sets a.csv,b.csv` or `all` for the end-to-end set); the others answer that they come with D6 and D7, and exit 2. Since D8.4 all five run (`grounding` takes `--sets` too) |
+| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). As of 2026-10-25 `corruption`, `ask` and `notebook` run (`notebook` takes `--sets a.csv,b.csv` or `all` for the end-to-end set); the others answer that they come with D6 and D7, and exit 2. Since D8.4 all five run (`grounding` takes `--sets` too). The Day 6 review built a grounding test of its own on its branch; the two were merged into one `eval grounding` with both sets of checks (TRD §14) |
 | Clean a file headless | `uv run sherlock clean <file.csv or sample>` (in `api/`): imports it, prints the live log and the report (D3.5) |
 | Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |
 | Export a notebook from the CLI | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |

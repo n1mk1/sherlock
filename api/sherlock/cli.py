@@ -5,7 +5,7 @@
     uv run sherlock eval ask [--sets titanic3.csv] the ask-anything eval (markdown table)
     uv run sherlock eval notebook [--sets a.csv,b.csv | all] export each file's notebook and run it in a fresh venv
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
-    uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts and wording (markdown table)
+    uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts, labels and wording (markdown table)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
 
 Commands run the app in-process against the configured `DATA_DIR` and `DATABASE_URL` (the `.env`),
@@ -17,7 +17,7 @@ import sys
 import time
 from pathlib import Path
 
-NOT_BUILT: dict[str, str] = {}
+NOT_BUILT: dict[str, str] = {}  # evals the plan names that aren't built yet, with the item they come with
 
 
 def _print(text: str) -> None:

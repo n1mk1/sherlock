@@ -88,8 +88,13 @@ def compute(conn: duckdb.DuckDBPyConnection, src: Source) -> dict[str, dict]:
     if not src.rows:
         return {"rows": fact(0, "int", "rows in the result", sql=src.sql, formula="rows the query returned")}
     facts: dict[str, dict] = {}
-    n = _scalar(conn, f"SELECT COUNT(*) FROM t WHERE {src.rows_sql}")
-    facts["n"] = fact(n, "int", "rows behind this widget", sql=f"SELECT COUNT(*) FROM t WHERE {src.rows_sql}", scalar=True)
+    # Rows with the widget's columns filled: an average of fare is over the rows that have a fare.
+    cols = src.spec.get("scope", {}).get("columns") or {}
+    present = {r[0] for r in conn.execute("DESCRIBE t").fetchall()}
+    filled = "".join(f" AND {ident(c)} IS NOT NULL" for c in dict.fromkeys(cols.get(k) for k in ("x", "series", "y"))
+                     if c and c in present)
+    n_sql = f"SELECT COUNT(*) FROM t WHERE {src.rows_sql}{filled}"
+    facts["n"] = fact(_scalar(conn, n_sql), "int", "rows behind this widget", sql=n_sql, scalar=True)
     vc = _value_col(src)
     first_type = src.columns[0]["type"] if src.columns else ""
     if view == "kpi" or (len(src.rows) == 1 and vc is not None):
@@ -331,7 +336,8 @@ def depends_on(spec: dict, sql: str) -> list[str]:
     cols.update(sc.get("features") or [])
     try:
         for c in sqlglot.parse_one(sql, read="duckdb").find_all(exp.Column):
-            cols.add(c.name)
+            if c.table in ("", "t"):  # `b.lo` in a histogram is its own CTE's, not a column of the data
+                cols.add(c.name)
     except sqlglot.errors.ParseError:
         pass
     return sorted(c for c in cols if c not in ("_row_id", "_quarantine_reason"))

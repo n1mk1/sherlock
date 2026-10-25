@@ -2,6 +2,7 @@
 
 import json
 import re
+import unicodedata
 
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```(?:json|python)?\s*\n?(.*?)```", re.DOTALL)
@@ -37,5 +38,6 @@ def extract_code(text: str) -> str:
 
 
 def has_digits(text: str) -> bool:
-    """The narrator's no-digits rule (TRD §7.4): numbers in prose must be chips."""
-    return bool(_DIGIT.search(text))
+    """The narrator's no-digits rule (TRD §7.4): numbers in prose must be chips. Any Unicode number
+    counts, not only 0-9: "²", "½", "①" and "Ⅻ" read as numbers too."""
+    return bool(_DIGIT.search(text)) or any(unicodedata.category(ch).startswith("N") for ch in text)

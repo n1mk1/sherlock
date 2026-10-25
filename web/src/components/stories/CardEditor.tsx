@@ -83,10 +83,24 @@ export function fromDoc(doc: JSONContent): CardBody {
   return { blocks };
 }
 
+/** Only what a CardBody can hold: paragraphs, bullets (not in the one-line headline), text, chips
+ * and labels. Numbered lists, line breaks and marks would be dropped or emptied on save. */
+export function editorExtensions(single: boolean) {
+  return [
+    StarterKit.configure({
+      heading: false, codeBlock: false, blockquote: false, horizontalRule: false, orderedList: false, hardBreak: false,
+      bold: false, italic: false, strike: false, code: false, underline: false, link: false,
+      ...(single ? { bulletList: false, listItem: false, listKeymap: false } : {}),
+    }),
+    ChipNode,
+    LabelNode,
+  ];
+}
+
 function useCardEditor(body: CardBody, onSlash: (e: Editor) => void, single: boolean) {
   const self = useRef<Editor | null>(null);
   const editor = useEditor({
-    extensions: [StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false }), ChipNode, LabelNode],
+    extensions: editorExtensions(single),
     content: toDoc(single ? { blocks: body.blocks.slice(0, 1) } : body),
     editorProps: {
       attributes: { class: "rounded-md border border-input bg-background px-2.5 py-1.5 outline-none focus:border-accent" },

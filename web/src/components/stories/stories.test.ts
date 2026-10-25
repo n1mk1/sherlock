@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { plainText } from "@/api/stories";
 import type { Card, CardBody } from "@/api/types";
-import { fromDoc, toDoc } from "./CardEditor";
+import { Editor } from "@tiptap/core";
+import { editorExtensions, fromDoc, toDoc } from "./CardEditor";
 
 const body: CardBody = {
   blocks: [
@@ -42,6 +43,23 @@ describe("the card editor document", () => {
     const run = out.blocks[0].runs[0];
     expect(run).toMatchObject({ type: "chip", key: "n", value: "891", unverified: false });
     expect(run.type === "chip" && run.id).toMatch(/^e/);
+  });
+});
+
+describe("the card editor's schema", () => {
+  // Day 6 review: "1. " made a numbered list, which fromDoc saved as empty text.
+  it("keeps the text of a numbered list, a line break and bold as paragraphs and plain text", () => {
+    const editor = new Editor({ extensions: editorExtensions(false), content: "<ol><li><p>First point</p></li></ol><p>a<br>b <b>bold</b></p>" });
+    const out = fromDoc(editor.getJSON());
+    const words = out.blocks.map((b) => b.runs.map((r) => (r.type === "text" ? r.text : "")).join(""));
+    expect(words).toEqual(["First point", "a b bold"]);
+    editor.destroy();
+  });
+
+  it("gives the one-line headline no lists", () => {
+    const editor = new Editor({ extensions: editorExtensions(true), content: "<ul><li><p>Headline</p></li></ul>" });
+    expect(fromDoc(editor.getJSON()).blocks.map((b) => b.type)).toEqual(["paragraph"]);
+    editor.destroy();
   });
 });
 

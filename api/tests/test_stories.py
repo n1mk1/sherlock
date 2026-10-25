@@ -298,3 +298,160 @@ def test_a_run_that_finishes_before_the_first_card_still_gets_its_story(client):
         assert queued and "wdg_analysis" in queued["params_json"]
     finally:
         db.close()
+
+
+def test_no_number_reaches_a_card_by_another_way():
+    """Rule 2 (Day 6 review): a value label the facts don't name, a number spelled another way,
+    a Unicode number or an HTML entity is refused like a digit."""
+    class Fake:
+        def __init__(self, story):
+            self.story = story
+
+        def structured(self, role, messages, schema, *, purpose, scope, validate):
+            from sherlock.llm.client import StructuredOutputError
+
+            try:
+                validate(self.story)
+            except ValueError as exc:
+                raise StructuredOutputError(str(exc)) from exc
+            return type("S", (), {"value": self.story})()
+
+    facts = {**FACTS, "n": {"value": 200, "formatted": "200", "label": "rows"},
+             "top_group": {"value": "female", "formatted": "female", "label": "sex with the highest rate"}}
+    spec = {"scope": {"columns": {"x": "sex", "y": "survived"}}}
+
+    def told(body):
+        story = Story(headline=[TextRun(text="Women fared better than men here")], body=body)
+        return nr.narrate(Fake(story), None, title="t", widget_id="w1", spec=spec, facts=facts,
+                          widget_columns=["sex", "survived"], dataset_columns=["sex", "survived", "fare"], related=[])[2]
+
+    rate = [TextRun(text="The rate for "), LabelRun(label="value:sex:female"), TextRun(text=" was "), ChipRun(chip="top_value"),
+            TextRun(text=" overall.")]
+    assert told(rate)  # an allowed value label still passes
+    for label in ("value:fare:512.33", "value:sex:three quarters"):
+        assert not told([TextRun(text="Passengers paid about "), LabelRun(label=label), TextRun(text=" against "),
+                         ChipRun(chip="top_value"), TextRun(text=" survival.")])
+    for words in ("Seventeen men survived, against ", "About half of men survived, against ", "Over XLV men survived, against ",
+                  "Survival quadrupled for women, at ", "One in a few men survived, against ", "A third of men survived, against ",
+                  "Roughly &half; of women survived, at "):
+        assert not told([TextRun(text=words), ChipRun(chip="top_value"), TextRun(text=" for women.")]), words
+    for text in ("x²", "½ of men", "class ①", "Ⅻ cases"):
+        with pytest.raises(ValueError):
+            TextRun(text=text)
+
+    # The overview takes only the value labels its widgets' facts name.
+    widgets = [{"prefix": "w1", "title": "Survival by sex", "facts": facts, "score": 1, "widget_id": "w1", "spec": spec,
+                "columns": ["sex", "survived"]}]
+
+    class Over(Fake):
+        pass
+
+    good = nr.Overview(bullets=[[TextRun(text="Survival was highest for "), LabelRun(label="value:sex:female"),
+                                 TextRun(text=" passengers, at "), ChipRun(chip="w1.top_value")]] * 2)
+    assert nr.overview(Over(good), None, widgets, ["sex", "survived", "fare"])[2]
+    bad = nr.Overview(bullets=[[TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"),
+                                TextRun(text=" while survival was "), ChipRun(chip="w1.top_value")]] * 2)
+    assert not nr.overview(Over(bad), None, widgets, ["sex", "survived", "fare"])[2]
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_the_grounding_eval_checks_every_number_on_the_cards(mocked, client):
+    import json
+
+    from sherlock.db.connection import connect
+    from sherlock.eval import grounding
+
+    ds = _ready_with_stories(client)
+    settings = get_settings()
+    db = connect(settings)
+    try:
+        res = grounding.check_dataset(client, db, settings, "titanic3.csv", ds)
+        assert res.cards >= 7 and res.chips > 0 and res.chips_ok == res.chips and res.problems == [], res.problems
+        card = db.execute("SELECT * FROM cards WHERE dataset_id = ? AND kind = 'widget' AND narrated_by IS NOT NULL", (ds,)).fetchone()
+        body = json.loads(card["body_json"])
+        chip = next(r for b in body["blocks"] for r in b["runs"] if r["type"] == "chip")
+        chip["value"] = "99.9%"  # a chip that no longer shows its fact
+        body["blocks"].append({"type": "paragraph", "runs": [{"type": "text", "text": "Seventeen more survived."}]})
+        db.execute("UPDATE cards SET body_json = ? WHERE id = ?", (json.dumps(body), card["id"]))
+        db.commit()
+        res = grounding.check_dataset(client, db, settings, "titanic3.csv", ds)
+        assert len(res.problems) == 2 and res.chips_ok == res.chips - 1, res.problems
+        assert "grounded" in grounding.report([res]).lower()
+    finally:
+        db.close()
+
+
+def test_rows_behind_a_widget_have_its_columns_filled_and_cte_names_are_not_columns():
+    """Day 6 review: "Average fare across 1,309 passengers" for an average over the 1,308 with a fare,
+    and a histogram that "read" its own CTE's `lo` and `w`."""
+    df = pd.DataFrame({"_quarantine_reason": [None] * 5, "fare": [1.0, 2.0, None, 4.0, 8.0], "sex": ["f", "m", "f", None, "m"]})
+    conn = conn_with(df)
+    rows = "_quarantine_reason IS NULL AND (1=1)"
+    kpi = fx.Source(sql=f"SELECT AVG(fare) AS value, COUNT(fare) AS n FROM t WHERE {rows}", rows_sql=rows,
+                    spec={"scope": {"columns": {"y": "fare", "agg": "avg"}}, "view": {"type": "kpi", "options": {"value": "value"}}},
+                    title="Average fare", columns=[{"name": "value", "type": "DOUBLE"}, {"name": "n", "type": "BIGINT"}],
+                    rows=[[3.75, 4]])
+    f = fx.compute(conn, kpi)
+    assert f["n"]["value"] == 4 and fx.verify(conn, f, ["n"]) == []
+    by_sex = fx.Source(sql=f"SELECT sex, AVG(fare) AS v FROM t WHERE {rows} AND sex IS NOT NULL GROUP BY 1", rows_sql=rows,
+                       spec={"scope": {"columns": {"x": "sex", "y": "fare", "agg": "avg"}}, "view": {"type": "bar", "options": {"y": "v"}}},
+                       title="Fare by sex", columns=[{"name": "sex", "type": "VARCHAR"}, {"name": "v", "type": "DOUBLE"}],
+                       rows=[["f", 1.0], ["m", 5.0]])
+    assert fx.compute(conn, by_sex)["n"]["value"] == 3
+    hist = ("WITH b AS (SELECT MIN(fare) AS lo, (MAX(fare) - MIN(fare)) / 20 AS w FROM t WHERE 1=1) "
+            "SELECT b.lo + b.w * FLOOR((fare - b.lo) / b.w) AS bin_start, COUNT(*) AS n FROM t, b WHERE fare IS NOT NULL GROUP BY 1")
+    assert fx.depends_on({"scope": {"columns": {"x": "fare"}}}, hist) == ["fare"]
+
+
+def test_a_unit_the_chip_shows_is_not_said_twice_and_a_label_after_a_full_stop_gets_its_space():
+    facts = {"rate": {"value": 0.382, "formatted": "38.2%", "label": "rate"}, "ratio": {"value": 3.8, "formatted": "3.8×", "label": "r"},
+             "verdict": {"value": "Beats the rule.", "formatted": "Beats the rule.", "label": "v"}}
+
+    def shown(runs):
+        return "".join(r.get("value") or r.get("text") for r in nr.to_runs(runs, facts, ["sex"]))
+
+    assert shown([TextRun(text="Survival rate was "), ChipRun(chip="rate"), TextRun(text="%.")]) == "Survival rate was 38.2%."
+    assert shown([TextRun(text="Women were "), ChipRun(chip="ratio"), TextRun(text=" times as likely, at "), ChipRun(chip="rate"),
+                  TextRun(text=" percent overall.")]) == "Women were 3.8× as likely, at 38.2% overall."
+    assert shown([TextRun(text="The model says "), ChipRun(chip="verdict")]) == "The model says Beats the rule."
+    assert shown([TextRun(text="It shows fare for each sex."), LabelRun(label="column:sex"), TextRun(text=" leads.")]) \
+        == "It shows fare for each sex. sex leads."
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_ask_first_marks_the_affected_cards_outdated_without_narrating(mocked, client):
+    """Day 6 review: "Story updates: Ask first" (TRD §7.6) had no test of its own for cards."""
+    ds = _ready_with_stories(client)
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
+    before = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
+    widgets = {w["id"]: w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
+    fare = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "sql" and "fare" in w["spec"]["op"]["sql"]}
+    ml = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "ml"}  # its run reads fare: outdated, card too
+    narrated = len(db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'narrate'", ds))
+    v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+    client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": 1, "column": "fare", "value": "500"}]})
+    done = wait_for(lambda: next((j for j in client.get(f"{API}/jobs?dataset_id={ds}").json()
+                                  if j["kind"] == "cascade" and j["status"] in ("done", "failed")), None), timeout=60)
+    assert done["status"] == "done" and done["result"]["outdated"] == len(fare) + len(ml) and done["result"]["cards"] == 0, done
+    after = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
+    for wid in fare | ml:
+        assert after[wid]["status"] == "outdated" and after[wid]["body"] == before[wid]["body"], widgets[wid]["title"]
+    assert all(after[wid]["status"] == "ready" for wid in after if wid not in fare and widgets[wid]["spec"]["op"]["type"] == "sql")
+    assert len(db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'narrate'", ds)) == narrated
+
+
+def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
+    """Rule 2 (Day 6 review): synthesis and `ask_story` ran the narrator's checks without the allowed
+    labels, so any `value:` label was shown as written."""
+    from sherlock.stories import synthesis
+
+    facts = {"c1.top_value": {"value": 0.7, "formatted": "70.0%", "label": "rate"}}
+    values = synthesis._values(["column:sex", "value:sex:female"])
+    ok = [TextRun(text="Survival was highest for "), LabelRun(label="value:sex:female"), TextRun(text=" passengers, at "),
+          ChipRun(chip="c1.top_value")]
+    synthesis._check([ok], facts, ["sex", "fare"], values)
+    for bad in ([TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"), TextRun(text=" while survival was "),
+                 ChipRun(chip="c1.top_value")],
+                [TextRun(text="Over XLV passengers survived, at "), ChipRun(chip="c1.top_value")]):
+        with pytest.raises(ValueError):
+            synthesis._check([bad], facts, ["sex", "fare"], values)
