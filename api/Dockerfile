@@ -25,6 +25,8 @@ COPY api/pyproject.toml api/uv.lock api/.python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY api/sherlock ./sherlock
 COPY api/samples ./samples
+# The chat's app_help answers from these pages (TRD §8.2); config.REPO_ROOT is /app.
+COPY docs/help /app/docs/help
 RUN uv sync --frozen --no-dev
 
 COPY --from=web /web/dist /app/web

@@ -320,7 +320,9 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7):
   - Run turns the widget into the analysis, titled "What drives <target>?".
 - **Step 3.** The widget shows "What drives <target>: <label>…", a progress bar and the steps ticked off, with Cancel. The job tray lists the `ml_run` job.
 - **Step 4.** The widget shows the verdict line ("Beats the best simple rule by 2.4 points. Gradient boosting: Accuracy 80.4% vs 78.0%."), then the importance bars, with the top factor in the accent. The footer has "Model card" (the drawer) and "How do you know?" (the run's reproduction code). Its story card is narrated from the run's fact sheet when the run finishes. On a fresh dashboard the builder's "What drives <target>?" widget does the same by itself.
-- **Step 5.** Clicking a factor bar opens its partial-dependence mini chart (the probability or prediction as the factor varies) under the bar. "Who did it get wrong?" and predicted cells are not built: they need out-of-fold predictions, which came with `predict` (cut 7).
+- **Step 5.** Clicking a factor bar opens its partial-dependence mini chart (the probability or prediction as the factor varies) under the bar. For categories the widget has a view switcher (Importance · Confusion · ROC, the last for two classes), and the model card shows the confusion matrix and the ROC curve.
+  - **"Who did it get wrong?"** (2026-10-25, D7.4) is in the model card with the count. It saves a selection of the rows the out-of-fold predictions got wrong and opens the CSV tab on `?rows=<selection_id>` ("256 rows selected" on Titanic), with a toast.
+  - Predicted cells stay cut (cut 7).
 - **Step 6.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first". Under "Automatic" it re-runs by itself and shows the progress again.
 - **Compare with Auto** is not built (cut 4: Auto is the only method). A failed or cancelled run says why, with Re-run.
 
@@ -333,6 +335,14 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7):
 - Collapsed: a single input with the placeholder "Ask Sherlock, or tell it what to build…", a `/` hint, and a send button. Under it, three **suggested questions** as chips.
 - Focus or typing expands the thread above the input (max 40% of the centre height), showing the dataset's conversation. Esc collapses it.
 - A **context chip** on the left of the input shows what the next message applies to: "All rows", "Selection: 709 rows", "3 cards selected", "Cell B12", or the widget name when a widget is focused. Clicking it clears the context.
+
+As built (2026-10-25, D7.3), the answerers behind the bar:
+- **"Is fare significantly different between men and women?"** answers with the test chosen by the column types (Welch's t-test and Mann-Whitney here), the p-value, the effect size and n as chips, a plain verdict, and the test and group tables.
+- **"What drives survival?"** answers from the analysis (the dashboard's, from the cache, or a new one waited for up to a minute): the verdict, the metric against the best simple rule, the strongest factors, the importance table and a **Model card** button that opens the drawer.
+- **"How accurate is the model?"**, **"why was boat left out?"** answer from the model card. **"Who did the model get wrong?"** answers with the count, the first rows and "Open these rows in CSV".
+- **"What does sibsp mean?"** answers with what the data says (counts, range and common values), then a dashed box "In general (not from your data): …" from the model's general knowledge.
+- **"How do I undo a step?"** answers from the help pages (`docs/help`), naming the page in How do you know?.
+- **Tabs.** Each tab offers its own tools. On the CSV tab "add a chart … to the dashboard" answers with a chart and Pin instead of adding a widget, and the Dashboard tab adds it.
 
 ### 10.2 Message lifecycle
 

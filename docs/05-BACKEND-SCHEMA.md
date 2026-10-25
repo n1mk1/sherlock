@@ -343,6 +343,7 @@ As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`; no migrat
 - **`created_by`.** `builder` for the dashboard's driver widget, otherwise `user`.
 - **`fact_sheets.run_id`** is set on the run's own sheet. An analysis widget's sheet is a copy with its `widget_id`.
 - **`widgets.spec_json`.** An analysis that replaced a chart keeps the chart's title in `view.options.chart_title`, for Undo.
+- **`selections` for "who did it get wrong?"** (`POST /runs/{rid}/wrong-rows`, D7.4): `row_ids_json` holds the misclassified `_row_id`s, `predicate` is NULL, `label` is "<target>: predicted wrong", and `version` is the current version. Row IDs are stable across versions.
 
 ### 2.14 jobs and job_events
 
@@ -567,7 +568,9 @@ Queries from widgets and answerers run on that in-memory connection after extern
         model_card.json             the ModelCard (as built, D7)
         results/*.parquet           predictions, importance, pdp, coefficients
                                     (as built, D7: results/importance.json and results/partial_dependence.json;
-                                    JSON because pyarrow isn't a dependency; no predictions or coefficients, cuts 4 and 7)
+                                    JSON because pyarrow isn't a dependency; no predictions or coefficients, cuts 4 and 7;
+                                    results/oof.json for classification: _row_id, actual, predicted, probability,
+                                    the out-of-fold predictions behind the confusion matrix, ROC and "who did it get wrong?")
       exports/
         notebook_<cache_key>.ipynb  generated notebooks (ephemeral, 24 h)
         *.csv, *.py                 other generated exports (ephemeral)

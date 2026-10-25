@@ -13,4 +13,5 @@
 data
 api/data
 web/dist
-docs
+docs/*
+!docs/help

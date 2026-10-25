@@ -13,7 +13,7 @@ from sherlock.ml import core
 from sherlock.ml.plan import Plan
 
 CORE_FUNCTIONS = ("prepare", "preprocessor", "make_model", "folds", "metric_name", "score", "pipeline", "evaluate",
-                  "baselines", "importance", "run")
+                  "baselines", "importance", "run", "out_of_fold")
 
 
 def core_source() -> str:

@@ -144,3 +144,25 @@ class Answer(Strict):
     number: str | None = Field(description="for shape number: the chip of the headline value, else null")
     label: str | None = Field(description="for shape number: what the value is, in words with no digits, else null")
     chart: Literal["bar", "line", "area", "pie"] | None = Field(description="for shape chart: the chart type, else null")
+
+
+# --- Chat answerers, D7.3 (TRD §8.2) ---------------------------------------------------------
+
+
+class StatsDraft(Strict):
+    reading: str = Field(description="how you read the question's words as columns, e.g. 'women vs men → sex'")
+    outcome: str = Field(description="the column whose values are compared (a number or a category)")
+    group: str = Field(description="the column that splits the rows into groups, or the second number")
+
+
+class Meaning(Strict):
+    general: str = Field(description="one or two sentences, no digits: what this column most likely records, "
+                                     "from general knowledge; say so when unsure")
+
+    @model_validator(mode="after")
+    def no_digits(self) -> "Meaning":
+        if has_digits(self.general):
+            raise ValueError("write the meaning without digits")
+        if not self.general.strip():
+            raise ValueError("the meaning can't be empty")
+        return self

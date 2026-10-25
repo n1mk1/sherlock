@@ -472,6 +472,13 @@ The analysis widget's body follows App Flow §9 steps 3–5:
 - **Partial dependence.** A 64px SVG mini chart in a bordered figure under its bar: a line for numbers, bars for categories, with an accessible label listing the points.
 - **Footer.** It adds "Model card", and "Outdated" with a small Re-run in `--warning`.
 
+Added 2026-10-25 (D7.4):
+- **View switcher.** For a classification run, 24px text tabs over the body: Importance · Confusion · ROC.
+- **Confusion matrix.** A table of mono counts, actual by predicted. Each cell is tinted with `color-mix` of `--chart-accent` (the diagonal, right) or `--chart-1` (wrong), 12–62% by count, with a tooltip. A line under it gives the count predicted wrong.
+- **ROC curve.** A 170px SVG: the curve in `--chart-accent`, the chance diagonal dashed in `--chart-grid`, small axis labels, and the AUC in the caption.
+- **The drawer** adds a "Who it got wrong" section with the matrix, the ROC curve and a secondary "Who did it get wrong? (n rows)" button. It opens the CSV tab on those rows and closes the drawer. Opened from a chat answer, the drawer has no Re-run.
+- **Chat.** A general-knowledge block (`labeled: "general"`) is a 1px dashed bordered box in `--foreground-2` at 13px, with a tooltip saying it isn't computed from the data. A `open_model_card` action is a secondary "Model card" button under the answer.
+
 ### 5.10 Flow canvas
 
 Canvas background `--background` with a dot grid (`--border` dots, 22px spacing). Nodes: story cards at 240px width using the §4.5 card style at headline-sm; notes 220px with `--muted` fill; synthesis with `--accent` overline; direction with dashed `--accent` border. Edges: 1.5px `--muted-foreground` curves with a small arrowhead; AI-made edges in `--accent`; suggested edges (P1) dashed. Labels: label-size chips at the midpoint, `--card` fill. Selected node: 2px `--accent` outline offset 2px. Zoom control bottom-left (two ghost buttons in a `--card` pill), minimap bottom-right (132 × 84, `--card`, viewport rectangle in `--info`).

@@ -136,6 +136,15 @@ def run_code(request: Request, owned_run: Owned = Depends(owned("run")), user: U
     return {"python": path.read_text(encoding="utf-8")}
 
 
+@router.post("/runs/{rid}/wrong-rows", status_code=status.HTTP_201_CREATED)
+def run_wrong_rows(request: Request, owned_run: Owned = Depends(owned("run")), user: User = Depends(current_user),
+                   db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """"Who did it get wrong?": a selection of the misclassified rows (out of fold), opened in the CSV
+    tab with `?rows=<selection_id>`."""
+    dataset, run = _run(owned_run, user, db)
+    return ml.wrong_rows(db, request.app.state.settings, dataset, run)
+
+
 @router.post("/widgets/{wid}/rerun")
 def rerun_widget(request: Request, owned_widget: Owned = Depends(owned("widget")), user: User = Depends(current_user),
                  db: sqlite3.Connection = Depends(get_db)) -> dict:

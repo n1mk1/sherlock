@@ -210,10 +210,13 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
   - `driver_analysis` with Auto (logistic or ridge, gradient boosting and a random forest, chosen by CV within `time_budget_s`), and the registry with the other recipes disabled with their reason.
   - `GET /recipes`, the runs API (`/runs`, `/runs/preview`, `/runs/{rid}`, `/results?view=`, `/model-card`, `/code`, `/cancel`, plus `POST /widgets/{wid}/rerun`), the cache, and `run.updated`.
   - The cascade outdates runs, and the builder adds "What drives <target>?" when rows ≥ 100.
-- [ ] D7.3: the answerers `ask_why`, `ask_stats`, `ask_model` (with explain-row), `ask_meaning` and `app_help` are not built.
-- [x] D7.4 within cuts 4 and 7, except two items:
+- [x] D7.3 (2026-10-25, follow-up):
+  - `ask_why`, `ask_stats`, `ask_model` and `ask_meaning`, plus `app_help` with `docs/help/*.md` and tool exposure by tab (TRD §8.2).
+  - explain-row stays cut with predictions (cut 7); `ask_model` says so for a one-row question.
+  - The new model calls were recorded live into the chat fixture.
+- [x] D7.4 within cuts 4 and 7:
   - **Built:** the analysis dropdown with disabled reasons; the setup form from the manifest (target, feature chips with exclusions struck through and reasons on hover, the scope chip, More); run progress; the importance view with the partial-dependence mini chart on a factor bar; the model card drawer; Outdated with Re-run; "Plain chart (SQL)".
-  - **Not built:** the confusion and ROC views, and "Who did it get wrong?". Both need out-of-fold predictions.
+  - **Built later the same day (follow-up):** the confusion and ROC views, and "Who did it get wrong?" (out-of-fold predictions saved at run time, the CSV tab via `?rows=`). Only `predict`, the predictions table, predicted cells and explain-row stay cut (cut 7).
 - [x] D7.5:
   - `repro.py` for Auto, written at completion; the model card's metrics come from executing it. `GET /runs/{rid}/code` serves it.
   - Run cells in the notebook: the analysis widgets via their run, and `include_runs`, with embedded metrics, baselines and importance.
@@ -279,7 +282,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the custom-chart candidates done 2026-10-25 (D6.5); the driver widget done 2026-10-25 (D7.2)
 - [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash: done 2026-10-25 (D6) without the material hash (cut 6)
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto: done 2026-10-25 within cuts 4 and 7 (plan, core, analysis, repro, registry, runner, artifacts: `driver_analysis` with Auto); explain-row, predictions and compare-auto are cut
-- [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9
+- [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9; `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help` and tool exposure by tab done 2026-10-25 (D7.3)
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [ ] `canvas/` model, persistence, pruning
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5)

@@ -41,7 +41,7 @@ from sherlock.widgets.spec import Scope
 
 RUNNING = ("queued", "running")
 FINISHED_OK = ("done", "outdated")
-VIEWS = ("importance", "partial_dependence", "baselines")
+VIEWS = ("importance", "partial_dependence", "baselines", "confusion", "roc")
 WIDGET_STATUS = {"queued": "building", "running": "building", "done": "ready", "outdated": "outdated",
                  "failed": "error", "cancelled": "error"}
 PREVIEW_ROWS = 5000
@@ -229,7 +229,8 @@ def to_run(db: sqlite3.Connection, row: sqlite3.Row, full: bool = False) -> dict
         out["summary"] = {"verdict": card["verdict"], "verdict_text": card["verdict_text"], "metric": card["model"]["metric"],
                           "value": card["model"]["value"], "best_baseline": best, "chosen_model": card["chosen_model"],
                           "chosen_label": core.MODEL_LABELS.get(card["chosen_model"], card["chosen_model"]),
-                          "rows": card["rows"]["train"], "excluded": len(card["excluded"])}
+                          "rows": card["rows"]["train"], "excluded": len(card["excluded"]), "task": card["task"],
+                          "misclassified": card.get("misclassified"), "views": result_views(card)}
     if row["status"] in RUNNING and row["job_id"]:
         job = db.execute("SELECT progress_json FROM jobs WHERE id = ?", (row["job_id"],)).fetchone()
         if job and job["progress_json"]:
@@ -237,6 +238,29 @@ def to_run(db: sqlite3.Connection, row: sqlite3.Row, full: bool = False) -> dict
     if full:
         out["model_card"] = card
     return out
+
+
+def result_views(card: dict) -> list[str]:
+    """The views a run can show: importance, then the confusion matrix and the ROC curve when it has them."""
+    return ["importance"] + [v for v in ("confusion", "roc") if v in card]
+
+
+def wrong_rows(db: sqlite3.Connection, settings, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
+    """"Who did it get wrong?" (App Flow §9 step 5): a selection of the rows whose out-of-fold
+    prediction missed, for the CSV tab's `?rows=`. Row ids are stable across versions."""
+    _finished(row)
+    path = run_folder(settings, dataset, row["id"]) / "results" / "oof.json"
+    if not path.exists():
+        raise ApiError(422, "invalid", "Only a run that explains categories has rows it got wrong.")
+    oof = json.loads(path.read_text(encoding="utf-8"))
+    ids = sorted({int(r["_row_id"]) for r in oof if r["actual"] != r["predicted"]})
+    card = json.loads(row["model_card_json"])
+    sel_id = new_id("sel")
+    db.execute("INSERT INTO selections (id, dataset_id, version, predicate, row_ids_json, row_count, label, created_at) "
+               "VALUES (?, ?, ?, NULL, ?, ?, ?, ?)",
+               (sel_id, dataset["id"], dataset["current_version"], json.dumps(ids), len(ids),
+                f"{card['target']}: predicted wrong", now_iso()))
+    return {"selection_id": sel_id, "row_count": len(ids), "label": f"{card['target']}: predicted wrong"}
 
 
 def run_folder(settings, dataset: sqlite3.Row, run_id: str):
@@ -261,6 +285,18 @@ def results(settings, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3
         table = json.loads((folder / "results" / "importance.json").read_text(encoding="utf-8"))
         columns = [{"name": "feature", "type": "VARCHAR"}, {"name": "importance", "type": "DOUBLE"}]
         rows = [[r["feature"], float(r["importance"])] for r in table]
+    elif view in ("confusion", "roc"):
+        if view not in card:
+            raise ApiError(422, "invalid", "The confusion matrix is for categories" if view == "confusion"
+                           else "The ROC curve is for a yes/no target (two values).")
+        if view == "confusion":
+            labels = card["confusion"]["labels"]
+            columns = [{"name": "actual", "type": "VARCHAR"}, {"name": "predicted", "type": "VARCHAR"},
+                       {"name": "n", "type": "BIGINT"}]
+            rows = [[a, p, card["confusion"]["matrix"][i][j]] for i, a in enumerate(labels) for j, p in enumerate(labels)]
+        else:
+            columns = [{"name": "fpr", "type": "DOUBLE"}, {"name": "tpr", "type": "DOUBLE"}, {"name": "threshold", "type": "DOUBLE"}]
+            rows = [[pt["fpr"], pt["tpr"], pt["threshold"]] for pt in card["roc"]["points"]]
     elif view == "baselines":
         columns = [{"name": "name", "type": "VARCHAR"}, {"name": "metric", "type": "VARCHAR"},
                    {"name": "value", "type": "DOUBLE"}, {"name": "ci_low", "type": "DOUBLE"}, {"name": "ci_high", "type": "DOUBLE"}]
@@ -371,6 +407,28 @@ def facts_for(run_id: str, card: dict) -> dict:
     return facts
 
 
+ROC_POINTS = 50
+
+
+def classification_checks(oof: pd.DataFrame) -> dict:
+    """From the out-of-fold predictions: the confusion matrix (actual × predicted), how many rows were
+    misclassified, and for two classes the ROC curve (at most 50 points) on the second class."""
+    from sklearn.metrics import roc_auc_score, roc_curve
+
+    labels = sorted(set(oof["actual"]) | set(oof["predicted"]))
+    counts = pd.crosstab(oof["actual"], oof["predicted"]).reindex(index=labels, columns=labels, fill_value=0)
+    out = {"confusion": {"labels": labels, "matrix": counts.values.astype(int).tolist()},
+           "misclassified": int((oof["actual"] != oof["predicted"]).sum())}
+    if "probability" in oof.columns and len(labels) == 2:
+        positive = (oof["actual"] == labels[1]).astype(int)
+        fpr, tpr, thr = roc_curve(positive, oof["probability"])
+        keep = np.unique(np.linspace(0, len(fpr) - 1, min(ROC_POINTS, len(fpr))).round().astype(int))
+        out["roc"] = {"positive": labels[1], "auc": round(float(roc_auc_score(positive, oof["probability"])), 6),
+                      "points": [{"fpr": round(float(fpr[i]), 6), "tpr": round(float(tpr[i]), 6),
+                                  "threshold": round(float(min(thr[i], 1.0)), 6)} for i in keep]}
+    return out
+
+
 def _emit_run(db: sqlite3.Connection, bus: EventBus | None, dataset: sqlite3.Row, run_id: str, job_id: str | None = None) -> None:
     """`run.updated`, then `widget.updated` for every live widget showing the run, with its status."""
     run = get_run(db, run_id)
@@ -413,6 +471,11 @@ def _execute(ctx: JobContext) -> dict:
     (folder / "results" / "importance.json").write_text(
         a.result["importance"].to_json(orient="records", double_precision=6), encoding="utf-8")
     (folder / "results" / "partial_dependence.json").write_text(json.dumps(a.pdp, default=_plain), encoding="utf-8")
+    checks = {}
+    if "oof" in a.result:  # classification: who it got wrong, the confusion matrix and the ROC curve
+        oof = a.result["oof"]
+        (folder / "results" / "oof.json").write_text(oof.to_json(orient="records", double_precision=6), encoding="utf-8")
+        checks = classification_checks(oof)
     libraries = {"pandas": pd.__version__, "numpy": np.__version__, "duckdb": duckdb.__version__,
                  "scikit-learn": sklearn.__version__}
     facts = facts_for(run["id"], a.card)
@@ -423,7 +486,7 @@ def _execute(ctx: JobContext) -> dict:
         "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?)",
         (sheet_id, dataset["id"], run["widget_id"], run["id"], version, json.dumps(facts, default=_plain), json.dumps(deps), now_iso()),
     )
-    model_card = {"run_id": run["id"], **a.card, "version": version, "scope": scope, "params": params,
+    model_card = {"run_id": run["id"], **a.card, **checks, "version": version, "scope": scope, "params": params,
                   "artifact_path": f"runs/{run['id']}/model.joblib", "fact_sheet_id": sheet_id,
                   "repro": {"libraries": libraries, "code_path": f"runs/{run['id']}/repro.py"}}
     (folder / "model_card.json").write_text(json.dumps(model_card, default=_plain, indent=1), encoding="utf-8")

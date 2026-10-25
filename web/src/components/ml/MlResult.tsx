@@ -28,7 +28,123 @@ export function MlResult({ widget, run, asTable }: { widget: Widget; run: Run | 
       </div>
     );
   }
-  return <Importance run={run} asTable={asTable} />;
+  return <Views run={run} asTable={asTable} initial={widget.spec.view.type} />;
+}
+
+const VIEW_NAMES: Record<string, string> = { importance: "Importance", confusion: "Confusion", roc: "ROC" };
+
+/** The view switcher (App Flow §9 step 4): importance, and for categories the confusion matrix and
+ * the ROC curve (two classes), all from the run's out-of-fold predictions. */
+function Views({ run, asTable, initial }: { run: Run; asTable?: boolean; initial: string }) {
+  const views = run.summary?.views ?? ["importance"];
+  const [view, setView] = useState(views.includes(initial) ? initial : "importance");
+  return (
+    <div className="flex h-full flex-col gap-1">
+      {views.length > 1 && (
+        <div role="tablist" aria-label="Result view" className="flex gap-1 pt-1">
+          {views.map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => setView(v)}
+              className={cn(
+                "h-6 rounded-md px-2 text-[12px] focus-visible:outline-2 focus-visible:outline-ring",
+                view === v ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {VIEW_NAMES[v] ?? v}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        {view === "confusion" ? <Confusion run={run} /> : view === "roc" ? <Roc run={run} /> : <Importance run={run} asTable={asTable} />}
+      </div>
+    </div>
+  );
+}
+
+/** Actual × predicted counts; the diagonal (right) in the accent tint. */
+export function ConfusionMatrix({ labels, matrix, target }: { labels: string[]; matrix: number[][]; target?: string | null }) {
+  const max = Math.max(1, ...matrix.flat());
+  return (
+    <table className="w-full max-w-[360px] border-separate border-spacing-1 text-[12px]" aria-label="Confusion matrix: actual by predicted">
+      <thead>
+        <tr>
+          <th className="text-left font-normal text-muted-foreground">{target ?? "actual"} ↓ · predicted →</th>
+          {labels.map((l) => <th key={l} className="font-mono font-normal text-muted-foreground">{l}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {labels.map((a, i) => (
+          <tr key={a}>
+            <th className="text-left font-mono font-normal text-muted-foreground">{a}</th>
+            {labels.map((p, j) => (
+              <td
+                key={p}
+                title={`actual ${a}, predicted ${p}: ${matrix[i][j].toLocaleString("en-US")}`}
+                className="h-8 rounded text-center font-mono"
+                style={{ background: `color-mix(in srgb, ${i === j ? "var(--chart-accent)" : "var(--chart-1)"} ${Math.round(12 + 50 * matrix[i][j] / max)}%, transparent)` }}
+              >
+                {matrix[i][j].toLocaleString("en-US")}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Confusion({ run }: { run: Run }) {
+  const res = useRunResults(run, "confusion");
+  if (!res.data) return <div className="h-full min-h-20 animate-pulse rounded-lg bg-muted" />;
+  const rows = res.data.rows as [string, string, number][];
+  const labels = [...new Set(rows.map((r) => r[0]))];
+  const matrix = labels.map((a) => labels.map((p) => rows.find((r) => r[0] === a && r[1] === p)?.[2] ?? 0));
+  const wrong = rows.filter((r) => r[0] !== r[1]).reduce((n, r) => n + r[2], 0);
+  return (
+    <div className="flex flex-col gap-1.5 pt-1">
+      <ConfusionMatrix labels={labels} matrix={matrix} target={run.target} />
+      <p className="text-[12px] text-muted-foreground">
+        Each row predicted by a model that never saw it; <span className="font-mono">{wrong.toLocaleString("en-US")}</span> predicted wrong.
+      </p>
+    </div>
+  );
+}
+
+/** The ROC curve (two classes): true-positive rate against false-positive rate, the diagonal is chance. */
+export function RocCurve({ points, auc, positive }: { points: { fpr: number; tpr: number }[]; auc: number; positive: string }) {
+  const S = 160;
+  const pad = 22;
+  const x = (v: number) => pad + v * (S - pad - 6);
+  const y = (v: number) => S - pad - v * (S - pad - 6);
+  return (
+    <figure className="flex flex-col gap-1">
+      <svg viewBox={`0 0 ${S} ${S}`} className="size-[170px] max-h-full shrink-0" role="img"
+        aria-label={`ROC curve for ${positive}: area under the curve ${auc.toFixed(3)}`}>
+        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(1)} stroke="var(--chart-grid)" strokeDasharray="3 3" />
+        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(0)} stroke="var(--chart-grid)" />
+        <line x1={x(0)} y1={y(0)} x2={x(0)} y2={y(1)} stroke="var(--chart-grid)" />
+        <polyline fill="none" stroke="var(--chart-accent)" strokeWidth={2} points={points.map((p) => `${x(p.fpr)},${y(p.tpr)}`).join(" ")} />
+        <text x={x(0.5)} y={S - 6} textAnchor="middle" fontSize={9} fill="var(--chart-label)">false positives</text>
+        <text x={8} y={y(0.5)} textAnchor="middle" fontSize={9} fill="var(--chart-label)" transform={`rotate(-90 8 ${y(0.5)})`}>true positives</text>
+      </svg>
+      <figcaption className="text-[12px] text-muted-foreground">
+        Predicting {positive}: area under the curve <span className="font-mono">{auc.toFixed(3)}</span> (0.5 is chance).
+      </figcaption>
+    </figure>
+  );
+}
+
+function Roc({ run }: { run: Run }) {
+  const res = useRunResults(run, "roc");
+  const card = run.model_card;
+  if (!res.data) return <div className="h-full min-h-20 animate-pulse rounded-lg bg-muted" />;
+  const points = (res.data.rows as [number, number, number][]).map(([fpr, tpr]) => ({ fpr, tpr }));
+  return <RocCurve points={points} auc={card?.roc?.auc ?? 0} positive={card?.roc?.positive ?? ""} />;
 }
 
 function Progress({ run, onCancel }: { run: Run; onCancel: () => void }) {

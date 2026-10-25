@@ -1,9 +1,10 @@
 """The chat loop (TRD §8.1), version 1 (Implementation Plan D4.3).
 
 Per message: context → route (`small`, schema `Route`, reasoning off) → clarification if ambiguous →
-resolve names → run up to two intents (`ask_data`, `find_rows`, `explain_widget`, `ask_history`,
-`create_widget`) → compose → verify → save the message with its focus. Intents that aren't built
-yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
+resolve names → run up to two intents → compose → verify → save the message with its focus. The
+intents are `ask_data`, `find_rows`, `explain_widget`, `ask_history` and `create_widget` (D4.3), and
+`ask_stats`, `ask_why`, `ask_model`, `ask_meaning` and `app_help` (D7.3, `insight.py`); each tab
+exposes its own set (TRD §8.2). Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
 the message is saved even if nobody is listening any more.
 
 Budgets per message: 8 answerer and action calls, `MESSAGE_TOKEN_BUDGET` tokens, 90 s.
@@ -15,7 +16,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
-from sherlock.agent import prompts
+from sherlock.agent import insight, prompts
 from sherlock.agent.answerers import CantAnswer, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import resolve
@@ -32,15 +33,24 @@ WALL_S = 90.0
 HISTORY = 6
 CARD_CHARS = 16_000  # about 4k tokens
 NOT_YET = {
-    "ask_why": "Finding what drives a column comes with the analysis menu, which isn't built yet.",
-    "ask_stats": "Statistical tests aren't built yet.",
-    "ask_model": "Models aren't built yet.",
-    "ask_meaning": "Explaining what a column means isn't built yet.",
-    "app_help": "Help about the app isn't built yet.",
-    "ask_story": "Story cards aren't built yet.",
+    "ask_story": "Answering from the story cards isn't built yet; each card's Ask why opens a question about it.",
     "update_widget": "Changing a widget from chat isn't built yet; use the widget's menu.",
 }
+# Tool exposure by tab (TRD §8.2): the answerers everywhere, actions where they belong.
+ANSWERERS = ("ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats", "ask_model",
+             "ask_meaning", "app_help")
+TOOLS = {
+    "dashboard": ANSWERERS + ("create_widget", "update_widget"),
+    "csv": ANSWERERS,
+    "flow": ANSWERERS + ("ask_story",),
+}
+ELSEWHERE = {
+    "create_widget": "Adding a widget works from the Dashboard tab; ask there, or use Add widget.",
+    "update_widget": "Changing a widget works from the Dashboard tab.",
+    "ask_story": "Questions about the story cards work from the Flow tab.",
+}
 DATA_INTENTS = ("ask_data", "find_rows")
+INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help")
 DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
 
 
@@ -181,7 +191,8 @@ class Agent:
         rows_scope = self._scope(context, types)
         base_context = self._context(card, rows_scope, history, focus, None, context)
 
-        route = self._route(question, base_context, scope)
+        tab = context.get("tab") if context.get("tab") in TOOLS else "dashboard"
+        route = self._route(question, base_context, scope, TOOLS[tab])
         if route.ambiguous and route.clarification and not clarified:
             clar = route.clarification.model_dump()
             self.emit("clarification", clar)
@@ -193,7 +204,7 @@ class Agent:
         resolved = resolve(self.db, dataset["id"], [e.model_dump() for e in route.entities], columns)
         ctx_text = self._context(card, rows_scope, history, focus, resolved, context)
         kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope)
-        blocks, sources, results, actions, notes, streamed = [], [], [], [], [], []
+        blocks, sources, results, actions, notes, streamed, computed = [], [], [], [], [], [], []
         focus_out = {"question": question, "intents": list(route.intents), "selection_id": rows_scope.selection_id}
 
         intents = list(dict.fromkeys(route.intents[:2]))
@@ -207,9 +218,21 @@ class Agent:
                 break
             kit.calls[0] += 1
             try:
+                if intent not in TOOLS[tab]:
+                    raise CantAnswer(ELSEWHERE.get(intent, "I can't do that here."))
+                if intent in INSIGHT:
+                    rid = f"r{len(results) + len(computed) + 1}"
+                    reply = self._insight(intent, kit, question, resolved, card, context, focus, rid)
+                    blocks += reply.blocks
+                    sources += reply.sources
+                    actions += reply.actions
+                    results += reply.results
+                    computed += [r.id for r in reply.results]
+                    focus_out.update(reply.focus)
+                    continue
                 if intent in ("ask_data", "find_rows"):
                     self.emit("status", {"text": "Running a query" if intent == "ask_data" else "Finding rows"})
-                    rid = f"r{len(results) + 1}"
+                    rid = f"r{len(results) + len(computed) + 1}"
                     res = kit.ask_data(question, rid) if intent == "ask_data" else kit.find_rows(question, rid, columns)
                     results.append(res)
                     streamed.append(table_block(res))
@@ -276,12 +299,22 @@ class Agent:
         if results:
             self.emit("status", {"text": "Writing the answer"})
             composed, _ = compose(self.llm, scope, question, results, columns, dataset["current_version"], rows_scope.selection_id)
+            by_id = {r.id: r for r in results}
+            # A model card's numbers have no query to pin: shown as a table, never a pinnable chart.
+            composed = [table_block(by_id[b["result"]]) if b["type"] == "chart" and b.get("result") in computed else b
+                        for b in composed]
+            # Of a model card's tables, show only those the prose cites.
+            cited = {r.get("key", "").split(":")[0] for b in composed if b["type"] == "text"
+                     for para in b["body"]["blocks"] for r in para["runs"] if r["type"] == "chip"}
+            composed = [b for b in composed if not (b["type"] == "table" and b.get("result") in computed and b["result"] not in cited)]
             blocks = composed + blocks
             for i, b in enumerate(blocks):
                 if b["type"] == "chart" and "widget_id" not in b:
                     actions.append({"kind": "pin", "block_index": i})
-            focus_out.update({"sql": results[0].template, "columns": [c["name"] for c in results[0].columns],
-                              "result_ids": [r.id for r in results]})
+            queried = [r for r in results if r.id not in computed]
+            if queried:
+                focus_out.update({"sql": queried[0].template, "columns": [c["name"] for c in queried[0].columns]})
+            focus_out["result_ids"] = [r.id for r in results]
         if notes and not blocks and any(n in NOT_YET.values() for n in notes):
             notes.append(self._suggestion(card))  # ASK-8: say what is answerable instead
         for note in notes:
@@ -298,11 +331,34 @@ class Agent:
                 text = f"{number['label']}: {number['formatted']}"
             elif results:
                 text = f"Here is the result ({results[0].row_count} rows)."
+        unique = []
+        for a in actions:  # two intents may offer the same action
+            if a not in unique:
+                unique.append(a)
+        actions = unique
         focus_out["actions"] = actions
         out = self._save(mid, "assistant", text, blocks=blocks, sources=sources, context=context, focus=focus_out,
                          route=route.model_dump(), tokens=scope.message_tokens[0])
         self.emit("message", out)
         return out
+
+    def _insight(self, intent: str, kit: Toolkit, question: str, resolved: dict, card: dict, context: dict,
+                 focus: dict | None, rid: str) -> "insight.Reply":
+        status = {"ask_stats": "Running a test", "ask_why": "Finding what drives it", "ask_model": "Reading the model card",
+                  "ask_meaning": "Looking at the column", "app_help": "Looking in the help"}[intent]
+        self.emit("status", {"text": status})
+        if intent == "ask_stats":
+            return insight.ask_stats(kit, question, resolved, card, rid)
+        if intent == "ask_why":
+            left = WALL_S - (time.monotonic() - self.started) - 15
+            filters = wc.parse_filter(context.get("global_filter"))
+            return insight.ask_why(kit, question, resolved, card, filters, rid, wait_s=max(0.0, min(insight.WAIT_S, left)),
+                                   status=lambda t: self.emit("status", {"text": t}))
+        if intent == "ask_model":
+            return insight.ask_model(kit, question, resolved, context, focus, rid)
+        if intent == "ask_meaning":
+            return insight.ask_meaning(kit, question, resolved, card, rid)
+        return insight.app_help(question)
 
     @staticmethod
     def _suggestion(card: dict) -> str:
@@ -325,9 +381,10 @@ class Agent:
         context = self._context(card, Scope(), [], None, None, {})
         return Toolkit(self.env, self.llm, scope, dataset, context, Scope()).create_widget(prompt, created_by)
 
-    def _route(self, question: str, context: str, scope: CallScope) -> Route:
+    def _route(self, question: str, context: str, scope: CallScope, tools=TOOLS["dashboard"]) -> Route:
+        intents = "\n".join(f"- {prompts.INTENT_LINES[i]}" for i in tools)
         messages = [{"role": "system", "content": prompts.SYSTEM},
-                    {"role": "user", "content": prompts.ROUTE.format(context=context, message=data_block(question))}]
+                    {"role": "user", "content": prompts.ROUTE.format(intents=intents, context=context, message=data_block(question))}]
         try:
             return self.llm.structured("small", messages, Route, purpose="route", scope=scope, reasoning=False).value
         except StructuredOutputError:

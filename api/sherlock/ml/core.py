@@ -170,4 +170,23 @@ def run(data, target, numeric, categorical, high_card, task, model, seed=42, n_f
     for k in ("auc", "mae"):
         if k in result:
             metrics[k] = round(result[k], 6)
-    return {"metrics": metrics, "baselines": base, "importance": imp, "rows": int(len(X))}
+    out = {"metrics": metrics, "baselines": base, "importance": imp, "rows": int(len(X))}
+    if task == "classification":
+        out["oof"] = out_of_fold(result["fitted"], X, y, data)
+    return out
+
+
+def out_of_fold(fitted, X, y, data):
+    """Each row's prediction from the fold that held it out: `_row_id`, actual, predicted and, for
+    two classes, the probability of the second class (sorted order)."""
+    frames = []
+    for p, test in fitted:
+        part = pd.DataFrame({"actual": y.iloc[test].astype(str).values,
+                             "predicted": pd.Series(p.predict(X.iloc[test])).astype(str).values}, index=X.index[test])
+        if y.nunique() == 2:
+            part["probability"] = p.predict_proba(X.iloc[test])[:, 1]
+        frames.append(part)
+    oof = pd.concat(frames).sort_index()
+    if "_row_id" in data.columns:
+        oof.insert(0, "_row_id", data.loc[oof.index, "_row_id"].astype(int).values)
+    return oof.reset_index(drop=True)

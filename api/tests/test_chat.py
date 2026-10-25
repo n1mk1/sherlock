@@ -136,7 +136,7 @@ def test_clarification_then_the_choice(client, ready):
 
 
 def test_honest_limits(client, ready):
-    _, msg = send(client, ready["id"], "what drives survival?")
+    _, msg = send(client, ready["id"], "make this a line chart")  # update_widget isn't built yet (D8.5)
     assert "isn't built yet" in msg["text"] and "“the rate of survived by" in msg["text"]
     _, msg = send(client, ready["id"], "nationality breakdown")
     assert msg["text"].startswith("This file has no column that answers that.")

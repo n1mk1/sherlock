@@ -129,6 +129,19 @@ def test_recipes_preview_run_results_code_and_cache(client):
     pdp = client.get(f"{API}/runs/{run['id']}/results", params={"view": "partial_dependence", "feature": "strong"}).json()
     assert pdp["kind"] == "numeric" and pdp["rows"][0][1] < pdp["rows"][-1][1]  # more `strong`, more likely
     assert client.get(f"{API}/runs/{run['id']}/model-card").json()["verdict_text"] == card["verdict_text"]
+    assert done["summary"]["views"] == ["importance", "confusion", "roc"]
+    conf = client.get(f"{API}/runs/{run['id']}/results", params={"view": "confusion"}).json()
+    assert [c["name"] for c in conf["columns"]] == ["actual", "predicted", "n"] and len(conf["rows"]) == 4
+    assert sum(r[2] for r in conf["rows"]) == card["rows"]["train"]
+    wrong_n = sum(r[2] for r in conf["rows"] if r[0] != r[1])
+    assert wrong_n == card["misclassified"] > 0
+    roc = client.get(f"{API}/runs/{run['id']}/results", params={"view": "roc"}).json()["rows"]
+    assert roc[0][:2] == [0.0, 0.0] and roc[-1][:2] == [1.0, 1.0] and len(roc) <= 50
+    assert abs(card["roc"]["auc"] - card["model"]["auc"]) < 0.03  # pooled out-of-fold vs the mean over folds
+    wrong = client.post(f"{API}/runs/{run['id']}/wrong-rows")
+    assert wrong.status_code == 201 and wrong.json()["row_count"] == wrong_n
+    page = client.get(f"{API}/datasets/{ds}/rows", params={"selection": wrong.json()["selection_id"], "limit": 500}).json()
+    assert page["total"] == wrong_n
     code = client.get(f"{API}/runs/{run['id']}/code").json()["python"]
     assert code.startswith("# Reproduces Sherlock run") and "def reproduce(df, seed=42):" in code
 

@@ -211,18 +211,20 @@ export type AnswerBlock =
   | { type: "number"; value: unknown; formatted: string; format: string; label: string; result?: string }
   | { type: "table"; columns: Column[]; rows: unknown[][]; total: number; selection_id?: string | null; result?: string; widget_id?: string }
   | { type: "chart"; spec: WidgetSpec; data: WidgetData; result?: string; widget_id?: string }
-  | { type: "text"; body: CardBody };
+  | { type: "text"; body: CardBody; labeled?: "general" };
 
 export interface Source {
-  kind: "sql" | "run" | "step" | "card" | "help";
+  kind: "sql" | "run" | "step" | "card" | "help" | "general";
+  run_id?: string;
   sql?: string | null;
   step_id?: string;
   label: string;
 }
 
 export interface MessageAction {
-  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export";
+  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export" | "open_model_card";
   block_index?: number;
+  run_id?: string;
   widget_id?: string;
   selection_id?: string;
 }

@@ -67,7 +67,9 @@ def resolve_chip(ref: str, results: dict[str, Result]) -> tuple[object, str, str
         raise ValueError(f"chip {ref!r} names a cell outside result {res.id} ({len(res.rows)} rows, {len(res.columns)} columns)")
     value = res.rows[r][c]
     column = res.columns[c]["name"]
-    return value, fmt(value, fmt_kind(value, column)), column
+    # A computed result (a model card) may say how each cell reads: its rows mix rates and counts.
+    kind = res.extra.get("formats", {}).get(f"{r}:{c}") or fmt_kind(value, column)
+    return value, fmt(value, kind), column
 
 
 def label_text(ref: str, columns: list[str]) -> str:
@@ -120,7 +122,7 @@ def table_block(res: Result) -> dict:
 
 def number_block(res: Result, r: int, c: int, label: str) -> dict:
     value = res.rows[r][c]
-    kind = fmt_kind(value, res.columns[c]["name"])
+    kind = res.extra.get("formats", {}).get(f"{r}:{c}") or fmt_kind(value, res.columns[c]["name"])
     return {"type": "number", "value": value, "formatted": fmt(value, kind), "format": kind, "label": label,
             "result": res.id, "cell": [r, c]}
 

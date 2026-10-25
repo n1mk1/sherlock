@@ -5,7 +5,7 @@
 // a status line, then its blocks, then the final message with its "How do you know?" sources.
 // The "Chat bar" setting pins it, hides it until pointed at, or hides it.
 import { ArrowRight, ChevronDown, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -237,6 +237,9 @@ function Thread({ dataset, messages, pending, onClose, onChoice }: {
   );
 }
 
+// The model card loads with the first answer that offers it, not with the page.
+const ModelCardDrawer = lazy(() => import("@/components/ml/ModelCardDrawer").then((m) => ({ default: m.ModelCardDrawer })));
+
 const UserBubble = ({ text }: { text: string }) => (
   <div className="max-w-[80%] self-end rounded-[12px] bg-secondary px-3 py-2 text-[14px]">{text}</div>
 );
@@ -246,8 +249,10 @@ function MessageView({ message, dataset, onChoice }: {
 }) {
   const pin = usePin(dataset.id);
   const navigate = useNavigate();
+  const [card, setCard] = useState<string | null>(null);
   if (message.role === "user") return <UserBubble text={message.text} />;
   const pinnable = new Set((message.actions ?? []).filter((a) => a.kind === "pin").map((a) => a.block_index));
+  const modelCard = (message.actions ?? []).find((a) => a.kind === "open_model_card");
   return (
     <div className="flex flex-col gap-3">
       {message.clarification && (
@@ -272,7 +277,13 @@ function MessageView({ message, dataset, onChoice }: {
           }) : undefined}
         />
       ))}
+      {modelCard?.run_id && (
+        <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>
+      )}
       {message.sources.length > 0 && <Sources sources={message.sources} />}
+      {modelCard && card && (
+        <Suspense fallback={null}><ModelCardDrawer datasetId={dataset.id} runId={card} onClose={() => setCard(null)} /></Suspense>
+      )}
     </div>
   );
 }

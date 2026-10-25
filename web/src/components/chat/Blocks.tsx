@@ -95,6 +95,13 @@ export function BlockView({ block, datasetId, onPin, pinning }: {
         </div>
       );
     case "text":
-      return <div className="text-[14px]"><RunsView body={block.body} /></div>;
+      // General knowledge (ask_meaning) is set apart from what the data says.
+      return block.labeled === "general" ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-2 text-[13px] text-foreground-2" title="From the model's general knowledge, not computed from your data">
+          <RunsView body={block.body} />
+        </div>
+      ) : (
+        <div className="text-[14px]"><RunsView body={block.body} /></div>
+      );
   }
 }

@@ -62,6 +62,11 @@ export interface ModelCard {
   params: Record<string, number>;
   repro: { libraries: Record<string, string>; code_path: string };
   status?: RunStatus;
+  // Classification only (out-of-fold predictions): the confusion matrix, the misclassified count, and
+  // for two classes the ROC curve on the second class.
+  confusion?: { labels: string[]; matrix: number[][] };
+  misclassified?: number;
+  roc?: { positive: string; auc: number; points: { fpr: number; tpr: number; threshold: number }[] };
 }
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "cancelled" | "outdated";
@@ -89,6 +94,9 @@ export interface Run {
     chosen_label: string;
     rows: number;
     excluded: number;
+    task: "classification" | "regression";
+    misclassified: number | null;
+    views: string[];
   } | null;
   progress: Progress | null;
   model_card?: ModelCard | null;
@@ -200,6 +208,10 @@ export function useRunActions(datasetId: string) {
         qc.setQueryData(mlKeys.run(run.id), run);
         refresh();
       },
+    }),
+    wrongRows: useMutation({
+      mutationFn: (runId: string) =>
+        request<{ selection_id: string; row_count: number; label: string }>("POST", `/api/v1/runs/${runId}/wrong-rows`),
     }),
     cancel: useMutation({
       mutationFn: (runId: string) => request<void>("POST", `/api/v1/runs/${runId}/cancel`),

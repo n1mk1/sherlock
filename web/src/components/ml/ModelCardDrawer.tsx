@@ -1,20 +1,36 @@
 // The model card drawer (PRD ML-3, ML-5; UI/UX brief §5.9): verdict, data, excluded columns with
 // reasons, method, baselines vs the model with its interval, importance, warnings with suggestions,
-// and Re-run when outdated. Compare with Auto is cut (cut 4: Auto is the only method).
-import { AlertTriangle, Code2 } from "lucide-react";
+// the confusion matrix and ROC curve for categories, "Who did it get wrong?" (the misclassified rows in
+// the CSV tab), and Re-run when outdated. Compare with Auto is cut (cut 4: Auto is the only method).
+// Opened from an analysis widget's footer, or from a chat answer about a run (no widget: no Re-run).
+import { AlertTriangle, Code2, Rows3 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { fmtMetric, METRIC_LABELS, useRun, useRunActions, useRunCode } from "@/api/ml";
-import type { Widget } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
+import { ConfusionMatrix, RocCurve } from "./MlResult";
 
 const H = ({ children }: { children: React.ReactNode }) => (
   <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{children}</h3>
 );
 
-export function ModelCardDrawer({ widget, runId, onClose }: { widget: Widget; runId: string | null; onClose: () => void }) {
+export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
+  datasetId: string; widgetId?: string; runId: string | null; onClose: () => void;
+}) {
   const run = useRun(runId);
-  const actions = useRunActions(widget.dataset_id);
+  const actions = useRunActions(datasetId);
+  const navigate = useNavigate();
+  const wrong = () =>
+    runId && actions.wrongRows.mutate(runId, {
+      onSuccess: (sel) => {
+        onClose();
+        navigate(`/d/${datasetId}/csv?rows=${sel.selection_id}`);
+        toast(`${sel.row_count.toLocaleString("en-US")} rows the model predicted wrong`);
+      },
+      onError: (e) => toast.error((e as Error).message),
+    });
   const [showCode, setShowCode] = useState(false);
   const code = useRunCode(runId, showCode);
   const card = run.data?.model_card;
@@ -28,11 +44,11 @@ export function ModelCardDrawer({ widget, runId, onClose }: { widget: Widget; ru
         <div className="flex flex-col gap-5 text-[13px]">
           <section>
             <p className="font-serif text-[20px] font-semibold leading-snug">{card.verdict_text}</p>
-            {run.data?.status === "outdated" && (
+            {run.data?.status === "outdated" && widgetId && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-warning p-2 text-warning">
                 <AlertTriangle className="size-4 shrink-0" />
                 <span className="flex-1">Outdated: the data changed after this ran on v{card.version}.</span>
-                <Button size="sm" onClick={() => actions.rerun.mutate(widget.id)} loading={actions.rerun.isPending}>Re-run</Button>
+                <Button size="sm" onClick={() => actions.rerun.mutate(widgetId!)} loading={actions.rerun.isPending}>Re-run</Button>
               </div>
             )}
           </section>
@@ -111,6 +127,20 @@ export function ModelCardDrawer({ widget, runId, onClose }: { widget: Widget; ru
               ))}
             </ol>
           </section>
+
+          {card.confusion && (
+            <section>
+              <H>Who it got wrong</H>
+              <p className="mb-1.5 text-muted-foreground">Each row predicted by a model that never saw it.</p>
+              <ConfusionMatrix labels={card.confusion.labels} matrix={card.confusion.matrix} target={card.target} />
+              {card.roc && <div className="mt-2"><RocCurve points={card.roc.points} auc={card.roc.auc} positive={card.roc.positive} /></div>}
+              {!!card.misclassified && (
+                <Button size="sm" className="mt-2" onClick={wrong} loading={actions.wrongRows.isPending}>
+                  <Rows3 /> Who did it get wrong? ({card.misclassified.toLocaleString("en-US")} rows)
+                </Button>
+              )}
+            </section>
+          )}
 
           {card.warnings.length > 0 && (
             <section>

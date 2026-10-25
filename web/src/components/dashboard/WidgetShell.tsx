@@ -23,7 +23,7 @@ import { useUi } from "@/state/ui";
 
 const VIEW_LABELS: Record<string, string> = {
   bar: "Bar", line: "Line", area: "Area", pie: "Pie", ring: "Ring", kpi: "KPI tile", table: "Table",
-  histogram: "Histogram", heatmap: "Heatmap", box: "Box plot", scatter: "Scatter", importance: "Importance",
+  histogram: "Histogram", heatmap: "Heatmap", box: "Box plot", scatter: "Scatter", importance: "Importance", confusion: "Confusion matrix", roc: "ROC curve",
 };
 
 /** Views that can draw this result (the menu's Change view). */
@@ -128,7 +128,7 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
           </MenuTrigger>
           <MenuContent>
             <SubMenu label="Change view" icon={<LayoutGrid />}>
-              {(isMl ? ["importance", "table"] : compatibleViews(data)).map((v) => (
+              {(isMl ? [...(run?.summary?.views ?? ["importance"]), "table"] : compatibleViews(data)).map((v) => (
                 <MenuCheck key={v} checked={widget.spec.view.type === v} onSelect={() => changeView(v)}>
                   {VIEW_LABELS[v] ?? v}
                 </MenuCheck>
@@ -196,7 +196,10 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
           </footer>
         </>
       )}
-      {isMl && <ModelCardDrawer widget={widget} runId={cardOpen ? widget.run_id ?? null : null} onClose={() => setCardOpen(false)} />}
+      {isMl && (
+        <ModelCardDrawer datasetId={widget.dataset_id} widgetId={widget.id} runId={cardOpen ? widget.run_id ?? null : null}
+          onClose={() => setCardOpen(false)} />
+      )}
     </article>
   );
 }

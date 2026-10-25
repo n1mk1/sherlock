@@ -646,6 +646,10 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/rout
 - **`GET /runs/{rid}/model-card`** is `409` until there is one. `GET /runs/{rid}/code` serves `repro.py` once it's written.
 - **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6).
 - **`GET /widgets/{wid}/data` for an analysis widget** returns its run's importance plus `run` (the `Run` summary), so the widget can show progress, the verdict or "Outdated". An analysis ignores the dashboard's filter.
+- **Confusion, ROC and wrong rows (2026-10-25, D7.4).**
+  - For a classification run, `results?view=confusion` gives `actual`, `predicted` and `n` for every pair of classes. `view=roc` gives `fpr`, `tpr` and `threshold` (at most 50 points) for two classes. Both come from the out-of-fold predictions; a run without them answers `422`.
+  - `Run.summary` lists the run's `views`, `task` and `misclassified` count.
+  - `POST /runs/{rid}/wrong-rows` (added) saves a selection of the misclassified rows: their `_row_id`s, labelled "<target>: predicted wrong". It returns `{ selection_id, row_count, label }` for the CSV tab's `?rows=` ("Who did it get wrong?", App Flow §9).
 - **Not built:** `explain-row` and `predictions` (cut 7), and `compare-auto` (cut 4).
 
 ### 4.9 Chat
@@ -969,6 +973,10 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
   - `forced_in`: a column put back in although a check excluded it.
 - **`limits`, `sample`.** As above.
 - **Run context.** `version`, `scope`, `params`, `artifact_path`, `fact_sheet_id`, and `repro: { libraries: { pandas, numpy, duckdb, scikit-learn }, code_path }`.
+- **Classification extras (2026-10-25, D7.4).** These come from the out-of-fold predictions:
+  - `confusion: { labels, matrix }`: actual rows by predicted columns, labels in sorted order;
+  - `misclassified`: the count of rows predicted wrong;
+  - for two classes, `roc: { positive, auc, points: [{ fpr, tpr, threshold }] }`. Its pooled out-of-fold AUC is within a few thousandths of `model.auc`, which is the mean over folds.
 - **Not built.** `coefficients` and the method checks (cut 4), and `calibration` (no predictions are served, cut 7).
 
 ### 6.7 Reproduction code (runs and edit batches)
@@ -1359,10 +1367,13 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
 - **Step 8, explain.** Permutation importance on each held-out fold (10 repeats, the task's scorer), averaged, clipped at 0 and scaled so the strongest is 1.
   - **Decision:** no SHAP. It isn't a dependency, and permutation importance is model-agnostic and reproducible in the notebook with scikit-learn alone.
   - Partial dependence covers the top five factors on the winner refitted on all rows. Numbers use ten quantiles from 5% to 95%; categories use their ten most common values. Two-class targets are shown as the probability of the second class in sorted order.
-- **Step 9 (predict).** Not built (cut 7).
+- **Step 9 (predict).** Not built (cut 7). The out-of-fold part is built for classification (2026-10-25, D7.4):
+  - `core.run` returns `oof`: each row's `_row_id`, `actual`, `predicted` and, for two classes, `probability` of the second class, each from the fold that held it out. `repro.py` returns it too.
+  - The runner stores it as `results/oof.json` and derives the confusion matrix, the misclassified count and the ROC curve from it.
+  - Predictions for blank-target rows, OOD and per-row explanations stay cut.
 - **Step 10, artifacts.** `runs/<id>/`:
   - `repro.py`, `model.joblib` (the refitted winner) and `model_card.json`;
-  - `results/importance.json` and `results/partial_dependence.json`. These are JSON because pyarrow isn't a dependency.
+  - `results/importance.json` and `results/partial_dependence.json`, plus `results/oof.json` for classification. These are JSON because pyarrow isn't a dependency.
   - Run columns: `features_json` (the features used), `target`, `artifact_dir`, `repro_path`, `sample_json`, `libraries_json`.
   - **Fact sheet** (§6.4): `model_score`, `best_baseline`, `lift` (points or R²), `rows`, `verdict`, `auc` and `driver_1…3` with their importance. Each carries `run_id` and a `formula` naming the held-out metric. Stored in `fact_sheets` with `run_id`, and copied for the widget's card.
 - **The cache.** The key is sha1(version, scope, recipe, method, params). A done, queued or running run with the same key is returned as it is. A failed or cancelled one starts again under the same id.
@@ -1579,7 +1590,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
   - **`create_widget`.** `medium`, schema `WidgetDraft` (`reading`, `title`, `sql`, `view`, `x`, `y`). It's validated by creating the widget (created by `chat`), with one repair on failure. It's placed under the layout, and the answer shows it with `open_widget`.
   - **`explain_widget`** names the focused or resolved widget and returns its SQL as the source.
   - **`ask_history`** finds steps by shared words in their summary, columns and decisions, or else the latest five, and lists them with their reasons. The sources are the steps.
-  - **Not built yet:** `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, `ask_story` and `update_widget` get one honest sentence each. When nothing else was answered, a suggestion built from the file's own columns follows ("the rate of survived by pclass"), as ASK-8 asks.
+  - **Not built yet:** `ask_story` and `update_widget` get one honest sentence each. (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help` came with D7.3; see §8.2.) When nothing else was answered, a suggestion built from the file's own columns follows ("the rate of survived by pclass"), as ASK-8 asks.
 - **Compose (`compose.py`).**
   - It uses `medium`, not `small`. Live, Nano strung chips together with no words between them and left sentences unfinished.
   - The `Answer` schema has `prose` (text, chip and label runs, at least one), `shape`, `number` (a chip), `label` and `chart`. Chips name result cells.
@@ -1619,6 +1630,42 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 Actions: `create_widget(prompt|spec)`, `update_widget(id, patch|prompt)`, `run_recipe(RunRequest)`, `clean_selection(selection, columns, mode)` → proposal (Approve starts the Clean with AI job), `edit_cells(edits)` → proposal, `open_export(options)`, `add_canvas_node`, `add_canvas_edge`, `propose_card_edit(card_id, instruction)` → proposal, `propose_clean_step` (P1), `add_computed_column` (P1) → proposal.
 
 Tool exposure by tab: Dashboard → answerers + `create_widget`, `update_widget`, `run_recipe`; CSV → answerers + `find_rows`, `clean_selection`, `edit_cells`; Flow → answerers + canvas actions + `ask_story`; everywhere → `ask_data`, `ask_stats`, `ask_history`, `ask_meaning`, `app_help`.
+
+As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
+- **Tool exposure by tab (`loop.py::TOOLS`).**
+  - Every tab exposes the answerers: `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help`.
+  - Dashboard adds `create_widget` and `update_widget`, and Flow adds `ask_story`. CSV adds nothing yet: `clean_selection` and `edit_cells` are D8.5.
+  - The route prompt lists only the exposed intents, one line each (`prompts.INTENT_LINES`). An intent routed on a tab that doesn't expose it gets a sentence saying where it works.
+  - `run_recipe` is `ask_why`.
+- **Grounding.** Every number is computed in code. `ask_stats`, `ask_why`, `ask_meaning` and "who did it get wrong?" write their prose in code, with each number a chip naming a cell of a result. `ask_model` hands the model card to the composer as results (rows of measures and values, with per-cell formats so rates read as percentages), and the composer cites their cells as for `ask_data`.
+- **Computed results.** Results that come from a model card or a test (`extra.kind = computed`) are never shown as a pinnable chart, never become the focus's SQL, and only the tables the prose cites are shown. Repeated actions are listed once.
+- **`ask_stats`.**
+  - The two columns come from the message's resolved names (a value counts for its column). When fewer than two are named, `medium` with schema `StatsDraft` (`reading`, `outcome`, `group`, checked against the columns) picks them.
+  - A column is a number when it is int or float with more than 10 distinct values, and the number is the outcome.
+  - The test, run with SciPy on every row with both filled in (no 2,000-row cap):
+    - a number across two groups: Welch's t-test with Cohen's d, then Mann-Whitney U with the rank-biserial r;
+    - across 3–20 groups: Kruskal-Wallis with epsilon squared;
+    - two categories (at most 20 values each): chi-square with Cramér's V;
+    - two numbers: Pearson and Spearman.
+  - The answer gives the p-value ("<0.001" below that), the effect size with its size in words, and n as chips. It says whether the pattern is unlikely to be chance at the usual threshold (0.05), and that it's an association. It adds the test table and a per-group summary query (means and medians, or counts).
+- **`ask_why`.**
+  - The target is a named column the recipe can explain, else the first target candidate.
+  - It runs a `driver_analysis` `RunRequest` (Auto) on the chat's rows (selection and dashboard filter) through the runner, so the dashboard's driver run is reused from the cache when the request is the same.
+  - A new run is waited for up to 60 s within the message budget, with its progress as the status line. If it's still running, the answer says so.
+  - The answer gives the verdict in words, the metric against the best simple rule, and the three strongest factors as chips, plus the importance table and `open_model_card`.
+- **`ask_model`.**
+  - The run is the focused widget's, the previous answer's, one whose target the message names, or the newest finished one.
+  - "Who did it get wrong?" (wrong, misclassified, mistakes, errors, missed) saves the wrong-rows selection and answers in code with the count, the first 20 rows, `open_rows` and `open_model_card`.
+  - A question about one row ("row 12") is refused honestly: per-row explanations need predictions (cut 7).
+  - Anything else is composed from the model card's measures, importance, excluded columns with reasons, warnings and alternatives.
+- **`ask_meaning`.**
+  - The column is named in the message, or appears in it as a bare word.
+  - What the data says is written in code: the type and role, filled and total rows, distinct values and the range, with the eight most common values.
+  - What such a column usually records comes from `medium` with schema `Meaning` (one or two sentences, no digits). It is shown in a block marked `labeled: "general"` that begins "In general (not from your data):", with a `general` source.
+- **`app_help`.**
+  - Retrieval over the `##` sections of `docs/help/*.md`: shared words, headings counted three times, plus fuzzy heading similarity. The best section is answered with its heading as a label, "See also" names the next good ones, and the source names the file.
+  - No model call. The help files ship in the image (`COPY docs/help`).
+- **Fixtures.** The new model calls (route, `stats`, `meaning`, compose) were recorded live with `LLM_RECORD` on 2026-10-25 and added to `tests/fixtures/llm/chat_titanic.json`. `tests/test_answerers.py` covers each answerer and the tab exposure.
 
 ### 8.3 Prompt structure (all roles)
 
@@ -1707,7 +1754,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   - **Build.** `docker build -f api/Dockerfile -t sherlock .` from the repo root:
     - Stage 1 is `node:24-bookworm-slim`, running `pnpm build`.
     - Stage 2 is `python:3.12-slim-bookworm` with uv 0.11.28 and a frozen, no-dev `uv sync` into `/opt/venv`.
-    - `.dockerignore` keeps `.env`, `.git`, `node_modules`, `.venv` and `docs` out of the build context.
+    - `.dockerignore` keeps `.env`, `.git`, `node_modules`, `.venv` and `docs` out of the build context, except `docs/help`, which the image copies to `/app/docs/help` for the chat's `app_help` (2026-10-25, D7.3).
   - **Users.** It creates the `app` (uid 10001) and `sandbox` (uid 10002) users.
   - **Entrypoint.** `api/docker/entrypoint.sh`, as root:
     1. creates `$DATA_DIR`, chowns it to `app` and sets mode `700`, tolerating a filesystem that refuses either
