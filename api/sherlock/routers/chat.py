@@ -12,6 +12,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from sherlock.agent import flow
 from sherlock.agent.loop import Agent, to_message
 from sherlock.db.connection import connect, get_db
 from sherlock.db.users import User
@@ -119,13 +120,19 @@ def pin(
     user: User = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """Pin a chart or table answer to the dashboard as a widget made by chat. Flow comes with D8."""
+    """Pin a chart or table answer to the dashboard as a widget made by chat, or (`target: "flow"`) an
+    answer's text to the canvas as an `answer` card."""
     dataset = check_dataset(db, user.id, owned_message.dataset_id)
-    if body.get("target", "dashboard") != "dashboard":
-        raise ApiError(422, "invalid", "Adding answers to Flow isn't built yet.")
+    target = body.get("target", "dashboard")
+    if target not in ("dashboard", "flow"):
+        raise ApiError(422, "invalid", "target: dashboard or flow")
     row = db.execute("SELECT * FROM messages WHERE id = ?", (owned_message.id,)).fetchone()
     blocks = json.loads(row["blocks_json"])
     index = body.get("block_index")
+    if target == "flow":
+        if not isinstance(index, int):
+            raise ApiError(422, "invalid", "block_index: no such block in this message")
+        return flow.add_to_flow(db, request.app.state.bus, dataset, row, index)
     if not isinstance(index, int) or not 0 <= index < len(blocks):
         raise ApiError(422, "invalid", "block_index: no such block in this message")
     block = blocks[index]

@@ -70,14 +70,20 @@ def edit_card(cid: str, body: CardEdit, request: Request, _: Owned = Depends(own
 
 @router.post("/cards/{cid}/refresh", status_code=201)
 def refresh_card(cid: str, request: Request, _: Owned = Depends(owned("card")), db: sqlite3.Connection = Depends(get_db)) -> dict:
+    from sherlock.jobs.runner import insert_job, to_job
+
     r = _card(db, cid)
     dataset = _dataset(db, r["dataset_id"])
+    if r["kind"] in ("synthesis", "answer") and not r["widget_id"]:
+        if r["kind"] == "answer":
+            raise ApiError(409, "conflict", "An answer card keeps the numbers it was given; ask again for new ones.")
+        job = insert_job(db, dataset["user_id"], dataset["id"], "stories", {"synthesis_ids": [cid], "reason": "refresh"})
+        request.app.state.jobs.wake()
+        return to_job(job)
     queue_stories(db, dataset, [r["widget_id"]] if r["widget_id"] else [], "refresh")
     request.app.state.jobs.wake()
     job = db.execute("SELECT * FROM jobs WHERE dataset_id = ? AND kind = 'stories' ORDER BY created_at DESC LIMIT 1",
                      (dataset["id"],)).fetchone()
-    from sherlock.jobs.runner import to_job
-
     return to_job(job)
 
 
@@ -139,12 +145,19 @@ def evidence(cid: str, chip_id: str, _: Owned = Depends(owned("card")), db: sqli
         return {"value": chip["value"], "unverified": True, "label": "Typed by you, not computed", "version": card["version"]}
     sheet = stories.get_sheet(db, card["fact_sheet_id"])
     f = (sheet or {}).get("facts", {}).get(chip["key"])
+    via = None
+    if f is None and sheet is None and "." in (chip["key"] or ""):
+        # A synthesis or answer card's chip resolves through the card it cites (TRD §7.4.1).
+        source = stories.card_row(db, chip["key"].partition(".")[0])
+        sheet = stories.get_sheet(db, source["fact_sheet_id"]) if source["dataset_id"] == card["dataset_id"] else None
+        f = (sheet or {}).get("facts", {}).get(chip["key"].partition(".")[2])
+        via = source["id"]
     if f is None:
         raise not_found("This number's fact is no longer on the card's fact sheet.")
     return {"key": chip["key"], "value": f["value"], "formatted": f["formatted"], "label": f["label"],
             "sql": f.get("sql"), "cell": f.get("cell"), "from": f.get("from"), "formula": f.get("formula"),
             "method": f.get("method"), "run_id": f.get("run_id"), "computed_at": sheet["computed_at"],
-            "version": sheet["version"]}
+            "version": sheet["version"], "card_id": via}
 
 
 @router.get("/datasets/{dataset_id}/relations")

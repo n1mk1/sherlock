@@ -26,6 +26,26 @@
     "title": "Body_upload_dataset_api_v1_datasets_post",
     "type": "object"
    },
+   "CanvasPut": {
+    "additionalProperties": false,
+    "properties": {
+     "canvas": {
+      "additionalProperties": true,
+      "title": "Canvas",
+      "type": "object"
+     },
+     "etag": {
+      "title": "Etag",
+      "type": "string"
+     }
+    },
+    "required": [
+     "canvas",
+     "etag"
+    ],
+    "title": "CanvasPut",
+    "type": "object"
+   },
    "CardEdit": {
     "additionalProperties": false,
     "properties": {
@@ -1510,6 +1530,102 @@
     "summary": "Patch Dataset",
     "tags": [
      "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/canvas": {
+   "get": {
+    "operationId": "get_canvas_api_v1_datasets__dataset_id__canvas_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Canvas Api V1 Datasets  Dataset Id  Canvas Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Canvas",
+    "tags": [
+     "canvas"
+    ]
+   },
+   "put": {
+    "operationId": "put_canvas_api_v1_datasets__dataset_id__canvas_put",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CanvasPut"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Put Canvas Api V1 Datasets  Dataset Id  Canvas Put",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Put Canvas",
+    "tags": [
+     "canvas"
     ]
    }
   },
@@ -3678,7 +3794,7 @@
   },
   "/api/v1/messages/{mid}/pin": {
    "post": {
-    "description": "Pin a chart or table answer to the dashboard as a widget made by chat. Flow comes with D8.",
+    "description": "Pin a chart or table answer to the dashboard as a widget made by chat, or (`target: \"flow\"`) an\nanswer's text to the canvas as an `answer` card.",
     "operationId": "pin_api_v1_messages__mid__pin_post",
     "requestBody": {
      "content": {

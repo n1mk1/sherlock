@@ -615,6 +615,21 @@ Story cards API as implemented (2026-10-25, Implementation Plan D6.1–D6.3, `sh
 
 JSON Canvas nodes: `{ id, type: "text"|"file"|"link"|"group", x, y, width, height, text?, color? }`. Sherlock stores cards as `type: "text"` with `text` empty and an extra `sherlock: { card_id }` property (JSON Canvas allows extra keys); notes are `type: "text"` with their text. Edges: `{ id, fromNode, toNode, label?, color? }` plus `sherlock: { made_by: "user"|"ai", kind: "summarized_in"|"next"|"contrasts"|"custom" }`. Export strips nothing (readers ignore unknown keys).
 
+Canvas API as implemented (2026-10-25, Implementation Plan D8.1, `sherlock/canvas/service.py`, `sherlock/routers/canvas.py`):
+- **`GET /canvas`** answers `{ canvas, etag }`. A dataset with no canvas yet answers `{ nodes: [], edges: [] }` and the etag of that empty document, which a first `PUT` sends back.
+- **The etag** is the sha1 of the stored JSON (sorted keys, compact). `PUT` with any other etag is `409 conflict` with the current etag in `error.etag`, and nothing is written.
+- **Validation on `PUT`** (`422` with the reason):
+  - At most 400 nodes and 800 edges. IDs are 1–64 characters and unique.
+  - A node's `type` is `text`, `file`, `link` or `group`. `x` and `y` are numbers within ±1,000,000, and `width` and `height` within 1–4,000. `text`, `file`, `url` and `label` are at most 4,000 characters.
+  - A card node's `sherlock.card_id` names a card of this dataset (a soft-deleted one counts), at most once per canvas; its `text` is stored empty.
+  - An edge joins two different nodes on the canvas. `fromSide` and `toSide` are `top`, `right`, `bottom` or `left`, and a label is at most 200 characters. `sherlock` defaults to `{ made_by: "user", kind: "custom" }`.
+  - Only the JSON Canvas keys and `sherlock` are kept; anything else is dropped.
+- **A save** that changes the document bumps `datasets.state_rev` (so the notebook export cache sees it) and emits `canvas.updated` with `{ etag }`.
+- **Pruning on read.** A card node whose card no longer exists, and its edges, are removed; the canvas is written back, so the etag changes. A soft-deleted card's node stays, and the client hides it until the card is restored.
+- **AI writes** (`add_canvas_node`, `add_canvas_edge`) go through `mutate`: read, change, validate and store in one `BEGIN IMMEDIATE` transaction, so they can't race a tab's save. The tab then gets `canvas.updated`, and its next `PUT` with the old etag is `409`.
+- **Placement.** An AI-placed card is 240 × 170. A synthesis goes right of its sources (160px past the rightmost), level with their centroid, so it doesn't cover them; a card with no placed sources goes right of everything.
+- **Ownership.** Another user's dataset is `404`, as for every dataset route.
+
 ### 4.8 ML
 
 | Method | Path | Body / Query | Response |
@@ -692,6 +707,11 @@ Chat API as implemented (2026-10-25, Implementation Plan D4.3, `sherlock/routers
   - In a `text` block's `CardBody`, chip runs carry the cell reference as `key` (`r1:0:2`, or `r1:total`), the formatted `value` and the `raw` value. Label runs carry the `text` code rendered for their `ref`; refs can also be `widget:<id>` and `step:<id>`.
 - **`POST /messages/{mid}/pin`.** With `target: "dashboard"`, a chart block becomes a widget from its spec, and a table block from the answer's query as a table. Either is made by `chat`, titled with the question, and placed under the layout. It answers `201` with the `Widget`. `target: "flow"` is `422` until Flow (D8).
 - **`POST /widgets` with `{ prompt }`** (the Add widget drawer's "Describe it") runs the agent's `create_widget` action without a thread message, made by `user`, and counts against the LLM rate limit. Failing twice is `422` with the reason.
+- **`POST /messages/{mid}/pin` with `target: "flow"`** (2026-10-25, D8.1) takes a text block with chips and answers `201` with a `Card` of kind `answer`, placed on the canvas right of everything.
+  - The card's fact sheet (no widget) holds one fact per chip, keyed as the chip is. A result cell's fact keeps its value, formatted value and cell, with the answer's query as `sql`. A card fact (`<card_id>.<fact key>`) is copied from that card's sheet, and `source_card_ids` lists those cards.
+  - The headline is the question, as a label run (`ref: "question"`), and the body is the block's runs.
+  - Any other block, or general knowledge, is `422`. A cited card fact that is gone is `409`.
+  - An answer card's Refresh is `409`: it keeps the numbers it was given.
 
 ### 4.10 Jobs
 
@@ -1344,6 +1364,17 @@ Custom-chart candidates (2026-10-25, D6.5, `dashboard/candidates.py::_distributi
 - **Direction** ("Take the story toward X"): creates a `building` card with `job_id`. The job runs widget query → fact sheet → story → verify and emits `card.updated` per stage. On success the card becomes a `widget` card; on failure its status is `failed` with the stage and error, and Retry re-runs the job.
 - Card rewrites and suggested revisions use the Story schema and the same verify step before they are offered.
 
+As built (2026-10-25, Implementation Plan D8.1, `sherlock/stories/synthesis.py`, `sherlock/agent/flow.py`), with cuts 2 and 3 applied (no direction cards and no rewrites):
+- **Sources.** The selected cards, at most eight. A card with a fact sheet (a widget card, the overview, an `answer` card) is cited directly. A synthesis card stands for the cards its chips name. Fewer than two citable cards is "Select at least two cards to make sense of them."
+- **Prompt.** Each card is listed as `c<i>` with its title, what it says (its headline and body as text, 400 characters at most) and up to twelve facts as `c<i>.<fact key> · label · value`. The allowed labels are the `column:` and `value:` labels the cards already use, plus their fact sheets' columns.
+- **Model and checks.** `medium`, schema `Story`, purpose `synthesis`, temperature 0. The narrator's checks apply: chips name listed facts, labels name this file's columns, words around the chips, no numbers in words, no causal wording. One repair, then the fallback.
+- **Stored keys.** Code turns `c<i>.<fact key>` into `<card_id>.<fact key>`. Headline chip IDs start with `h` and body chip IDs with `b`, so they are unique on the card.
+- **Fallback.** The headline "What these cards say together", and a bullet per source card: its title (a `card:<id>` label) and its headline's runs, chips re-keyed through the card.
+- **The card.** `kind: "synthesis"`, `source_card_ids` the selection, no fact sheet, `status: "ready"`, the current version, `narrated_by` the model or null. `Card.facts` for it is built from its chips, each read from the cited card's current sheet.
+- **Evidence.** A chip keyed `<card_id>.<fact key>` resolves through that card's sheet. The answer adds `card_id`, the card the fact came from.
+- **`sources_changed`.** With cut 6 there is no material hash. After every stories run, cascade or refresh, each `ready` synthesis card compares its chips' values with the cited facts' current `formatted` values. If one differs, or its fact is gone, the card becomes `sources_changed`.
+- **Refresh** (`POST /cards/{cid}/refresh` on a synthesis card) queues a `stories` job with `{ synthesis_ids: [cid], reason: "refresh" }`, which writes the synthesis again from its sources' current facts. A card the user edited gets it as a suggestion. The card keeps its ID and its place on the canvas, and gets the changed badge. Such a job is never merged with a waiting widget stories job.
+
 Material-change detection (removed by cut 6, Implementation Plan §2.0; every affected card is narrated again): `material_hash` over rankings (ordered group labels), trend sign, significance flag, and key values bucketed to 2 significant figures. On cascade, if the hash is unchanged, only chip values refresh (no LLM call); otherwise re-narrate.
 
 As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with cut 6 applied:
@@ -1670,6 +1701,11 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 Actions: `create_widget(prompt|spec)`, `update_widget(id, patch|prompt)`, `run_recipe(RunRequest)`, `clean_selection(selection, columns, mode)` → proposal (Approve starts the Clean with AI job), `edit_cells(edits)` → proposal, `open_export(options)`, `add_canvas_node`, `add_canvas_edge`, `propose_card_edit(card_id, instruction)` → proposal, `propose_clean_step` (P1), `add_computed_column` (P1) → proposal.
 
 Tool exposure by tab: Dashboard → answerers + `create_widget`, `update_widget`, `run_recipe`; CSV → answerers + `find_rows`, `clean_selection`, `edit_cells`; Flow → answerers + canvas actions + `ask_story`; everywhere → `ask_data`, `ask_stats`, `ask_history`, `ask_meaning`, `app_help`.
+
+As built for the Flow tab (2026-10-25, Implementation Plan D8.1, `sherlock/agent/flow.py`):
+- **"Make sense of this."** On the Flow tab, a message that asks to make sense of, sum up, summarize or synthesize the cards (`flow.MAKE_SENSE`) goes straight to `ask_story` without a routing call. With two or more `selected_card_ids` it writes a synthesis card (§7.4.1). It places the card right of the selected nodes with an edge labelled "summarized in" from each (`made_by: "ai"`, `kind: "summarized_in"`). The answer says so, shows the card's headline and body, and lists each source card as a `card` source.
+- **`ask_story`** (any other question routed to it). It reads the selected cards, else the cards on the canvas, else all live cards (at most eight). `medium` answers with schema `StoryAnswer` (`prose`: runs), purpose `ask_story`, under the synthesis checks. Chips are keyed `<card_id>.<fact key>` and filled by code. The sources are the cards.
+- **Add to Flow.** Every text block of an answer with at least one chip, other than general knowledge, gets an `add_to_flow` action with its `block_index`; a synthesis answer doesn't, because its card is already on the canvas.
 
 As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
 - **Tool exposure by tab (`loop.py::TOOLS`).**

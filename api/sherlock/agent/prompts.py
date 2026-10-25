@@ -21,7 +21,7 @@ INTENT_LINES = {
     "ask_model": "ask_model: questions about the model of an analysis that already ran (\"how accurate is the model?\", \"why was boat left out?\", \"what did it compare against?\", \"who did the model get wrong?\")",
     "ask_meaning": "ask_meaning: what a column or a code in it means (\"what does pclass mean?\", \"what is sibsp?\")",
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I export a notebook?\")",
-    "ask_story": "ask_story: the story cards",
+    "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about class?\", \"make sense of this\")",
 }
 
 ROUTE = """Classify the user's latest message about this file.

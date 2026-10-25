@@ -124,6 +124,16 @@ def to_card(db: sqlite3.Connection, r: sqlite3.Row) -> dict:
     """A card in the TRD §4.6 shape, plus its fact values (`facts`: key → {formatted, label}) so chips
     render from the latest sheet, and the related widgets."""
     sheet = get_sheet(db, r["fact_sheet_id"])
+    if sheet:
+        facts = {k: {"formatted": f["formatted"], "label": f["label"]} for k, f in sheet["facts"].items()}
+    else:  # a synthesis or answer card cites its sources' facts as `<card_id>.<fact key>`
+        facts = {}
+        for part in (json.loads(r["headline_json"]), json.loads(r["body_json"])):
+            for run in (run for b in part.get("blocks", []) for run in b["runs"]):
+                if run["type"] == "chip" and run.get("key") and "." in run["key"]:
+                    f = fact_for(db, r["dataset_id"], run["key"])
+                    if f:
+                        facts[run["key"]] = {"formatted": f["formatted"], "label": f["label"]}
     related = []
     if r["widget_id"]:
         for wid in related_ids(db, r["dataset_id"], r["widget_id"]):
@@ -138,9 +148,17 @@ def to_card(db: sqlite3.Connection, r: sqlite3.Row) -> dict:
         "changed_badge": bool(r["changed_badge"]),
         "suggestion": json.loads(r["suggestion_json"]) if r["suggestion_json"] else None,
         "version": r["version"], "narrated_by": r["narrated_by"], "updated_at": r["updated_at"],
-        "facts": {k: {"formatted": f["formatted"], "label": f["label"]} for k, f in (sheet["facts"] if sheet else {}).items()},
+        "facts": facts,
         "related": related,
     }
+
+
+def fact_for(db: sqlite3.Connection, dataset_id: str, key: str) -> dict | None:
+    """The fact a `<card_id>.<fact key>` chip names, from that card's current fact sheet."""
+    cid, _, fkey = key.partition(".")
+    r = db.execute("SELECT fact_sheet_id FROM cards WHERE id = ? AND dataset_id = ?", (cid, dataset_id)).fetchone()
+    sheet = get_sheet(db, r["fact_sheet_id"]) if r else None
+    return sheet["facts"].get(fkey) if sheet else None
 
 
 def card_row(db: sqlite3.Connection, card_id: str) -> sqlite3.Row:
@@ -274,6 +292,9 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
                 emit_card(db, env.bus, dataset, cid, scope.job_id)
     progress(len(chosen) + 1, len(chosen) + 1, "Writing the overview")
     tell_overview(env, llm, scope, dataset, rows, dataset_columns, changed=reason == "cascade")
+    from sherlock.stories import synthesis  # a synthesis citing a number that moved says so
+
+    synthesis.check_sources(db, env.bus, dataset, scope.job_id)
     _bump(db, dataset["id"])
     return {"cards": done, "widgets": len(chosen)}
 

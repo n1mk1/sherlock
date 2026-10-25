@@ -15,8 +15,8 @@ def queue_stories(db: sqlite3.Connection, dataset: sqlite3.Row, widget_ids: list
     """One waiting stories job per dataset absorbs the next request (the union of their widgets)."""
     import json
 
-    waiting = db.execute("SELECT id, params_json FROM jobs WHERE dataset_id = ? AND kind = 'stories' AND status = 'queued'",
-                         (dataset["id"],)).fetchone()
+    waiting = db.execute("SELECT id, params_json FROM jobs WHERE dataset_id = ? AND kind = 'stories' AND status = 'queued' "
+                         "AND params_json NOT LIKE '%synthesis_ids%'", (dataset["id"],)).fetchone()
     if waiting:
         params = json.loads(waiting["params_json"])
         if params.get("widget_ids") is not None:
@@ -34,6 +34,14 @@ def _run(ctx: JobContext) -> dict:
     env = ws.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
     scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
                       on_wait=lambda text: ctx.log(text, icon="wait"))
+    if ctx.params.get("synthesis_ids"):  # a synthesis card's Refresh (TRD §7.4.1)
+        from sherlock.stories import synthesis
+
+        columns = list(ws.user_types(env, dataset, dataset["current_version"]))
+        for i, cid in enumerate(ctx.params["synthesis_ids"], 1):
+            ctx.progress(i, len(ctx.params["synthesis_ids"]), "Writing the synthesis again")
+            synthesis.refresh(ctx.db, ctx.bus, LLMClient(ctx.settings), scope, dataset, cid, columns)
+        return {"cards": len(ctx.params["synthesis_ids"]), "widgets": 0}
     return stories.tell(env, LLMClient(ctx.settings), scope, dataset, ctx.params.get("widget_ids"),
                         reason=ctx.params.get("reason", "build"), progress=ctx.progress, check_cancel=ctx.check_cancel)
 

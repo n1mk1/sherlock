@@ -200,6 +200,24 @@ export interface paths {
         patch: operations["patch_dataset_api_v1_datasets__dataset_id__patch"];
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Canvas */
+        get: operations["get_canvas_api_v1_datasets__dataset_id__canvas_get"];
+        /** Put Canvas */
+        put: operations["put_canvas_api_v1_datasets__dataset_id__canvas_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/cards": {
         parameters: {
             query?: never;
@@ -920,7 +938,8 @@ export interface paths {
         put?: never;
         /**
          * Pin
-         * @description Pin a chart or table answer to the dashboard as a widget made by chat. Flow comes with D8.
+         * @description Pin a chart or table answer to the dashboard as a widget made by chat, or (`target: "flow"`) an
+         *     answer's text to the canvas as an `answer` card.
          */
         post: operations["pin_api_v1_messages__mid__pin_post"];
         delete?: never;
@@ -1212,6 +1231,15 @@ export interface components {
             file: string;
             /** Options */
             options?: string | null;
+        };
+        /** CanvasPut */
+        CanvasPut: {
+            /** Canvas */
+            canvas: {
+                [key: string]: unknown;
+            };
+            /** Etag */
+            etag: string;
         };
         /** CardEdit */
         CardEdit: {
@@ -1988,6 +2016,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_canvas_api_v1_datasets__dataset_id__canvas_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_canvas_api_v1_datasets__dataset_id__canvas_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

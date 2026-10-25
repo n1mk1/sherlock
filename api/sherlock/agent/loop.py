@@ -16,7 +16,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 
-from sherlock.agent import insight, prompts
+from sherlock.agent import flow, insight, prompts
 from sherlock.agent.answerers import CantAnswer, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import resolve
@@ -33,7 +33,6 @@ WALL_S = 90.0
 HISTORY = 6
 CARD_CHARS = 16_000  # about 4k tokens
 NOT_YET = {
-    "ask_story": "Answering from the story cards isn't built yet; each card's Ask why opens a question about it.",
     "update_widget": "Changing a widget from chat isn't built yet; use the widget's menu.",
 }
 # Tool exposure by tab (TRD §8.2): the answerers everywhere, actions where they belong.
@@ -192,7 +191,11 @@ class Agent:
         base_context = self._context(card, rows_scope, history, focus, None, context)
 
         tab = context.get("tab") if context.get("tab") in TOOLS else "dashboard"
-        route = self._route(question, base_context, scope, TOOLS[tab])
+        if tab == "flow" and flow.MAKE_SENSE.search(question):
+            # "Make sense of this" on the canvas is the synthesis action; no routing call is needed.
+            route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
+        else:
+            route = self._route(question, base_context, scope, TOOLS[tab])
         if route.ambiguous and route.clarification and not clarified:
             clar = route.clarification.model_dump()
             self.emit("clarification", clar)
@@ -269,6 +272,19 @@ class Agent:
                                                "leaving out quarantined rows."}]))
                     sources.append({"kind": "sql", "sql": ex.get("sql"), "label": w["title"]})
                     actions.append({"kind": "open_widget", "widget_id": w["id"]})
+                elif intent == "ask_story":
+                    selected = [c for c in (context.get("selected_card_ids") or []) if isinstance(c, str)]
+                    if flow.MAKE_SENSE.search(question):
+                        self.emit("status", {"text": "Reading the selected cards"})
+                        made, cited, card_out = flow.make_sense(self.db, self.env.bus, self.llm, scope, dataset, selected, columns)
+                        blocks += made
+                        sources += cited
+                        focus_out["card_id"] = card_out["id"]
+                    else:
+                        self.emit("status", {"text": "Reading the story cards"})
+                        made, cited = flow.ask_story(self.db, self.llm, scope, dataset, question, selected, columns)
+                        blocks += made
+                        sources += cited
                 elif intent == "ask_history":
                     vrow = ws.version_row(self.db, dataset["id"], dataset["current_version"])
                     steps = ask_history(self.db, dataset["id"], question, json.loads(vrow["effective_step_ids_json"]))
@@ -319,6 +335,12 @@ class Agent:
             notes.append(self._suggestion(card))  # ASK-8: say what is answerable instead
         for note in notes:
             blocks.append(text_block([{"type": "text", "text": note}]))
+        # Narrative answers with numbers can go on the canvas (PRD ASK-4); a synthesis is already there.
+        if "card_id" not in focus_out:
+            for i, b in enumerate(blocks):
+                if b["type"] == "text" and b.get("labeled") != "general" and any(
+                        r["type"] == "chip" and r.get("key") for p in b["body"]["blocks"] for r in p["runs"]):
+                    actions.append({"kind": "add_to_flow", "block_index": i})
         for b in blocks:
             if b not in streamed:
                 self.emit("block", b)

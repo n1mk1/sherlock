@@ -305,6 +305,8 @@ CREATE TABLE canvases (
 
 Card nodes reference `cards.id`. Nodes of soft-deleted cards stay (hidden) so Undo restores them in place; nodes of hard-deleted cards are pruned on the next canvas read, which bumps the etag.
 
+As built (2026-10-25, D8.1): `canvas_json` is stored with sorted keys and no spaces, and `etag` is the sha1 of that text. A dataset has no row until its first save; until then `GET /canvas` answers the empty document and its etag. Every save that changes the document bumps `datasets.state_rev`. Synthesis cards (`kind = 'synthesis'`) have `source_card_ids_json` and no `fact_sheet_id`; their chips' keys are `<card_id>.<fact key>`. Answer cards added to Flow (`kind = 'answer'`) have a fact sheet with no `widget_id`.
+
 ### 2.13 runs
 
 ```sql
