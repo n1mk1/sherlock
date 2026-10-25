@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     model_embed: str = ""
     nvidia_embed_models: str = ""
     llm_tools_mode: Literal["json", "native"] = "json"
+    # Answer model calls from recorded fixtures (a JSON file or a directory of them) instead of Token Factory.
+    llm_mock: str = ""
+    # Append every live model reply to this fixture file (to record fixtures from a real run).
+    llm_record: str = ""
 
     job_backend: Literal["local", "nebius"] = "local"
     job_workers: int = 4

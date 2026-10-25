@@ -224,7 +224,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [ ] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions
-- [ ] `llm/` client, schemas, repair, budgets, logging
+- [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [ ] `canvas/` model, persistence, pruning
 - [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test
 - [ ] `chat/` threads, messages, proposals
