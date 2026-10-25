@@ -434,6 +434,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 - **`POST /edits`.** It answers `201` with `{ step, version, new_row_ids: { temp_id: _row_id } }`.
   - Values are typed to the column's DuckDB type. A blank value is NULL.
   - A value that doesn't parse as that type, such as `abc` in a `DOUBLE` column or `3.5` in a `BIGINT` one, is saved as NULL. Its lineage row keeps the text as `new_value` with flag `invalid` (App Flow §8.2: "invalid values are saved but flagged"), and its `notebook_code` assigns `None`.
+  - Integers are parsed exactly, never through a float, so a value past 2^53 keeps every digit. One that doesn't fit the column's integer type (past `BIGINT`'s range, for example) is invalid in the same way (review of Day 2, 2026-10-25).
   - The step has kind `edit`, `created_by` `user` and gate `user`. Its summary reads like "Edited 3 cells, added 1 row, deleted 1 row by hand". `edits_json` stores the batch with each new row's assigned `_row_id`.
   - It's refused with `422 invalid`, and writes nothing, when the batch is empty, names an unknown column or a row not in the version, or edits a row it also deletes.
   - **Conflicts.** A stale `base_version` is always `409 conflict`, with `current_version` and `conflicts: [{ row_id, column, mine, theirs }]`: the edited cells whose value differs between the base version and the current one, which may be none. The client reapplies the edits on the new version ("Rebase and save", App Flow §8.2) and sends them again with the new `base_version`.

@@ -23,6 +23,7 @@ from sherlock.storage import dataset_dir, new_duckdb, sql_path
 
 SYSTEM = ("_row_id", "_quarantine_reason")
 MAX_EDITS = 100_000
+INT_BITS = {"TINYINT": 8, "SMALLINT": 16, "INTEGER": 32, "BIGINT": 64, "HUGEINT": 128}
 
 
 class CellEdit(BaseModel):
@@ -81,8 +82,11 @@ def type_value(value, dtype: str) -> Typed:
     result = typed(text.strip(), dtype)
     if isinstance(result, str):  # `typed` keeps text it couldn't convert
         return Typed(None, text)
-    if dtype.upper() in ("BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT") and isinstance(result, float):
+    bits = INT_BITS.get(dtype.upper())
+    if bits and isinstance(result, float):
         return Typed(None, text)  # 3.5 in an integer column
+    if bits and not -(2 ** (bits - 1)) <= result < 2 ** (bits - 1):
+        return Typed(None, text)  # doesn't fit the column's integer type
     return Typed(result)
 
 

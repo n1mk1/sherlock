@@ -19,7 +19,11 @@ def typed(value, dtype: str):
     t = dtype.upper()
     try:
         if t in ("BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT", "UBIGINT"):
-            return int(float(value)) if float(value).is_integer() else float(value)
+            try:
+                return int(str(value).strip())  # exact: going through float rounds past 2**53
+            except ValueError:
+                number = float(value)
+                return int(number) if number.is_integer() else number
         if t in ("DOUBLE", "FLOAT", "REAL") or t.startswith("DECIMAL"):
             return float(value)
         if t == "BOOLEAN":

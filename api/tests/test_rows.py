@@ -139,6 +139,19 @@ def test_stale_base_version_lists_conflicts(app, client, ds):
     assert err["conflicts"] == [{"row_id": 1, "column": "name", "mine": "Annie", "theirs": "Anne"}]
 
 
+def test_integer_edits_are_exact_or_invalid(app, client, ds):
+    _, v = typed_version(app, ds["id"])  # age is BIGINT
+    r = client.post(f"{API}/datasets/{ds['id']}/edits", json={"base_version": v, "edits": [
+        {"row_id": 1, "column": "age", "value": "9007199254740993"},  # 2**53 + 1: a float would round it
+        {"row_id": 2, "column": "age", "value": "99999999999999999999"},  # past BIGINT: invalid, not a 500
+    ]})
+    assert r.status_code == 201, r.text
+    assert "df.loc[df._row_id == 1, 'age'] = 9007199254740993" in r.json()["step"]["notebook_code"]
+    by_id = {row["_row_id"]: row for row in rows(client, ds["id"])["rows"]}
+    assert by_id[1]["cells"]["age"] == 9007199254740993 and by_id[1]["marks"] == {"age": "changed"}
+    assert by_id[2]["cells"]["age"] is None and by_id[2]["marks"] == {"age": "invalid"}
+
+
 def test_edit_validation(client, ds):
     url = f"{API}/datasets/{ds['id']}/edits"
     assert client.post(url, json={"base_version": 1}).status_code == 422
