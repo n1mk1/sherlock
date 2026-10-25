@@ -243,6 +243,7 @@ export const filterParam = (f: FilterClause | null) => (f ? JSON.stringify({ and
 export function useWidgets(datasetId: string) {
   return useQuery({
     queryKey: keys.widgets(datasetId),
+    enabled: !!datasetId, // the stories panel has no dataset off a dataset route
     queryFn: () => request<{ widgets: Widget[]; layout: Layout }>("GET", `/api/v1/datasets/${datasetId}/widgets`),
   });
 }
