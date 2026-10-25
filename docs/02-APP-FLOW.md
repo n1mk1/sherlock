@@ -390,6 +390,8 @@ Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. '
 
 As built (2026-10-25, D6.3): Edit turns the card into two TipTap editors, Headline (one line) and Body. Chips and labels are atoms that move as a whole. `/` opens a picker of the card's facts (filter by typing, Enter or click inserts the chip, Esc closes). Save sends the card; the server marks typed numbers unverified (dashed chip, "Typed by you, not computed"). When the data changes, an edited card keeps its text and shows "The data changed. Suggested revision:" with Accept, Edit (opens the suggestion in the editor) and Dismiss.
 
+The editors hold only what a card can store (Day 6 review, 2026-10-25): paragraphs and bullets in the body, one paragraph in the headline, and text, chips and labels. Numbered lists, line breaks, bold, italic, strike, code, underline and links aren't offered. Before, typing "1. " made a numbered list that saved as empty text, and a line break joined the words on either side.
+
 ---
 
 ## 12. Flow tab
