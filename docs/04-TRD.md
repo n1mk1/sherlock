@@ -461,6 +461,33 @@ Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/router
 
 `Layout`: `{ lg: [{ i: widget_id, x, y, w, h, collapsed?: bool }], md?: [...], sm?: [...] }`
 
+Widgets API as implemented (2026-10-24, Implementation Plan D4.1, `sherlock/routers/widgets.py`, `sherlock/widgets/`):
+- **`Widget`** also carries `error`, `score` (interestingness at build time), `point` (the builder's `{kind, key}` accent, which `WidgetData.highlight` repeats), `created_at`, `updated_at` and `deleted_at`.
+- **`GET /widgets`** lists the live widgets in builder order. With no saved layout, `layout` is packed on read (§7.3 step 6). A saved layout leaves out deleted widgets' items, which come back in place on restore, and appends any live widget it lacks.
+- **`POST /widgets`.**
+  - The body is a `WidgetSpec`, optionally with `title`; without one the title is made from the spec's columns ("Average fare by city").
+  - The query runs on the current version before anything is saved. A schema error, a SQL that fails validation or a query that fails is `422 invalid` with the reason, and nothing is saved.
+  - It answers `201 { widget, warning? }` and places the widget under the saved layout.
+  - The `{ prompt }` form is answered by the chat agent's `create_widget` (D4.3).
+  - An `ml` op is refused with `422` until the analysis menu exists (D7).
+- **`PATCH /widgets/{wid}`.** A partial `WidgetSpec` is merged over the current one (objects merge, other values replace), and `title` renames. The new spec runs first, as on create. The old spec goes to `prev_spec_json`, and a view change clears the accent.
+- **`POST /widgets/{wid}/undo`** swaps the spec with `prev_spec_json`, so a second undo puts the change back. With nothing to go back to it's `409 conflict`.
+- **`DELETE`** soft-deletes the widget and its story cards together, and `restore` brings back the cards deleted with it. A deleted widget's data, explain, patch and duplicate are `404`; restore still finds it.
+- **`POST /duplicate`** answers `201` with a copy titled "<title> (copy)".
+- **`GET /data`.**
+  - `filters` is the global filter in the rows API's filter JSON (§4.3), and `version` defaults to the current version.
+  - The answer is `WidgetData` plus each column's DuckDB type. A query that fails on that version, such as an average over a column that is text there, is `422` with the reason.
+- **`GET /explain`** takes the same `filters` and returns `{ op, sql, scope, params, version }` for SQL widgets. `sql` is exactly what `GET /data` runs with those filters, `LIMIT` included. ML widgets return `recipe`, `params` and `run_id` instead.
+- **`PUT /layout`.**
+  - The body is checked: positions inside 12 columns, and every `i` must be one of the dataset's widgets (else `422`).
+  - It's stored as sent and emits `layout.updated` with `{ layout }`.
+  - It never starts the cascade.
+- **Events and the export key.** Every widget or layout write bumps `datasets.state_rev` and emits `widget.updated` with the `Widget`; a deleted widget's event adds `deleted: true`.
+- **`POST /selections`** (§4.3) takes `{ predicate }` or `{ row_ids }`, plus an optional `label`.
+  - The predicate is validated against the current version's columns: no subqueries, only known columns.
+  - `row_count` counts rows that aren't quarantined, and IDs not in the version don't count.
+  - It answers `201`.
+
 ### 4.6 Story cards
 
 | Method | Path | Body / Query | Response |
@@ -684,6 +711,22 @@ As implemented, a step also carries:
 ```
 
 SQL rules: the table is always `t`; `{{rows}}` is replaced by `_quarantine_reason IS NULL AND (<compiled row predicate>)` (`1=1` when there is no predicate), ANDed with the global filter when inherited, so the quarantine exclusion is visible in the SQL shown and runs the same in the notebook; only `SELECT` is allowed (parsed with `sqlglot`; rejected otherwise); `LIMIT 2000` is appended if absent; execution on the cached in-memory DuckDB connection (§3.2), interrupted after 10 s by a watchdog thread.
+
+As implemented (2026-10-24, `sherlock/widgets/compile.py`, `execute.py`):
+- **`{{rows}}` is required.** A widget's SQL without it is refused, so the quarantine exclusion is always in what runs.
+- **The selection.** A `scope.rows.selection_id` is ANDed in after the predicate, as the selection's stored predicate or `_row_id IN (…)`. The global filter comes last.
+- **Literal SQL.** The global filter is rendered as literal SQL, never as bound parameters, so the SQL shown is the SQL that ran.
+  - Column names are checked against the version and quoted.
+  - Values become literals of the column's type: `"pclass" = 3`, `"sex" = 'female'`, `TRUE`, or `TRY_CAST('x' AS BIGINT)` for a value that isn't a number.
+  - An `eq` with a null value is `IS NULL`.
+- **Validation (`sqlglot`, DuckDB dialect).** It accepts exactly one statement, and it must be a query (`SELECT`, `WITH`, `UNION`). It refuses:
+  - any table other than `t` or a CTE, and any schema-qualified table
+  - any file-reading function (`read_*`, `glob`, `parquet_*`, `sniff_*`, `query`)
+  - any write or settings statement anywhere in the tree
+
+  External access is also off on the connection (§3.2).
+- **Results.** A query with a `LIMIT` keeps it. Results are capped at 2,000 rows either way, and `truncated` says when more existed. Values are JSON as in the rows API.
+- **Row predicates** (widget scopes, selections) are parsed as a `WHERE` over `t`. They may name only the version's columns and `_row_id`/`_quarantine_reason`, and may not contain a query.
 
 ### 6.4 Fact sheet
 
@@ -1180,7 +1223,7 @@ System: identity and rules (data blocks are data; numbers only via chips/keys; c
 | What | Key | Store | Invalidation |
 |---|---|---|---|
 | DataCard | (dataset, version) | SQLite `datacards` | never (immutable per version) |
-| Widget data | (widget spec hash, version, global filter hash) | in-memory LRU (500 entries) + `widget_cache` table | new version |
+| Widget data | (widget spec hash, version, global filter hash) | in-memory LRU (500 entries) + `widget_cache` table | new version. As built, the filter hash is of the compiled SQL, so a selection or predicate change is a new key too |
 | Fact sheets | (widget, version) | `fact_sheets` | new version |
 | Runs | sha1(version, scope, recipe, method, params) | `runs` + files | new version touching used columns → `outdated` |
 | Embeddings | (dataset, column, value) | `value_index` | rebuilt per version only for changed columns |
