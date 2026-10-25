@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 const ENDED: Record<CleaningReport["ended_by"], string> = {
   done: "Every issue was looked at.",
-  steps: "Stopped at the 20-issue budget.",
+  steps: "Stopped at the issue budget.",
   time: "Stopped at the time budget.",
   tokens: "Stopped at the model budget.",
   stopped: "You stopped the run.",
@@ -25,7 +25,10 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
     <section className="rounded-2xl border border-border bg-card p-6" aria-labelledby="report-title">
       <h3 id="report-title" className="font-serif text-[22px] leading-tight">{title}</h3>
       <p className="mt-1 text-muted-foreground">
-        {ENDED[report.ended_by]} v{report.from_version} → v{report.to_version}
+        {report.ended_by === "steps" && report.budget.max_steps
+          ? `Stopped at the ${report.budget.max_steps}-issue budget.`
+          : ENDED[report.ended_by]}{" "}
+        v{report.from_version} → v{report.to_version}
         {report.waited_for_model_s > 0 && ` · waited ${Math.round(report.waited_for_model_s)} s for the model`}
       </p>
       <dl className="mt-4 grid grid-cols-5 gap-2 text-center">

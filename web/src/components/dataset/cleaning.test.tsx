@@ -83,4 +83,17 @@ describe("cleaning screens", () => {
     fireEvent.click(screen.getByRole("button", { name: "View full report" }));
     expect(await screen.findByText(/Looks like an ID column/)).toBeInTheDocument();
   });
+
+  it("names the configured issue budget when the run hit it", async () => {
+    mockApi({
+      "GET /api/v1/datasets/ds_1/report": {
+        job_id: "job_1", status: "done", from_version: 2, to_version: 9, ended_by: "steps", waited_for_model_s: 0,
+        attempted: 12, budget: { max_steps: 12, max_seconds: 300 }, started_at: null, finished_at: null, error: null,
+        counts: { found: 30, fixed: 7, flagged: 0, skipped: 5, rows_deleted: 0 },
+        steps: [], skipped: [], hand_edited_skipped: [], decisions: [],
+      },
+    });
+    renderAt(<ReportSummary datasetId="ds_1" />);
+    expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
+  });
 });
