@@ -52,7 +52,9 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   const nodes = page.locator(".react-flow__node-card");
   await expect(nodes).toHaveCount(2);
   await nodes.nth(0).click({ position: { x: 20, y: 12 } });
-  await nodes.nth(1).click({ position: { x: 20, y: 12 }, modifiers: ["Shift"] });
+  // The second from the keyboard: a focused node is added with Shift+Enter.
+  await nodes.nth(1).focus();
+  await nodes.nth(1).press("Shift+Enter");
   await expect(page.getByText("2 cards selected")).toBeVisible();
   await page.getByRole("button", { name: "Make sense of this", exact: true }).click();
   await expect(page.locator(".react-flow__node-card")).toHaveCount(3, { timeout: 60_000 });

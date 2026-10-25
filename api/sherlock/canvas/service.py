@@ -89,7 +89,7 @@ def validate(db: sqlite3.Connection, dataset_id: str, doc) -> dict:
                 raise _invalid(f"node {nid}: sherlock must be an object")
             card_id = meta.get("card_id")
             if card_id is not None:
-                if card_id not in cards:
+                if not isinstance(card_id, str) or card_id not in cards:
                     raise _invalid(f"node {nid}: card {card_id!r} isn't one of this dataset's cards")
                 if card_id in placed:
                     raise _invalid(f"card {card_id} is on the canvas twice")
@@ -106,7 +106,7 @@ def validate(db: sqlite3.Connection, dataset_id: str, doc) -> dict:
             raise _invalid(f"edge id {eid!r} is empty or repeated")
         edge_ids.add(eid)
         a, b = e.get("fromNode"), e.get("toNode")
-        if a not in ids or b not in ids or a == b:
+        if not isinstance(a, str) or not isinstance(b, str) or a not in ids or b not in ids or a == b:
             raise _invalid(f"edge {eid} must join two different nodes on the canvas")
         edge = {"id": eid, "fromNode": a, "toNode": b}
         for key in ("fromSide", "toSide"):
@@ -119,6 +119,8 @@ def validate(db: sqlite3.Connection, dataset_id: str, doc) -> dict:
         if e.get("color") is not None:
             edge["color"] = _text(e["color"], f"edge {eid} color", 16)
         meta = e.get("sherlock") or {}
+        if not isinstance(meta, dict):
+            raise _invalid(f"edge {eid}: sherlock must be an object")
         made_by = meta.get("made_by", "user")
         kind = meta.get("kind", "custom")
         if made_by not in ("user", "ai") or kind not in EDGE_KINDS:
