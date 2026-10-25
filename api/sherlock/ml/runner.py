@@ -343,7 +343,7 @@ def preview(env: ws.Env, dataset: sqlite3.Row, req: dict) -> dict:
     with ws.connection(env, dataset, p.version) as conn:
         data = conn.execute(f"SELECT * FROM t WHERE {p.rows_sql} ORDER BY _row_id").df()  # noqa: S608
     features = p.scope["columns"].get("features")
-    plan = make_plan(data, card, p.rows_sql, target, features, features)
+    plan = make_plan(data, card, p.rows_sql, target, features, features, p.params["cv_folds"])
     data = data[data[target].notna()]
     if len(data) > PREVIEW_ROWS:
         data = data.sample(n=PREVIEW_ROWS, random_state=SEED).sort_values("_row_id")

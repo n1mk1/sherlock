@@ -683,11 +683,13 @@ Canvas API as implemented (2026-10-25, Implementation Plan D8.1, `sherlock/canva
 As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/routers/runs.py`, `sherlock/ml/runner.py`):
 - **Recipes and methods.** Only `driver_analysis` with `method: "auto"` runs. Any other method is `422` ("Only Auto is available in this release"). A disabled recipe is `422` with its reason.
 - **`GET /recipes?dataset_id&scope`.** It returns every manifest (§6.5) with `compatible` and `reason`. Rows are counted in the scope (quarantine excluded). `driver_analysis` also carries `targets`: the columns it can explain, the DataCard's target candidates first.
+  - (Day 7 review, 2026-10-25) `scope` is the `Scope` as JSON; text that isn't valid JSON is `422` ("scope: not valid JSON"), as an invalid scope is.
 - **`RunRequest` additions:**
   - `filters` (optional): the dashboard's filter clauses. They are folded into `scope.rows.predicate`, and a run always has `inherit_global_filters: false`. Its rows are fixed by its scope and are part of the cache key.
   - `scope.columns.target`: filled in with the best guess when it's missing.
   - `scope.columns.features`: `null` means every column is a candidate. A list is exactly the chips the user left on. A listed column that a check would exclude is "forced in" and gets a model-card warning; a column left out of the list is excluded as "turned off in the setup".
   - The target and the minimum rows (100 with the target filled in, PRD ML-10) are checked before anything is queued, so a refusal is `422` with the count.
+  - (Day 7 review, 2026-10-25) A category target needs at least `cv_folds` rows of each value, one per fold, or a fold's held-out rows can lack a class and its AUC can't be computed. The preview refuses with `422` ("Each value of fraud needs at least 5 rows, one per fold of the cross-validation; '1' has 3."), so the setup form can't start the run. A run started without the preview (the builder's widget, `ask_why`) fails with the same message.
   - `params` are checked against the manifest: `cv_folds` from 3 to 10, `time_budget_s` from 10 to 300.
 - **`POST /datasets/{id}/runs`.** It returns the full `Run` (with `model_card` when cached). With `widget_id`, the widget *becomes* the analysis:
   - Its spec is replaced by the ML spec (`view: importance`), and its chart spec is kept as `prev_spec_json` for Undo ("Plain chart (SQL)").
@@ -1028,6 +1030,8 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
 - **`verdict` and `verdict_text`:**
   - `beats_baseline`: a lift of at least 2 points, or 0.05 in R².
   - `weak`: any smaller lift.
+    - (Day 7 review, 2026-10-25) When the best one-column rule beats the most-common-outcome (or average) baseline by the same margin, one column carries the signal, so the text names it instead of calling the drivers weak: "x2 alone does nearly as well (82.8%): it carries the signal, and the other columns add only 0.2 points on held-out rows." The `no_signal` text already did this.
+    - A rule on a target-encoded column (more than 50 values, such as a ticket number) is never named this way, in either verdict: rows of one group fall on both sides of a fold, so its held-out score can be inflated. Its baseline row in the model card carries `target_encoded: true`, and `ask_why` follows the same rule. On Titanic's 3rd class the best one-column rule is `ticket` (79.5% against 74.5% for the majority), which is this case.
   - `no_signal`: no lift. When a one-column rule carries the signal, the text names it ("No better than boat alone (97.6%)…").
 - **`importance`.** Permutation importance, scaled so the strongest is 1.
 - **`warnings`:**
@@ -1455,11 +1459,13 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
   - `registry.py`: the manifests.
   - `runner.py`: requests, the cache, the `ml_run` job, artifacts, the fact sheet, reads and outdating.
 - **Step 1.** `SELECT * FROM t WHERE <quarantine excluded, predicate, selection> ORDER BY _row_id`. Rows without the target are dropped. More than 50,000 rows are sampled with seed 42.
+  - (Day 7 review, 2026-10-25) The sample is `core.sample`, which `repro.py` carries too: for a category target it is stratified by the target (`train_test_split` with `stratify`), so each value keeps its share and the model card's `sample.stratify_column` is true; for a number it is a plain random sample. Before, both were plain random samples although the card named the target as the stratify column. The model card drawer says "stratified by <target>".
 - **Step 2.** As specified: AUC for two classes, MAE for regression.
 - **Step 3, leakage.** These are excluded with their reason:
   - empty columns, IDs, free text and dates (dates aren't features yet);
   - the DataCard's `leakage_candidates` for this target;
   - names containing the target's name;
+    - (Day 7 review, 2026-10-25) anywhere when the target's name has four or more letters and digits ("survived" in `survivedcount`), as whole words when it is shorter, split at punctuation and camelCase. So a target `y` leaves out `y_hat` but keeps `day` and `salary`, and `age` leaves out `age_group` but keeps `page_views`;
   - numbers with |correlation| above 0.98;
   - a category that settles a categorical outcome by itself: at least 98% of the rows of each of its values share one outcome while the outcome alone is under 95% predictable. This purity check stands in for "mutual information near max".
 - **Step 4.** `StratifiedKFold` (classification) or `KFold` (regression), 5 folds by default, seed 42. The `TimeSeriesSplit` and `GroupKFold` choices are not built.
@@ -1775,6 +1781,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
   - A column is a number when it is int or float with more than 10 distinct values, and the number is the outcome.
   - The test, run with SciPy on every row with both filled in (no 2,000-row cap):
     - a number across two groups: Welch's t-test with Cohen's d, then Mann-Whitney U with the rank-biserial r;
+      - (Day 7 review, 2026-10-25) The rank-biserial r is 2U₁/(n₁n₂) − 1, from SciPy's U for the first group, so it is positive when the first group's values tend to be larger: the same direction as Cohen's d. It was 1 − 2U₁/(n₁n₂), the opposite sign, so a table could show d = 0.112 beside r = −0.049 for the same difference (age by survived on Titanic).
     - across 3–20 groups: Kruskal-Wallis with epsilon squared;
     - two categories (at most 20 values each): chi-square with Cramér's V;
     - two numbers: Pearson and Spearman.
@@ -1784,6 +1791,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
   - It runs a `driver_analysis` `RunRequest` (Auto) on the chat's rows (selection and dashboard filter) through the runner, so the dashboard's driver run is reused from the cache when the request is the same.
   - A new run is waited for up to 60 s within the message budget, with its progress as the status line. If it's still running, the answer says so.
   - The answer gives the verdict in words, the metric against the best simple rule, and the three strongest factors as chips, plus the importance table and `open_model_card`.
+    - (Day 7 review, 2026-10-25) When the verdict isn't `beats_baseline` and one column carries the signal (as above), it says "<column> alone predicts <target> about as well as the model", with both scores as chips, rather than "the signal is weak" or "read these factors as weak".
 - **`ask_model`.**
   - The run is the focused widget's, the previous answer's, one whose target the message names, or the newest finished one.
   - "Who did it get wrong?" (wrong, misclassified, mistakes, errors, missed) saves the wrong-rows selection and answers in code with the count, the first 20 rows, `open_rows` and `open_model_card`.

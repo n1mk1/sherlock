@@ -18,7 +18,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, r2_score, roc_auc_score
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import KFold, StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -30,6 +30,18 @@ MODELS = {
 }
 MODEL_LABELS = {"logistic_regression": "Logistic regression", "ridge": "Ridge regression",
                 "gradient_boosting": "Gradient boosting", "random_forest": "Random forest"}
+
+
+def sample(data, target, task, n, seed):
+    """`n` of the rows, drawn with the seed and back in row order. For categories the draw is stratified
+    by the outcome, so each value keeps its share (TRD §6.7)."""
+    if len(data) <= n:
+        return data
+    if task == "classification":
+        data, _ = train_test_split(data, train_size=n, stratify=data[target].astype(str), random_state=seed)
+    else:
+        data = data.sample(n=n, random_state=seed)
+    return data.sort_values("_row_id")
 
 
 def prepare(data, target, numeric, categorical, high_card):

@@ -5,13 +5,15 @@ cascade."""
 
 import time
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from sherlock.errors import ApiError
 from sherlock.eval import planted
-from sherlock.ml import repro
-from sherlock.ml.analysis import analyze
+from sherlock.ml import core, repro
+from sherlock.ml import plan as plan_module
+from sherlock.ml.analysis import analyze, verdict
 from sherlock.ml.plan import make_plan
 from tests.test_jobs import wait_for, wait_status
 
@@ -52,11 +54,60 @@ def test_a_regression_target_is_explained():
     assert a.card["verdict"] == "beats_baseline" and "mae" in a.card["model"]
 
 
+def test_one_strong_column_is_named_not_called_weak():
+    best = {"name": "best one-column rule: x2", "metric": "accuracy", "value": 0.828, "column": "x2"}
+    floor = {"name": "everyone gets the most common outcome", "metric": "accuracy", "value": 0.532}
+    v, text = verdict("accuracy", 0.830, [floor, best])
+    assert v == "weak" and text.startswith("x2 alone does nearly as well (82.8%): it carries the signal") and "0.2 points" in text
+    v, text = verdict("accuracy", 0.80, [floor, best])
+    assert v == "no_signal" and text.startswith("No better than x2 alone (82.8%)")
+    v, text = verdict("accuracy", 0.515, [{**floor, "value": 0.50}, {**best, "value": 0.505}])  # no column stands out
+    assert v == "weak" and text.startswith("Only 1.0 points better than the best simple rule")
+    v, text = verdict("accuracy", 0.804, [{**floor, "value": 0.745}, {**best, "value": 0.795, "column": "ticket", "target_encoded": True}])
+    assert v == "weak" and text.startswith("Only 0.9 points better")  # a target-encoded ID isn't named as the signal
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"x1": rng.normal(0, 1, 600).round(3), "x2": rng.normal(0, 1, 600).round(3),
+                       "region": rng.choice(["north", "south", "east"], 600)})
+    df["churned"] = np.where(1.8 * df["x2"] + rng.normal(0, 1, 600) > 0, "yes", "no")  # x2 is the one driver
+    a = _analyze(df, "churned")
+    assert a.card["importance"][0]["column"] == "x2" and a.card["verdict"] != "beats_baseline"
+    assert "x2 alone" in a.card["verdict_text"] and "weak" not in a.card["verdict_text"], a.card["verdict_text"]
+
+
 def test_minimum_rows_are_enforced():
     df = planted.drivers(n=99)
     with pytest.raises(ApiError) as err:
         make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
     assert err.value.status == 422 and "at least 100 rows" in err.value.message and "99" in err.value.message
+
+
+def test_a_short_target_name_leaves_out_only_columns_named_after_it():
+    rng = np.random.default_rng(3)
+    n = 200
+    df = pd.DataFrame({"day": rng.integers(1, 29, n), "salary": rng.normal(50, 10, n).round(1),
+                       "y_hat": rng.normal(0, 1, n).round(3), "y": rng.choice(["yes", "no"], n)})
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "y"), ALL, "y")
+    assert set(plan.features) == {"day", "salary"}, plan.excluded
+    assert [e["column"] for e in plan.excluded] == ["y_hat"]
+    df = pd.DataFrame({"page_views": rng.integers(1, 500, n), "age_group": rng.choice(["young", "old"], n),
+                       "age": rng.normal(40, 12, n).round(1)})
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "age"), ALL, "age")
+    assert plan.features == ["page_views"] and [e["column"] for e in plan.excluded] == ["age_group"]
+    df = planted.drivers()
+    df["outcome_score"] = df["strong"]
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
+    assert "outcome_score" in {e["column"] for e in plan.excluded}  # a long name still matches anywhere
+
+
+def test_an_outcome_rarer_than_the_folds_is_refused():
+    df = planted.drivers(n=300)
+    df["outcome"] = 0
+    df.loc[:2, "outcome"] = 1  # three rows of 1: two of five folds would hold none
+    with pytest.raises(ApiError) as err:
+        make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome")
+    assert err.value.status == 422 and "at least 5 rows" in err.value.message and "'1' has 3" in err.value.message
+    plan = make_plan(planted.as_version(df), planted.card_for(df, "outcome"), ALL, "outcome", n_folds=3)
+    assert plan.task == "classification"
 
 
 def test_a_forced_column_is_used_with_a_warning_and_turned_off_columns_are_listed():
@@ -67,6 +118,18 @@ def test_a_forced_column_is_used_with_a_warning_and_turned_off_columns_are_liste
     assert any(w["code"] == "forced_in" and "leak" in w["text"] for w in a.card["warnings"])
     excluded = {e["column"]: e["reason"] for e in a.card["excluded"]}
     assert excluded["noise"] == "turned off in the setup" and "ID" in excluded["code"]
+
+
+def test_a_large_scope_is_sampled_stratified_in_the_app_and_its_reproduction(monkeypatch):
+    df = planted.as_version(planted.drivers(n=1000))
+    df["outcome"] = (np.arange(1000) % 10 == 0).astype(int)  # one row in ten
+    got = core.sample(df, "outcome", "classification", 200, 42)
+    assert len(got) == 200 and got["outcome"].sum() == 20 and got["_row_id"].is_monotonic_increasing
+    assert len(core.sample(df, "strong", "regression", 200, 42)) == 200 and len(core.sample(df, "outcome", "classification", 2000, 42)) == 1000
+    monkeypatch.setattr(plan_module, "SAMPLE_ROWS", 300)
+    a = _analyze(planted.drivers(n=600), "outcome")
+    assert a.card["sample"] == {"seed": 42, "stratify_column": "outcome", "n": 300} and a.result["rows"] == 300
+    assert "stratified by outcome, seed 42" in a.code and "data = sample(data, 'outcome', 'classification', 300, seed)" in a.code
 
 
 def test_the_reproduction_code_gives_the_model_cards_numbers():
@@ -102,6 +165,8 @@ def test_recipes_preview_run_results_code_and_cache(client):
     assert recipes["predict"]["compatible"] is False and recipes["predict"]["reason"]
     few = client.get(f"{API}/recipes", params={"dataset_id": ds, "scope": '{"rows": {"predicate": "strong > 2"}}'}).json()
     assert few[0]["compatible"] is False and "needs 100 rows" in few[0]["reason"]
+    bad = client.get(f"{API}/recipes", params={"dataset_id": ds, "scope": "{not json"})
+    assert bad.status_code == 422 and "not valid JSON" in bad.json()["error"]["message"]
 
     pre = client.post(f"{API}/datasets/{ds}/runs/preview", json={"recipe": "driver_analysis"}).json()
     assert pre["target"] == "outcome" and pre["task"] == "classification" and pre["metric"] == "accuracy"

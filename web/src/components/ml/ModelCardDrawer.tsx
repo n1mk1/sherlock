@@ -60,7 +60,7 @@ export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
               <span className="font-mono">{card.rows.train.toLocaleString("en-US")}</span> rows used of{" "}
               <span className="font-mono">{card.rows.total.toLocaleString("en-US")}</span>
               {card.rows.blank_target ? ` (${card.rows.blank_target.toLocaleString("en-US")} without ${card.target} left out)` : ""}.
-              {card.sample && ` A random sample of ${card.sample.n.toLocaleString("en-US")} rows (seed ${card.sample.seed}).`}
+              {card.sample && ` A random sample of ${card.sample.n.toLocaleString("en-US")} rows (${card.sample.stratify_column ? `stratified by ${card.sample.stratify_column}, ` : ""}seed ${card.sample.seed}).`}
             </p>
           </section>
 

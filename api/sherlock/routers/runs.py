@@ -42,7 +42,11 @@ def recipes(
     env = _env(request, db)
     version = dataset["current_version"]
     card = ml.datacard(env, dataset, version)
-    parsed = ml.parse_request({"scope": json.loads(scope)}) if scope else ml.parse_request({})
+    try:
+        raw = json.loads(scope) if scope else None
+    except ValueError:
+        raise ApiError(422, "invalid", "scope: not valid JSON") from None
+    parsed = ml.parse_request({"scope": raw})
     where = ml.rows_sql(env, dataset, parsed["scope"], version)
     with ws.connection(env, dataset, version) as conn:
         rows = conn.execute(f"SELECT count(*) FROM t WHERE {where}").fetchone()[0]  # noqa: S608

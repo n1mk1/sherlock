@@ -17,6 +17,7 @@ from sherlock.errors import ApiError
 from sherlock.rows.query import ident
 
 MIN_ROWS = 100           # supervised recipes refuse below this (PRD ML-10)
+FOLDS = 5                # the default number of cross-validation folds (core.FOLDS)
 SAMPLE_ROWS = 50_000     # larger scopes are sampled, stratified, with the seed (TRD §6.7)
 HIGH_CARDINALITY = 50
 SEED = 42
@@ -55,11 +56,12 @@ def load_scope(conn: duckdb.DuckDBPyConnection, rows_sql: str) -> pd.DataFrame:
 
 
 def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: list[str] | None = None,
-              forced: list[str] | None = None) -> Plan:
+              forced: list[str] | None = None, n_folds: int = FOLDS) -> Plan:
     """Frame the task and pick the features. `chosen` is the setup form's chips when the user changed
     them (None: every column is a candidate); a column left out of it is excluded as "turned off in the
     setup". `forced` re-includes columns the checks excluded (the form warns first; the model card
-    keeps a warning)."""
+    keeps a warning). Each outcome needs a row in every fold (`n_folds`), or held-out scores such as
+    AUC can't be computed."""
     cols = {c["name"]: c for c in card["columns"]}
     if target not in cols:
         raise ApiError(422, "invalid", f"There's no column {target!r} to explain.")
@@ -71,10 +73,14 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
     classes = sorted(y.dropna().unique().tolist(), key=str) if task == "classification" else None
     if task == "classification" and len(classes) < 2:
         raise ApiError(422, "invalid", f"{target} has a single value in these rows, so there's nothing to explain.")
+    if task == "classification":
+        counts = y.dropna().astype(str).value_counts()
+        if counts.iloc[-1] < n_folds:
+            raise ApiError(422, "invalid", f"Each value of {target} needs at least {n_folds} rows, one per fold of the "
+                                           f"cross-validation; {counts.index[-1]!r} has {int(counts.iloc[-1])}.")
     metric = "r2" if task == "regression" else ("accuracy" if len(classes) == 2 else "macro_f1")
 
     leak = {lc["column"]: lc["reason"] for lc in card.get("leakage_candidates") or [] if lc.get("target") in (None, target)}
-    stem = re.sub(r"[^a-z0-9]", "", target.lower())
     excluded, features, kept_anyway = [], [], []
     forced = set(forced or [])
     yn = pd.to_numeric(y, errors="coerce") if task == "regression" or (classes and all(isinstance(c, (int, float, bool, np.bool_)) for c in classes)) else None
@@ -92,7 +98,7 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
             reason = "a date (dates aren't used as features yet)"
         elif name in leak:
             reason = f"records the outcome (leakage): {leak[name]}"
-        elif stem and stem in re.sub(r"[^a-z0-9]", "", name.lower()):
+        elif names_target(name, target):
             reason = f"derived from {target} (its name contains it)"
         elif task == "classification" and c["type"] not in ("int", "float") and _pure(df[name], y):
             reason = f"each of its values goes with one {target} value (leakage)"
@@ -121,6 +127,22 @@ def make_plan(df: pd.DataFrame, card: dict, rows_sql: str, target: str, chosen: 
         if with_target > SAMPLE_ROWS else None
     return Plan(target, task, metric, rows_sql, features, numeric, categorical, high, excluded, rows, sample, classes,
                 kept_anyway)
+
+
+def _words(name: str) -> list[str]:
+    """A column name's words: split at anything not a letter or digit, and at camelCase."""
+    return [w for w in re.split(r"[^a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name).lower()) if w]
+
+
+def names_target(name: str, target: str) -> bool:
+    """A column whose name contains the target's: anywhere for a target name of four or more letters
+    and digits ("survived" in "survivedcount"), as whole words for a shorter one, so "age" matches
+    "age_group" but not "page_views", and "y" matches "y_hat" but not "day"."""
+    stem = re.sub(r"[^a-z0-9]", "", target.lower())
+    if len(stem) >= 4:
+        return stem in re.sub(r"[^a-z0-9]", "", name.lower())
+    words, tw = _words(name), _words(target)
+    return bool(tw) and any(words[i:i + len(tw)] == tw for i in range(len(words)))
 
 
 def _pure(x: pd.Series, y: pd.Series) -> bool:
