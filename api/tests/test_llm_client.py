@@ -112,6 +112,28 @@ def test_transient_errors_are_retried_with_backoff(db):
     assert err.value.code == "llm_unavailable" and err.value.status == 503
 
 
+def test_retries_stop_at_the_two_minute_cap(db):
+    """Every attempt times out: attempts and waits together stay within 120 s (TRD §3.5)."""
+    now = [0.0]
+    timeouts = []
+
+    class TimesOut(Transport):
+        def create(self, *, timeout, **kw):
+            timeouts.append(timeout)
+            now[0] += timeout
+            raise TransientError("timeout")
+
+    def sleep(s):
+        now[0] += s
+
+    for role, expected in (("large", [60.0, 58.0]), ("small", [30.0, 30.0, 30.0, 16.0])):
+        now[0], timeouts[:] = 0.0, []
+        client = LLMClient(get_settings(), transport=TimesOut(), sleep=sleep, clock=lambda: now[0])
+        with pytest.raises(LLMUnavailable):
+            client.complete(role, [], purpose="plain")
+        assert timeouts == expected and now[0] <= 120.0, (role, timeouts, now[0])
+
+
 def test_budgets(db, monkeypatch):
     client, _ = llm([{"purpose": "plain", "content": "ok", "prompt_tokens": 10, "completion_tokens": 10}])
     db.execute("UPDATE users SET tokens_used_today = 2000000, tokens_day = ? WHERE id = 'usr_1'", (now_iso()[:10],))

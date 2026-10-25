@@ -8,6 +8,7 @@ import re
 import sqlite3
 from collections.abc import Iterator
 
+import duckdb
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 
@@ -180,7 +181,12 @@ def find(
             )
             params += [*where.params, needle]
         union = " UNION ALL ".join(parts)
-        count = conn.execute(f"SELECT count(*) FROM ({union})", params).fetchone()[0]
+        try:
+            count = conn.execute(f"SELECT count(*) FROM ({union})", params).fetchone()[0]
+        except duckdb.InvalidInputException as exc:  # RE2 refuses some patterns `re` accepts: `(?=a)`, `\1`
+            if not regex:
+                raise
+            raise rq.invalid(f"q: not a valid regular expression ({str(exc).split(': ', 1)[-1]})") from None
         limit = FIND_ALL if all else FIND_FIRST
         matches = conn.execute(f"SELECT * FROM ({union}) ORDER BY _row_id, pos LIMIT {limit}", params).fetchall()
     first = [{"row_id": r[0], "column": columns[r[1]], **({"value": r[2]} if all else {})} for r in matches]

@@ -318,7 +318,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
       - With no `LLM_BASE_URL` and no `LLM_MOCK` (tests, a bare local run), a call fails at once with `llm_unavailable`, with no retries and no `llm_calls` row, and callers apply their fallbacks (since D4.2).
       - Retryable: timeouts, connection errors, `429` and `5xx`.
       - Any other error fails at once with `llm_unavailable`, which is HTTP `503`.
-    - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
+    - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. The 120 s counts the attempts as well as the waits: each attempt's timeout is the role's timeout or the time left, whichever is shorter, so a call that keeps timing out ends at 120 s (review of Day 2, 2026-10-25; before, it could run to 134 s). Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
     - **Budgets.** They're checked before each call:
       - the user's tokens today (`users.tokens_used_today`, reset when `tokens_day` isn't today in UTC)
       - the job's (`jobs.tokens_used`)
@@ -439,7 +439,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 - **`GET /rows`.**
   - It reads the version through the cached in-memory DuckDB connection. Every column name in `sort` and `filter` is checked against the version's columns and quoted, and every value is a bound parameter. An unknown column, operator or view is `422 invalid`, and an unknown version is `404`.
   - `sort` items are `col` or `col:asc|desc`, with `NULLS LAST`; `_row_id` breaks ties, and it's the default order.
-  - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `empty` also matches blank text.
+  - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `contains` looks for its value as a plain substring: `%`, `_` and `\` in it are literal characters, as in find (review of Day 2, 2026-10-25). `empty` also matches blank text.
   - `view=changed` is rows with any cell mark. `flagged` is quarantined rows plus rows with a `flagged` or `invalid` cell. `missing` is rows with any empty user cell.
   - `selection` reads a `selections` row: its `row_ids_json`, else its stored, already validated predicate.
   - The response adds `columns: [{name, type}]` (DuckDB types) and, per row, `quarantine_reason`.
@@ -449,12 +449,13 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 - **`POST /edits`.** It answers `201` with `{ step, version, new_row_ids: { temp_id: _row_id } }`.
   - Values are typed to the column's DuckDB type. A blank value is NULL.
   - A value that doesn't parse as that type, such as `abc` in a `DOUBLE` column or `3.5` in a `BIGINT` one, is saved as NULL. Its lineage row keeps the text as `new_value` with flag `invalid` (App Flow §8.2: "invalid values are saved but flagged"), and its `notebook_code` assigns `None`.
+  - Integers are parsed exactly, never through a float, so a value past 2^53 keeps every digit. One that doesn't fit the column's integer type (past `BIGINT`'s range, for example) is invalid in the same way (review of Day 2, 2026-10-25).
   - The step has kind `edit`, `created_by` `user` and gate `user`. Its summary reads like "Edited 3 cells, added 1 row, deleted 1 row by hand". `edits_json` stores the batch with each new row's assigned `_row_id`.
   - It's refused with `422 invalid`, and writes nothing, when the batch is empty, names an unknown column or a row not in the version, or edits a row it also deletes.
   - **Conflicts.** A stale `base_version` is always `409 conflict`, with `current_version` and `conflicts: [{ row_id, column, mine, theirs }]`: the edited cells whose value differs between the base version and the current one, which may be none. The client reapplies the edits on the new version ("Rebase and save", App Flow §8.2) and sends them again with the new `base_version`.
   - `run_cleaning_on_new_rows` is accepted; it queues a Clean with AI job scoped to the new rows once the Cleaner exists (D3.2).
 - **`GET /find`.**
-  - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`).
+  - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`). DuckDB runs the expression with RE2, so a pattern Python accepts but RE2 doesn't, such as a lookahead `(?=…)` or a backreference `\1`, is invalid too (review of Day 2, 2026-10-25).
   - `column` limits it to one column, and `selection` to a selection's rows.
   - Matches come in row order, then column order. `first_matches` holds the first 100. With `all=true`, it holds up to 10,000, each with its `value`.
 - **`GET /columns/{column}/values`.** It answers from `value_index`, most frequent first; `prefix` is a case-sensitive prefix and `limit` is 1–500 (default 50).
@@ -1039,7 +1040,7 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 
   If an auto-detected encoding fails later in the file, detection reruns on the whole file. If an encoding the user chose fails, that's `invalid`.
 - **Read.** A temporary UTF-8 copy (`.ingest.utf8.csv`) is read by DuckDB's `read_csv(..., all_varchar=true, null_padding=true)`, with the delimiter, header and skip resolved from `sniff_csv` (delimiter, `SkipRows`, `HasHeader`). It's checked against `csv.Sniffer`, and DuckDB wins on disagreement. Empty cells read as NULL.
-- **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`.
+- **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`. Names are compared without case, as DuckDB compares them, so `Name,name,NAME` become `Name`, `name_2`, `NAME_3`, and `_ROW_ID` becomes `_ROW_ID_2`. Before, DuckDB renamed such columns itself (`name_1`) and `versions.columns_json` no longer matched the Parquet (review of Day 2, 2026-10-25).
 - **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
 
@@ -1079,6 +1080,7 @@ Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleani
   2. `int`: `[+-]?\d+`
   3. `float`: `pd.to_numeric`
   4. `date` or `datetime`: ISO 8601, then the format set (`%d/%m/%Y`, `%m/%d/%Y`, `%d.%m.%Y`, `%Y/%m/%d`, `%d-%m-%Y`, `%m-%d-%Y`, named months, two-digit years); `datetime` if any value has a time
+     - Timestamps with more than one UTC offset in a column (daylight saving, `-05:00` and `-04:00`) don't count as dates: pandas can't hold them as one datetime column, so the column falls through to the text rules and isn't typed. Before, profiling such a file failed (review of Day 2, 2026-10-25).
   5. `id`: text with > 95% unique values and at least 20 values
   6. `category`: ≤ 50 distinct or ≤ 5% unique
   7. otherwise `text`

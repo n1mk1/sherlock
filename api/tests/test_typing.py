@@ -77,6 +77,16 @@ def test_upload_commits_the_typing_step_as_step_one(client):
     assert r == {"confirm_required": True, "replay_needed": [], "warning": "typing"}
 
 
+def test_mixed_utc_offsets_stay_text_and_profile(client):
+    """Daylight saving gives one column two offsets; pandas can't hold that as datetimes."""
+    lines = ["ts,v"] + [f"2024-{(i % 12) + 1:02d}-15 10:00:00-0{4 + i % 2}:00,{i}" for i in range(40)]
+    ds = upload(client, ("\n".join(lines) + "\n").encode())
+    done = wait_status(client, ds["id"], "offer", "failed")
+    assert done["status"] == "offer", done.get("error")
+    card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
+    assert {c["name"]: c["type"] for c in card["columns"]}["ts"] not in ("date", "datetime")
+
+
 def test_all_text_file_gets_no_typing_step(client):
     ds = upload(client, b"name,city\nAnn,Paris\nBob,Lyon\n")
     done = wait_status(client, ds["id"], "offer", "failed")

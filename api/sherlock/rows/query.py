@@ -82,7 +82,9 @@ def apply_filter(where: Where, raw: str | None, types: dict[str, str]) -> None:
         elif op == "notempty":
             where.add(f"({q} IS NOT NULL AND trim({_as_text(col)}) != '')")
         elif op == "contains":
-            where.add(f"{_as_text(col)} ILIKE ?", f"%{value}%")
+            text = "" if value is None else str(value)
+            needle = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            where.add(f"{_as_text(col)} ILIKE ? ESCAPE '\\'", f"%{needle}%")
         elif op == "in":
             if not isinstance(value, list) or not value:
                 raise invalid("filter: `in` needs a non-empty list")

@@ -56,6 +56,9 @@ def test_page_sort_and_filter(client, ds):
     assert [r["_row_id"] for r in rows(client, ds["id"], filter=f)["rows"]] == [4]
     f = json.dumps({"and": [{"col": "name", "op": "contains", "value": "e"}]})
     assert [r["cells"]["name"] for r in rows(client, ds["id"], filter=f)["rows"]] == ["Dee"]
+    for literal in ("%", "_", "\\"):  # a substring, not a LIKE pattern
+        f = json.dumps({"and": [{"col": "name", "op": "contains", "value": literal}]})
+        assert rows(client, ds["id"], filter=f)["total"] == 0
     f = json.dumps({"and": [{"col": "name", "op": "in", "value": ["Ann", "Cy"]}]})
     assert rows(client, ds["id"], filter=f)["total"] == 2
     assert rows(client, ds["id"], view="missing")["total"] == 2
@@ -139,6 +142,19 @@ def test_stale_base_version_lists_conflicts(app, client, ds):
     assert err["conflicts"] == [{"row_id": 1, "column": "name", "mine": "Annie", "theirs": "Anne"}]
 
 
+def test_integer_edits_are_exact_or_invalid(app, client, ds):
+    _, v = typed_version(app, ds["id"])  # age is BIGINT
+    r = client.post(f"{API}/datasets/{ds['id']}/edits", json={"base_version": v, "edits": [
+        {"row_id": 1, "column": "age", "value": "9007199254740993"},  # 2**53 + 1: a float would round it
+        {"row_id": 2, "column": "age", "value": "99999999999999999999"},  # past BIGINT: invalid, not a 500
+    ]})
+    assert r.status_code == 201, r.text
+    assert "df.loc[df._row_id == 1, 'age'] = 9007199254740993" in r.json()["step"]["notebook_code"]
+    by_id = {row["_row_id"]: row for row in rows(client, ds["id"])["rows"]}
+    assert by_id[1]["cells"]["age"] == 9007199254740993 and by_id[1]["marks"] == {"age": "changed"}
+    assert by_id[2]["cells"]["age"] is None and by_id[2]["marks"] == {"age": "invalid"}
+
+
 def test_edit_validation(client, ds):
     url = f"{API}/datasets/{ds['id']}/edits"
     assert client.post(url, json={"base_version": 1}).status_code == 422
@@ -181,6 +197,8 @@ def test_find_values_and_csv_download(client, ds):
     r = client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "^[AB]", "regex": True, "column": "name", "all": True}).json()
     assert r["count"] == 2 and r["first_matches"][0] == {"row_id": 1, "column": "name", "value": "Ann"}
     assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "(", "regex": True}).status_code == 422
+    for q in ("(?=a)", r"(a)\1"):  # valid for Python's `re`, refused by DuckDB's RE2
+        assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": q, "regex": True}).status_code == 422
     assert client.get(f"{API}/datasets/{ds['id']}/find", params={"q": "100%"}).json()["count"] == 0
 
     download = client.get(f"{API}/datasets/{ds['id']}/export.csv")
