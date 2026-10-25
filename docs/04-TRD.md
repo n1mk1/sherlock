@@ -1022,6 +1022,10 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
 
   The full run comes before the gate (the pseudocode above has it after) so the gate's blast is the measured share of changed and quarantined cells, not an estimate from a stratified sample. A fix that changes nothing is skipped.
 
+  Two lines of the pseudocode work differently as built (Day 3 review, 2026-10-25):
+  - A `409` from `commit_step` (another commit landed while the issue ran) skips the issue as "The data changed while this step ran". It isn't reloaded and re-run once.
+  - Code that removes rows isn't rewritten to quarantine them: the `row_ledger` check fails it, so the candidate scores 0. The prompts tell the model to call `quarantine_rows` instead.
+
   A newly quarantined row counts as all of its cells in the blast (`gate.cells_affected`, capped at the dataset's cells), since it leaves every widget, model and story (Day 3 review, 2026-10-25). Counted as one cell each, a live Titanic step that quarantined 1,020 of 1,309 rows measured a 5.6% blast instead of 78%.
 - **The queue.** After every attempt, the next issue is the most severe one on the current version's card whose `detector|column` hasn't been attempted. Leakage and ID-candidate issues are never changed: they're logged as skipped ("Records the outcome, so it is marked as leakage and not changed", "Looks like an ID column, so it is left as is") with no model call, and they don't count against the 20-issue budget. The same goes for every other issue on a column in the card's `leakage_candidates` or `id_columns` ("body records the outcome, so it is not changed"). The first live run on Titanic, before this rule, imputed the missing `body` numbers and filled `boat`.
 - **The sample.** Datasets of up to 2,000 rows are used whole. A larger one gets up to 1,000 rows that have the issue (missing cells for `missing`, the issue's example values otherwise, its example `_row_id`s for row-level detectors) and fills the rest at random (seed 42). It's copied from the version's Parquet, so column types are the real ones.
