@@ -71,7 +71,8 @@ def test_new_users_are_capped_per_client_ip(monkeypatch):
     try:
         app = create_app()
         with TestClient(app) as c:
-            hdr = {"X-Forwarded-For": "6.6.6.6, 203.0.113.9"}  # the proxy's last hop is the client
+            # As on Render: the client's entry, then the host's proxy (TRUSTED_PROXY_HOPS = 1).
+            hdr = {"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}
             codes = []
             for _ in range(3):
                 c.cookies.clear()
@@ -80,11 +81,11 @@ def test_new_users_are_capped_per_client_ip(monkeypatch):
             blocked = c.get("/api/v1/me", headers=hdr)
             assert codes == [200, 200, 200] and blocked.status_code == 429
             assert blocked.json()["error"]["code"] == "rate_limited" and int(blocked.headers["retry-after"]) > 0
-            # A forged first hop doesn't buy a new bucket; another client IP has its own.
+            # A forged entry doesn't buy a new bucket, nor does another proxy node; another client has its own.
             c.cookies.clear()
-            assert c.get("/api/v1/me", headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.9"}).status_code == 429
+            assert c.get("/api/v1/me", headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.9, 10.0.0.2"}).status_code == 429
             c.cookies.clear()
-            ok = c.get("/api/v1/me", headers={"X-Forwarded-For": "198.51.100.7"})
+            ok = c.get("/api/v1/me", headers={"X-Forwarded-For": "198.51.100.7, 10.0.0.1"})
             assert ok.status_code == 200
             # Someone who already has a cookie is never capped.
             assert c.get("/api/v1/me", headers=hdr).status_code == 200
@@ -102,3 +103,15 @@ def test_new_user_limiter_window():
         lim.admit("a")
     now[0] = 100.0
     lim.admit("a")  # the first two have left the window
+
+
+def test_client_ip_skips_the_hosts_proxies():
+    from sherlock.identity import client_ip
+
+    def scope(xff=None):
+        return {"headers": [(b"x-forwarded-for", xff.encode())] if xff else [], "client": ("127.0.0.1", 5)}
+    assert client_ip(scope("203.0.113.9, 10.0.0.1")) == "203.0.113.9"
+    assert client_ip(scope("6.6.6.6, 203.0.113.9, 10.0.0.1")) == "203.0.113.9"  # a forged entry is ignored
+    assert client_ip(scope("203.0.113.9")) == "203.0.113.9"
+    assert client_ip(scope(), 1) == "127.0.0.1"
+    assert client_ip(scope("203.0.113.9, 10.0.0.1"), 0) == "10.0.0.1"

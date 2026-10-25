@@ -4,9 +4,9 @@ The token is 256 random bits sent as an HttpOnly, SameSite=Lax cookie with a one
 expiry; only its sha256 is stored. Pure ASGI, so it also works for streaming responses (SSE).
 
 New users are capped per client IP (`NEW_USERS_PER_IP_HOUR`, TRD §15): a client that drops its
-cookie would otherwise get fresh per-user limits and budgets on every request. The IP is the last
-`X-Forwarded-For` entry, the one the host's proxy appended (a client can forge the ones before it),
-else the socket's peer. The window is in memory, which is right for the one API process (TRD §3.1).
+cookie would otherwise get fresh per-user limits and budgets on every request. The IP is the
+`X-Forwarded-For` entry just before the ones the host's own proxies appended (`TRUSTED_PROXY_HOPS`,
+1 on Render; a client can forge the entries before it), else the socket's peer. The window is in memory, which is right for the one API process (TRD §3.1).
 """
 
 import hashlib
@@ -68,12 +68,16 @@ class NewUserLimiter:
                     del self._hits[key]
 
 
-def client_ip(scope: Scope) -> str:
+def client_ip(scope: Scope, trusted_proxies: int = 1) -> str:
+    """The client's IP: the `X-Forwarded-For` entry just before the `trusted_proxies` entries the host's
+    own proxies appended. On Render a plain request arrives as `client, render-proxy` (checked live,
+    2026-10-25), so it's the second-to-last; entries a client sends itself come before it and are ignored."""
+    hops: list[str] = []
     for name, value in scope.get("headers") or []:
         if name == b"x-forwarded-for":
-            hops = [h.strip() for h in value.decode("latin-1").split(",") if h.strip()]
-            if hops:
-                return hops[-1]
+            hops += [h.strip() for h in value.decode("latin-1").split(",") if h.strip()]
+    if hops:
+        return hops[-(trusted_proxies + 1)] if len(hops) > trusted_proxies else hops[0]
     client = scope.get("client")
     return client[0] if client else "unknown"
 
@@ -124,7 +128,7 @@ class IdentityMiddleware:
             return
         request = Request(scope)
         token = request.cookies.get(COOKIE_NAME)
-        ip = client_ip(scope)
+        ip = client_ip(scope, self.settings.trusted_proxy_hops)
 
         def admit() -> None:
             self.new_users.admit(ip)

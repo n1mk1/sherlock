@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # dropping its cookie can't reset (TRD §15).
     app_token_budget: int = 10_000_000
     new_users_per_ip_hour: int = 30  # 0 = no cap
+    # X-Forwarded-For entries the host's own proxies append after the client's (Render: 1, checked live).
+    trusted_proxy_hops: int = 1
 
     clean_max_steps: int = 20
     clean_max_seconds: int = 300

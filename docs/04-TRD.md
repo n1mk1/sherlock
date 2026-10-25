@@ -1754,6 +1754,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `USER_TOKEN_BUDGET` / `JOB_TOKEN_BUDGET` / `MESSAGE_TOKEN_BUDGET` | `2000000` / `300000` / `40000` | |
 | `APP_TOKEN_BUDGET` | `10000000` | all users' tokens per UTC day; 0 = no ceiling (§3.5) |
 | `NEW_USERS_PER_IP_HOUR` | `30` | new cookie users per client IP per hour; 0 = no cap (§15) |
+| `TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries the host's proxies append after the client's (Render: 1, checked live) (§15) |
 | `CLEAN_MAX_STEPS` / `CLEAN_MAX_SECONDS` | `20` / `300` | issues attempted, committed or not / wall-clock seconds |
 | `TAVILY_API_KEY` | — | P1 |
 | `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; kept equal to the API's own pins (check on day 1) |
@@ -1896,6 +1897,7 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **New users per client IP** (2026-10-25, owner's decision on the Day 1 review). `IdentityMiddleware` admits at most `NEW_USERS_PER_IP_HOUR` (default 30) new users per client IP in a sliding hour, in memory (one process).
   - A request that would create one past the cap gets `429 rate_limited` with `Retry-After`. Existing cookies are never capped.
   - The client IP is the last `X-Forwarded-For` entry, the one the host's proxy appended, else the socket's peer. Render appends to whatever the client sends, so the first entry can be forged.
+    - **Corrected after the live check (2026-10-25).** A plain request reached the app with two entries, the client and then a Render proxy whose address varies. The last entry would have grouped unrelated visitors by proxy node. The client is the entry just before the `TRUSTED_PROXY_HOPS` entries the host's own proxies append (default 1, for Render), so a forged entry sent before it is still ignored.
   - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's. The `sherlock.*` loggers get a stderr handler at INFO in `create_app`. Before, they had none, so their INFO lines were dropped at the root logger's WARNING level, this one included.
   - 30 an hour leaves room for judges behind one office network. The app-wide token ceiling (§3.5) bounds the cost either way.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).
