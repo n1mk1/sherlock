@@ -303,7 +303,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
       - With no `LLM_BASE_URL` and no `LLM_MOCK` (tests, a bare local run), a call fails at once with `llm_unavailable`, with no retries and no `llm_calls` row, and callers apply their fallbacks (since D4.2).
       - Retryable: timeouts, connection errors, `429` and `5xx`.
       - Any other error fails at once with `llm_unavailable`, which is HTTP `503`.
-    - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
+    - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. The 120 s counts the attempts as well as the waits: each attempt's timeout is the role's timeout or the time left, whichever is shorter, so a call that keeps timing out ends at 120 s (review of Day 2, 2026-10-25; before, it could run to 134 s). Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
     - **Budgets.** They're checked before each call:
       - the user's tokens today (`users.tokens_used_today`, reset when `tokens_day` isn't today in UTC)
       - the job's (`jobs.tokens_used`)

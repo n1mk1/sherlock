@@ -271,8 +271,9 @@ class LLMClient:
         attempt = 0
         while True:
             t0 = self.clock()
+            timeout = min(TIMEOUT_S[role], TOTAL_CAP_S - (t0 - started))  # the cap counts attempts, not just waits
             try:
-                raw = self.transport.create(model=model, messages=messages, timeout=TIMEOUT_S[role],
+                raw = self.transport.create(model=model, messages=messages, timeout=timeout,
                                             purpose=purpose, **kwargs)
                 latency = int((self.clock() - t0) * 1000)
                 c = Completion(raw["content"], raw.get("tool_calls") or [], raw.get("prompt_tokens") or 0,
@@ -288,7 +289,7 @@ class LLMClient:
             except TransientError as exc:
                 latency = int((self.clock() - t0) * 1000)
                 self._record(scope, role, model, purpose, None, latency, False, str(exc), repaired)
-                if attempt >= len(BACKOFF_S) or self.clock() - started + BACKOFF_S[attempt] > TOTAL_CAP_S:
+                if attempt >= len(BACKOFF_S) or self.clock() - started + BACKOFF_S[attempt] >= TOTAL_CAP_S:
                     raise LLMUnavailable(str(exc)) from exc
                 if scope.on_wait:
                     scope.on_wait("Waiting for the model…")
