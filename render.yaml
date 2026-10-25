@@ -8,7 +8,8 @@ services:
     name: sherlock
     runtime: docker
     region: frankfurt
-    plan: starter
+    # Standard (1 CPU, 2 GB) since 2026-10-25, for the sandbox and the Cleaner (TRD §11).
+    plan: standard
     dockerfilePath: ./api/Dockerfile
     dockerContext: .
     healthCheckPath: /healthz
@@ -27,13 +28,14 @@ services:
       # The image listens on 8080; Render routes public traffic to $PORT.
       - key: PORT
         value: "8080"
-      # Starter has 512 MB; keep each DuckDB connection well under it (TRD §10).
+      # Standard has 2 GB for everything: the API, its DuckDB connections and one sandbox
+      # worker. Each cap stays well under that, so a runaway step fails with MemoryError
+      # instead of getting the whole container killed (TRD §10).
       - key: DUCKDB_MEMORY_MB
-        value: "256"
-      # The sandbox's extra memory per step. 2048 (the default) needs the Standard plan;
-      # raise it, and DUCKDB_MEMORY_MB, when the plan moves (before the Cleaner runs here).
+        value: "512"
+      # The sandbox's extra memory per step (the 2048 default assumes a 16 GB host).
       - key: SANDBOX_MEM_MB
-        value: "256"
+        value: "1024"
       # Set in the Render dashboard when the Blueprint is created; never in the repo.
       - key: LLM_API_KEY
         sync: false

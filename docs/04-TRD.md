@@ -162,7 +162,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - `/data` is a persistent volume mounted into the container; a filesystem with local locking semantics is required for SQLite and the Parquet files. On Render it is the service's persistent disk (§11), which is a block device local to the instance. Whether a Nebius Serverless Endpoint provides this on a single replica is unverified and is the Day 1 deploy's exit check; if it fails, the same image runs on one Nebius AI Cloud VM with an attached disk.
 - Layout per dataset in [Schema §4](05-BACKEND-SCHEMA.md).
 - SQLite in WAL mode, one connection per request, `busy_timeout=5000`.
-- DuckDB implementation (`sherlock/storage.py`): `VersionConnections` keeps at most 4 connections, opens a version's connection on first use, and closes the dataset's older versions when a newer one opens. Each connection has `memory_limit = DUCKDB_MEMORY_MB` and 2 threads, and is used by one request at a time (a lock per connection). The cap is per connection, not 1 GB in total, so a small host can set it low (Render Starter: 256 MB).
+- DuckDB implementation (`sherlock/storage.py`): `VersionConnections` keeps at most 4 connections, opens a version's connection on first use, and closes the dataset's older versions when a newer one opens. Each connection has `memory_limit = DUCKDB_MEMORY_MB` and 2 threads, and is used by one request at a time (a lock per connection). The cap is per connection, not 1 GB in total, so a small host can set it low (Render Starter: 256 MB; Render Standard, from 2026-10-25: 512 MB).
 - DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections or 1 GB and evicted when a newer version exists. Commits write Parquet and SQLite only.
 
 ### 3.3 Job runner
@@ -1006,10 +1006,10 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `LLM_TOOLS_MODE` | `json` | `native` once verified |
 | `JOB_BACKEND` | `local` | `nebius` to dispatch |
 | `JOB_WORKERS` | `4` | |
-| `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | CPU seconds for the worker process; memory the generated code may add on top of the worker's own (§3.4). `render.yaml` sets 256 while the service is on the 512 MB Starter plan |
+| `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | CPU seconds for the worker process; memory the generated code may add on top of the worker's own (§3.4). `render.yaml` set 256 while the service was on the 512 MB Starter plan, and sets 1024 on the 2 GB Standard plan (from 2026-10-25), which leaves room for the API and its DuckDB connections |
 | `SANDBOXD_SOCKET` | empty (image: `/run/sherlock/sandboxd.sock`) | Unix socket of `sherlock-sandboxd`; empty starts workers directly (dev, tests) |
 | `SANDBOX_TMP` | empty (image: `/tmp/sherlock-sandbox`) | where worker temp directories go, outside `DATA_DIR`; empty uses `<system temp>/sherlock-sandbox` |
-| `DUCKDB_MEMORY_MB` | `1024` | memory cap of each DuckDB connection (ingest and the per-version cache, §3.2); `render.yaml` sets 256 for the Starter plan |
+| `DUCKDB_MEMORY_MB` | `1024` | memory cap of each DuckDB connection (ingest and the per-version cache, §3.2); `render.yaml` set 256 for the Starter plan, and sets 512 for the Standard plan (from 2026-10-25) |
 | `MAX_UPLOAD_MB` / `MAX_COLUMNS` / `MAX_ROWS` | `50` / `1000` / `2000000` | bytes enforced while streaming; rows and columns after parse |
 | `USER_STORAGE_MB` | `500` | |
 | `DATASET_TTL_DAYS` | `7` | |
@@ -1030,6 +1030,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 - **Image**: `api/Dockerfile`, multi-stage: build `web/` with pnpm, then python:3.12-slim with uv install, the built web app copied in, an entrypoint that starts as root, launches `sherlock-sandboxd` (the only process that keeps root, and only to spawn workers as the `sandbox` user, §3.4), then drops the API to the `app` user with `setpriv`, and `uvicorn sherlock.main:app --host 0.0.0.0 --port 8080 --workers 1`. The same image runs jobs with a different command, which also starts `sherlock-sandboxd` first so cleaning jobs can launch workers.
 - **Render (the host, decided 2026-10-24; PRD §9)**: `render.yaml` is a Blueprint for one web service.
   - **Service.** `runtime: docker` from `api/Dockerfile` with the repo root as the build context, in the `frankfurt` region on the `starter` plan (0.5 CPU, 512 MB). The plan moves up when the sandbox and ML land (Implementation Plan D2.4, D7), because `SANDBOX_MEM_MB` defaults to 2048.
+  - **Plan change (2026-10-25).** The owner moved the service to the `standard` plan (1 CPU, 2 GB, about $25 a month) before the Cleaner. `render.yaml` says `plan: standard`, so a Blueprint sync keeps it. On 2 GB, `SANDBOX_MEM_MB` is 1024 and `DUCKDB_MEMORY_MB` is 512, so that the API, its DuckDB connections and one sandbox worker fit together. A step that needs more memory fails with the sandbox's limit message, and the container keeps running.
   - **Disk.** A 5 GB persistent disk is mounted at `/data`. A service with a disk is single-instance and has no zero-downtime deploys, which the one-process design requires anyway. The disk can grow but never shrink.
   - **Port and health.** `PORT=8080` makes Render route to the image's port. The health check is `/healthz`. TLS ends at Render's edge, and `X-Forwarded-Proto: https` gives the identity cookie its `Secure` flag (§3.1).
   - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint.
