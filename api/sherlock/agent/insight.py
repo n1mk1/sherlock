@@ -140,7 +140,7 @@ def ask_stats(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str)
             u = stats.mannwhitneyu(g1, g2)
             sd = math.sqrt((g1.var(ddof=1) + g2.var(ddof=1)) / 2) or 1.0
             d = float((g1.mean() - g2.mean()) / sd)
-            rb = float(1 - 2 * u.statistic / (len(g1) * len(g2)))
+            rb = float(2 * u.statistic / (len(g1) * len(g2)) - 1)  # > 0 when g1 tends higher, as d is
             rows = [["Welch's t-test", float(t.statistic), float(t.pvalue), "Cohen's d", d, n],
                     ["Mann-Whitney U", float(u.statistic), float(u.pvalue), "rank-biserial r", rb, n]]
             effect_words, size = "Cohen's d", _size(abs(d), (0.2, 0.5, 0.8))

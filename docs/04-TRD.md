@@ -1726,6 +1726,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
   - A column is a number when it is int or float with more than 10 distinct values, and the number is the outcome.
   - The test, run with SciPy on every row with both filled in (no 2,000-row cap):
     - a number across two groups: Welch's t-test with Cohen's d, then Mann-Whitney U with the rank-biserial r;
+      - (Day 7 review, 2026-10-25) The rank-biserial r is 2U₁/(n₁n₂) − 1, from SciPy's U for the first group, so it is positive when the first group's values tend to be larger: the same direction as Cohen's d. It was 1 − 2U₁/(n₁n₂), the opposite sign, so a table could show d = 0.112 beside r = −0.049 for the same difference (age by survived on Titanic).
     - across 3–20 groups: Kruskal-Wallis with epsilon squared;
     - two categories (at most 20 values each): chi-square with Cramér's V;
     - two numbers: Pearson and Spearman.

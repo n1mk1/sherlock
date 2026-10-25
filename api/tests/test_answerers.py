@@ -31,6 +31,7 @@ def test_ask_stats_picks_the_test_by_the_column_types(client, ready):
     table = blocks_of(msg, "table")[0]
     assert [c["name"] for c in table["columns"]] == ["test", "statistic", "p_value", "effect", "effect_size", "n"]
     assert table["rows"][0][0] == "Welch's t-test" and table["rows"][0][2] < 0.001
+    assert (table["rows"][0][4] > 0) == (table["rows"][1][4] > 0)  # Cohen's d and the rank-biserial r agree in sign
     by_key = {c["key"]: c for c in chips(msg)}
     assert by_key[f"{table['result']}:0:5"]["raw"] == table["rows"][0][5]  # every number is a cell of the result
     groups = blocks_of(msg, "table")[1]
