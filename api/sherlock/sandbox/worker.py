@@ -1,9 +1,14 @@
 """The sandbox worker (TRD §3.4): `python -I -m sherlock.sandbox.worker`, one process per run.
 
 Protocol: one JSON object on stdin `{input, output, code, cpu_s, mem_mb}`; the worker loads the
-input Parquet as `df`, runs `code` with only `pd`, `np`, `df` (and later the helper library) in
-scope, expects a DataFrame in `result`, writes it to `output`, and prints one JSON line:
-`{ok, rows_in, rows_out, columns_added, columns_removed, error, traceback_tail, stdout_tail}`.
+input Parquet as `df`, runs `code` with only `pd`, `np`, `df` and the cleaning helpers
+(`sherlock.cleaning.helpers`) in scope, expects a DataFrame in `result`, writes it to `output`, and
+prints one JSON line:
+`{ok, rows_in, rows_out, columns_added, columns_removed, error, traceback_tail, stdout_tail, flags}`.
+
+A column the code didn't mean to retype keeps its input type on the way out: pandas reads a
+nullable integer column as float and a DATE as a timestamp, so such columns are cast back when
+that loses nothing. `flags` is `result.attrs["sherlock_flags"]` from `flag_rows`.
 
 Defences inside the process, on top of the static check: CPU and address-space limits (POSIX),
 sockets disabled, proxies pointed nowhere, a builtins table without file, eval or import escape
@@ -98,9 +103,53 @@ def restricted_globals(df):
             raise ImportError(f"import of {name!r} is not allowed in the sandbox")
         return real_import(name, globals, locals, fromlist, level)
 
+    from sherlock.cleaning import helpers
+
     safe = {name: getattr(builtins, name) for name in SAFE_BUILTINS if hasattr(builtins, name)}
     safe["__import__"] = guarded_import
-    return {"__builtins__": safe, "pd": pd, "np": np, "df": df}
+    scope = {"__builtins__": safe, "pd": pd, "np": np, "df": df}
+    scope.update({name: getattr(helpers, name) for name in helpers.__all__})
+    return scope
+
+
+INT_TYPES = ("BIGINT", "INTEGER", "SMALLINT", "TINYINT", "HUGEINT", "UBIGINT", "UINTEGER")
+
+
+def _q(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def output_select(result, input_types: dict[str, str]) -> str:
+    """The SELECT that writes `result`, casting columns back to their input type where pandas
+    changed the type only in transit (nullable ints → float, DATE → timestamp, all-missing → object)."""
+    import pandas as pd
+
+    parts = []
+    for column in result.columns:
+        s = result[column]
+        original = input_types.get(column)
+        expr = _q(column)
+        if column == "_row_id":
+            expr = f"CAST({expr} AS BIGINT)"
+        elif column == "_quarantine_reason":
+            expr = f"CAST({expr} AS VARCHAR)"
+        elif original is not None:
+            present = s.dropna()
+            if present.empty:
+                expr = f"CAST({expr} AS {original})"
+            elif original in INT_TYPES and s.dtype.kind == "f" and bool((present % 1 == 0).all()):
+                expr = f"CAST({expr} AS {original})"
+            elif original == "DATE" and s.dtype.kind == "M" and bool((present.dt.normalize() == present).all()):
+                expr = f"CAST({expr} AS DATE)"
+            elif original.startswith("TIMESTAMP") and s.dtype.kind == "M":
+                expr = f"CAST({expr} AS {original})"
+            elif original == "BOOLEAN" and s.dtype == object and present.map(lambda v: isinstance(v, bool)).all():
+                expr = f"CAST({expr} AS BOOLEAN)"
+            elif original == "VARCHAR" and s.dtype == object and pd.api.types.infer_dtype(present) == "string":
+                expr = f"CAST({expr} AS VARCHAR)"
+        parts.append(f"{expr} AS {_q(column)}")
+    return "SELECT " + ", ".join(parts) + " FROM result_frame"
+
 
 
 def run(request: dict) -> dict:
@@ -110,6 +159,7 @@ def run(request: dict) -> dict:
     block_network()
     reader = duckdb.connect(":memory:")
     df = reader.execute("SELECT * FROM read_parquet(?)", [request["input"]]).df()
+    input_types = {r[0]: str(r[1]) for r in reader.execute("DESCRIBE SELECT * FROM read_parquet(?)", [request["input"]]).fetchall()}
     reader.close()
     rows_in, columns_in = len(df), list(df.columns)
     scope = restricted_globals(df)
@@ -132,8 +182,10 @@ def run(request: dict) -> dict:
                 "stdout_tail": out.getvalue()[-STDOUT_CHARS:]}
     writer = duckdb.connect(":memory:")
     writer.register("result_frame", result)
-    writer.execute(f"COPY result_frame TO '{request['output'].replace(chr(39), chr(39) * 2)}' (FORMAT PARQUET)")
+    select = output_select(result, input_types)
+    writer.execute(f"COPY ({select}) TO '{request['output'].replace(chr(39), chr(39) * 2)}' (FORMAT PARQUET)")
     writer.close()
+    flags = result.attrs.get("sherlock_flags") or {}
     return {
         "ok": True,
         "rows_in": rows_in,
@@ -143,6 +195,7 @@ def run(request: dict) -> dict:
         "error": None,
         "traceback_tail": None,
         "stdout_tail": out.getvalue()[-STDOUT_CHARS:],
+        "flags": {str(k): [int(i) for i in v][:10000] for k, v in flags.items()},
     }
 
 

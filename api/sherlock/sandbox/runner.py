@@ -35,6 +35,7 @@ class SandboxResult:
     traceback_tail: str | None = None
     stdout_tail: str | None = None
     violations: list[str] = field(default_factory=list)
+    flags: dict[str, list[int]] = field(default_factory=dict)  # flag_rows reasons → _row_ids
     wall_ms: int = 0
     timed_out: bool = False
 
@@ -119,6 +120,7 @@ def _parse(stdout: str, stderr: str, returncode: int, timed_out: bool) -> Sandbo
         ok=bool(data.get("ok")), error=data.get("error"), rows_in=data.get("rows_in"), rows_out=data.get("rows_out"),
         columns_added=data.get("columns_added") or [], columns_removed=data.get("columns_removed") or [],
         traceback_tail=data.get("traceback_tail"), stdout_tail=data.get("stdout_tail"),
+        flags=data.get("flags") or {},
     )
 
 

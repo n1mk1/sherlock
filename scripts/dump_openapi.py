@@ -18,5 +18,5 @@ OUT = Path(__file__).resolve().parents[1] / "web" / "src" / "api" / "openapi.jso
 
 if __name__ == "__main__":
     schema = create_app().openapi()
-    OUT.write_text(json.dumps(schema, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    OUT.write_bytes((json.dumps(schema, indent=1, sort_keys=True) + "\n").encode("utf-8"))  # LF on Windows too
     print(f"wrote {OUT} ({len(schema['paths'])} paths)")

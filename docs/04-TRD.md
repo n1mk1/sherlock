@@ -224,7 +224,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - runs the code with a builtins table that has no `open`, `eval`, `exec`, `compile`, `type`, `object`, `getattr` or `globals`, and with an `__import__` that allows only the allowlist
     - writes `result` with DuckDB
   - **Memory limit.** It applies only around the generated code: the soft `RLIMIT_AS` = the process's current address space + `SANDBOX_MEM_MB`, lifted afterwards. DuckDB can't run under an address-space limit (it reserves large virtual memory for its threads), so a whole-process limit would break the worker's own reads and writes.
-  - **Worker output.** User `print` output is captured (`stdout_tail`). A `MemoryError` is reported as such.
+  - **Worker output.** User `print` output is captured (`stdout_tail`). A `MemoryError` is reported as such. Since D3.1 the cleaning helpers are in scope, columns keep their input type through the round trip where nothing changed them, and the reply adds `flags` (§7.2).
   - **Runner (`runner.py`).**
     - It copies the input into a fresh `SANDBOX_TMP/<uuid>/`, outside `DATA_DIR`.
     - It runs the worker through `sherlock-sandboxd` when `SANDBOXD_SOCKET` is set, else as a direct subprocess (dev and tests).
@@ -884,6 +884,35 @@ Schemas as built (2026-10-24, `sherlock/llm/schemas.py`): `Diagnosis` adds two f
 Helpers available in the sandbox (`sherlock.cleaning.helpers`): `parse_dates_smart(s, order_hint=None)`, `parse_numbers(s, locale_hint=None)`, `strip_sentinels(s, extra=[])`, `normalize_whitespace_case(s, mode="title"|"lower"|"upper"|"keep")`, `canonicalize_categories(s, mapping=None)` (rapidfuzz clustering; mapping from the LLM when provided), `extract_pattern(s, regex, group)`, `fill_by_group(df, col, by, stat="median")`, `flag_rows(df, mask, reason)`, `quarantine_rows(df, mask, reason)`, `fix_encoding(s)`.
 
 Verifier scoring: hard checks (row ledger, no NaN introduction, dtype sanity, pandera, lossless round-trip for type parses, parse failures sent to quarantine) → 0 if any fails; soft score = mean of (parse success rate, share of the issue's examples resolved, 1 − share of unrelated cells touched, distribution conservation where applicable).
+
+Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
+- **Helpers (`helpers/__init__.py`).** The ten helpers above, plus `parse_failures(original, parsed)`: the rows that had a real value (not a placeholder) and didn't parse, so code can quarantine them.
+  - None changes its input in place or removes rows.
+  - `strip_sentinels` turns the profiler's placeholder strings, plus `extra` values (text or numbers such as `-999`), into missing.
+  - `parse_numbers` handles currency signs and codes, thousands separators, `%` (kept as the number), `(300)` and `300-`. Comma decimals come from `locale_hint` (`"comma"` or a locale like `"de"`), or else a guess per column. Failures become NaN.
+  - `parse_dates_smart` tries ISO 8601, then the formats for `order_hint` (`dmy`, `mdy` or `ymd`). Without a hint, it tries month-first and day-first and keeps the one that parses more, month-first on a tie. dateparser handles up to 500 values left over. Failures become NaT.
+  - `normalize_whitespace_case(mode="keep")` trims, collapses inner spaces, and gives spellings that differ only by case the column's most frequent spelling.
+  - `canonicalize_categories(s, mapping=None, threshold=90)` applies a mapping, or clusters values whose rapidfuzz ratio, ignoring case and spacing, is at least `threshold`, and maps each cluster to its most frequent spelling.
+  - `fill_by_group(df, col, by, stat)` fills from the group's `median`, `mean` or `mode`, computed over rows that aren't quarantined, and falls back to the whole column's.
+  - `flag_rows(df, mask, reason)` changes no data. It records the rows in `df.attrs["sherlock_flags"]`, which the sandbox reports back as `flags`.
+  - `quarantine_rows` sets `_quarantine_reason` on rows that don't have one yet.
+- **The sandbox and the helpers.**
+  - Every helper is in scope by name in sandbox code, next to `pd`, `np` and `df`.
+  - On the way out, the worker casts a column back to its input type when pandas changed the type only in transit: a nullable integer read as float with all-integral values, a `DATE` read as a midnight timestamp, a `TIMESTAMP`, a column of bools, text, or an all-missing column. `_row_id` is written as `BIGINT` and `_quarantine_reason` as `VARCHAR`.
+- **Verifiers (`verifiers.py`).** `verify(before, after, detector, column)` returns a report with the hard checks, the soft components and the score.
+  - Hard checks:
+    - `row_ledger`: the same `_row_id`s, none added or removed.
+    - `pandera`: no user column removed, a unique non-null `_row_id`, `_quarantine_reason` text.
+    - `nan_introduced`: a value may become missing only if it was a placeholder (the profiler's strings, or −99999 … 99999) or its row was quarantined by the step.
+    - `dtype`: no column holds text next to other types, and no numeric or date column turned into text.
+    - `parse_quarantine`: in a column retyped from text, every value that didn't convert has its row quarantined. This is also the lossless round-trip check: no value of a type parse is lost without its row being quarantined and its text kept in lineage.
+  - Soft components:
+    - `parse_rate`.
+    - `resolved`: 1 − (the issue's count after ÷ before), from re-running the issue's detector on the result's usable rows.
+    - `unrelated`: penalizes changes outside the issue's column.
+    - `distribution`, for a numeric column that stays numeric: 1 − the median shift in standard deviations − the change in spread.
+  - The score is the mean of the soft components, or 0 if any hard check fails.
+- **Gate (`gate.py`).** It's the formula above. With no candidate passing it's `skip` ("no candidate passed the checks"). A `flag` names its reason ("changes more than a fifth of the data", or "medium confidence (0.62)").
 
 ### 7.3 Dashboard builder
 
