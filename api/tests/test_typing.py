@@ -1,0 +1,84 @@
+import duckdb
+import pandas as pd
+import pytest
+
+from sherlock.profile import typing as typing_step
+from tests.test_jobs import upload, wait_status
+
+API = "/api/v1"
+pytestmark = pytest.mark.usefixtures("run_jobs")
+
+
+def frame_conn(columns: dict[str, list]) -> duckdb.DuckDBPyConnection:
+    n = len(next(iter(columns.values())))
+    df = pd.DataFrame({"_row_id": range(1, n + 1), "_quarantine_reason": [None] * n, **columns})
+    df = df.astype({c: object for c in columns})
+    conn = duckdb.connect()
+    conn.register("src", df)
+    conn.execute("CREATE TABLE t AS SELECT _row_id::BIGINT AS _row_id, _quarantine_reason::VARCHAR AS _quarantine_reason, "
+                 + ", ".join(f'"{c}"::VARCHAR AS "{c}"' for c in columns) + " FROM src")
+    return conn
+
+
+def test_plan_casts_only_lossless_columns():
+    n = 200
+    conn = frame_conn({
+        "qty": [str(i) for i in range(n - 2)] + ["N/A", None],
+        "code": [f"{i:03d}" for i in range(n)],          # leading zeros: stays text
+        "price": [f"{i}.5" for i in range(n - 1)] + ["oops"],
+        "flag": ["yes", "no"] * (n // 2),
+        "day": [f"2024-01-{(i % 28) + 1:02d}" for i in range(n)],
+        "city": ["Paris", "Lyon"] * (n // 2),
+    })
+    casts = typing_step.plan(conn)
+    assert set(casts) == {"qty", "price", "flag", "day"}
+
+    sql = typing_step.statement(["qty", "code", "price", "flag", "day", "city"], casts)
+    conn.execute("CREATE VIEW df AS SELECT * FROM t")
+    types = {r[0]: r[1] for r in conn.execute(f"DESCRIBE ({sql})").fetchall()}
+    assert (types["qty"], types["code"], types["price"], types["flag"], types["day"]) == (
+        "BIGINT", "VARCHAR", "DOUBLE", "BOOLEAN", "DATE")
+    out = conn.execute(f"SELECT * FROM ({sql})").df()
+    assert out["qty"].isna().sum() == 2                      # the sentinel became NULL; no quarantine
+    bad = out[out["_quarantine_reason"].notna()]
+    assert bad["_quarantine_reason"].tolist() == ["type: price"] and bad["_row_id"].tolist() == [n]
+
+    # The same statement runs over a pandas DataFrame named df (the exported notebook).
+    df = conn.execute("SELECT * FROM t").df()
+    result = duckdb.sql(sql).df()
+    assert result["price"].dtype == "float64" and len(result) == len(df) == n
+
+
+def test_upload_commits_the_typing_step_as_step_one(client):
+    csv = "id,age,score,joined\n" + "".join(f"{i},{20 + i % 50},{i}.25,2024-02-{(i % 28) + 1:02d}\n" for i in range(150))
+    csv += "150,abc,1.0,2024-01-01\n"  # one age that isn't a number: quarantined
+    ds = upload(client, csv.encode())
+    done = wait_status(client, ds["id"], "offer", "failed")
+    assert done["status"] == "offer" and done["current_version"] == 2
+
+    [step] = client.get(f"{API}/datasets/{ds['id']}/steps").json()
+    assert (step["no"], step["kind"], step["created_by"], step["gate"]) == (1, "clean", "system", "commit")
+    assert step["summary"].startswith("Typed 4 columns from text: id, age, score, joined")
+    assert step["notebook_code"].startswith('result = duckdb.sql("""') and step["notebook_code"].endswith("df = result\n")
+    assert step["impact"]["quarantined"] == 1
+
+    card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
+    assert card["version"] == 2 and card["quarantined"] == 1
+    assert {c["name"]: c["type"] for c in card["columns"]}["age"] == "int"
+
+    page = client.get(f"{API}/datasets/{ds['id']}/rows", params={"view": "flagged"}).json()
+    [row] = page["rows"]
+    assert row["quarantined"] and row["quarantine_reason"] == "type: age" and row["marks"] == {"age": "invalid"}
+    history = client.get(f"{API}/datasets/{ds['id']}/cells/{row['_row_id']}/age/history").json()["entries"]
+    assert history[0]["old"] == "abc" and history[0]["new"] is None and history[0]["flag"] == "quarantined"
+
+    # Undoing it warns first, even though it's the latest step.
+    r = client.post(f"{API}/datasets/{ds['id']}/steps/{step['id']}/undo", json={"base_version": 2}).json()
+    assert r == {"confirm_required": True, "replay_needed": [], "warning": "typing"}
+
+
+def test_all_text_file_gets_no_typing_step(client):
+    ds = upload(client, b"name,city\nAnn,Paris\nBob,Lyon\n")
+    done = wait_status(client, ds["id"], "offer", "failed")
+    assert done["current_version"] == 1
+    assert client.get(f"{API}/datasets/{ds['id']}/steps").json() == []

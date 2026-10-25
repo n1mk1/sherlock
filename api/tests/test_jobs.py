@@ -18,7 +18,10 @@ from sherlock.profile import service as profile_service
 from sherlock.routers import streams
 
 API = "/api/v1"
+pytestmark = pytest.mark.usefixtures("run_jobs")
 CSV = b"name,age,fare\nAnn,30,7.25\nBob,,8.05\nCy,41,-1\nDee,29,100\n"
+# All text, so the profile job commits no typing step: the event-sequence tests stay about the runner.
+TEXT_CSV = b"name,city\nAnn,Paris\nBob,Lyon\nCy,Nice\n"
 
 
 def upload(client, content: bytes = CSV, filename="data.csv"):
@@ -63,22 +66,23 @@ def test_upload_queues_profile_job_that_ends_in_offer(client):
     done = wait_status(client, ds["id"], "offer", "failed")
     assert done["status"] == "offer"
 
-    # The card was built by the job, before any request asked for it.
-    assert db_rows("SELECT 1 FROM datacards WHERE dataset_id = ? AND version = 1", ds["id"])
+    # The typing step made version 2, and the job built its card before any request asked for it.
+    assert done["current_version"] == 2
+    assert db_rows("SELECT 1 FROM datacards WHERE dataset_id = ? AND version = 2", ds["id"])
     jobs = client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()
     assert [j["kind"] for j in jobs] == ["profile"]
     job = jobs[0]
     assert job["status"] == "done" and job["progress"]["pct"] == 100
     assert job["progress"]["label"] == "Profiling 3 columns"
-    assert job["result"]["version"] == 1 and job["result"]["issues"] >= 1
+    assert job["result"]["version"] == 2 and job["result"]["issues"] >= 1 and job["result"]["typing_step_id"]
     assert job["started_at"] and job["finished_at"]
     card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
     assert len(card["issues"]) == job["result"]["issues"]
 
     types = [t for t, _ in events_of(ds["id"])]
-    assert types == ["job.progress", "dataset.status", "job.done"]
-    _, status = events_of(ds["id"])[1]
-    assert status == {"dataset_id": ds["id"], "status": "offer", "current_version": 1}
+    assert types == ["job.progress", "version.created", "job.log", "job.progress", "dataset.status", "job.done"]
+    _, status = events_of(ds["id"])[4]
+    assert status == {"dataset_id": ds["id"], "status": "offer", "current_version": 2}
 
 
 def test_sample_is_profiled(client):
@@ -114,7 +118,7 @@ def test_failed_profile_marks_dataset_failed_and_retry_recovers(client, monkeypa
 
 
 def test_concurrent_datacard_request_waits_for_the_job(client):
-    ds = upload(client)
+    ds = upload(client, TEXT_CSV)
     card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
     wait_status(client, ds["id"], "offer")
     assert client.get(f"{API}/datasets/{ds['id']}/datacard").json() == card
@@ -303,19 +307,19 @@ def _types(events):
 
 def test_sse_live_then_replay(live, app):
     collected = []
-    ds = live.post(f"{API}/datasets", files={"file": ("a.csv", CSV, "text/csv")}).json()
+    ds = live.post(f"{API}/datasets", files={"file": ("a.csv", TEXT_CSV, "text/csv")}).json()
     cookies = dict(live.cookies)
     wait_for(lambda: live.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer")
 
     # Replay from the start: everything the profile job emitted, in order, with increasing ids.
     replayed = read_events(live, f"{API}/datasets/{ds['id']}/events", {"Last-Event-ID": "0"},
                            until=lambda evs: "job.done" in _types(evs))
-    assert _types(replayed) == ["job.progress", "dataset.status", "job.done"]
+    assert _types(replayed) == ["job.progress", "job.progress", "dataset.status", "job.done"]
     ids = [e[0] for e in replayed]
     assert ids == sorted(ids)
-    assert replayed[2][2]["status"] == "done" and replayed[2][2]["dataset_id"] == ds["id"]
+    assert replayed[3][2]["status"] == "done" and replayed[2][2]["dataset_id"] == ds["id"]
 
-    # Resume after the first event: only the later two come back.
+    # Resume after the first event: only the later three come back.
     resumed = read_events(live, f"{API}/datasets/{ds['id']}/events", {"Last-Event-ID": str(ids[0])},
                           until=lambda evs: "job.done" in _types(evs))
     assert [e[0] for e in resumed] == ids[1:]
@@ -333,18 +337,18 @@ def test_sse_live_then_replay(live, app):
     t = threading.Thread(target=listen)
     t.start()
     wait_for(lambda: app.state.bus.subscriber_count >= 1)
-    second = live.post(f"{API}/datasets", files={"file": ("b.csv", CSV, "text/csv")}).json()
+    second = live.post(f"{API}/datasets", files={"file": ("b.csv", TEXT_CSV, "text/csv")}).json()
     t.join(timeout=15)
-    assert _types(collected) == ["job.progress", "dataset.status"]  # job.done isn't on the user stream
+    assert _types(collected) == ["job.progress", "job.progress", "dataset.status"]  # job.done isn't on the user stream
     assert all(e[2]["dataset_id"] == second["id"] for e in collected)
 
 
 def test_user_stream_replay_filters_types(live):
-    ds = live.post(f"{API}/datasets", files={"file": ("a.csv", CSV, "text/csv")}).json()
+    ds = live.post(f"{API}/datasets", files={"file": ("a.csv", TEXT_CSV, "text/csv")}).json()
     wait_for(lambda: live.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer")
     events = read_events(live, f"{API}/events", {"Last-Event-ID": "0"},
                          until=lambda evs: "dataset.status" in _types(evs))
-    assert _types(events) == ["job.progress", "dataset.status"]
+    assert _types(events) == ["job.progress", "job.progress", "dataset.status"]
 
 
 def test_sse_heartbeat(live, monkeypatch):

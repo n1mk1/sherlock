@@ -518,7 +518,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 - **`POST /jobs/{jid}/retry`.** It answers `201` with a new queued job of the same kind, dataset and params. Only a `failed` or `cancelled` job can be retried; any other is `409 conflict`.
 - **`GET /jobs/{jid}/log`.** It returns the job's `job.log` event data, oldest first.
 - **`progress`.** Before a job reports, it is `{ step: 0, of: 0, label: "", pct: 0 }`.
-- **The profile job.** It reports one step, labelled "Profiling <n> columns". Its `result` is `{ version, issues }`, the number of issues on the card.
+- **The profile job.** It reports two steps, "Typing <n> columns" (the typing step, §7.1 step 3b) and "Profiling <n> columns". Its `result` is `{ version, issues, typing_step_id }`: the version profiled, the number of issues on its card, and the typing step's ID, or null when no column was typed.
 
 ---
 
@@ -763,13 +763,35 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
 
 Implementation of step 6 (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/profile.py`):
-- Steps 3–6 run as the `profile` job, which every import queues.
+- Steps 3–6 run as the `profile` job, which every import queues. Step 3b, the typing step, comes first, and the card is then built for the version it produces.
 - The job builds and caches the current version's DataCard, then sets the status and emits `dataset.status`.
 - Until the Cleaner (D3) and the dashboard builder (D4) exist, every "After upload" setting ends in `offer`.
 - If the job fails, or is cancelled, the dataset becomes `failed` and the reason goes in `error`. The UI shows it as "Profiling failed: <reason>" (App Flow §3.3). Retrying the job (§4.10) moves the dataset back to `profiling`.
 - A dataset deleted before its job runs is skipped.
 
-Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleaning/detectors/`). The step 3b typing step is Implementation Plan D2.8 and not built yet.
+Implementation of step 3b, the typing step (2026-10-24, Implementation Plan D2.8, `sherlock/profile/typing.py`):
+- **When.** It's the profile job's first step, on version 1 of a dataset with no steps yet. A retried profile job finds the step there and skips it.
+- **Which columns.** The inference below runs on version 1. A column is a candidate when its type is `int`, `float`, `bool`, `date` or `datetime`, and it's cast only when at least 99% of its values (sentinels aside) cast losslessly:
+  - `int`: the `BIGINT` written back as text equals the source, a leading `+` aside. So `007` isn't lossless, and codes with leading zeros stay text.
+  - `float`: `DOUBLE`, unless the value starts with a leading zero (`0` followed by a digit).
+  - `bool`: true/t/yes/y and false/f/no/n.
+  - `date` and `datetime`: the detected format through `TRY_STRPTIME`, or a plain `TRY_CAST` for ISO 8601.
+
+  Category, text, ID and empty columns are never cast, so a file with nothing to type gets no step and stays at version 1.
+- **The statement.** One DuckDB `SELECT` over `df`:
+  - The sentinel strings of the inference rules, compared trimmed and case-folded, become NULL in the cast columns.
+  - Each cast column is the lossless cast of its trimmed value. A value that doesn't cast losslessly becomes NULL.
+  - `_quarantine_reason` becomes `type: <column>` for the first cast column whose value failed, unless the row was already quarantined.
+- **The step.** Kind `clean`, `created_by` `system`, gate `commit`, confidence 1.
+  - `code` is `result = duckdb.sql(<the statement, triple-quoted>).df()`, and `notebook_code` is that plus `df = result`.
+  - The summary reads "Typed 7 columns from text: pclass, survived, age, …".
+  - It has one decision ("Which columns hold numbers, true/false values or dates?").
+  - In the app, `commit_step` runs the same statement with the parent's Parquet exposed as the view `df`.
+- **Lineage.** A sentinel that became NULL is a changed cell. A failed value is a cell with flag `quarantined`, its text kept in `old_value` (§7.9), plus a `_row` quarantine event.
+- **Titanic.** It types `pclass`, `survived`, `age`, `sibsp`, `parch`, `fare` and `body` in about 0.1 s and quarantines no rows, so the sample's current version after profiling is 2.
+- **Notebook dtypes.** pandas has no NULL for `int64`, so in the notebook a `BIGINT` column with NULLs comes back from `.df()` as `float64` (Titanic's `body`). The notebook's assertion cell (D5.6) has to compare such columns as numbers.
+
+Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleaning/detectors/`). The typing step (3b) is described above.
 - **Inference input.** It runs in pandas on the version's usable rows. Values are stripped, and the sentinel strings are left out before inference.
 - **Type rules.** First match wins, and a type needs ≥ 99% of the remaining values:
   1. `bool`: true/false/yes/no/t/f/y/n

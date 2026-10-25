@@ -11,6 +11,9 @@ TEST_MODELS = {
     "MODEL_SMALL": "nvidia/nemotron-test-nano",
     "MODEL_EMBED": "",
     "NVIDIA_EMBED_MODELS": "",
+    # No job workers: an upload's profile job (and its typing step) would race the test's own commits.
+    # Tests of jobs opt in with the run_jobs fixture.
+    "JOB_WORKERS": "0",
 }
 
 
@@ -26,6 +29,12 @@ def test_env(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'data' / 'sherlock.db').as_posix()}")
     get_settings.cache_clear()
     yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def run_jobs(monkeypatch):
+    monkeypatch.setenv("JOB_WORKERS", "4")
     get_settings.cache_clear()
 
 
