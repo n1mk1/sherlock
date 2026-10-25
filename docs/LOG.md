@@ -90,7 +90,7 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - A live call still succeeded afterwards, with the trial credit at $0.00.
   - The console's "Post-trial preference" says the account stops usage when the 30-day trial ends (29 days left) unless it's switched to paid usage.
 - **What needs you:**
-  - Switch Token Factory to paid usage (console → Post-trial preference) before the trial ends in 29 days. Otherwise the deployed app loses the model mid-judging (PRD §9: availability through judging). It's a billing setting, so it's yours to change.
+  - ~~Switch Token Factory to paid usage before the trial ends.~~ Done by the owner on 2026-10-24, so model calls draw on the $25 balance after the trial and the deployed app keeps its model through judging (PRD §9).
   - The two judgement calls on cleaning quality before the demo:
     - Should "missing values" in text columns stay missing rather than become `'Unknown'`? The detector's proposal currently suggests "keep as Unknown".
     - Should the critic's concerns lower confidence less, so fills like "Median by title" commit outright?
