@@ -52,7 +52,13 @@ export async function saveCanvas(datasetId: string, canvas: CanvasDoc, etag: str
 }
 
 const byId = <T extends { id: string }>(list: T[]) => new Map(list.map((x) => [x.id, x]));
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+// Compared with keys sorted: the server stores the canvas with sorted keys, and this tab writes its
+// own order, so a plain JSON.stringify called every node "edited here" and undid other tabs' moves.
+const canonical = (v: unknown): unknown =>
+  Array.isArray(v) ? v.map(canonical)
+    : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])]))
+      : v;
+export const same = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 
 /** Three-way merge: what this tab changed since `base` (added, removed, edited), applied to `server`. */
 export function mergeCanvas(base: CanvasDoc, local: CanvasDoc, server: CanvasDoc): CanvasDoc {

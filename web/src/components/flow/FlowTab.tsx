@@ -15,7 +15,7 @@ import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useM
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { canvasKey, mergeCanvas, saveCanvas, useCanvas, type CanvasDoc } from "@/api/canvas";
+import { canvasKey, mergeCanvas, same, saveCanvas, useCanvas, type CanvasDoc } from "@/api/canvas";
 import { ApiError } from "@/api/client";
 import { useWidgets } from "@/api/queries";
 import { useCardActions, useCards } from "@/api/stories";
@@ -94,7 +94,6 @@ function toDoc(all: FlowNode[], allEdges: FlowEdge[]): CanvasDoc {
   };
 }
 
-const same = (a: CanvasDoc, b: CanvasDoc) => JSON.stringify(a) === JSON.stringify(b);
 const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 function cardTitle(card: Card, titles: Record<string, string>) {
