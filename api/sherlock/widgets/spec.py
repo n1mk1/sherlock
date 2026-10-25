@@ -14,9 +14,9 @@ VIEW_TYPES = (
     "bar", "line", "area", "pie", "ring", "gauge", "scatter", "heatmap", "histogram", "box", "kpi", "table",
     "importance", "confusion", "roc", "residuals", "coefficients",
 )
-# Views the web app draws before the custom visx charts land (Implementation Plan D4.7; D6.5 adds
-# histogram, heatmap, box and scatter). The builder only proposes these.
-P0_VIEWS = ("bar", "line", "area", "pie", "ring", "kpi", "table")
+# Views the web app draws: Bklit's (D4.7) and the custom visx charts (D6.5). The builder only proposes
+# these; gauges render as a KPI tile.
+P0_VIEWS = ("bar", "line", "area", "pie", "ring", "kpi", "table", "histogram", "heatmap", "box", "scatter")
 AGGS = ("count", "sum", "avg", "min", "max", "median", "rate")
 
 ViewType = Literal[

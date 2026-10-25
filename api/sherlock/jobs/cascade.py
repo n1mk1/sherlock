@@ -1,9 +1,17 @@
-"""The `cascade` job (TRD §7.6, App Flow §16): after a new version, bring the dashboard up to date.
+"""The `cascade` job (TRD §7.6, App Flow §16): after a new version, bring the dashboard and its
+stories up to date, touching only what depends on what changed.
 
-Cascade v0 (Implementation Plan D5.5): every live widget re-runs its query on the new version
-(warming the data cache), records `version_built`, and emits `widget.updated`; `cascade.started`
-and `cascade.done` frame the run. A commit queues one cascade per dataset: one already queued
-absorbs the next, and a job waits until 2 s after it was queued, so saves within 2 s cascade once.
+- **What changed.** The steps since the oldest widget's `version_built`: their target columns and
+  added or removed columns (an undo adds the steps it replayed). Rows added, deleted, quarantined
+  or restored, or a change of columns, affect every widget.
+- **Widgets.** An affected widget (one whose scope or query names a changed column) re-runs its
+  query on the new version, records `version_built` and emits `widget.updated`. The others only
+  record the new version.
+- **Cards.** The affected widgets' cards are narrated again (cut 6: no material-change check), an
+  edited card gets a suggestion, and with "Story updates: Ask first" they're marked outdated
+  instead; then the overview.
+- **Debounce.** A commit queues one cascade per dataset: one already queued, or running but still in
+  its 2 s wait, absorbs the next, so saves within 2 s cascade once.
 """
 
 import asyncio
@@ -38,7 +46,43 @@ def _age_s(created_at: str) -> float:
     return (datetime.now(UTC) - created).total_seconds()
 
 
+def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -> tuple[set[str], bool]:
+    """(changed columns, every widget affected) for the steps after `since` up to `version`."""
+    cols: set[str] = set()
+    everything = False
+    steps = db.execute("SELECT * FROM steps WHERE dataset_id = ? AND to_version > ? AND to_version <= ?",
+                       (dataset_id, since, version)).fetchall()
+    for s in steps:
+        ids = [s["id"]] + (json.loads(s["replayed_step_ids_json"]) if s["replayed_step_ids_json"] else [])
+        for sid in ids:
+            r = db.execute("SELECT * FROM steps WHERE id = ?", (sid,)).fetchone()
+            cols.update(json.loads(r["column_targets_json"]))
+            if json.loads(r["columns_added_json"]) or json.loads(r["columns_removed_json"]):
+                everything = True
+            if r["kind"] == "clean" and r["created_by"] == "system":
+                everything = True  # typing (or undoing it) changes column types
+            impact = json.loads(r["impact_json"])
+            if impact.get("rows_added") or impact.get("rows_deleted") or impact.get("quarantined"):
+                everything = True
+            if r["edits_json"] and json.loads(r["edits_json"]).get("restore_row_ids"):
+                everything = True
+        if s["kind"] == "undo" and s["undone_step_id"]:
+            u = db.execute("SELECT * FROM steps WHERE id = ?", (s["undone_step_id"],)).fetchone()
+            cols.update(json.loads(u["column_targets_json"]))
+            impact = json.loads(u["impact_json"])
+            if impact.get("rows_added") or impact.get("rows_deleted") or impact.get("quarantined") \
+                    or json.loads(u["columns_added_json"]) or json.loads(u["columns_removed_json"]) \
+                    or (u["kind"] == "clean" and u["created_by"] == "system"):
+                everything = True
+    return cols, everything
+
+
 def _cascade(ctx: JobContext) -> dict:
+    from sherlock.llm.client import CallScope, LLMClient
+    from sherlock.routers.me import effective_settings
+    from sherlock.db import users
+    from sherlock.stories import facts as fx
+    from sherlock.stories import service as stories
     from sherlock.widgets import service as widgets
 
     wait = DEBOUNCE_S - _age_s(ctx.row["created_at"])
@@ -50,23 +94,53 @@ def _cascade(ctx: JobContext) -> dict:
     version = dataset["current_version"]
     rows = ctx.db.execute("SELECT * FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL ORDER BY order_no",
                           (dataset["id"],)).fetchall()
-    ids = [r["id"] for r in rows]
-    ctx.emit("cascade.started", {"version": version, "widget_ids": ids, "card_ids": [], "run_ids": []})
+    stale = [r for r in rows if r["version_built"] < version]
+    since = min((r["version_built"] for r in stale), default=version)
+    changed, everything = changes(ctx.db, dataset["id"], since, version)
     env = widgets.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
+    affected = []
+    for r in stale:
+        spec = json.loads(r["spec_json"])
+        try:
+            deps = set(fx.depends_on(spec, widgets.compiled(env, dataset, spec, version, []))) if spec["op"]["type"] == "sql" else set()
+        except ApiError:
+            deps, everything_for_it = set(), True
+        else:
+            everything_for_it = False
+        if everything or everything_for_it or deps & changed:
+            affected.append(r)
+    cards = [c["id"] for c in ctx.db.execute(
+        f"SELECT id FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND widget_id IN ({','.join('?' * len(affected))})",
+        (dataset["id"], *[r["id"] for r in affected])).fetchall()] if affected else []
+    ctx.emit("cascade.started", {"version": version, "widget_ids": [r["id"] for r in affected], "card_ids": cards,
+                                 "run_ids": [], "columns": sorted(changed), "all": everything})
     errors = 0
-    for i, row in enumerate(rows, 1):
+    for i, row in enumerate(stale, 1):
         ctx.check_cancel()
-        ctx.progress(i, len(rows), f"Updating {len(rows)} widget{'s' if len(rows) != 1 else ''}")
+        ctx.progress(i, len(stale) + 1, f"Updating {len(affected)} widget{'s' if len(affected) != 1 else ''}")
         status, error = "ready", None
-        if json.loads(row["spec_json"])["op"]["type"] == "sql":
+        if row in affected and json.loads(row["spec_json"])["op"]["type"] == "sql":
             try:
                 widgets.data(env, dataset, row, [], version)
             except ApiError as exc:
                 status, error, errors = "error", exc.message, errors + 1
         ctx.db.execute("UPDATE widgets SET status = ?, error = ?, version_built = ?, updated_at = ? WHERE id = ?",
                        (status, error, version, now_iso(), row["id"]))
-        ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
-    counts = {"widgets": len(rows), "errors": errors, "cards": 0, "runs": 0}
+        if row in affected:
+            ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
+    told = {"cards": 0}
+    with_cards = [r["id"] for r in affected
+                  if ctx.db.execute("SELECT 1 FROM cards WHERE widget_id = ? AND deleted_at IS NULL", (r["id"],)).fetchone()]
+    if with_cards:
+        ctx.progress(len(stale) + 1, len(stale) + 1, f"Updating {len(with_cards)} {'story' if len(with_cards) == 1 else 'stories'}")
+        user = users.get(ctx.db, dataset["user_id"])
+        ask = effective_settings(user.settings if user else {}).story_updates == "ask"
+        scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
+                          on_wait=lambda text: ctx.log(text, icon="wait"))
+        told = stories.tell(env, LLMClient(ctx.settings), scope, dataset, with_cards, reason="cascade", ask_first=ask,
+                            check_cancel=ctx.check_cancel)
+    counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
+              "outdated": told.get("outdated", 0), "runs": 0}
     ctx.emit("cascade.done", {"version": version, "counts": counts})
     return {"version": version, **counts}
 

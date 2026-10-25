@@ -213,3 +213,49 @@ def closing() -> list:
 
 def safe_name(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
+
+
+def _runs_md(runs: list[dict], facts: dict, notes: list[str]) -> str:
+    out = []
+    for r in runs:
+        if r.get("type") == "chip":
+            if r.get("unverified"):
+                notes.append(r.get("value", ""))
+                out.append(f"{r.get('value', '')}*")
+            else:
+                f = facts.get(r.get("key") or "")
+                out.append(f["formatted"] if f else r.get("value", ""))
+        elif r.get("type") == "label":
+            out.append(r.get("text") or r.get("ref", "").split(":")[-1])
+        else:
+            out.append(r.get("text", ""))
+    return "".join(out).strip()
+
+
+def card(c: dict, facts: dict, level: str = "###") -> list:
+    """A story card as Markdown (PRD NB-6): the headline as a heading, the body with every chip as
+    its number from the fact sheet, related widgets, and the evidence queries in a closed details
+    block. Numbers typed by hand get an asterisk and a footnote."""
+    notes: list[str] = []
+    lines = [f"{level} {_runs_md([r for b in c['headline']['blocks'] for r in b['runs']], facts, notes)}", ""]
+    for b in c["body"]["blocks"]:
+        text = _runs_md(b["runs"], facts, notes)
+        lines.append(f"- {text}" if b.get("type") == "bullets" else text)
+        if b.get("type") != "bullets":
+            lines.append("")
+    if c.get("related"):
+        lines += ["", "Related: " + " · ".join(r["title"] for r in c["related"])]
+    if notes:
+        lines += ["", r"\* Typed by hand in Sherlock, not computed."]
+    sqls = []
+    for b in c["headline"]["blocks"] + c["body"]["blocks"]:
+        for r in b["runs"]:
+            f = facts.get(r.get("key") or "") if r.get("type") == "chip" else None
+            if f and f.get("sql") and f["sql"] not in sqls:
+                sqls.append(f["sql"])
+    if sqls:
+        lines += ["", "<details><summary>Evidence</summary>", ""]
+        for s in sqls:
+            lines += ["```sql", s, "```", ""]
+        lines.append("</details>")
+    return [new_markdown_cell("\n".join(lines).strip())]

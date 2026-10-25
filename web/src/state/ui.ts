@@ -39,6 +39,12 @@ interface UiState extends Panels {
   addWidgetOpen: boolean;     // the Add widget drawer
   focusedWidgetId: string | null; // the widget the chat's context chip names
   chatOpen: boolean;          // the thread above the chat bar
+  hoveredWidget: string | null; // two-way hover linking between widgets and cards (PRD STORY-4)
+  setHoveredWidget: (id: string | null) => void;
+  flashWidget: string | null;   // a card click scrolls to its widget and flashes it
+  setFlashWidget: (id: string | null) => void;
+  chatDraft: string | null;     // text "Ask why" puts in the chat bar
+  setChatDraft: (text: string | null) => void;
   exportOpen: boolean;        // the Export notebook dialog (App Flow §17)
   setExportOpen: (open: boolean) => void;
   cascade: Record<string, { version: number; widgetIds: string[]; cardIds: string[] }>; // dataset_id → running cascade
@@ -73,6 +79,12 @@ export const useUi = create<UiState>((set, get) => ({
   addWidgetOpen: false,
   focusedWidgetId: null,
   chatOpen: false,
+  hoveredWidget: null,
+  setHoveredWidget: (hoveredWidget) => set({ hoveredWidget }),
+  flashWidget: null,
+  setFlashWidget: (flashWidget) => set({ flashWidget }),
+  chatDraft: null,
+  setChatDraft: (chatDraft) => set({ chatDraft }),
   exportOpen: false,
   setExportOpen: (exportOpen) => set({ exportOpen }),
   cascade: {},

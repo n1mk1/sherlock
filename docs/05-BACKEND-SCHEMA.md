@@ -257,6 +257,8 @@ CREATE TABLE relations (
 );
 ```
 
+As built (2026-10-25, D6.1): each fact in `facts_json` is `{value, format, label, formatted}` plus `sql`+`cell`, `sql`+`scalar`, or `from`+`formula` (TRD §6.4). `material_hash` is stored as an empty string (cut 6). The overview's sheet has `widget_id` NULL and keys prefixed `w<i>.`. Relations are rewritten for the current version on every stories run; `detail_json` is `{columns}` for shared columns or `{column}` for the target.
+
 ### 2.11 cards
 
 ```sql
@@ -284,6 +286,8 @@ CREATE TABLE cards (
 CREATE INDEX cards_dataset ON cards(dataset_id, deleted_at, kind);
 CREATE INDEX cards_widget ON cards(widget_id);
 ```
+
+As built (2026-10-25, D6.1–D6.3): `narrated_by` is the model ID, or NULL when the card shows the fact-sheet bullets. Chip runs typed by hand have `key: null` and `unverified: true`. `suggestion_json` holds `{headline, body}` for an edited card after a cascade.
 
 ### 2.12 canvases
 

@@ -42,7 +42,8 @@ def test_candidates_follow_roles():
     # High-cardinality text and empty columns are never charted; the target isn't its own category.
     assert not any("ticket" in k or "blank" in k or (k.endswith(":survived") and not k.startswith("kpi")) for k in kinds)
     assert all("{{rows}}" in c.sql for c in cands)
-    assert {c.view for c in cands} <= {"bar", "line", "area", "kpi", "table", "ring", "pie"}
+    assert {c.view for c in cands} <= {"bar", "line", "area", "kpi", "table", "ring", "pie", "histogram", "box", "heatmap", "scatter"}
+    assert {"histogram:fare", "box:fare:pclass"} <= set(kinds)  # one category: no heatmap
 
 
 def test_binary_text_target_counts_its_positive_value():
@@ -148,4 +149,4 @@ def test_build_job_with_the_model(mocked, client):
     assert len(widgets) == 6
     assert "Survival by sex" in [w["title"] for w in widgets]
     calls = db_rows("SELECT purpose, role FROM llm_calls WHERE dataset_id = ?", ds["id"])
-    assert [(c["purpose"], c["role"]) for c in calls] == [("curate", "medium")]
+    assert [(c["purpose"], c["role"]) for c in calls if c["purpose"] == "curate"] == [("curate", "medium")]

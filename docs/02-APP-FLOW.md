@@ -220,6 +220,14 @@ As built (2026-10-25, Implementation Plan D4.6–D4.7):
 
 ---
 
+As built (2026-10-25, D6.3):
+- **Panel.** The overview card first ("Overview" overline, bullets), then a card per widget in builder order. While the stories job writes them, three placeholders and "Writing the stories…" show.
+- **Hover.** Hovering a widget lights its card (accent border and spotlight) and scrolls it into view; widgets its card lists as related get the accent border at 45%. Hovering a card lights its widget. Hover linking is off in Edit layout.
+- **Click.** Clicking a card (not a button or chip) scrolls the dashboard to its widget and flashes it for 1.2 s. A related chip spotlights its widget on hover and flashes it on click.
+- **Evidence.** A chip opens "How do you know?": the value, what it is, the version, and the SQL (with Copy) or how it was derived. The footer's Evidence opens the card's first chip.
+- **Badges.** "changed" (click to dismiss), "edited", "outdated, click to refresh".
+- **Ask why** focuses the card's widget as the chat context and fills the bar with "Why <headline>?".
+
 ## 8. CSV tab
 
 ### 8.1 Layout
@@ -353,6 +361,8 @@ Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. '
 4. **Save** or **Cancel**. Saving marks the card as user-edited (an "edited" pencil badge).
 5. Later data changes: chips update in place; the card gets a "data changed" badge with **See suggestion** (opens a side-by-side: your text vs the AI's revision, with Accept / Keep mine).
 
+As built (2026-10-25, D6.3): Edit turns the card into two TipTap editors, Headline (one line) and Body. Chips and labels are atoms that move as a whole. `/` opens a picker of the card's facts (filter by typing, Enter or click inserts the chip, Esc closes). Save sends the card; the server marks typed numbers unverified (dashed chip, "Typed by you, not computed"). When the data changes, an edited card keeps its text and shows "The data changed. Suggested revision:" with Accept, Edit (opens the suggestion in the editor) and Dismiss.
+
 ---
 
 ## 12. Flow tab
@@ -430,6 +440,8 @@ Trigger: a save in the CSV tab, a cleaning step commit, a widget added/changed/r
 5. The progress line disappears. A toast summarizes: "v8: 4 widgets re-queried, 3 stories updated."
 
 The cascade is debounced: multiple saves within 2 seconds produce one cascade.
+
+As built (2026-10-25, D6.2–D6.4): the progress line reads "Updating 4 widgets and 4 stories". Only widgets that read a changed column dim; their cards show a spinner while they're rewritten, then the "changed" badge. The toast reads "v3: 4 widgets re-queried, 4 stories updated." 
 
 ---
 

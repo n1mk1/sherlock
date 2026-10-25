@@ -11,7 +11,9 @@ depends on the chart:
 - a KPI of a measure: its skew and outlier share
 - a target's rate KPI: half of how far the rate is from 0 or 1
 - a trend: Kendall τ
-Correlation strength and outliers belong to the scatter, histogram and box candidates of D6.5.
+- a histogram: its skew and outlier share; a box plot: half the η² of the measure by the category and
+  its outlier share; a heatmap: 0.8 of the η² of the target by the two categories together; a
+  scatter: the |correlation| of its two measures (D6.5)
 """
 
 import math
@@ -146,6 +148,9 @@ def _facts(cand: Candidate, result: dict) -> None:
         if rows:
             cand.facts = {"value": rows[0][0]}
         return
+    if cand.view in ("histogram", "scatter"):
+        cand.facts = {"elements": []}  # the chart accents its own peak; there's no category to name
+        return
     if cand.view == "table":
         cand.facts = {"first": rows[0][0]}
         cand.point = {"kind": "cell", "key": str(rows[0][0])}
@@ -196,6 +201,22 @@ def score(conn: duckdb.DuckDBPyConnection, card: dict, cands: list[Candidate]) -
             parts["variance"] = 0.5 * (1 - abs(2 * p - 1))  # a rate near 0 or 1 says little
         elif cand.kind == "trend":
             parts["trend"] = kendall_tau([r[1] for r in result["rows"]])
+        elif cand.kind == "histogram":
+            values = pd.to_numeric(df[cand.x], errors="coerce").dropna()
+            parts["skew"] = min(1.0, abs(float(values.skew())) / 2) if len(values) > 2 else 0.0
+            parts["outliers"] = outlier_share(values)
+        elif cand.kind == "box":
+            values = pd.to_numeric(df[cand.y], errors="coerce")
+            parts["variance"] = eta_squared(values, df[cand.x]) * 0.5
+            parts["outliers"] = outlier_share(values)
+        elif cand.kind == "heatmap" and ind is not None:
+            key = df[cand.x].astype("string") + " · " + df[cand.series].astype("string")
+            parts["variance"] = eta_squared(ind, key) * 0.8  # most of it is already in the one-category bars
+        elif cand.kind == "scatter":
+            a, b = pd.to_numeric(df[cand.x], errors="coerce"), pd.to_numeric(df[cand.y], errors="coerce")
+            ok = a.notna() & b.notna()
+            r = float(a[ok].corr(b[ok])) if ok.sum() > 2 and a[ok].std() > 0 and b[ok].std() > 0 else 0.0
+            parts["correlation"] = abs(r) if not math.isnan(r) else 0.0
         cand.parts = {k: round(float(0 if math.isnan(v) else v), 4) for k, v in parts.items()}
         cand.score = round(sum(WEIGHTS[k] * v for k, v in cand.parts.items()), 4)
         kept.append(cand)

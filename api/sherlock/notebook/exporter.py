@@ -116,6 +116,9 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     rows = _widgets(db, dataset["id"]) if options.up_to_step is None else []
     if options.up_to_step is not None and _widgets(db, dataset["id"]):
         notes.append("Widgets are left out: they belong to the current version.")
+    cards = _cards(db, dataset["id"]) if options.include_cards and options.up_to_step is None else {}
+    if options.include_cards and not cards and options.up_to_step is None:
+        notes.append("There are no story cards yet, so this notebook has the widgets only.")
 
     nb = new_notebook(metadata={
         "kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -131,6 +134,8 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     nb.cells += cells.helpers(helpers_cell(used))
     nb.cells += cells.load(import_options, [c["name"] for c in v1_columns if c["name"] not in ("_row_id", "_quarantine_reason")],
                            {c["name"]: c["type"] for c in v1_columns})
+    if "overview" in cards:
+        nb.cells += cells.card(*cards["overview"], level="##")
     for s in chain:
         nb.cells += cells.step(s)
     in_chain = {s["id"] for s in chain}
@@ -156,13 +161,28 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
         point = json.loads(w["point_json"])["key"] if w["point_json"] else None
         nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], data["row_count"]), point)
         emitted += 1
+        if w["id"] in cards:
+            nb.cells += cells.card(*cards[w["id"]])
     nb.cells += cells.closing()
 
     progress(3, 3, "Checking the notebook")
     nbformat.validate(nb)
     scan(nb)
-    counts = {"steps": len(chain), "widgets": emitted, "runs": 0, "cards": 0}
+    counts = {"steps": len(chain), "widgets": emitted, "runs": 0, "cards": len(cards)}
     return Built(nb, version, counts, notes)
+
+
+def _cards(db, dataset_id: str) -> dict:
+    """widget_id (or "overview") → (card, facts) for the live cards (TRD §7.7)."""
+    from sherlock.stories import service as stories
+
+    out = {}
+    for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('overview', 'widget')",
+                        (dataset_id,)):
+        c = stories.to_card(db, r)
+        sheet = stories.get_sheet(db, c["fact_sheet_id"])
+        out["overview" if c["kind"] == "overview" else c["widget_id"]] = (c, (sheet or {}).get("facts", {}))
+    return out
 
 
 def _helpers_used(db, step_id: str) -> list[str]:
@@ -176,7 +196,7 @@ def preview(db: sqlite3.Connection, dataset: sqlite3.Row, options: NotebookOptio
     widgets = [w for w in _widgets(db, dataset["id"]) if json.loads(w["spec_json"])["op"]["type"] == "sql"]
     return {"version": target["version"], "notes": notes,
             "counts": {"steps": len(chain), "widgets": len(widgets) if options.up_to_step is None else 0,
-                       "runs": 0, "cards": 0}}
+                       "runs": 0, "cards": len(_cards(db, dataset["id"])) if options.include_cards and options.up_to_step is None else 0}}
 
 
 def export_path(settings: Settings, dataset: sqlite3.Row, key: str) -> tuple[Path, str]:

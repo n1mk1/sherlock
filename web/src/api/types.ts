@@ -199,7 +199,7 @@ export interface FilterClause {
 // Chat (TRD §4.9, §5.3).
 export type Run =
   | { type: "text"; text: string }
-  | { type: "chip"; id: string; key: string; value: string; raw?: unknown; unverified: boolean }
+  | { type: "chip"; id: string; key: string | null; value: string; raw?: unknown; unverified: boolean }
   | { type: "label"; ref: string; text?: string };
 
 export interface CardBody {
@@ -250,4 +250,38 @@ export interface JobProgressEvent extends Progress {
   dataset_id: string;
   job_id: string;
   kind: JobKind;
+}
+
+// Story cards (TRD §4.6). `facts` carries the latest fact sheet's values, so chips render from it.
+export interface Card {
+  id: string;
+  dataset_id: string;
+  kind: "overview" | "widget" | "synthesis" | "direction" | "answer";
+  widget_id: string | null;
+  headline: CardBody;
+  body: CardBody;
+  fact_sheet_id: string | null;
+  status: "ready" | "updating" | "outdated" | "sources_changed" | "building" | "failed";
+  edited_by_user: boolean;
+  changed_badge: boolean;
+  suggestion: { headline: CardBody; body: CardBody } | null;
+  version: number;
+  narrated_by: string | null;
+  updated_at: string;
+  facts: Record<string, { formatted: string; label: string }>;
+  related: { widget_id: string; title: string }[];
+}
+
+export interface Evidence {
+  key?: string;
+  value: unknown;
+  formatted?: string;
+  label: string;
+  sql?: string | null;
+  formula?: string | null;
+  method?: string | null;
+  from?: string[] | null;
+  version: number;
+  computed_at?: string;
+  unverified?: boolean;
 }

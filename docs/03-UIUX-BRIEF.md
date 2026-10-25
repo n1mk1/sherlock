@@ -243,6 +243,8 @@ Minimum target 32 × 32 for icon buttons, 36px tall for text buttons; compact te
 - Empty: "No rows match the current filter" in `--muted-foreground`, with a "Clear filter" link.
 - Custom visx charts (heatmap, histogram, box plot) follow the same tokens; the heatmap uses a single-hue grey ramp with the accent for the maximum cell.
 
+As built (2026-10-25, D6.5): the custom charts are plain visx SVG. Histogram bars are radius 2, the tallest bin (or the builder's point) in the accent. The heatmap mixes `--chart-1` into `--card` by value (15–85%), the largest cell in the accent, with the value in mono inside cells big enough to hold it. The box plot draws whiskers to min and max, a `--card` box with a 1.5px series outline and a 2px median line; the point's box in the accent. Scatter points are 2.5px at 55% opacity. Each shows a small readout of the hovered element at its top right, and carries a one-sentence summary as its accessible label.
+
 ### 4.5 Story card
 
 ```
@@ -264,9 +266,13 @@ Minimum target 32 × 32 for icon buttons, 36px tall for text buttons; compact te
 - Direction card (building): dashed `--accent` border, a four-item checklist with ✓ / spinner / empty circle.
 - Note node (canvas only, not a story card): `--muted` fill, no overline, no chips.
 
+As built (2026-10-25, D6.3): the overline is the widget's title (11px, uppercase, muted); the headline is the serif at 18px; the body 14px in `--foreground-2`; related chips 24px tall. The footer has Evidence (link with a database icon), Edit and Ask why (ghost, small). A card being rewritten is at 70% with a spinning refresh icon. The suggestion sits in a dashed `--warning` box under the body.
+
 ### 4.6 Number chip
 
 Inline, mono 12.5px, `--info-soft` fill, 1px `--info` border at 35%, radius 6, padding 0 5px, `--foreground` text. Hover: underline, cursor pointer; click opens the evidence drawer. Unverified: dashed border, `--muted-foreground` text, tooltip "Typed by you, not computed". Updating: a 400ms highlight pulse to `--accent-soft` when the value changes.
+
+As built (2026-10-25): chips render from the card's latest fact-sheet value (`Card.facts`), and pulse to `--accent-soft` for 400 ms when it changes. The title tooltip is the fact's label.
 
 ### 4.7 Data grid (CSV tab)
 

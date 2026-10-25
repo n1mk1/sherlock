@@ -18,11 +18,12 @@ from sherlock.jobs import cascade as _cascade_job  # noqa: F401
 from sherlock.jobs import clean as _clean_job  # noqa: F401
 from sherlock.jobs import export as _export_job  # noqa: F401
 from sherlock.jobs import profile as _profile_job  # noqa: F401
+from sherlock.jobs import stories as _stories_job  # noqa: F401
 from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import chat, cleaning, datasets, exports, jobs, me, rows, steps, streams, widgets
+from sherlock.routers import cards, chat, cleaning, datasets, exports, jobs, me, rows, steps, streams, widgets
 from sherlock.storage import VersionConnections
 from sherlock.storage_check import check_storage
 
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     api.include_router(widgets.router)
     api.include_router(chat.router)
     api.include_router(exports.router)
+    api.include_router(cards.router)
     app.include_router(api)
     if settings.web_dist_dir and settings.web_dist_dir.is_dir():
         _serve_web(app, settings.web_dist_dir)

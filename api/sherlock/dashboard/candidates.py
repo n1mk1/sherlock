@@ -34,10 +34,11 @@ class Candidate:
     parts: dict = field(default_factory=dict)
     point: dict | None = None
     facts: dict = field(default_factory=dict)  # the top and bottom elements, computed in code
+    series: str | None = None  # a second category (heatmaps)
 
     def spec(self) -> dict:
         return {
-            "scope": {"columns": {"x": self.x, "y": self.y, "agg": self.agg, "series": None, "target": None,
+            "scope": {"columns": {"x": self.x, "y": self.y, "agg": self.agg, "series": self.series, "target": None,
                                   "features": None, "exclude": []},
                       "rows": {"predicate": None, "selection_id": None, "inherit_global_filters": True}},
             "op": {"type": "sql", "sql": self.sql},
@@ -176,6 +177,8 @@ def generate(card: dict, keep: list[str] | None = None) -> list[Candidate]:
                 f"Rate of {target.positive} by {unit}", [target.name, tcol["name"]], x=tcol["name"], y=target.name,
                 agg="rate", options={"x": "period", "y": "rate", "label_format": "pct"}))
 
+    out += _distributions(dims, meas, target, rows)
+
     if ids and meas:
         idc, m = ids[0], meas[0]
         qi, qm = ident(idc["name"]), ident(m["name"])
@@ -192,6 +195,53 @@ def generate(card: dict, keep: list[str] | None = None) -> list[Candidate]:
                 f"SELECT {qc}, COUNT(*) AS n FROM t {rows} AND {qc} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 10",
                 f"Most common {c['name']}", [c["name"]], x=c["name"], agg="count"))
     return out[:MAX_CANDIDATES]
+
+
+def _distributions(dims: list[dict], meas: list[dict], target: Target | None, rows: str) -> list[Candidate]:
+    """The custom charts (Implementation Plan D6.5): a histogram per measure, a box plot of a measure
+    by a category, the target's rate by two categories as a heatmap, and scatters of measure pairs
+    (scoring keeps the most correlated)."""
+    out: list[Candidate] = []
+    for m in meas[:4]:
+        q = ident(m["name"])
+        out.append(Candidate(
+            f"histogram:{m['name']}", "histogram", "histogram",
+            f"WITH b AS (SELECT MIN({q}) AS lo, (MAX({q}) - MIN({q})) / 20 AS w FROM t {rows} AND {q} IS NOT NULL) "
+            f"SELECT b.lo + b.w * COALESCE(LEAST(FLOOR(({q} - b.lo) / NULLIF(b.w, 0)), 19), 0) AS bin_start, "
+            f"COUNT(*) AS n FROM t, b {rows} AND {q} IS NOT NULL GROUP BY 1 ORDER BY 1",
+            f"Distribution of {m['name']}", [m["name"]], x=m["name"], agg="count", options={"x": "bin_start", "y": "n"}))
+    small = [d for d in dims if (d["distinct"] or 0) <= 8]
+    for d in small[:2]:
+        for m in meas[:2]:
+            qd, qm = ident(d["name"]), ident(m["name"])
+            out.append(Candidate(
+                f"box:{m['name']}:{d['name']}", "box", "box",
+                f"SELECT {qd}, MIN({qm}) AS min, QUANTILE_CONT({qm}, 0.25) AS q1, MEDIAN({qm}) AS median, "
+                f"QUANTILE_CONT({qm}, 0.75) AS q3, MAX({qm}) AS max, COUNT(*) AS n FROM t {rows} "
+                f"AND {qd} IS NOT NULL AND {qm} IS NOT NULL GROUP BY 1 ORDER BY 1",
+                f"{m['name']} by {d['name']}", [m["name"], d["name"]], x=d["name"], y=m["name"], agg="median",
+                options={"x": d["name"], "y": "median"}))
+    if target:
+        pairs = [(a, b) for i, a in enumerate(small[:3]) for b in small[i + 1:3]]
+        for a, b in pairs:
+            qa, qb = ident(a["name"]), ident(b["name"])
+            out.append(Candidate(
+                f"heatmap:{target.name}:{a['name']}:{b['name']}", "heatmap", "heatmap",
+                f"SELECT {qa}, {qb}, AVG({target.indicator}) AS rate, COUNT(*) AS n FROM t {rows} AND {qa} IS NOT NULL "
+                f"AND {qb} IS NOT NULL AND {ident(target.name)} IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2",
+                f"Rate of {target.positive} by {a['name']} and {b['name']}", [target.name, a["name"], b["name"]],
+                x=a["name"], y=target.name, agg="rate",
+                options={"x": a["name"], "series": b["name"], "y": "rate", "label_format": "pct"}))
+            out[-1].series = b["name"]
+    for i, a in enumerate(meas[:4]):
+        for b in meas[i + 1:4]:
+            qa, qb = ident(a["name"]), ident(b["name"])
+            out.append(Candidate(
+                f"scatter:{a['name']}:{b['name']}", "scatter", "scatter",
+                f"SELECT {qa}, {qb} FROM t {rows} AND {qa} IS NOT NULL AND {qb} IS NOT NULL ORDER BY _row_id LIMIT 2000",
+                f"{b['name']} against {a['name']}", [a["name"], b["name"]], x=a["name"], y=b["name"],
+                options={"x": a["name"], "y": b["name"]}))
+    return out
 
 
 def _span_days(col: dict) -> float | None:

@@ -163,6 +163,19 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - **Suggestion for Token Factory or the model card:** document how property order in a strict `json_schema` affects generation. It changes the output a lot.
 - **Eval v0** (35 questions on two files): 31 and then 32 passed, with 0 unsourced answers and a median of 11–12 s per answer.
 
+### Nemotron writing story cards (2026-10-25, Implementation Plan D6)
+
+**What we used it for:** a short story card per dashboard widget. Code computes a fact sheet (values, rankings, chi² and Kruskal-Wallis tests, trends); the model writes the headline and two to four sentences as a list of runs where every number is a chip naming a fact and every column or category is a label. Strict `json_schema` (the Story union from Day 1), reasoning on.
+
+- **Nano (`small`), the planned narrator, didn't hold the contract.** On the Titanic dashboard (8 cards):
+  - It typed the chip markup inside text runs: `{"text": "The rate is {\"chip\":\"value\"}."}`. Strict decoding enforces the run shapes, but nothing stops JSON inside a string, and the no-digits check passes because the markup has no digits.
+  - It ran sentences together (`".It is"`) and two of thirteen calls hit our 30 s timeout. Median latency was 22.5 s.
+  - **Effect:** narration moved to Super, as chat compose did on Day 4. We added a check that rejects `{`, `}`, `chip` and `column:` inside a text run.
+- **Super (`medium`) wrote valid cards** with a median of 13.6 s per card (about 1,500 completion tokens, most of it reasoning). On its first try it also wrote chip markup inside text runs on two of eight cards and on the overview; one repair fixed each.
+- **Steps to reproduce:** ask any Nemotron model, with a strict schema whose items are `{"text"}` / `{"chip"}` / `{"label"}` objects, to write two sentences with three numbers: some replies embed `{"chip": ...}` as text.
+- **Suggestion:** a documented pattern (or a constrained-decoding option) for "interleaved text and references" outputs, the shape every grounded-generation app needs. An example in the Nemotron docs showing the expected run list would help any team building cited or chip-based text.
+- **Token Factory returned `529 System is overloaded`** three times in one stories job (2026-10-25, about 07:10 UTC), each answered in about 3.4 s. Our retry with backoff (2 s) succeeded every time, so the cards were only slower. **Suggestion:** a `Retry-After` header on 529, and a status page entry, so clients back off for the right time.
+
 ### NVIDIA embedding model (`embed`)
 
 - None is available on Token Factory, so this role is empty (see Token Factory problem 1).

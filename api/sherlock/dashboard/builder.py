@@ -136,6 +136,11 @@ def build(ctx: JobContext) -> dict:
         ctx.check_cancel()
     wl.save(ctx.db, dataset["id"], wl.pack([(r["id"], json.loads(r["spec_json"])["view"]["type"]) for r in made]))
     ctx.set_dataset_status("ready")
+    if made:
+        from sherlock.jobs.stories import queue_stories
+
+        queue_stories(ctx.db, dataset, None, "build")  # TRD §7.3 step 7
+        ctx.runner.wake()
     result = {"version": dataset["current_version"], "widgets": len(made), "candidates": len(scored),
               "curated_by": "model" if by_model else "fallback"}
     if keep is not None:

@@ -3,9 +3,10 @@
 // updating (dimmed with a progress line while a filter re-queries), error (message, Retry, Show
 // query), collapsed (header only).
 import { ChevronDown, ChevronUp, Copy, GripVertical, LayoutGrid, MoreHorizontal, Table2, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { filterParam, useWidgetActions, useWidgetData } from "@/api/queries";
+import { useCards } from "@/api/stories";
 import type { FilterClause, ViewType, Widget, WidgetData } from "@/api/types";
 import { WidgetChart } from "@/components/charts/adapter";
 import { Button } from "@/components/ui/button";
@@ -16,11 +17,15 @@ import { useUi } from "@/state/ui";
 
 const VIEW_LABELS: Record<string, string> = {
   bar: "Bar", line: "Line", area: "Area", pie: "Pie", ring: "Ring", kpi: "KPI tile", table: "Table",
+  histogram: "Histogram", heatmap: "Heatmap", box: "Box plot", scatter: "Scatter",
 };
 
 /** Views that can draw this result (the menu's Change view). */
 export function compatibleViews(data: WidgetData | undefined): ViewType[] {
   if (!data) return ["table"];
+  const names = data.columns.map((c) => c.name);
+  if (["q1", "median", "q3"].every((n) => names.includes(n))) return ["box", "table"];
+  if (names.includes("bin_start")) return ["histogram", "bar", "table"];
   const numeric = data.columns.some((_, i) => i > 0 && data.rows.some((r) => typeof r[i] === "number"));
   if (data.row_count === 1 || data.columns.length === 1) return ["kpi", "table"];
   const dated = data.columns[0]?.type.startsWith("DATE") || data.columns[0]?.type.startsWith("TIMESTAMP");
@@ -40,6 +45,7 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
   const toggle = useFilters((s) => s.toggle);
   const editLayout = useUi((s) => s.editLayout);
   const setFocused = useUi((s) => s.setFocusedWidget);
+  const link = useLinking(widget);
   const inherits = widget.spec.scope.rows.inherit_global_filters !== false;
   // The column a click filters on: the spec's category column (the result's first column is
   // checked once the data is in).
@@ -76,11 +82,18 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
 
   return (
     <article
+      ref={link.ref}
+      data-widget-id={widget.id}
       className={cn(
         "@container group flex h-full flex-col overflow-hidden rounded-[16px] border border-border bg-card",
-        "hover:border-accent focus-within:border-border-strong",
+        "transition-[border-color,box-shadow] duration-[var(--duration-fast)] hover:border-accent focus-within:border-border-strong",
+        link.state === "hovered" && "border-accent shadow-[var(--spotlight-shadow)]",
+        link.state === "related" && "border-[color-mix(in_srgb,var(--accent)_45%,transparent)]",
+        link.state === "flash" && "border-accent shadow-[0_0_0_3px_var(--spotlight)]",
       )}
       onPointerDown={() => setFocused(widget.id)}
+      onMouseEnter={link.enter}
+      onMouseLeave={link.leave}
       aria-label={widget.title}
     >
       <header className={cn("widget-header flex h-10 shrink-0 items-center gap-1.5 px-2", editLayout && "cursor-grab")}>
@@ -155,6 +168,31 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
       )}
     </article>
   );
+}
+
+/** Two-way hover linking (PRD STORY-4): hovering a widget lights its card and the widgets related to
+ * it; hovering a card lights its widget. A card click scrolls here and flashes the widget. */
+function useLinking(widget: Widget) {
+  const { hoveredWidget, setHoveredWidget, flashWidget, setFlashWidget, editLayout } = useUi();
+  const cards = useCards(widget.dataset_id);
+  const ref = useRef<HTMLElement>(null);
+  const [flash, setFlash] = useState(false);
+  useEffect(() => {
+    if (flashWidget !== widget.id) return;
+    ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    setFlash(true);
+    setFlashWidget(null);
+    const t = setTimeout(() => setFlash(false), 1200);
+    return () => clearTimeout(t);
+  }, [flashWidget, widget.id, setFlashWidget]);
+  const hoveredCard = hoveredWidget ? cards.data?.find((c) => c.widget_id === hoveredWidget) : undefined;
+  const state = flash ? "flash" : hoveredWidget === widget.id ? "hovered"
+    : hoveredCard?.related.some((r) => r.widget_id === widget.id) ? "related" : null;
+  return {
+    ref, state,
+    enter: () => !editLayout && setHoveredWidget(widget.id), // suppressed while arranging
+    leave: () => setHoveredWidget(null),
+  };
 }
 
 function ScopeChip({ widget, filter }: { widget: Widget; filter: FilterClause | null }) {

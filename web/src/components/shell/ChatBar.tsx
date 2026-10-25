@@ -67,6 +67,15 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   const thread = useThread(dataset.id);
   const widgets = useWidgets(dataset.id);
   const [text, setText] = useState("");
+  const { chatDraft, setChatDraft } = useUi();
+  // "Ask why" on a story card fills the bar (App Flow §7.4).
+  useEffect(() => {
+    if (chatDraft === null) return;
+    setText(chatDraft);
+    setChatDraft(null);
+    setOpen(true);
+    input.current?.focus();
+  }, [chatDraft, setChatDraft, setOpen]);
   const [pending, setPending] = useState<Pending | null>(null);
   const focused = widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
 

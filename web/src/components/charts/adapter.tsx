@@ -10,6 +10,7 @@ import { AreaChart, Area } from "./area-chart";
 import { Bar } from "./bar";
 import { BarChart } from "./bar-chart";
 import { BarXAxis } from "./bar-x-axis";
+import { BoxPlot, Heatmap, Histogram, Scatter } from "./custom";
 import { useChartHover } from "./chart-context";
 import { Grid } from "./grid";
 import { LineChart, Line } from "./line-chart";
@@ -80,6 +81,13 @@ export function WidgetChart({ spec, data, asTable, selected, onSelect, compact }
       </AreaChart>
     );
   }
+
+  const opt = spec.view.options as { series?: string };
+  if (view === "histogram") return <Histogram data={data} x={x} y={y} point={point} />;
+  if (view === "heatmap") return <Heatmap data={data} x={x} y={y} series={opt.series ?? data.columns[1]?.name} />;
+  if (view === "box") return <BoxPlot data={data} x={x} y={y} point={point} />;
+  if (view === "scatter") return <Scatter data={data} x={x} y={y} />;
+  if (view === "gauge") return <Kpi spec={spec} data={data} />; // gauges render as a KPI tile in P0 (D6.5)
 
   if (view === "pie" || view === "ring") {
     return <Pie rows={rows} x={x} y={y} donut={view === "ring"} point={point} selected={selected} onSelect={onSelect} fmt={fmt} />;

@@ -166,6 +166,15 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 **Exit**: the sample dashboard has grounded cards; hovering links both ways; editing `age` values in the CSV tab updates only the cards that depend on `age`; an edited card keeps its text and shows a suggestion.
 
+**Done 2026-10-25, within cut 6** (as built in TRD §4.6, §6.4, §7.3–§7.7; App Flow §7.4, §11, §16; UI/UX brief §4.4–§4.6):
+- [x] D6.1: fact sheets per view type with their tests, significance helpers (chi², Kruskal-Wallis, Kendall), relations, the narrator with the chip-only schema and its checks, `verify`, the overview, the `stories` job streaming `card.updated`. The narrator runs on `medium` (TRD §7.4).
+- [x] D6.2 within cut 6: the cascade with column-level dependencies, edited cards given suggestions, "Ask first" marking cards outdated; every affected card is narrated again (no material hash). Debounce from D5.5.
+- [x] D6.3: the story panel, cards, chips with the evidence drawer, related chips, two-way hover linking with the spotlight, changed/edited/outdated badges, the TipTap editor with chip and label nodes and the `/` picker, the suggestion side by side, Ask why → chat.
+- [x] D6.4: the cascade's progress line, updating widgets and cards, the summary toast (since D5.5).
+- [x] D6.5: custom visx histogram, heatmap, box plot and scatter; builder candidates for them. Gauges render as a KPI tile.
+- [x] D6.6: story cards in the notebook (overview as the introduction, each card after its widget, evidence details, unverified footnotes, Include story cards wired).
+- Exit, checked: the sample dashboard has grounded cards (live, Nemotron Super); hovering links both ways; editing `fare` in the data updated only the four cards that read `fare` (the exit names `age`; no widget on that dashboard read `age`); an edited card kept its text and showed a suggestion.
+
 ### Day 7 · Oct 26: ML
 
 **Must**
@@ -230,8 +239,8 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay done 2026-10-25 (D5.5)
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain
 - [ ] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets wait for D7
-- [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the driver widget is D7.2 and the custom-chart candidates are D6.5
-- [ ] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash
+- [ ] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the custom-chart candidates done 2026-10-25 (D6.5); the driver widget is D7.2
+- [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash: done 2026-10-25 (D6) without the material hash (cut 6)
 - [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto
 - [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
@@ -252,10 +261,10 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10); rename and delete with Undo done 2026-10-25 (D4.5)
 - [ ] cleaning: offer, in-progress (log, so-far, checks), report view
 - [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button and the outdated state (it comes with runs, D7)
-- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom charts are D6.5, brushing is cut 8, the accessible summary comes with fact sheets (D6)
+- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom histogram, heatmap and box plot (and scatter) done 2026-10-25 (D6.5), each with an accessible summary as its label; brushing is cut 8
 - [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats)
 - [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells
-- [ ] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight
+- [x] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight: done 2026-10-25 (D6.3)
 - [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist
 - [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9
 - [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points: done 2026-10-25 (D5.6) but the Flow palette entry (D8) and the dialog's Save and export button (the note tells the user to save first)

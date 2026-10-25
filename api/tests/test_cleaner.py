@@ -77,8 +77,9 @@ def test_clean_commits_steps_reports_and_builds(client):
     assert flagged_entry["detail"].startswith("committed with a flag · step 2")
     committed = next(entry for entry in logs if entry.get("gate") == "commit" and entry.get("step_no") == 3)
     assert committed["detail"] == "committed · step 3" and committed["checks"]["row_ledger"] == "pass"
-    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()][:2] == [
-        "build_dashboard", "clean"]
+    # The clean queues the build, and the build queues the stories (TRD §7.3 step 7).
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()][:3] == [
+        "stories", "build_dashboard", "clean"]
     calls = db_rows("SELECT purpose, role FROM llm_calls WHERE job_id = ?", job["id"])
     assert {(c["purpose"], c["role"]) for c in calls} == {("diagnose", "large"), ("propose", "large"), ("critic", "medium")}
 

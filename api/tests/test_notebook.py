@@ -156,6 +156,9 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
                          json={"base_version": b["version"], "confirm": True})
     assert undone.status_code == 200, undone.text
 
+    # The cascade and the stories job change the dataset's state; export once they're done.
+    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled") for j in client.get(f"{API}/jobs?dataset_id={ds}").json()),
+             timeout=60)
     pre = client.get(f"{API}/datasets/{ds}/exports/notebook/preview").json()
     assert pre["counts"]["steps"] == 3 and pre["options"]["include_data"] is True
     out = _export(client, ds)

@@ -151,6 +151,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - **Pending edits.** `src/state/edits.ts` (Zustand) holds the buffer per dataset and mirrors it to local storage (Schema §5).
     - **Popovers.** `@radix-ui/react-popover` 1.1.15 under `src/components/ui/popover.tsx` (Clean with AI).
     - **Right panel.** On `/d/:id/csv` the right panel is the Changes panel (`src/components/csv/ChangesPanel.tsx`); elsewhere it stays the stories panel.
+    - **Day 6 additions (2026-10-25, Implementation Plan D6):** TipTap 3.32.0 (`@tiptap/react`, `core`, `pm`, `starter-kit`) for the card editor, loaded only when a card is edited (its chunk is about 400 kB); the custom charts in `src/components/charts/custom.tsx` use the `@visx/*` packages Bklit already brought.
     - **One dataset stream.** `useDatasetEvents` (`src/api/queries.ts`) opens `GET /datasets/{id}/events` once per open dataset in `DatasetPage`, for every tab. It replaces the dashboard's own stream and adds `version.created` (dataset, steps, data card, jobs), `card.updated` and the cascade events.
   - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
 - **Dependencies** are added at exact versions: `saveExact` is set in `web/pnpm-workspace.yaml`, and `uv.lock` pins the API.
@@ -228,6 +229,16 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
     - A failed or cancelled build still sets the dataset to `ready`, with whatever widgets were made.
 
 - **`cascade`** (2026-10-25, D5.5, `sherlock/jobs/cascade.py`). Every `version.created` queues one for a dataset that has live widgets (§7.6). **`export_notebook`** (D5.6, `sherlock/jobs/export.py`) builds and writes an export (§7.7).
+- **`stories`** (2026-10-25, D6.1, `sherlock/jobs/stories.py`). It runs the Storyteller (`stories.service.tell`, §7.4) for some or all widgets, then the overview.
+  - **Params:** `{ widget_ids: string[] | null, reason: "build"|"widget"|"refresh" }`. `null` means every widget; `[]` means only the overview.
+  - **Queued by:**
+    - the dashboard builder when it made widgets (§7.3 step 7, `reason: "build"`, all widgets)
+    - a widget created, or its spec changed, through the widgets service (`reason: "widget"`, that widget), once the dataset has any card
+    - a widget deleted (`[]`, so the overview stops counting it)
+    - a card's Refresh (`POST /cards/{cid}/refresh`, `reason: "refresh"`)
+  - **Coalescing.** A `stories` job still `queued` for the dataset absorbs the next request. Its `widget_ids` become the union of both lists, and a job for every widget stays one.
+  - **Progress:** "Reading the facts · i of n" per widget, then "Writing the overview". The result is `{ cards, widgets }`.
+  - The cascade doesn't queue a `stories` job. It runs the same pipeline itself (§7.6).
 
 ### 3.4 Sandbox
 
@@ -552,6 +563,38 @@ Widgets API as implemented (2026-10-24, Implementation Plan D4.1, `sherlock/rout
 
 `CardBody` (rich text as blocks): `{ blocks: [{ type: "paragraph"|"bullets", runs: [{ type: "text", text } | { type: "chip", id, key, value, unverified: bool } | { type: "label", ref }] }] }`. `ref` names a DataCard column (`column:<name>`) or category value (`value:<column>:<value>`) and is rendered by code, so labels containing digits never appear in text runs. `key` names the fact-sheet entry (`<fact_key>`, or `<card_id>.<fact_key>` for synthesis cards); `value` is the formatted value at write time (the client re-renders from the latest fact sheet).
 
+Story cards API as implemented (2026-10-25, Implementation Plan D6.1–D6.3, `sherlock/routers/cards.py`):
+- **`Card`** also carries `narrated_by` (the model ID, or null when the card shows the fact-sheet bullets), `updated_at`, `facts` (key → `{formatted, label}` from the card's current fact sheet, so chips render from it) and `related` (`[{widget_id, title}]`, from the relation graph).
+- **`GET /datasets/{id}/cards`** lists the overview first, then the widget cards in builder order.
+- **`PATCH /cards/{cid}`** takes `{ headline?, body? }` as `CardBody`, sets `edited_by_user`, and turns every number typed in a text run into a chip with `key: null` and `unverified: true` ("Typed by you, not computed"). An edited card is never narrated over again; the cascade gives it a `suggestion`.
+- **`POST /cards/{cid}/refresh`** queues a `stories` job for the card's widget (the overview: for no widget, so only the overview is written) and answers `201` with the `Job`.
+- **`POST accept-suggestion`** puts the suggestion in the card and clears `edited_by_user` and the badge (`409` without a suggestion); **`dismiss-suggestion`** drops it and the badge; **`dismiss-badge`** clears `changed_badge`.
+- **`GET /cards/{cid}/evidence/{chip_id}`** answers `{ key, value, formatted, label, sql?, cell?, from?, formula?, method?, run_id?, computed_at, version }`; for an unverified chip, `{ value, unverified: true, label, version }`.
+- **`GET /fact-sheets/{fsid}`** answers `{ id, widget_id, version, facts, depends_columns, computed_at }`.
+- **`GET /datasets/{id}/relations`** answers the latest version's edges with their `detail` (the shared columns, or the target).
+- **More detail** (`sherlock/stories/service.py`):
+  - `Card.related` holds at most four live widgets, strongest edge first; the overview's is empty. The editor's `/` picker lists `Card.facts`.
+  - **Label runs** carry the `text` code rendered for their `ref`, as in chat (§4.9). The refs are:
+    - `column:<name>`
+    - `value:<column>:<value>`; a numeric value reads as "<column> <value>", for example "pclass 1"
+    - `widget:<id>`, for the fallback headline and the overview fallback's bullet names
+    - `fact:<key>`, for the fallback's bullet names
+  - **The list** follows `widgets.order_no` and leaves out deleted cards.
+  - **`PATCH`.**
+    - Each part must be `{ blocks: [...] }`, otherwise `422`.
+    - Typed numbers match `[-+]?\d[\d,]*(\.\d+)?%?` and become chips with IDs `u<n>`.
+    - It bumps `state_rev` and emits `card.updated`, as do the suggestion, badge and restore routes. `DELETE` emits `card.updated` without bumping `state_rev`.
+  - **`DELETE`** sets `deleted_at`; `POST /cards/{cid}/restore` clears it. The 10-minute purge of deleted cards waits for the purge job (D8.6).
+  - **Evidence.**
+    - The chip is looked up in the headline, the body and the suggestion. An unknown chip, or a key no longer on the card's sheet, is `404`.
+    - `sql` is the fact's query with `{{rows}}` compiled and no global filter.
+    - `cell` is `[row, col]` in that query's result.
+    - `from` and `formula` describe a derived fact.
+    - `method` names the test: `chi2`, `kruskal` or `kendall`.
+    - `version` is the version the sheet was computed on.
+  - **Relation edges** are `{ a, b, kind, weight, detail }`, where `detail` is `{ columns }` for `shared_column` and `{ column }` for `same_target`.
+  - **Ownership.** Every `/cards/{cid}` and `/fact-sheets/{fsid}` route resolves through its dataset (§3.1); another user's is `404`.
+
 ### 4.7 Canvas
 
 | Method | Path | Body / Query | Response |
@@ -657,6 +700,18 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 | `cascade.done` | `{ version, counts }` | cascade ends |
 | `layout.updated` | `Layout` | another tab saved the layout |
 | `canvas.updated` | `{ etag }` | another tab saved the canvas |
+
+As built for stories and the cascade (2026-10-25, Implementation Plan D6.1–D6.2):
+- **`card.updated`** carries the whole `Card` as `GET /cards/{cid}` returns it (§4.6 as built: with `facts` and `related`). It is written to `job_events` under the job when a `stories` job or a cascade sends it, and published on the bus alone when a card route sends it.
+  - **During a stories run or a cascade**, a card is sent when it goes to `updating`, again when its new text (or suggestion) is stored, and the overview last.
+  - **With "Story updates: Ask first"**, a cascade sends each affected card once, as `outdated`.
+  - A deleted card is sent with its `deleted_at` set. The web app refetches the dataset's cards on every `card.updated`.
+- **`cascade.started`** adds `columns`: the changed columns, sorted. It also adds `all`: true when the change affects every widget, such as rows added, deleted, quarantined or restored, a column added or removed, or the typing step. `widget_ids` lists only the affected widgets, `card_ids` their cards, and `run_ids` is `[]` until runs (D7).
+- **`cascade.done`** `counts` is `{ widgets, errors, cards, outdated, runs }`.
+  - `widgets` is the number of affected widgets re-queried, and `errors` how many of them failed.
+  - `cards` is the number of cards narrated again, the overview not counted.
+  - `outdated` is the number of cards marked outdated in Ask-first mode.
+  - `runs` is `0` until D7.
 
 ### 5.2 Delivery
 
@@ -814,6 +869,12 @@ As implemented (2026-10-24, `sherlock/widgets/compile.py`, `execute.py`):
 ```
 
 Every fact has `sql`, `run_id`, or, for a derived fact, `from` (the fact keys or result it is computed from) plus `formula` as its provenance; "How do you know?" shows whichever applies. The narrator receives only `facts` (values and labels) and must reference them by key.
+
+As implemented (2026-10-25, D6.1, `sherlock/stories/facts.py`):
+- **Every fact** is `{ value, format, label, formatted }` plus its provenance: `sql` with `cell: [row, col]` (a cell of the widget's own query, no global filter), `sql` with `scalar: true` (a one-value query over the widget's rows), or `from` with `formula` (derived from other facts or from the result). Tests add `method` (`chi2`, `kruskal`, `kendall`). Formats are `pct`, `int`, `num`, `text`, `x` (a ratio, "3.8×") and `p` ("p<0.001").
+- **Per view:** every sheet has `n` (rows behind the widget). KPIs: `value`. Categories (bar, pie, ring): `groups`, `top_group`, `top_value`, `bottom_group`, `bottom_value`, `ratio_top_bottom`; for a rate with `n`: `overall`, `significance` (chi² on the groups' counts) and `effect` (Cramér's V); for an average, median or sum by category: `significance` (Kruskal-Wallis on the rows). Time series: `first_period`/`first_value`, `last_period`/`last_value`, `peak_period`/`peak_value`, `periods`, `change`, and from four periods `trend` (rising, falling or flat by Kendall's τ at 0.05) with `trend_significance`. Histogram: `median`, `mean`, `min`, `max`, `outlier_share` (1.5 IQR). Scatter: `correlation`, `direction`. Box: `top_group`, `top_median`, `bottom_group`, `bottom_median`. Heatmap: `max_x`, `max_y`, `max_value`.
+- **Stored** in `fact_sheets` with `depends_columns_json` (the scope's columns and every column the query names, by sqlglot). `material_hash` is stored empty: cut 6 removed the material-change check.
+- **Labels** contain no digits, so the code-written fallback can show them as text.
 
 ### 6.5 RecipeManifest
 
@@ -1140,6 +1201,14 @@ As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
 - **Not yet.** The `driver_analysis` widget (step 5) is added with the ML recipes (Implementation Plan D7.2). Enqueuing the stories job (step 7) comes with D6.1.
 - **Live check (2026-10-24, Nemotron 3 Super):** Titanic got seven widgets ("Survival rate", "Passenger count", "Survival by sex", "Fare by class", "Survival by class", "Passengers by port", plus average fare), and `sales_dated.csv` got eight.
 
+Custom-chart candidates (2026-10-25, D6.5, `dashboard/candidates.py::_distributions`, `scoring.py`):
+- **Histogram** for each of the first four measures: twenty equal-width bins in SQL (`bin_start`, `n`), scored by skew and outlier share.
+- **Box plot** of each of the first two measures by each of the first two categories with at most eight values (`min`, `q1`, `median`, `q3`, `max`, `n` per category), scored by half the η² and the outlier share.
+- **Heatmap** of the target's rate by each pair of the first three such categories (`x`, `series`, `rate`, `n`), scored by 0.8 of the η² of the target by the two together.
+- **Scatter** of each pair of the first four measures (up to 2,000 rows in `_row_id` order), scored by |correlation|.
+- `WidgetSpec.scope.columns.series` carries the heatmap's second category. `P0_VIEWS` adds the four views. The builder's tie-breaks now order equal values by the category, so results are deterministic (the notebook test compares them).
+- **Stories.** The build queues the `stories` job when it made widgets (step 7).
+
 ### 7.4 Storyteller
 
 1. For each widget, compute the fact sheet in code (per view type: rates, rankings, top/bottom, ratios, trend slope and direction, outliers, n, a significance test where it applies: chi² for rate differences across categories, Welch t / Mann-Whitney for two groups, Kruskal for more; effect sizes: Cramér's V, Cohen's d).
@@ -1155,7 +1224,17 @@ As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
 - **Direction** ("Take the story toward X"): creates a `building` card with `job_id`. The job runs widget query → fact sheet → story → verify and emits `card.updated` per stage. On success the card becomes a `widget` card; on failure its status is `failed` with the stage and error, and Retry re-runs the job.
 - Card rewrites and suggested revisions use the Story schema and the same verify step before they are offered.
 
-Material-change detection: `material_hash` over rankings (ordered group labels), trend sign, significance flag, and key values bucketed to 2 significant figures. On cascade, if the hash is unchanged, only chip values refresh (no LLM call); otherwise re-narrate.
+Material-change detection (removed by cut 6, Implementation Plan §2.0; every affected card is narrated again): `material_hash` over rankings (ordered group labels), trend sign, significance flag, and key values bucketed to 2 significant figures. On cascade, if the hash is unchanged, only chip values refresh (no LLM call); otherwise re-narrate.
+
+As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with cut 6 applied:
+- **Pipeline (`service.tell`).** For each widget: its card goes to `updating` (`card.updated`), its fact sheet is computed on the current version and verified (a fact that no longer matches is dropped before narration), then the relations are recomputed over every widget's latest sheet. Narration runs four at a time; each card is stored and emitted as soon as it's ready. Then the overview. Every write bumps `state_rev`.
+- **Relations.** Shared columns (any column both widgets read, the target included) 0.5, same target 0.3, kept at 0.4 or more and at most four per widget. Correlation between measures and ML dependencies aren't computed yet.
+- **Narrator: `medium`, not `small`.** Live on 2026-10-25, Nano typed chip markup into text runs (`"{\"chip\":\"n\"}"`), ran sentences together and timed out twice; Super wrote valid cards, sometimes after one repair (`FEEDBACK.md`). As with chat compose (§8.1), narration uses `medium`. Prompts are in `stories/narrate.py`.
+- **Checks on every story (and every overview bullet):** chips name facts of the sheet; labels name the widget's columns or the category values its facts name (`column:<name>`, `value:<column>:<value>`); no text run contains chip or label markup or digits; at least one text run of two words in the headline and in the body; no causal wording (causes, because, leads to, results in, drives, driven by, due to); with `n` under 30, a small-sample note ("small", "few", "limited"). One repair, then the fallback.
+- **Rendering in code.** Chips take the fact's `formatted` value; a label of a numeric category reads as "pclass 1"; spaces are added between runs and before a sentence, and removed inside brackets around a chip.
+- **Fallback.** The headline is the widget's title (a label run `widget:<id>`), and the body is the fact sheet as bullets (a label run `fact:<key>` and a chip per fact, at most six).
+- **Overview (`medium`, schema `Overview`: two to five bullets of runs).** Chips are `w<i>.<fact key>` over every widget card's sheet; the merged facts are stored as the overview's own sheet. The fallback is up to four bullets, one per widget by score, of its headline fact.
+- **Model failures.** Any exception while narrating a card falls back for that card, so the job always finishes.
 
 ### 7.5 ML runner
 
@@ -1203,6 +1282,14 @@ Cascade v0 as implemented (2026-10-25, Implementation Plan D5.5, `sherlock/jobs/
 - **Work.** Every live widget re-runs its query on that version through the data cache, its `version_built` is set (status `ready`, or `error` with the reason), and `widget.updated` is emitted. `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
 - **Not yet.** Column-level dependencies, cards and runs come with D6 (cards, cut 6 applied: no material hash) and D7 (runs).
 - **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16).
+
+Cascade with cards (2026-10-25, Implementation Plan D6.2, cut 6 applied; `sherlock/jobs/cascade.py`):
+- **What changed.** The steps since the oldest stale widget's `version_built`: their `column_targets`, plus those of the steps an undo replayed and of the step it undid. Added or removed columns, the typing step, and any rows added, deleted, quarantined or restored affect every widget.
+- **Affected widgets** are stale widgets whose dependencies (§6.4 `depends_on`) meet the changed columns, or every stale widget when everything changed; a widget whose query no longer compiles counts as affected. Only they re-run their query and emit `widget.updated`; the others just record the new `version_built`. `cascade.started` lists the affected widgets and their cards, the changed `columns` and `all`.
+- **Cards.** The affected widgets' cards go through `tell` with reason `cascade`: a new sheet and a new narration, the `changed` badge set, an edited card given a `suggestion` instead, and the overview rewritten. With the user's "Story updates: Ask first", those cards become `outdated` (no narration) until Refresh.
+- **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
+- **Widgets added, changed or deleted** queue a `stories` job for that widget (deleted: the overview only), once the dataset has cards.
+- **Two job runners on one database.** A runner from an older build that lacks a job kind fails that kind's jobs ("No handler…"). Locally, a second API on the same `api/data` did this to a cascade during the 2026-10-25 browser check; production runs one process.
 
 ### 7.7 Notebook exporter
 
@@ -1259,6 +1346,8 @@ As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
 - **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5.
 - **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
 - **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
+
+- **Story cards** (2026-10-25, D6.6): with Include story cards, the overview follows the load cell as a `##` section, and each widget's card follows its widget as a `###` headline, its body (chips as their current fact-sheet values; bullets as a list), a "Related:" line, and the SQL of its chips in a closed `<details><summary>Evidence</summary>` block. Unverified numbers get `*` and the footnote "Typed by hand in Sherlock, not computed." With no cards yet, the first cell says so. `counts.cards` counts the cards included.
 
 ### 7.8 Undo and replay
 

@@ -168,7 +168,17 @@ def create(
     row = get_row(env.db, widget_id)
     if emit_event:
         _emit(env, dataset, row)
+        _stories(env, dataset, [widget_id])
     return row
+
+
+def _stories(env: Env, dataset: sqlite3.Row, widget_ids: list[str] | None, reason: str = "widget") -> None:
+    """A widget added, changed or removed tells its story again (TRD §7.6), once the dashboard
+    has stories at all."""
+    from sherlock.jobs.stories import queue_stories
+
+    if env.db.execute("SELECT 1 FROM cards WHERE dataset_id = ? LIMIT 1", (dataset["id"],)).fetchone():
+        queue_stories(env.db, dataset, widget_ids, reason)
 
 
 def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, title: str | None) -> sqlite3.Row:
@@ -190,6 +200,8 @@ def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, 
     bump_state(env.db, dataset["id"])
     new = get_row(env.db, row["id"])
     _emit(env, dataset, new)
+    if spec is not None:
+        _stories(env, dataset, [row["id"]])
     return new
 
 
@@ -214,6 +226,7 @@ def delete(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> None:
     env.db.execute("UPDATE cards SET deleted_at = ? WHERE widget_id = ? AND deleted_at IS NULL", (now, row["id"]))
     bump_state(env.db, dataset["id"])
     _emit(env, dataset, get_row(env.db, row["id"]), deleted=True)
+    _stories(env, dataset, [], "widget")  # the overview no longer counts it
 
 
 def restore(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> sqlite3.Row:
