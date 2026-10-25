@@ -30,7 +30,9 @@ def upload(client, content: bytes = CSV, filename="data.csv"):
     return r.json()
 
 
-def wait_for(fn, timeout=20.0, interval=0.05):
+# 0.2 s, not faster: a poll is a read, and a busy machine can make a wait outlast the 600 reads a
+# minute (TRD §15), after which the poll gets a 429 body instead of the list it expects.
+def wait_for(fn, timeout=20.0, interval=0.2):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         value = fn()
