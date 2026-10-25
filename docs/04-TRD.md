@@ -899,7 +899,7 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
 
   If an auto-detected encoding fails later in the file, detection reruns on the whole file. If an encoding the user chose fails, that's `invalid`.
 - **Read.** A temporary UTF-8 copy (`.ingest.utf8.csv`) is read by DuckDB's `read_csv(..., all_varchar=true, null_padding=true)`, with the delimiter, header and skip resolved from `sniff_csv` (delimiter, `SkipRows`, `HasHeader`). It's checked against `csv.Sniffer`, and DuckDB wins on disagreement. Empty cells read as NULL.
-- **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`.
+- **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`. Names are compared without case, as DuckDB compares them, so `Name,name,NAME` become `Name`, `name_2`, `NAME_3`, and `_ROW_ID` becomes `_ROW_ID_2`. Before, DuckDB renamed such columns itself (`name_1`) and `versions.columns_json` no longer matched the Parquet (review of Day 2, 2026-10-25).
 - **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
 

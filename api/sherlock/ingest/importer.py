@@ -45,15 +45,15 @@ def column_names(header: list[str], count: int) -> list[str]:
     """User column names (App Flow §3.2): trimmed; blanks → `col_N`; duplicates and the two
     system names get `_2`, `_3`…; columns beyond the header (or no header) → `col_N`."""
     names: list[str] = []
-    taken = set(RESERVED_COLUMNS)
+    taken = {c.lower() for c in RESERVED_COLUMNS}  # DuckDB's names are case-insensitive: `Name` and `name` clash
     for index in range(count):
         base = header[index].strip() if index < len(header) else ""
         base = base or f"col_{index + 1}"
         name, n = base, 1
-        while name in taken:
+        while name.lower() in taken:
             n += 1
             name = f"{base}_{n}"
-        taken.add(name)
+        taken.add(name.lower())
         names.append(name)
     return names
 

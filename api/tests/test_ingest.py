@@ -174,6 +174,17 @@ def test_column_names_rules():
     assert column_names(["x", " x ", "", "_quarantine_reason"], 5) == [
         "x", "x_2", "col_3", "_quarantine_reason_2", "col_5",
     ]
+    assert column_names(["Name", "name", "NAME", "_ROW_ID"], 4) == ["Name", "name_2", "NAME_3", "_ROW_ID_2"]
+
+
+def test_names_differing_only_in_case_match_the_parquet(app, client):
+    res = upload(client, b"Name,name,NAME,_ROW_ID\n1,2,3,4\n")
+    assert res.status_code == 201, res.text
+    ds = res.json()
+    cols = read_version(app, ds["id"], folder_of(client, ds["id"]), "SELECT column_name FROM (DESCRIBE t)")
+    recorded = json.loads(db_row("SELECT columns_json FROM versions WHERE dataset_id = ? AND version = 1", ds["id"])[0])
+    assert [c for (c,) in cols] == [c["name"] for c in recorded]
+    assert [c for (c,) in cols][2:] == ["Name", "name_2", "NAME_3", "_ROW_ID_2"]
 
 
 # --- refusals: nothing is created ----------------------------------------------------
