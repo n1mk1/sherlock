@@ -19,6 +19,7 @@ from sherlock.errors import ApiError
 from sherlock.rows.query import OPS, SYSTEM, ident
 
 ROWS_TOKEN = "{{rows}}"
+ROWS_MARK = "__sherlock_rows__"  # stands in for `{{rows}}` while its placement is checked
 MAX_RESULT_ROWS = 2000
 NUMERIC = re.compile(r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|FLOAT|DOUBLE|REAL|DECIMAL.*)$")
 # Statement kinds that never belong in a widget, wherever they appear in the tree.
@@ -166,6 +167,10 @@ def validate_predicate(predicate: str, columns: list[str]) -> str:
     where = root.args.get("where")
     if where is None or list(where.find_all(exp.Select)) or list(where.find_all(exp.Subquery)):
         raise SqlError("A row predicate can't contain a query.")
+    if not isinstance(where.this, exp.Paren):
+        # `a = 1) OR (1 = 1` closes the parentheses it's wrapped in and would OR past the
+        # quarantine exclusion and the global filter.
+        raise SqlError("The row predicate has unbalanced parentheses.")
     known = set(columns) | set(SYSTEM)
     for col in where.find_all(exp.Column):
         if col.name not in known:
@@ -184,9 +189,29 @@ def rows_clause(predicate: str | None, selection: str | None, global_filter: str
     return clause
 
 
+def check_rows_placement(sql: str) -> None:
+    """`{{rows}}` must be ANDed into the `WHERE` of every `SELECT` that reads `t`. Otherwise an `OR`
+    (`WHERE {{rows}} OR x`), a `NOT` or a second read of `t` without it brings back quarantined and
+    filtered-out rows."""
+    root = _parse_one(sql.replace(ROWS_TOKEN, ROWS_MARK))
+    marks = [c for c in root.find_all(exp.Column) if c.name == ROWS_MARK and not c.table]
+    for mark in marks:
+        node = mark
+        while not isinstance(node.parent, exp.Where):
+            if not isinstance(node.parent, (exp.And, exp.Paren)):
+                raise SqlError("{{rows}} must be ANDed into the WHERE clause, as in WHERE {{rows}} AND ….")
+            node = node.parent
+    guarded = {id(m.find_ancestor(exp.Select)) for m in marks}
+    for select in root.find_all(exp.Select):
+        reads_t = any(tb.name == "t" and tb.find_ancestor(exp.Select) is select for tb in select.find_all(exp.Table))
+        if reads_t and id(select) not in guarded:
+            raise SqlError("Every SELECT that reads t must filter its rows with WHERE {{rows}}.")
+
+
 def compile_sql(sql: str, rows: str) -> str:
-    """Substitute `{{rows}}` and validate. SQL without `{{rows}}` is refused, so the quarantine
-    exclusion is always in what runs."""
+    """Substitute `{{rows}}` and validate. SQL without `{{rows}}`, or with it anywhere but ANDed into
+    the `WHERE` of each read of `t`, is refused, so the quarantine exclusion is always in what runs."""
     if ROWS_TOKEN not in sql:
         raise SqlError("The query must filter its rows with WHERE {{rows}}.")
+    check_rows_placement(sql)
     return validate_select(sql.replace(ROWS_TOKEN, rows))
