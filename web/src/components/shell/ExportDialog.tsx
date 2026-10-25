@@ -86,8 +86,9 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
         if (!blocked) setOpen(true);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Capture phase: the CSV grid stops the keys it handles from bubbling, and it usually has focus there.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [blocked, setOpen]);
   useEffect(() => {
     if (params.get("export") === "notebook" && !blocked) {
@@ -102,7 +103,9 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
     enabled: open && !blocked,
     placeholderData: (prev) => prev,
     queryFn: () => {
-      const q = options ? `?${new URLSearchParams(Object.entries(options).map(([k, v]) => [k, String(v)]))}` : "";
+      // Unset options (the preview answers `up_to_step: null`) are left out: "null" isn't a number, so it was a 422.
+      const set = options ? Object.entries(options).filter(([, v]) => v !== null && v !== undefined) : [];
+      const q = set.length ? `?${new URLSearchParams(set.map(([k, v]) => [k, String(v)]))}` : "";
       return request<Preview>("GET", `/api/v1/datasets/${dataset.id}/exports/notebook/preview${q}`);
     },
   });
@@ -126,6 +129,8 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
     runExport(dataset, o);
   };
   const busy = dataset.status === "cleaning" || dataset.status === "building";
+  // The server's notes (TRD §4.2 preview), less its running-job note: the dialog words that one itself.
+  const notes = (preview.data?.notes ?? []).filter((n) => !n.startsWith("A job was still running"));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -154,12 +159,13 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
             </div>
           </div>
         )}
-        {(busy || pending > 0 || (preview.data?.notes.length ?? 0) > 0) && (
+        {(busy || pending > 0 || notes.length > 0) && (
           <div className="flex gap-2.5 rounded-md bg-muted p-3 text-[13px]">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
             <div className="flex flex-col gap-2">
               {busy && <p>A job is still running. This export uses v{dataset.current_version}, the latest committed version.</p>}
               {pending > 0 && <p>You have {pending} unsaved {pending === 1 ? "edit" : "edits"}. They are not included; save first to include them.</p>}
+              {notes.map((n) => <p key={n}>{n}</p>)}
             </div>
           </div>
         )}

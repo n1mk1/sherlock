@@ -1,10 +1,13 @@
 """The exporter's allowlist scan (TRD §7.7, PRD NB-11), run on every code cell before the file is
 written: imports only from the allowlist, no network modules, no `subprocess`, no file writes, no
 shell escapes. Two cells are exempt by tag: `requirements` (its pinned `%pip install` line) and
-`load` (its one write of the UTF-8 copy). It also refuses text that looks like a secret.
+`load` (its one write of the UTF-8 copy). It also refuses text that looks like a secret, and any
+configured key's actual value anywhere in the file (sources, embedded outputs and metadata), since
+Token Factory keys (`v1.…`) don't match the generic pattern.
 """
 
 import ast
+import json
 import re
 
 ALLOWED_IMPORTS = {
@@ -42,7 +45,18 @@ def _check_code(source: str, where: str) -> None:
             raise ScanError(f"{where}: writes a file ({node.attr})")
 
 
-def scan(nb) -> None:
+def _configured_secrets() -> list[str]:
+    from sherlock.config import get_settings
+
+    settings = get_settings()
+    return [v for v in (settings.llm_api_key, settings.tavily_api_key) if v and len(v) >= 8]
+
+
+def scan(nb, secrets: list[str] | None = None) -> None:
+    text = json.dumps(nb)
+    for value in _configured_secrets() if secrets is None else secrets:
+        if value in text:
+            raise ScanError("the notebook contains a configured API key")
     for i, cell in enumerate(nb.cells, 1):
         if SECRET.search(cell.source):
             raise ScanError(f"cell {i}: looks like it contains a secret or an identifier")

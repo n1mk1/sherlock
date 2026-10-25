@@ -235,3 +235,20 @@ def test_csv_download_escapes_formulas_in_text_columns(client):
     lines = list(csv.reader(io.StringIO(client.get(f"{API}/datasets/{ds['id']}/export.csv").text)))
     assert lines[1] == ["ok 0", "-3"]  # delta was typed as a number: its minus sign stays
     assert lines[-2] == ["'=HYPERLINK(\"http://x\")", "-1"] and lines[-1] == ["'@SUM(A1)", "2"]
+
+
+def test_cleaning_new_rows_on_save_uses_the_llm_bucket(app, client, ds):
+    """`run_cleaning_on_new_rows` queues a model job, so it's limited like `POST /clean`; a plain save isn't."""
+    from sherlock.ratelimit import RateLimiter
+
+    app.state.rate_limiter = RateLimiter({"read": 100, "mutate": 100, "llm": 1})
+    row = {"temp_id": "a", "cells": {"name": "Eve"}}
+    r = client.post(f"{API}/datasets/{ds['id']}/edits",
+                    json={"base_version": 1, "new_rows": [row], "run_cleaning_on_new_rows": True})
+    assert r.status_code == 201, r.text
+    assert r.json()["clean_job"]["kind"] == "clean"
+    r = client.post(f"{API}/datasets/{ds['id']}/edits",
+                    json={"base_version": 2, "new_rows": [{**row, "temp_id": "b"}], "run_cleaning_on_new_rows": True})
+    assert r.status_code == 429, r.text
+    r = client.post(f"{API}/datasets/{ds['id']}/edits", json={"base_version": 2, "new_rows": [{**row, "temp_id": "c"}]})
+    assert r.status_code == 201, r.text

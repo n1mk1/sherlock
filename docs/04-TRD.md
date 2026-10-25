@@ -521,6 +521,7 @@ Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `she
   - A whole-dataset clean sets the status to `cleaning`. A scoped one leaves the status alone.
 - **`POST /use-as-is`.** Only from `offer`: the status becomes `building`, a `build_dashboard` job is queued, and the answer is `201` with that `Job`.
 - **`POST /edits` with `run_cleaning_on_new_rows`.** It queues a clean job scoped to the new rows' IDs and returns it as `clean_job`.
+  - As of 2026-10-25 (Day 5 review): a save with `run_cleaning_on_new_rows` and at least one new row also counts against the LLM bucket (10 per minute), like `POST /clean`, and is `429` past it before anything is saved. A save without it isn't limited by that bucket.
 
 Steps API as implemented (2026-10-24, Implementation Plan D2.3, `sherlock/routers/steps.py`):
 - **Step list.** `GET /datasets/{id}/steps` returns every step newest first (by `no`), each in the §6.2 shape plus `active`. `active` is whether the step is in the current version's effective chain: undone steps and undo steps are not.
@@ -1589,6 +1590,7 @@ As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
 - **Helpers cell.** The used helpers (from each step's `helpers_used`) with the module's private functions and constants they rely on, then `output_select`, `keep_types` and `store_step`.
 - **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5.
 - **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
+  - As of 2026-10-25 (Day 5 review): the scan also refuses the file if the configured `LLM_API_KEY` or `TAVILY_API_KEY` value appears anywhere in it (cell sources, embedded outputs or metadata). Token Factory keys start `v1.`, which the generic secret pattern doesn't match.
 - **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
 
 - **Runs** (2026-10-25, D7.5):

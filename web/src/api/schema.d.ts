@@ -350,7 +350,8 @@ export interface paths {
         put?: never;
         /**
          * Post Edits
-         * @description One Save: one `edit` step and one new version, or `409` with the conflicts.
+         * @description One Save: one `edit` step and one new version, or `409` with the conflicts. Asking to clean
+         *     the new rows starts a model job, so it counts against the LLM bucket like `POST /clean`.
          */
         post: operations["post_edits_api_v1_datasets__dataset_id__edits_post"];
         delete?: never;

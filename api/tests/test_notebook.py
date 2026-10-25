@@ -56,6 +56,24 @@ def test_scan_refuses_secrets_and_allows_the_exempt_cells():
         scan_mod.scan(nb)
 
 
+def test_scan_refuses_a_configured_key_anywhere_in_the_file():
+    """A Token Factory key (`v1.…`) doesn't look like `sk-…`, so the scan also looks for the
+    configured value itself, in sources, embedded outputs and metadata (PRD NB-11, Rule 6)."""
+    key = "v1.CmQKHHN0YXRpY2tleS1leGFtcGxlLW5vdC1yZWFsEiE"
+    nb = nbformat.v4.new_notebook()
+    nb.cells.append(new_code_cell("x = 1\n"))
+    scan_mod.scan(nb, secrets=[key])
+    out = nbformat.v4.new_code_cell("result\n")
+    out.outputs = [nbformat.v4.new_output("execute_result", data={"text/plain": f"token {key}"}, execution_count=None)]
+    nb.cells.append(out)
+    with pytest.raises(scan_mod.ScanError, match="API key"):
+        scan_mod.scan(nb, secrets=[key])
+    nb.cells.pop()
+    nb.metadata["note"] = key
+    with pytest.raises(scan_mod.ScanError, match="API key"):
+        scan_mod.scan(nb, secrets=[key])
+
+
 def _export(client, ds, **options):
     r = client.post(f"{API}/datasets/{ds}/exports/notebook", json=options)
     assert r.status_code == 201, r.text

@@ -525,6 +525,8 @@ Title "Export notebook". Body:
 - A note when pending edits exist: "You have 12 unsaved edits. They are not included; save first to include them." with a **Save and export** button.
 - Footer: Cancel · **Export** (primary).
 
+As built (2026-10-25, Day 5 review): the notes box also shows the preview's own notes (TRD §4.2), for example "There are no story cards yet, so this notebook has the widgets only." The preview's running-job note is left out there, because the dialog says that itself in the words above.
+
 ### 17.3 Flow
 
 1. Export → the dialog closes; a toast "Preparing notebook…" with a progress bar (job in the tray).

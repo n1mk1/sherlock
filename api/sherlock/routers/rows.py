@@ -13,9 +13,12 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from sherlock.db.connection import get_db
+from sherlock.db.users import User
 from sherlock.errors import not_found
+from sherlock.identity import current_user
 from sherlock.jobs.runner import to_job
 from sherlock.ownership import owned_dataset
+from sherlock.ratelimit import llm_rate_limit
 from sherlock.rows import query as rq
 from sherlock.rows.edits import EditBatch, save
 from sherlock.steps import lineage
@@ -128,9 +131,13 @@ def post_edits(
     body: EditBatch,
     request: Request,
     dataset: sqlite3.Row = Depends(owned_dataset),
+    user: User = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """One Save: one `edit` step and one new version, or `409` with the conflicts."""
+    """One Save: one `edit` step and one new version, or `409` with the conflicts. Asking to clean
+    the new rows starts a model job, so it counts against the LLM bucket like `POST /clean`."""
+    if body.run_cleaning_on_new_rows and body.new_rows:
+        llm_rate_limit(request, user)
     ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
     result = save(ctx, dataset, body)
     if body.run_cleaning_on_new_rows and result["new_row_ids"]:
