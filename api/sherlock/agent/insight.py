@@ -233,17 +233,7 @@ def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, filters: li
     shown = (lambda v: f"{v * 100:.1f}%") if m["metric"] != "r2" else (lambda v: f"{v:.2f}")
     scores = memory_result(f"{rid}m", f"model card of run {run['id']}", [("measure", "VARCHAR"), ("value", "DOUBLE")],
                            [[f"model {metric}", m["value"]], [best["name"], best["value"]]])
-    runs = []
-    if mc["verdict"] == "beats_baseline":
-        runs += [text(f"A model can predict {target} better than simple rules: its {metric} on rows it never saw is "),
-                 chip(scores, 0, 1, shown(m["value"])), text(" against "), chip(scores, 1, 1, shown(best["value"])),
-                 text(" for the best simple rule. ")]
-    elif mc["verdict"] == "weak":
-        runs += [text(f"The signal is weak: the model's {metric} is "), chip(scores, 0, 1, shown(m["value"])),
-                 text(" against "), chip(scores, 1, 1, shown(best["value"])), text(" for the best simple rule. ")]
-    else:
-        runs += [text(f"The model does no better than the best simple rule ({metric} "), chip(scores, 0, 1, shown(m["value"])),
-                 text(" against "), chip(scores, 1, 1, shown(best["value"])), text("), so read these factors as weak. ")]
+    runs = _verdict_runs(mc, target, metric, shown, scores)
     named_top = top[:3]
     runs.append(text("The strongest factors are " if len(named_top) > 1 else "The strongest factor is "))
     for i, f in enumerate(named_top):
@@ -257,6 +247,33 @@ def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, filters: li
                                     f"{mc['split']['folds']}-fold cross-validation on version {mc['version']}"}],
                  actions=[{"kind": "open_model_card", "run_id": run["id"]}],
                  focus={"run_id": run["id"], "target": target})
+
+
+def _verdict_runs(mc: dict, target: str, metric: str, shown, scores: Result) -> list:
+    """The verdict sentence of `ask_why`: row 0 of `scores` is the model's metric, row 1 the best simple
+    rule's. When one column's rule does about as well as the model, it names that column: the signal is
+    real and one column carries it, so the drivers aren't weak."""
+    from sherlock.ml.analysis import LIFT
+
+    runs = []
+    m, best = mc["model"], max(mc["baselines"], key=lambda b: b["value"])
+    floor = min(b["value"] for b in mc["baselines"])
+    carried = best.get("column") and best["value"] - floor >= LIFT[m["metric"]]
+    if mc["verdict"] != "beats_baseline" and carried:  # one strong column, not weak drivers
+        runs += [label(best["column"]), text(f" alone predicts {target} about as well as the model: {metric} "),
+                 chip(scores, 1, 1, shown(best["value"])), text(" against "), chip(scores, 0, 1, shown(m["value"])),
+                 text(" for the model on rows it never saw. That column carries the signal; the others add little. ")]
+    elif mc["verdict"] == "beats_baseline":
+        runs += [text(f"A model can predict {target} better than simple rules: its {metric} on rows it never saw is "),
+                 chip(scores, 0, 1, shown(m["value"])), text(" against "), chip(scores, 1, 1, shown(best["value"])),
+                 text(" for the best simple rule. ")]
+    elif mc["verdict"] == "weak":
+        runs += [text(f"The signal is weak: the model's {metric} is "), chip(scores, 0, 1, shown(m["value"])),
+                 text(" against "), chip(scores, 1, 1, shown(best["value"])), text(" for the best simple rule. ")]
+    else:
+        runs += [text(f"The model does no better than the best simple rule ({metric} "), chip(scores, 0, 1, shown(m["value"])),
+                 text(" against "), chip(scores, 1, 1, shown(best["value"])), text("), so read these factors as weak. ")]
+    return runs
 
 
 # --- ask_model ------------------------------------------------------------------------------------

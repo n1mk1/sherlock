@@ -113,19 +113,23 @@ def partial_dependence(model, X: pd.DataFrame, y: pd.Series, plan: Plan, feature
 
 
 def verdict(metric: str, value: float, baselines: list[dict]) -> tuple[str, str]:
-    """Against the best baseline. When a single column does as well as the model, the text names it:
-    the signal is real but one column carries it."""
+    """Against the best baseline. When a single column does about as well as the model, the text names
+    it: the signal is real but one column carries it (the drivers aren't weak, the rest add little)."""
     best = max(baselines, key=lambda b: b["value"])
     lift = value - best["value"]
     unit = "points" if metric != "r2" else "R²"
     shown = f"{lift * 100:.1f} points" if metric != "r2" else f"{lift:.2f} in R²"
     if lift >= LIFT[metric]:
         return "beats_baseline", f"Beats the best simple rule by {shown}."
+    floor = min(b["value"] for b in baselines)
+    carried = best.get("column") and best["value"] - floor >= LIFT[metric]
+    score = f"{best['value'] * 100:.1f}%" if metric != "r2" else f"R² {best['value']:.2f}"
+    if lift > 0 and carried:
+        return "weak", (f"{best['column']} alone does nearly as well ({score}): it carries the signal, and the other "
+                        f"columns add only {shown} on held-out rows.")
     if lift > 0:
         return "weak", f"Only {shown} better than the best simple rule: treat these drivers as weak."
-    floor = min(b["value"] for b in baselines)
-    if best.get("column") and best["value"] - floor >= LIFT[metric]:
-        score = f"{best['value'] * 100:.1f}%" if metric != "r2" else f"R² {best['value']:.2f}"
+    if carried:
         return "no_signal", (f"No better than {best['column']} alone ({score}): the other columns add nothing on held-out rows.")
     return "no_signal", f"No signal: the model does no better than the best simple rule ({unit} compared on held-out rows)."
 

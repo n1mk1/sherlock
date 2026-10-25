@@ -12,7 +12,7 @@ import pytest
 from sherlock.errors import ApiError
 from sherlock.eval import planted
 from sherlock.ml import repro
-from sherlock.ml.analysis import analyze
+from sherlock.ml.analysis import analyze, verdict
 from sherlock.ml.plan import make_plan
 from tests.test_jobs import wait_for, wait_status
 
@@ -51,6 +51,24 @@ def test_a_regression_target_is_explained():
     assert a.plan.task == "regression" and a.card["model"]["metric"] == "r2"
     assert [i["column"] for i in a.card["importance"][:2]] == ["strong", "moderate"]
     assert a.card["verdict"] == "beats_baseline" and "mae" in a.card["model"]
+
+
+def test_one_strong_column_is_named_not_called_weak():
+    best = {"name": "best one-column rule: x2", "metric": "accuracy", "value": 0.828, "column": "x2"}
+    floor = {"name": "everyone gets the most common outcome", "metric": "accuracy", "value": 0.532}
+    v, text = verdict("accuracy", 0.830, [floor, best])
+    assert v == "weak" and text.startswith("x2 alone does nearly as well (82.8%): it carries the signal") and "0.2 points" in text
+    v, text = verdict("accuracy", 0.80, [floor, best])
+    assert v == "no_signal" and text.startswith("No better than x2 alone (82.8%)")
+    v, text = verdict("accuracy", 0.515, [{**floor, "value": 0.50}, {**best, "value": 0.505}])  # no column stands out
+    assert v == "weak" and text.startswith("Only 1.0 points better than the best simple rule")
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"x1": rng.normal(0, 1, 600).round(3), "x2": rng.normal(0, 1, 600).round(3),
+                       "region": rng.choice(["north", "south", "east"], 600)})
+    df["churned"] = np.where(1.8 * df["x2"] + rng.normal(0, 1, 600) > 0, "yes", "no")  # x2 is the one driver
+    a = _analyze(df, "churned")
+    assert a.card["importance"][0]["column"] == "x2" and a.card["verdict"] != "beats_baseline"
+    assert "x2 alone" in a.card["verdict_text"] and "weak" not in a.card["verdict_text"], a.card["verdict_text"]
 
 
 def test_minimum_rows_are_enforced():

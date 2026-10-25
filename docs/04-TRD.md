@@ -996,6 +996,7 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
 - **`verdict` and `verdict_text`:**
   - `beats_baseline`: a lift of at least 2 points, or 0.05 in R².
   - `weak`: any smaller lift.
+    - (Day 7 review, 2026-10-25) When the best one-column rule beats the most-common-outcome (or average) baseline by the same margin, one column carries the signal, so the text names it instead of calling the drivers weak: "x2 alone does nearly as well (82.8%): it carries the signal, and the other columns add only 0.2 points on held-out rows." The `no_signal` text already did this.
   - `no_signal`: no lift. When a one-column rule carries the signal, the text names it ("No better than boat alone (97.6%)…").
 - **`importance`.** Permutation importance, scaled so the strongest is 1.
 - **`warnings`:**
@@ -1731,6 +1732,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
   - It runs a `driver_analysis` `RunRequest` (Auto) on the chat's rows (selection and dashboard filter) through the runner, so the dashboard's driver run is reused from the cache when the request is the same.
   - A new run is waited for up to 60 s within the message budget, with its progress as the status line. If it's still running, the answer says so.
   - The answer gives the verdict in words, the metric against the best simple rule, and the three strongest factors as chips, plus the importance table and `open_model_card`.
+    - (Day 7 review, 2026-10-25) When the verdict isn't `beats_baseline` and one column carries the signal (as above), it says "<column> alone predicts <target> about as well as the model", with both scores as chips, rather than "the signal is weak" or "read these factors as weak".
 - **`ask_model`.**
   - The run is the focused widget's, the previous answer's, one whose target the message names, or the newest finished one.
   - "Who did it get wrong?" (wrong, misclassified, mistakes, errors, missed) saves the wrong-rows selection and answers in code with the count, the first 20 rows, `open_rows` and `open_model_card`.

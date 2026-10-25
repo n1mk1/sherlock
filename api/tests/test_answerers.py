@@ -93,3 +93,17 @@ def test_help_retrieval_and_its_limits():
     with pytest.raises(CantAnswer):
         insight.app_help("zzz qqq")
     assert insight._size(0.6, (0.2, 0.5, 0.8)) == "medium" and insight._p(0.0004) == "<0.001"
+
+
+def test_ask_why_names_the_one_column_that_carries_the_signal():
+    mc = {"verdict": "weak", "model": {"metric": "accuracy", "value": 0.83},
+          "baselines": [{"name": "everyone gets the most common outcome", "value": 0.53},
+                        {"name": "best one-column rule: x2", "value": 0.828, "column": "x2"}]}
+    scores = insight.memory_result("r1m", "model card", [("measure", "VARCHAR"), ("value", "DOUBLE")],
+                                   [["model accuracy", 0.83], ["best one-column rule: x2", 0.828]])
+    runs = insight._verdict_runs(mc, "churned", "accuracy", lambda v: f"{v * 100:.1f}%", scores)
+    words = "".join(r.get("text", r.get("value", "")) for r in runs)
+    assert words.startswith("x2 alone predicts churned about as well as the model: accuracy 82.8% against 83.0%")
+    assert "weak" not in words and [r["key"] for r in runs if r["type"] == "chip"] == ["r1m:1:1", "r1m:0:1"]
+    mc["baselines"][1]["value"] = 0.54  # no column stands out: the drivers are weak
+    assert "".join(r.get("text", "") for r in insight._verdict_runs(mc, "churned", "accuracy", str, scores)).startswith("The signal is weak")
