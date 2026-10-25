@@ -8,6 +8,8 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
 - `pandera`: a schema derived from the starting data: the same user columns, `_row_id` unique and
   never missing, `_quarantine_reason` text.
 - `parse_quarantine`: in a column that changed type, every value that didn't convert is quarantined.
+- `placeholder_fill`: missing values weren't filled with a placeholder word ("Unknown", "N/A",
+  "Missing", …): an empty cell stays empty unless a rule recovers its value.
 
 The soft score is the mean of: parse success rate, the share of the issue resolved (the detector
 re-run on the result), 1 − the share of cells changed outside the issue's column, and distribution
@@ -25,6 +27,10 @@ from sherlock.profile.datacard import build_frame
 
 SYSTEM = ("_row_id", "_quarantine_reason")
 NUMERIC_SENTINELS = {-99999.0, -9999.0, -999.0, -99.0, 999.0, 9999.0, 99999.0}
+PLACEHOLDER_WORDS = SENTINELS | {
+    "unknown", "not known", "not recorded", "not available", "not provided", "not specified", "unspecified",
+    "no data", "missing value", "blank", "empty", "tbd", "pending", "undisclosed",
+}
 
 
 @dataclass
@@ -153,6 +159,7 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
     r.hard["nan_introduced"] = "pass" if nan_new == 0 else f"fail: {nan_new} values became empty"
     r.hard["dtype"] = dtype_problem or "pass"
     r.hard["parse_quarantine"] = "pass" if parse_failures == 0 else f"fail: {parse_failures} unparsed values not quarantined"
+    r.hard["placeholder_fill"] = _placeholder_fill(b, a, user_cols)
 
     # --- soft score -------------------------------------------------------------------------------
     r.soft["parse_rate"] = r.parse_rate
@@ -169,6 +176,20 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
         r.soft["distribution"] = _conservation(b[column], a[column])
     r.soft["unrelated"] = min(r.soft["unrelated"], 1.0 - unrelated / total_cells)
     return r
+
+
+def _placeholder_fill(b: pd.DataFrame, a: pd.DataFrame, columns: list[str]) -> str:
+    """Missing cells that became a placeholder word, in any column."""
+    for c in columns:
+        filled = b[c].isna() & a[c].notna()
+        if not filled.any():
+            continue
+        words = a.loc[filled, c]
+        placeholder = words.map(lambda v: isinstance(v, str) and v.strip().lower() in PLACEHOLDER_WORDS)
+        if placeholder.any():
+            example = words[placeholder].iloc[0]
+            return f"fail: {int(placeholder.sum())} missing values in {c} filled with the placeholder {example!r}"
+    return "pass"
 
 
 def _conservation(before: pd.Series, after: pd.Series) -> float:

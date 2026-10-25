@@ -63,6 +63,20 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 | sales | 1,500 | 765 | 97.3% | 0.00% | 0.0% | 45 | 5 | 87 s |
 | hr | 800 | 269 | 94.1% | 0.00% | 0.0% | 5 | 5 | 80 s |
 
+**Rerun after the owner's two cleaning decisions** (missing values stay missing; reviewer concerns don't block a commit), same seeds:
+
+| Set | Recovered | Harm | Row loss | Steps | Time |
+|---|---|---|---|---|---|
+| titanic_clean | 97.2% (was 92.1%) | 0.00% | 0.0% | 4 | 59 s |
+| sales | 94.5% (was 97.3%) | 0.00% | 0.0% | 5 | 69 s |
+| hr | 74.0% (was 94.1%) | 0.00% | 0.0% | 4 | 75 s |
+
+- Placeholders improved from 28 to 41 of 102 recovered.
+- The two drops are run-to-run variance in which fix Ultra proposes, not the new rules:
+  - `hr` department case variants: 55 of 120 this time, 120 of 120 before.
+  - `sales` units placeholders: 3 of 45, 27 of 45 before.
+- Same input and temperature 0, different code. This is the reproducibility point above, measured.
+
 - **What it recovered fully:** money formatting (`$1,234.5` → numbers), case and spacing variants, mojibake (`ZÃ¼rich` → `Zürich`) and day-first dates. Typos in categories were 42 of 45.
 - **Weak spot:** placeholder values (`N/A`, `-999`, `?`) in numeric columns. Only 28 of 102 became missing; the rest were quarantined as parse failures, or `-999` stayed a number. The quarantined rows keep their text and are excluded from analysis, so nothing is silently wrong, but the cleaning is incomplete. This is our pipeline's order (the issue is diagnosed after the typing step), not a model fault.
 - **Harm 0%** after we fixed two bugs in our own scorer: yes/no columns typed as booleans counted as changed, and money damage rounded fares to cents. The first two runs reported 11–13% harm, all of it the scorer.

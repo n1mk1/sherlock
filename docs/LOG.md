@@ -91,10 +91,13 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - The console's "Post-trial preference" says the account stops usage when the 30-day trial ends (29 days left) unless it's switched to paid usage.
 - **What needs you:**
   - ~~Switch Token Factory to paid usage before the trial ends.~~ Done by the owner on 2026-10-24, so model calls draw on the $25 balance after the trial and the deployed app keeps its model through judging (PRD §9).
-  - The two judgement calls on cleaning quality before the demo:
-    - Should "missing values" in text columns stay missing rather than become `'Unknown'`? The detector's proposal currently suggests "keep as Unknown".
-    - Should the critic's concerns lower confidence less, so fills like "Median by title" commit outright?
+  - ~~The two judgement calls on cleaning quality.~~ Decided by the owner: missing values stay missing, and the critic's concerns can't block a commit on their own (applied, see below).
   - Review the `docs/` additions (TRD §4.3, §4.4, §7.1–§7.2, §7.9, §14; App Flow §3–§5).
+- **The owner's cleaning decisions, applied the same night:**
+  - Missing values stay missing unless a rule over related columns recovers them. A new hard verifier, `placeholder_fill`, rejects fills like "Unknown".
+  - The reviewer's concerns no longer lower confidence; only its "changed something it shouldn't" verdict does.
+  - **Titanic now:** cabin, home.dest and embarked stay missing, and age is imputed by class and sex and committed.
+  - **Benchmark rerun:** 97.2%, 94.5% and 74.0% recovered, harm 0% and row loss 0%. Hr's drop is model variance (`FEEDBACK.md`).
 - **Decision for tomorrow:**
   - D4.1–D4.3 backend (widgets, the dashboard builder, agent v1).
   - Then D4.4–D4.8 frontend, starting with the Bklit and react-grid-layout checks (plan §2.0).

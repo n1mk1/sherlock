@@ -344,11 +344,11 @@ class Cleaner:
             return self._skip(issue, "The fix changed nothing", candidates=chips)
         try:
             critique = self._critic(issue, best, before, after_full, full_report)
-            critic_clean = not critique.changed_something_it_shouldnt and not critique.concerns
+            review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
         except StructuredOutputError:
-            critique, critic_clean = None, False
+            critique, review_ok = None, False
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
-        decision = gate.decide([s for _, s, *_ in scored], critic_clean,
+        decision = gate.decide([s for _, s, *_ in scored], review_ok,
                                full_report.cells_changed + full_report.quarantined, len(before) * max(len(user_cols), 1))
         if decision.gate == "skip":
             return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
@@ -366,7 +366,7 @@ class Cleaner:
             gate=decision.gate, flag_reason=flag_reason, parse_failures=full_report.quarantined,
             decisions=[{"question": f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?",
                         "chosen": best.label, "alternatives": [c.label for c, *_ in scored if c is not best],
-                        "reason": diagnosis.cause}],
+                        "reason": diagnosis.cause, "review": critique.concerns if critique else []}],
             verifiers=full_report.as_json(), job_id=self.ctx.id,
         )
         try:
@@ -384,7 +384,8 @@ class Cleaner:
                 else f"committed with a flag · step {step['no']} · confidence {decision.confidence:.2f}")
         self.ctx.log(best.expected_effect, icon="check" if decision.gate == "commit" else "flag", column=column,
                      gate=decision.gate, candidates=chips, step_id=step["id"], step_no=step["no"],
-                     confidence=decision.confidence, detail=text, checks=full_report.hard, issue_id=issue["id"])
+                     confidence=decision.confidence, detail=text, checks=full_report.hard, issue_id=issue["id"],
+                     review=critique.concerns if critique else [])
 
     def _stop_requested(self) -> bool:
         """Polled while a sandbox worker runs, so Stop kills it instead of waiting for it."""

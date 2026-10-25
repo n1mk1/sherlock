@@ -23,7 +23,8 @@ def detect(frame: Frame) -> list[Finding]:
                 together.append(other)
         findings.append(Finding(
             "missing", name, col.missing,
-            "Fill from a rule over related columns where one fits, otherwise keep as Unknown. Rows are never dropped.",
+            "Fill from a rule over related columns where one fits; otherwise leave the values missing. "
+            "Never fill with a placeholder such as Unknown. Rows are never dropped.",
             details={"missing_with": together} if together else {},
         ))
     return findings

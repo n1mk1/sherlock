@@ -1,7 +1,10 @@
 """The gate (TRD §7.2, PRD CLEAN-4): commit, commit with a flag, or skip.
 
-confidence = 0.6 × best score + 0.2 × agreement + 0.2 × (1 if the critic has no concerns else 0),
-where agreement is the share of candidates scoring within 0.1 of the best.
+confidence = 0.6 × best score + 0.2 × agreement + 0.2 × (1 if the review passed else 0),
+where agreement is the share of candidates scoring within 0.1 of the best, and the review passes
+unless the critic says the step changed something it shouldn't (or the review couldn't be read).
+The critic's list of concerns is recorded on the step but doesn't lower confidence: concerns on
+their own can't keep a step from committing (owner's decision, 2026-10-24).
 blast = cells changed / cells in the dataset.
 """
 
@@ -28,10 +31,10 @@ def agreement(scores: list[float]) -> float:
     return sum(1 for s in scores if best - s <= 0.1) / len(scores)
 
 
-def decide(scores: list[float], critic_clean: bool, cells_changed: int, total_cells: int) -> Decision:
+def decide(scores: list[float], review_ok: bool, cells_changed: int, total_cells: int) -> Decision:
     best = max(scores) if scores else 0.0
     agree = agreement(scores)
-    confidence = round(0.6 * best + 0.2 * agree + 0.2 * (1.0 if critic_clean else 0.0), 4)
+    confidence = round(0.6 * best + 0.2 * agree + 0.2 * (1.0 if review_ok else 0.0), 4)
     blast = cells_changed / total_cells if total_cells else 0.0
     if best == 0.0:
         return Decision("skip", confidence, agree, blast, "no candidate passed the checks")

@@ -16,6 +16,7 @@ const CHECK_LABELS: Record<string, string> = {
   dtype: "Types make sense",
   pandera: "Data-card constraints (pandera)",
   parse_quarantine: "Parse failures quarantined",
+  placeholder_fill: "No placeholder fills",
   lossless: "Lossless round-trip",
 };
 

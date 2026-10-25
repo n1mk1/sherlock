@@ -153,3 +153,19 @@ def test_helpers_run_in_the_sandbox_and_types_survive(tmp_path):
     types = {c: t for c, t, *_ in duckdb.sql(f"DESCRIBE SELECT * FROM read_parquet('{out.as_posix()}')").fetchall()}
     assert (types["body"], types["day"], types["_quarantine_reason"], types["_row_id"]) == ("BIGINT", "DATE", "VARCHAR", "BIGINT")
     assert duckdb.sql(f"SELECT age FROM read_parquet('{out.as_posix()}') ORDER BY _row_id").fetchall() == [(30.0,), (30.0,), (40.0,)]
+
+
+def test_verify_rejects_placeholder_fills_but_allows_real_imputation():
+    before = frame(port=["S", "C", None, "S", None, "Q"])
+    unknown = before.assign(port=before["port"].fillna("Unknown"))
+    r = verify(before, unknown, "missing", "port")
+    assert r.hard["placeholder_fill"] == "fail: 2 missing values in port filled with the placeholder 'Unknown'"
+    assert r.score == 0.0
+    mode = before.assign(port=before["port"].fillna("S"))  # the most frequent value is a real imputation
+    assert verify(before, mode, "missing", "port").hard["placeholder_fill"] == "pass"
+
+
+def test_reviewer_concerns_alone_do_not_block_a_commit():
+    # The loop passes review_ok = not changed_something_it_shouldnt; concerns don't enter it.
+    assert gate.decide([0.9, 0.85], True, 10, 1000).gate == "commit"
+    assert gate.decide([0.9, 0.85], False, 10, 1000).gate == "flag"  # "changed something it shouldn't"

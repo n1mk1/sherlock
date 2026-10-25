@@ -968,7 +968,14 @@ Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
     - `unrelated`: penalizes changes outside the issue's column.
     - `distribution`, for a numeric column that stays numeric: 1 − the median shift in standard deviations − the change in spread.
   - The score is the mean of the soft components, or 0 if any hard check fails.
-- **Gate (`gate.py`).** It's the formula above. With no candidate passing it's `skip` ("no candidate passed the checks"). A `flag` names its reason ("changes more than a fifth of the data", or "medium confidence (0.62)").
+- **Owner's decisions (2026-10-24, after the first live runs):**
+  - **Missing values stay missing.** A missing value is filled only when a rule over related columns recovers it, never with a placeholder. The `missing` detector's proposal says so, and so does the system prompt.
+  - **The `placeholder_fill` check.** A new hard verifier fails any step that turns missing cells into a placeholder word (the profiler's placeholder strings plus "Unknown", "not recorded", "not available", "unspecified", …). Filling with a real value, such as the most frequent port, still passes.
+  - **The review's term.** In the confidence formula it's now 1 unless the critic says the step `changed_something_it_shouldnt`, or the review can't be read. The critic's `concerns` no longer lower confidence: they're recorded in the step's decision (`review`) and on the log line (`review`), but on their own they can't keep a step from committing.
+  - **Before and after**, on Titanic:
+    - Before: cabin, home.dest and embarked were filled with "Unknown", and the critic's concerns flagged sensible fills such as age by group.
+    - After: those columns stay missing, and age is imputed by class and sex and committed.
+- **Gate (`gate.py`).** It's the formula above, with the review's term as just described. With no candidate passing it's `skip` ("no candidate passed the checks"). A `flag` names its reason ("changes more than a fifth of the data", or "medium confidence (0.62)").
 
 ### 7.3 Dashboard builder
 

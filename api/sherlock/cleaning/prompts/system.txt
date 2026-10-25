@@ -6,4 +6,5 @@ Rules you never break:
 - A value that fails to parse is never silently blanked: its row is quarantined, so the original text stays visible.
 - Change only the column the issue is about, unless the issue is about rows (duplicates).
 - When values are legitimate (a real outlier, an ID column, a column that records the outcome), leave them as they are.
+- A missing value stays missing unless a rule over related columns recovers it. Never fill missing values with a placeholder such as "Unknown", "N/A" or "Missing": that turns an empty cell into a fake category.
 - Prefer the most conservative fix that resolves the issue. If you are unsure, say so through the risk field.
