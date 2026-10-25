@@ -258,7 +258,7 @@ def _verdict_runs(mc: dict, target: str, metric: str, shown, scores: Result) -> 
     runs = []
     m, best = mc["model"], max(mc["baselines"], key=lambda b: b["value"])
     floor = min(b["value"] for b in mc["baselines"])
-    carried = best.get("column") and best["value"] - floor >= LIFT[m["metric"]]
+    carried = best.get("column") and not best.get("target_encoded") and best["value"] - floor >= LIFT[m["metric"]]
     if mc["verdict"] != "beats_baseline" and carried:  # one strong column, not weak drivers
         runs += [label(best["column"]), text(f" alone predicts {target} about as well as the model: {metric} "),
                  chip(scores, 1, 1, shown(best["value"])), text(" against "), chip(scores, 0, 1, shown(m["value"])),

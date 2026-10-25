@@ -122,7 +122,7 @@ def verdict(metric: str, value: float, baselines: list[dict]) -> tuple[str, str]
     if lift >= LIFT[metric]:
         return "beats_baseline", f"Beats the best simple rule by {shown}."
     floor = min(b["value"] for b in baselines)
-    carried = best.get("column") and best["value"] - floor >= LIFT[metric]
+    carried = best.get("column") and not best.get("target_encoded") and best["value"] - floor >= LIFT[metric]
     score = f"{best['value'] * 100:.1f}%" if metric != "r2" else f"R² {best['value']:.2f}"
     if lift > 0 and carried:
         return "weak", (f"{best['column']} alone does nearly as well ({score}): it carries the signal, and the other "
@@ -137,7 +137,10 @@ def verdict(metric: str, value: float, baselines: list[dict]) -> tuple[str, str]
 def model_card(plan: Plan, model: str, alternatives: list[dict], result: dict, y: pd.Series) -> dict:
     m = result["metrics"]
     best_base = max(b["value"] for b in result["baselines"])
-    v, text = verdict(m["metric"], m["value"], result["baselines"])
+    # A rule on a target-encoded column (an ID-like group such as a ticket number) isn't named as carrying
+    # the signal: rows of one group fall on both sides of a fold, so its held-out score can be inflated.
+    baselines = [{**b, "target_encoded": True} if b.get("column") in plan.high_card else b for b in result["baselines"]]
+    v, text = verdict(m["metric"], m["value"], baselines)
     warnings = []
     if plan.task == "classification":
         share = float(y.value_counts(normalize=True).iloc[0])
@@ -163,7 +166,7 @@ def model_card(plan: Plan, model: str, alternatives: list[dict], result: dict, y
         "features_used": plan.features, "excluded": plan.excluded,
         "rows": {**plan.rows, "train": result["rows"]},
         "split": {"kind": "stratified_kfold" if plan.task == "classification" else "kfold", "folds": len(m["folds"]), "seed": core_seed()},
-        "baselines": result["baselines"], "model": model_block,
+        "baselines": baselines, "model": model_block,
         "alternatives": [{"model": a["model"], "label": core.MODEL_LABELS.get(a["model"], a["model"]), "metric": a["metric"],
                           "value": round(a["mean"], 6)} for a in alternatives],
         "verdict": v, "verdict_text": text,

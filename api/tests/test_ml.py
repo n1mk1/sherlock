@@ -63,6 +63,8 @@ def test_one_strong_column_is_named_not_called_weak():
     assert v == "no_signal" and text.startswith("No better than x2 alone (82.8%)")
     v, text = verdict("accuracy", 0.515, [{**floor, "value": 0.50}, {**best, "value": 0.505}])  # no column stands out
     assert v == "weak" and text.startswith("Only 1.0 points better than the best simple rule")
+    v, text = verdict("accuracy", 0.804, [{**floor, "value": 0.745}, {**best, "value": 0.795, "column": "ticket", "target_encoded": True}])
+    assert v == "weak" and text.startswith("Only 0.9 points better")  # a target-encoded ID isn't named as the signal
     rng = np.random.default_rng(1)
     df = pd.DataFrame({"x1": rng.normal(0, 1, 600).round(3), "x2": rng.normal(0, 1, 600).round(3),
                        "region": rng.choice(["north", "south", "east"], 600)})

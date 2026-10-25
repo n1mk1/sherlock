@@ -105,5 +105,8 @@ def test_ask_why_names_the_one_column_that_carries_the_signal():
     words = "".join(r.get("text", r.get("value", "")) for r in runs)
     assert words.startswith("x2 alone predicts churned about as well as the model: accuracy 82.8% against 83.0%")
     assert "weak" not in words and [r["key"] for r in runs if r["type"] == "chip"] == ["r1m:1:1", "r1m:0:1"]
+    mc["baselines"][1]["target_encoded"] = True  # a target-encoded ID (a ticket number) isn't named
+    assert "".join(r.get("text", "") for r in insight._verdict_runs(mc, "churned", "accuracy", str, scores)).startswith("The signal is weak")
+    mc["baselines"][1].pop("target_encoded")
     mc["baselines"][1]["value"] = 0.54  # no column stands out: the drivers are weak
     assert "".join(r.get("text", "") for r in insight._verdict_runs(mc, "churned", "accuracy", str, scores)).startswith("The signal is weak")

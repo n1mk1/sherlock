@@ -998,6 +998,7 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
   - `beats_baseline`: a lift of at least 2 points, or 0.05 in R².
   - `weak`: any smaller lift.
     - (Day 7 review, 2026-10-25) When the best one-column rule beats the most-common-outcome (or average) baseline by the same margin, one column carries the signal, so the text names it instead of calling the drivers weak: "x2 alone does nearly as well (82.8%): it carries the signal, and the other columns add only 0.2 points on held-out rows." The `no_signal` text already did this.
+    - A rule on a target-encoded column (more than 50 values, such as a ticket number) is never named this way, in either verdict: rows of one group fall on both sides of a fold, so its held-out score can be inflated. Its baseline row in the model card carries `target_encoded: true`, and `ask_why` follows the same rule. On Titanic's 3rd class the best one-column rule is `ticket` (79.5% against 74.5% for the majority), which is this case.
   - `no_signal`: no lift. When a one-column rule carries the signal, the text names it ("No better than boat alone (97.6%)…").
 - **`importance`.** Permutation importance, scaled so the strongest is 1.
 - **`warnings`:**
