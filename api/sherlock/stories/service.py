@@ -213,6 +213,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
         return {"cards": 0, "outdated": len(marked)}
 
     sheets: dict[str, dict] = {}
+    failed: set[str] = set()
     for i, w in enumerate(chosen, 1):
         check_cancel()
         progress(i, len(chosen) + 1, f"Reading the facts · {i} of {len(chosen)}")
@@ -222,7 +223,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
         try:
             sheets[w["id"]] = build_sheet(env, dataset, w, version)
         except ApiError:
-            continue  # a widget whose query fails on this version has no story until it works again
+            failed.add(w["id"])  # a widget whose query fails on this version has no story until it works again
     all_sheets = dict(sheets)
     if widget_ids is not None:  # relations need every widget's sheet; reuse the latest of the others
         for w in rows:
@@ -259,6 +260,12 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
                           llm.settings.model_medium if by_model else None, changed=existed and reason == "cascade")
             emit_card(db, env.bus, dataset, cid, scope.job_id)
             done += 1
+    told = {w["id"] for w, _, _ in jobs}
+    for w in chosen:  # never leave a card spinning: a failed query asks for Refresh, no facts keeps the text
+        if w["id"] not in told:
+            cid = _set_status(db, dataset["id"], w["id"], "outdated" if w["id"] in failed else "ready")
+            if cid:
+                emit_card(db, env.bus, dataset, cid, scope.job_id)
     progress(len(chosen) + 1, len(chosen) + 1, "Writing the overview")
     tell_overview(env, llm, scope, dataset, rows, dataset_columns, changed=reason == "cascade")
     _bump(db, dataset["id"])

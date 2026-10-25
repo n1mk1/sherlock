@@ -87,8 +87,10 @@ def accept_suggestion(cid: str, request: Request, _: Owned = Depends(owned("card
     if not r["suggestion_json"]:
         raise ApiError(409, "conflict", "This card has no suggestion.")
     s = json.loads(r["suggestion_json"])
+    # The suggestion was written from the card's current sheet, so the card now reflects its version.
     db.execute("UPDATE cards SET headline_json = ?, body_json = ?, suggestion_json = NULL, edited_by_user = 0, "
-               "changed_badge = 0, updated_at = ? WHERE id = ?",
+               "changed_badge = 0, version = COALESCE((SELECT version FROM fact_sheets WHERE id = cards.fact_sheet_id), "
+               "version), updated_at = ? WHERE id = ?",
                (json.dumps(s["headline"]), json.dumps(s["body"]), now_iso(), cid))
     return _changed(request, db, cid)
 

@@ -64,7 +64,7 @@ export function StoryCard({ card, title, onEvidence }: {
   card: Card; title: string; onEvidence: (card: Card, chipId: string) => void;
 }) {
   const actions = useCardActions(card.dataset_id);
-  const { hoveredWidget, setHoveredWidget, setFlashWidget, setChatDraft, setFocusedWidget, setChatOpen } = useUi();
+  const { hoveredWidget, setHoveredWidget, setFlashWidget, setChatDraft, setFocusedWidget, setChatOpen, editLayout } = useUi();
   const [editing, setEditing] = useState<null | "card" | "suggestion">(null);
   const ref = useRef<HTMLElement>(null);
   const linked = !!card.widget_id && hoveredWidget === card.widget_id;
@@ -86,7 +86,7 @@ export function StoryCard({ card, title, onEvidence }: {
     <article
       ref={ref}
       aria-label={overview ? "Overview" : title}
-      onMouseEnter={() => card.widget_id && setHoveredWidget(card.widget_id)}
+      onMouseEnter={() => card.widget_id && !editLayout && setHoveredWidget(card.widget_id)} // off while arranging
       onMouseLeave={() => setHoveredWidget(null)}
       onClick={(e) => {
         if (card.widget_id && !(e.target as HTMLElement).closest("button, [contenteditable]")) setFlashWidget(card.widget_id);

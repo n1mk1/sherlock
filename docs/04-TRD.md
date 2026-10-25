@@ -569,6 +569,7 @@ Story cards API as implemented (2026-10-25, Implementation Plan D6.1–D6.3, `sh
 - **`PATCH /cards/{cid}`** takes `{ headline?, body? }` as `CardBody`, sets `edited_by_user`, and turns every number typed in a text run into a chip with `key: null` and `unverified: true` ("Typed by you, not computed"). An edited card is never narrated over again; the cascade gives it a `suggestion`.
 - **`POST /cards/{cid}/refresh`** queues a `stories` job for the card's widget (the overview: for no widget, so only the overview is written) and answers `201` with the `Job`.
 - **`POST accept-suggestion`** puts the suggestion in the card and clears `edited_by_user` and the badge (`409` without a suggestion); **`dismiss-suggestion`** drops it and the badge; **`dismiss-badge`** clears `changed_badge`.
+- **Accept also sets the card's `version`** to its fact sheet's version (Day 6 review, 2026-10-25). An edited card keeps the version its user-written text reflects; the suggestion was written from the current sheet.
 - **`GET /cards/{cid}/evidence/{chip_id}`** answers `{ key, value, formatted, label, sql?, cell?, from?, formula?, method?, run_id?, computed_at, version }`; for an unverified chip, `{ value, unverified: true, label, version }`.
 - **`GET /fact-sheets/{fsid}`** answers `{ id, widget_id, version, facts, depends_columns, computed_at }`.
 - **`GET /datasets/{id}/relations`** answers the latest version's edges with their `detail` (the shared columns, or the target).
@@ -1235,6 +1236,12 @@ As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with
 - **Fallback.** The headline is the widget's title (a label run `widget:<id>`), and the body is the fact sheet as bullets (a label run `fact:<key>` and a chip per fact, at most six).
 - **Overview (`medium`, schema `Overview`: two to five bullets of runs).** Chips are `w<i>.<fact key>` over every widget card's sheet; the merged facts are stored as the overview's own sheet. The fallback is up to four bullets, one per widget by score, of its headline fact.
 - **Model failures.** Any exception while narrating a card falls back for that card, so the job always finishes.
+- **Day 6 review (2026-10-25)** added three rules.
+  - **No card is left `updating`.**
+    - When a widget's query fails on the version, its card becomes `outdated` and keeps its text; Refresh tries again.
+    - When the widget has no facts, the card goes back to `ready` with its text unchanged.
+  - **Numbers in words count as numbers.** Text runs may not spell numbers: two to twelve, the tens, hundred, thousand, million, billion, dozen, twice, thrice, doubled, tripled and halved. Such a story is repaired like one with a digit. In the live check, Super wrote "six parents or children" for a category value to get around the digit rule.
+  - **A heatmap names both categories of its cell.** The allowed labels add the series column's value of the highest cell (`value:<series>:<max_y>`), and the prompt asks for both. Live, the story said "highest for pclass 1, at 96.5%" for the pclass 1 × female cell.
 
 ### 7.5 ML runner
 
@@ -1289,6 +1296,7 @@ Cascade with cards (2026-10-25, Implementation Plan D6.2, cut 6 applied; `sherlo
 - **Cards.** The affected widgets' cards go through `tell` with reason `cascade`: a new sheet and a new narration, the `changed` badge set, an edited card given a `suggestion` instead, and the overview rewritten. With the user's "Story updates: Ask first", those cards become `outdated` (no narration) until Refresh.
 - **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
 - **Widgets added, changed or deleted** queue a `stories` job for that widget (deleted: the overview only), once the dataset has cards.
+- **Restoring a deleted widget** brings its card back and queues the overview, so the overview counts the widget again (Day 6 review, 2026-10-25).
 - **Two job runners on one database.** A runner from an older build that lacks a job kind fails that kind's jobs ("No handler…"). Locally, a second API on the same `api/data` did this to a cascade during the 2026-10-25 browser check; production runs one process.
 
 ### 7.7 Notebook exporter

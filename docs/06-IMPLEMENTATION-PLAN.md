@@ -174,6 +174,19 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] D6.5: custom visx histogram, heatmap, box plot and scatter; builder candidates for them. Gauges render as a KPI tile.
 - [x] D6.6: story cards in the notebook (overview as the introduction, each card after its widget, evidence details, unverified footnotes, Include story cards wired).
 - Exit, checked: the sample dashboard has grounded cards (live, Nemotron Super); hovering links both ways; editing `fare` in the data updated only the four cards that read `fare` (the exit names `age`; no widget on that dashboard read `age`); an edited card kept its text and showed a suggestion.
+- **Review, 2026-10-25, after the deploy of `52cc5eb`.**
+  - **Live check on https://sherlock-anw3.onrender.com, scripted against the API.**
+    - Sample, Use as is: 7 widgets (bar, box, heatmap, histogram, KPIs), with 8 cards written by the model 48 s after upload.
+    - Every chip matches its fact. No text run has digits or markup, and every card's evidence resolves.
+    - Editing one `fare` cell cascaded in 22 s, and only the 3 cards that read `fare` changed.
+    - An edited fare card kept its text and got a suggestion. An edited card that doesn't read `fare` got none.
+  - **Fixed after the review** (TRD §4.6, §7.4, §7.6):
+    - A card whose widget query fails is no longer left `updating`.
+    - Accept sets the card's version.
+    - Restoring a widget rewrites the overview.
+    - Hovering a card no longer spotlights its widget in Edit layout.
+    - Numbers spelled out in words are rejected.
+    - The heatmap story may name both categories of its cell.
 
 ### Day 7 · Oct 26: ML
 

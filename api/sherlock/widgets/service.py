@@ -237,6 +237,7 @@ def restore(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> sqlite3.Row:
     bump_state(env.db, dataset["id"])
     new = get_row(env.db, row["id"])
     _emit(env, dataset, new)
+    _stories(env, dataset, [], "widget")  # the overview counts it again
     return new
 
 

@@ -116,6 +116,16 @@ def test_narrate_falls_back_to_bullets_and_checks_wording():
                     body=[TextRun(text="The rate is "), ChipRun(chip="top_value"), TextRun(text=" for women.")])
     assert not nr.narrate(Fake(no_note), None, title="t", widget_id="w1", spec={}, facts=FACTS,
                           widget_columns=["sex"], dataset_columns=["sex"], related=[])[2]  # n = 20 needs the note
+    spelled = Story(headline=[TextRun(text="Women did twice as well in this small sample")],
+                    body=[TextRun(text="The rate is "), ChipRun(chip="top_value"), TextRun(text=" for women in a small sample.")])
+    assert not nr.narrate(Fake(spelled), None, title="t", widget_id="w1", spec={}, facts=FACTS,
+                          widget_columns=["sex"], dataset_columns=["sex"], related=[])[2]  # "twice" is a number
+
+
+def test_a_heatmap_story_may_name_both_categories_of_its_cell():
+    facts = {"max_x": fx.fact("1", "text", "pclass of the highest cell"), "max_y": fx.fact("female", "text", "sex of the highest cell")}
+    spec = {"scope": {"columns": {"x": "pclass", "series": "sex", "y": "survived"}}}
+    assert {"value:pclass:1", "value:sex:female"} <= set(nr.allowed_labels(["pclass", "sex", "survived"], facts, spec))
 
 
 def test_hand_typed_numbers_become_unverified_chips():
@@ -194,6 +204,30 @@ def test_the_cascade_retells_only_the_cards_that_depend_on_the_change(mocked, cl
     assert kept["headline"]["blocks"][0]["runs"][0]["text"] == "My fare headline" and kept["suggestion"]["body"]
     started = db_rows("SELECT data_json FROM job_events WHERE dataset_id = ? AND type = 'cascade.started'", ds)
     assert '"fare"' in started[-1]["data_json"]
+    accepted = client.post(f"{API}/cards/{kept['id']}/accept-suggestion").json()
+    current = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+    assert not accepted["edited_by_user"] and accepted["version"] == current and accepted["suggestion"] is None
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_card_whose_query_fails_is_not_left_updating(mocked, client, monkeypatch):
+    from sherlock.errors import ApiError
+    from sherlock.stories import service
+
+    ds = _ready_with_stories(client)
+    card = next(c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget")
+    real = service.build_sheet
+
+    def failing(env, dataset, widget, version):
+        if widget["id"] == card["widget_id"]:
+            raise ApiError(422, "invalid", "query failed")
+        return real(env, dataset, widget, version)
+
+    monkeypatch.setattr(service, "build_sheet", failing)
+    job = client.post(f"{API}/cards/{card['id']}/refresh").json()
+    wait_for(lambda: client.get(f"{API}/jobs/{job['id']}").json()["status"] in ("done", "failed"), timeout=60)
+    after = client.get(f"{API}/cards/{card['id']}").json()
+    assert after["status"] == "outdated" and after["headline"] == card["headline"]
 
 
 @pytest.mark.usefixtures("run_jobs")
