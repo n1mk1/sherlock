@@ -76,6 +76,9 @@ export interface JobLogEntry {
   step_no?: number;
   confidence?: number;
   checks?: Record<string, string>;
+  detail?: string;
+  issue_id?: string;
+  outcome?: string; // the client's merge of a "running" line with its result
   [key: string]: unknown;
 }
 
@@ -93,12 +96,21 @@ export interface Step {
 
 export interface CleaningReport {
   job_id: string;
-  from_version: number;
-  to_version: number;
+  status: JobStatus;
+  from_version: number | null;
+  to_version: number | null;
   ended_by: "done" | "steps" | "time" | "tokens" | "stopped" | "error";
   waited_for_model_s: number;
-  counts: { found: number; fixed: number; flagged: number; skipped: number };
-  steps: { step_id: string; no: number; summary: string; gate: string; impact: Step["impact"] }[];
+  attempted: number;
+  budget: { max_steps: number | null; max_seconds: number | null };
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  counts: { found: number; fixed: number; flagged: number; skipped: number; rows_deleted: number };
+  steps: {
+    step_id: string; no: number; summary: string; gate: string; confidence: number | null; flag_reason: string | null;
+    impact: Step["impact"];
+  }[];
   skipped: { issue_id: string; column: string | null; detector: string; reason: string }[];
   hand_edited_skipped: { row_id: number; column: string }[];
   decisions: { step_id: string; question: string; chosen: string; reason: string }[];

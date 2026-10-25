@@ -19,7 +19,7 @@ export function AppShell() {
       <SidePanel side="left" open={leftOpen} onClose={() => setLeftOpen(false)} className="w-[240px]">
         <LibraryPanel />
       </SidePanel>
-      <main className="relative flex min-w-0 flex-1 flex-col">
+      <main className="@container relative flex min-w-0 flex-1 flex-col">
         <div className="absolute left-2 top-3 z-10 flex gap-1 lg:hidden">
           <IconButton label="Show your CSVs" onClick={() => setLeftOpen(true)}><Menu /></IconButton>
         </div>

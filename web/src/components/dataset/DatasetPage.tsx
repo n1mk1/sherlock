@@ -8,8 +8,11 @@ import type { Dataset, Tab } from "@/api/types";
 import { CenterHeader } from "@/components/shell/CenterHeader";
 import { ChatBar } from "@/components/shell/ChatBar";
 import { CleaningOffer } from "./CleaningOffer";
+import { CleaningProgress } from "./CleaningProgress";
+import { ReportSummary } from "./CleaningReport";
+import { OfferActions } from "./OfferActions";
 import { RowsTable } from "./RowsTable";
-import { FailedScreen, ProfilingScreen } from "./StatusScreens";
+import { BuildingScreen, FailedScreen, ProfilingScreen } from "./StatusScreens";
 
 const TABS: Tab[] = ["csv", "dashboard", "flow"];
 
@@ -61,21 +64,28 @@ function StatusScreen({ dataset }: { dataset: Dataset }) {
       return <ProfilingScreen dataset={dataset} />;
     case "failed":
       return <FailedScreen dataset={dataset} />;
+    case "cleaning":
+      return <CleaningProgress dataset={dataset} />;
+    case "building":
+      return <BuildingScreen dataset={dataset} />;
     default:
-      return <CleaningOffer dataset={dataset} />;
+      return <CleaningOffer dataset={dataset} actions={<OfferActions dataset={dataset} />} />;
   }
 }
 
 function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {
   if (tab === "csv") return <RowsTable datasetId={dataset.id} version={dataset.current_version} />;
   return (
-    <div className="mx-auto flex max-w-[420px] flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-      <h2 className="text-[15px] font-semibold">{tab === "dashboard" ? "No widgets yet" : "The canvas is empty"}</h2>
-      <p className="text-muted-foreground">
-        {tab === "dashboard"
-          ? "Widgets appear here once the dashboard builds."
-          : "Cards and notes you place on the canvas appear here."}
-      </p>
+    <div className="mx-auto flex w-full max-w-[640px] flex-1 flex-col gap-6 p-8">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h2 className="text-[15px] font-semibold">{tab === "dashboard" ? "No widgets yet" : "The canvas is empty"}</h2>
+        <p className="text-muted-foreground">
+          {tab === "dashboard"
+            ? "Widgets appear here once the dashboard builds."
+            : "Cards and notes you place on the canvas appear here."}
+        </p>
+      </div>
+      {tab === "dashboard" && <ReportSummary datasetId={dataset.id} title="Last cleaning report" />}
     </div>
   );
 }

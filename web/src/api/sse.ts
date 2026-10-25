@@ -4,8 +4,9 @@ import { useEffect, useRef } from "react";
 
 export type Handlers = Record<string, (data: unknown, id: number) => void>;
 
+/** `lastEventId` replays the events after it (0 = from the start); without it the stream is live only. */
 export function openStream(url: string, handlers: () => Handlers, opts: { lastEventId?: number } = {}) {
-  let last = opts.lastEventId ?? 0;
+  let last = opts.lastEventId ?? -1;
   let source: EventSource | null = null;
   let retry: ReturnType<typeof setTimeout> | null = null;
   let delay = 1000;
@@ -13,7 +14,7 @@ export function openStream(url: string, handlers: () => Handlers, opts: { lastEv
 
   const connect = () => {
     const sep = url.includes("?") ? "&" : "?";
-    source = new EventSource(last ? `${url}${sep}last_event_id=${last}` : url, { withCredentials: true });
+    source = new EventSource(last >= 0 ? `${url}${sep}last_event_id=${last}` : url, { withCredentials: true });
     source.onopen = () => {
       delay = 1000;
     };
