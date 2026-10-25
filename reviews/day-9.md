@@ -136,7 +136,7 @@ The live rules (https://nebiusglobalaihackathon.devpost.com/rules, read 2026-10-
 
 - **H1. The new-user cap rejected this network repeatedly, for a reason not yet known.**
   - What happened: between 21:40 and 22:02 UTC, `GET /api/v1/me` from this machine answered `429` "Too many new visitors from your network" four times (21:40 and 21:41 in `live_check`, 21:56 and 22:02 in the browser passes). That's `NEW_USERS_PER_IP_HOUR` = 300, a sliding hour (`identity.py:44-68`). Two `live_check.py` runs died on it, and the browser passes recovered after a 429 on `/me`.
-  - Why it's suspect: this session created about 20 users in that time (three `live_check` attempts, three browser passes, five `curl`s). The Day 8 sibling was asked whether it was creating users on the live site and hadn't answered by the end of this review.
+  - Why it's suspect: this session created about 20 users in that time (three `live_check` attempts, three browser passes, five `curl`s). The Day 8 sibling was asked whether it was creating users on the live site and hadn't answered by the end of this review. **Update:** it answered afterwards that it never touched the live site (all its work was local and had stopped by about 21:20 UTC). No other session in this group was running against the live URL, so the shared-address explanation below is now the more likely one.
   - Two possible causes:
     - Something else on this network is creating about 300 users an hour.
     - `client_ip` (the X-Forwarded-For entry before the last trusted hop, `TRUSTED_PROXY_HOPS` = 1) now picks a shared address. The responses carry `Server: cloudflare` and `CF-RAY`, so another proxy hop would make every visitor behind one edge share a bucket.
