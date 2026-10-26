@@ -23,6 +23,7 @@ dependencies = [
     "scikit-learn==1.5.2",
     "sqlglot>=30.24.0",
     "statsmodels==0.14.4",
+    "tavily-python==0.8.5",
     "uvicorn[standard]>=0.54.0",
 ]
 

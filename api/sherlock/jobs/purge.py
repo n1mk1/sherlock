@@ -3,7 +3,8 @@
 
 1. Hard-delete datasets, widgets and cards soft-deleted more than 10 minutes ago (a dataset's files too).
 2. Soft-delete datasets past `expires_at`; the next pass hard-deletes them.
-3. Delete `job_events` and `widget_cache` rows older than 24 h, and exports (rows and files) older than 24 h.
+3. Delete `job_events`, `widget_cache` and `web_cache` rows older than 24 h, and exports (rows and files) older
+   than 24 h.
 4. Delete sandbox temp directories older than 1 h, and Cleaner work folders (`.clean/<job_id>`) older than
    1 h whose job isn't queued or running.
 5. Delete empty workspaces: users with no dataset at all who haven't been seen for 24 h. A browser that
@@ -31,6 +32,7 @@ SYSTEM_USER = "system"
 GRACE_S = 600
 EVENTS_TTL_S = 24 * 3600
 EXPORTS_TTL_S = 24 * 3600
+WEB_CACHE_TTL_S = 24 * 3600  # Tavily responses (TRD §3.6)
 SANDBOX_TTL_S = 3600
 IDLE_USER_TTL_S = 24 * 3600
 # Tables keyed by dataset without a cascading foreign key (Schema §2): cleared with the dataset.
@@ -67,8 +69,8 @@ def _remove_old_dirs(root: Path, cutoff: float, keep: set[str] | frozenset[str] 
 
 
 def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections | None, progress=lambda *_: None) -> dict:
-    counts = {"datasets": 0, "expired": 0, "widgets": 0, "cards": 0, "events": 0, "cache": 0, "exports": 0, "sandbox_dirs": 0,
-              "clean_dirs": 0, "users": 0}
+    counts = {"datasets": 0, "expired": 0, "widgets": 0, "cards": 0, "events": 0, "cache": 0, "web_cache": 0, "exports": 0,
+              "sandbox_dirs": 0, "clean_dirs": 0, "users": 0}
     grace = _ago(GRACE_S)
 
     progress(1, 6, "Removing deleted CSVs")
@@ -91,6 +93,7 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
     progress(3, 6, "Clearing old events, caches and exports")
     counts["events"] = db.execute("DELETE FROM job_events WHERE created_at < ?", (_ago(EVENTS_TTL_S),)).rowcount
     counts["cache"] = db.execute("DELETE FROM widget_cache WHERE created_at < ?", (_ago(EVENTS_TTL_S),)).rowcount
+    counts["web_cache"] = db.execute("DELETE FROM web_cache WHERE created_at < ?", (_ago(WEB_CACHE_TTL_S),)).rowcount
     for e in db.execute("SELECT e.id, e.path, d.user_id, d.id AS dataset_id FROM exports e JOIN datasets d ON d.id = e.dataset_id "
                         "WHERE e.created_at < ?", (_ago(EXPORTS_TTL_S),)).fetchall():
         if e["path"]:

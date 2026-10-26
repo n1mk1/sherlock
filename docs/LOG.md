@@ -551,6 +551,27 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A model sentence with a number is dropped whole, not edited: cutting the number out leaves a sentence nobody wrote.
   - The calls line names the model IDs without the `nvidia/` prefix; receipts (slice 8) own the fuller per-call view.
 
+### Slice 13, part 1 (plan T-0): the Tavily client
+
+- **Done:**
+  - `tavily-python` 0.8.5, pinned (`api/pyproject.toml`, `uv.lock`), with what it installs (`requests`, `httpx`, `tiktoken`, `urllib3`, `certifi`) in `THIRD_PARTY.md`, and a "Web retrieval" note there: retrieval only, under Tavily's terms.
+  - `sherlock/web/client.py`: `WebClient.search`, `extract` and `map` with every parameter fixed (`basic` search, five results, `include_answer: false`, no raw content, no images, no auto-parameters; extract with a query and three chunks per page; map one level deep, 20 links, no external ones). A caller picks only the query or URLs, the topic and a time range; there is no way to pass `include_answer` or call `research()`.
+  - **Fail-soft:** no key, `WEB_SEARCH=off`, the hourly limit, too little time before the call's `CallScope.deadline`, a timeout, a 4xx, a 5xx, a connection error or a bad reply all raise `WebUnavailable` with the one line the answer shows instead. Nothing else is raised.
+  - The timeout is `TAVILY_TIMEOUT_S` (8 s) or the time left before the deadline; a process-wide gate of four (`llm/client.py::gate`, role `web`).
+  - Migration `005_web_cache.sql`: `web_cache` (24 h, read only when fresh, deleted by the purge job) and `llm_calls.results`. Every call, cached or not, is an `llm_calls` row with `role = 'web'`, `model` `tavily-search|extract|map`, `cached` (receipts' 004 column) and `results`, and NULL tokens, so the token budgets and the app-wide ceiling don't count it; receipts already name these rows ("Searched the web").
+  - Settings `WEB_SEARCH`, `TAVILY_TIMEOUT_S`, `WEB_RATE_LIMIT` (20 per user per hour, cache hits not counted) and `WEB_MOCK` (recorded responses, like `LLM_MOCK`); `TAVILY_API_KEY` declared in `render.yaml` with `sync: false`; `.env.example`.
+  - `sherlock/web/fixtures.py`: a fixture transport that captures every request (for tests and the offline eval to come) and a failing one.
+  - `tests/conftest.py` empties `TAVILY_API_KEY`, so no test can reach Tavily. `tests/test_web.py` (15 tests): the exact parameters sent; a caller can't widen them; extract and map parameters; a cache hit makes no call and keeps the first retrieval date; a stale entry is asked again and purged; a timeout and a 502 fail soft, logged and not cached; a transport raising anything fails soft; no key sends nothing and writes no row; `WEB_SEARCH=off` wins over a transport; a key turns the live transport on; the hourly limit per user (cache hits free, another user unaffected, free again after an hour); the deadline bounds the timeout and stops a call with no time left; the live transport refuses an empty key; through `requests`, the body posted to `/search` holds `include_answer: false` and the bearer key, a 500 and a 400 fail, a timeout times out, and no request goes to `/research`.
+  - Docs: TRD §2 (the `web/` package), new §3.6 (the web client), §10 (five settings), §12, §15; Schema §1, §2.18 (web rows, `results`), new §2.22 (`web_cache`), §5, §6.
+- **Decisions:**
+  - **T-0 lands before T-1.** T-1's routing waits for the `chat-checks` stream's slice 12; the client and the cache don't, so they land as their own commit (the goal allows smaller slices). Nothing calls the client yet, so the app behaves exactly as before.
+  - **Never keyless.** `tavily-python` 0.8.5 sends unauthenticated "keyless" search and extract requests when it has no key. With no `TAVILY_API_KEY` Sherlock makes no transport at all, and the live transport refuses an empty key, so nothing leaves the process until the owner sets one.
+  - **`llm_calls.results`** (005) holds how many results or pages a web call returned, for the receipts' "5 results" (T-5). Receipts' 004 owns `cached`, so 005 doesn't add it.
+  - **`WEB_MOCK`** is a developer setting like `LLM_MOCK`, not a user setting (goal default 2 asks for no new user setting).
+  - **The cache is shared by every user.** A request holds only words and column names and the response is public web content, so one user's search can answer another's within 24 h; each user's hit is still logged under them.
+  - **The gate is four calls, fixed** in code rather than a sixth setting; it can become one if a key's rate limit needs it.
+  - A call refused before it went out (no key, the limit, no time) writes no `llm_calls` row: nothing was sent and nothing cost a credit.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

@@ -26,6 +26,8 @@ def test_env(monkeypatch, tmp_path):
     # Never reach Token Factory from unit tests.
     monkeypatch.setenv("LLM_BASE_URL", "")
     monkeypatch.setenv("LLM_API_KEY", "")
+    # ... nor Tavily: web features run on a fake transport or fail soft (TRD §3.6).
+    monkeypatch.setenv("TAVILY_API_KEY", "")
     # Each test gets its own data dir and SQLite file.
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'data' / 'sherlock.db').as_posix()}")

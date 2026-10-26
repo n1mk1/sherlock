@@ -136,6 +136,7 @@ As built. The tree above is the plan. Where the code differs:
 - **`cleaning/`.** Also `plan.py` (the cleaning plan: items, ops, merge, §4.4) and `report.py` (the `CleaningReport`, §6.8).
 - **`notebook/`.** `cells.py` is one module, not a `cells/` folder; `scan.py` is the allowlist scan; there's no `repro_render.py` (§7.7).
 - **No `chat/` package.** Threads and messages are in `routers/chat.py` and `agent/loop.py`, proposals in `agent/actions.py` and `routers/proposals.py`.
+- **`web/`** (Python, `api/sherlock/web/`): `client.py` (the Tavily client, §3.6) and `fixtures.py` (recorded responses for tests and `WEB_MOCK`).
 - **Also:** `llm/models.py` (the NVIDIA-only role rules, §3.5), `llm/text.py` (stripping reasoning, pulling out JSON), `llm/fixtures.py` (recorded responses for tests and `LLM_MOCK`) and `llm/calls.py` (receipts: reading `llm_calls` back per message and per job, §4.9); `canvas/service.py`; `api/samples/seed/` (the cached sample). In `web/src/components/`, `dataset/` holds the dataset page with the offer, the cleaning plan (`CleanPlanPanel.tsx`), the status, cleaning and report screens (there's no `cleaning/` folder), and `ui/` the shadcn-style primitives. `chat/` holds the message renderers (`Blocks.tsx`) and "How I worked it out" (`Receipts.tsx`, also used by the cleaning report); the chat bar, thread and proposal cards are in `shell/ChatBar.tsx`. `src/app/` is the theme (`ThemeSync.tsx`, `theme.css`; the routes are in `src/App.tsx`); `src/state/` is `ui`, `filters`, `edits` and `flow` (the CSV selection is in `ui`); `src/lib/` is `cells`, `format`, `importPreview`, `tokens` and `utils`, with no keyboard module. `web/e2e/flow.spec.ts` and `web/playwright.config.ts` hold the end-to-end flow (§14).
 - **CI.** `.github/workflows/ci.yml` is correct but doesn't run, because Actions won't start jobs on this account (billing). Tests run locally and deploys are by hand (§11).
 
@@ -380,6 +381,26 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
     - A call takes, among the entries with its purpose whose `match` strings all appear in the prompt, the most specific ones: the first unused, then the last again.
     - `LLM_RECORD=<file>` appends every live reply to a fixture file, to record fixtures from a real run.
   - **Live check.** `tests/test_llm_live.py` (marker `live`) runs a strict `Diagnosis` on `large` and a `Critique` on `medium` against Token Factory.
+
+### 3.6 Web client
+
+Tavily, for retrieval only: `search`, `extract` and `map`, through `tavily-python` (pinned in `api/pyproject.toml`, `THIRD_PARTY.md`). It has no caller yet: reading a data dictionary the user links (PRD LOAD-7), outside-world questions (PRD ASK-11, §8.2 `web_context`) and what a column usually means (§8.2 `ask_meaning`) are built on it next. It is optional: with no key every web feature is off and says so in one line, and the rest of the app is unchanged.
+
+- **Retrieval only (CLAUDE.md Rule 2).** Tavily's own model never writes text a user reads, so `research()` and `include_answer` are never used, and `crawl` isn't either (`map` and `extract` cover the data dictionary at a bounded cost). Every parameter is fixed in `sherlock/web/client.py`; a caller chooses only the query (or the URLs and the instructions), the topic and a time range:
+  - `search`: `search_depth: basic`, `max_results: 5`, `include_answer: false`, `include_raw_content: false`, `include_images: false`, `auto_parameters: false`, `topic` `general` or `news`, and `time_range` (`day`, `week`, `month` or `year`) only when the caller asks for recent results. The query is whitespace-collapsed and cut to 400 characters (Tavily's advice).
+  - `extract`: `extract_depth: basic`, `format: markdown`, a `query` (the chunks are ranked by it) with `chunks_per_source: 3`, `include_images: false`, at most three URLs.
+  - `map`: `max_depth: 1`, `max_breadth: 20`, `limit: 20`, `allow_external: false`, with `instructions`.
+  - No other keyword reaches the client, so `include_answer: true` can't be asked for (`tests/test_web.py`).
+- **What goes out (TRD §15).** Queries are built from the user's own words and the file's column names, never from cell values. Every caller has to keep to this.
+- **What comes back is untrusted.** Snippets and pages go into prompts fenced (§3.5, `fence()`), and what the model writes from them follows the narrator's rules: text runs with no digits, numbers in words, causal wording or markup. Numbers from the web are shown only inside the quoted excerpts, as Tavily returned them, with their URL and the date they were retrieved. Web facts never enter a fact sheet or a chip.
+- **Fail-soft.** No key, `WEB_SEARCH=off`, the hourly limit, too little time before the call's deadline, a timeout, a `4xx`, a `5xx`, a connection error or a reply that isn't an object: the call raises `WebUnavailable` with the one line the answer shows instead (`web/client.py::NOTES`), and only that feature degrades. Nothing else is raised. The lines: "Web search isn't set up on this server, so I didn't look this up on the web." (no key or off), "I've already searched the web a lot this hour, so I didn't search again." (the limit), "There wasn't enough time left in this answer to search the web." (the deadline), "The web search took too long, so I left it out." (a timeout), "The web search didn't work just now, so I left it out." (anything else).
+- **Never keyless.** `tavily-python` sends unauthenticated "keyless" requests when it has no key. Sherlock never does: with an empty `TAVILY_API_KEY` there is no transport and no request leaves the process, and the live transport refuses to be made without a key.
+- **The deadline and the gate.** A call takes its timeout from `TAVILY_TIMEOUT_S` (8 s) or the time left before its `CallScope.deadline` (§3.5), whichever is shorter; with less than a second left (ten for `map`, whose server-side timeout is at least 10 s) it doesn't start. Calls share a process-wide gate of four in flight (`llm/client.py::gate`, role `web`), like the model roles.
+- **Cache.** Every response is stored in `web_cache` (Schema §2.22) under the SHA-1 of its kind and parameters, and the same request within 24 h is answered from it with no call. The purge job deletes rows older than 24 h (Schema §6). A failure isn't cached. A cached answer keeps the date Tavily first returned it.
+- **The hourly limit.** `WEB_RATE_LIMIT` (20) Tavily calls per user per hour, counted from `llm_calls` (`role = 'web'`, `cached = 0`, the last hour); a cache hit doesn't count. 0 turns it off.
+- **Logging.** Every call, cached or not, is an `llm_calls` row (Schema §2.18): `role = 'web'`, `model` `tavily-search`, `tavily-extract` or `tavily-map`, the feature's `purpose`, its latency, `ok` and error, `cached` and the number of `results`. Its token columns are NULL, so no token budget or the app-wide ceiling counts it. A call that never went out writes no row. Receipts show these rows beside the model calls (§4.9).
+- **Fixtures.** `WEB_MOCK` names a recorded-response file or folder (`sherlock/web/fixtures.py`), answered with no network and every request captured, like `LLM_MOCK` (§3.5): a fixture is `{kind, match: [substrings of the request], response}` or `{kind, match, error: "timeout" | "failed"}`, the most specific match wins, and a request with no match fails like a `5xx`. The tests use the same transport, and `tests/conftest.py` empties `TAVILY_API_KEY`, so no test reaches Tavily.
+- **Turning it on.** Set `TAVILY_API_KEY` in `.env` or in Render's environment variables (`render.yaml` declares it `sync: false`, so the value is entered in the dashboard and never stored in the repo). Search, extract and map work at once, with no code change; `WEB_SEARCH=off` turns them off again.
 
 ---
 
@@ -2041,14 +2062,18 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `NEW_USERS_PER_IP_HOUR` | `300` | new cookie users per client IP per hour; 0 = no cap (§15) |
 | `TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries the host's proxies append after the client's (Render: 1, checked live) (§15) |
 | `CLEAN_MAX_STEPS` / `CLEAN_MAX_SECONDS` | `20` / `300` | issues attempted, committed or not / wall-clock seconds |
-| `TAVILY_API_KEY` | — | P1. `web_context` isn't built, so only the notebook's secret scan reads it (`notebook/scan.py`) |
+| `TAVILY_API_KEY` | empty | turns on web retrieval through Tavily (§3.6): search, extract and map, with no code change. Empty: every web feature is off and says so in one line, and no request is sent. The notebook's secret scan refuses a file that holds it (`notebook/scan.py`). `render.yaml` declares it `sync: false` |
+| `WEB_SEARCH` | `on` | `off` turns web retrieval off even with a key (§3.6). Not a user setting |
+| `TAVILY_TIMEOUT_S` | `8` | each Tavily call's timeout, or less when the call's deadline is nearer (§3.6) |
+| `WEB_RATE_LIMIT` | `20` | Tavily calls per user per hour; cache hits don't count; 0 = no cap (§3.6) |
+| `WEB_MOCK` | empty | a fixture file or a directory of them (§3.6): every Tavily call is answered from recorded responses, with no network, even without a key. For the offline `sherlock eval web` and tests |
 | `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; kept equal to the API's own pins (check on day 1) |
 | `CORS_ORIGINS` | empty | local dev only; production serves the web app from the API origin |
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
 | `LOG_LEVEL` | `info` | the level of the `sherlock.*` loggers (`main._app_logging`); a name Python's `logging` doesn't know fails startup. uvicorn keeps its own level |
 | `GIT_COMMIT` | empty | the deployed commit, reported by `/healthz` as `commit` (first 12 characters). Falls back to `RENDER_GIT_COMMIT`, which Render sets on every deploy, so it needs no setting there |
 
-Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` `sync: false`, so it's entered in the dashboard and never stored in the repo.
+Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` and `TAVILY_API_KEY` `sync: false`, so they're entered in the dashboard and never stored in the repo.
 
 ---
 
@@ -2114,6 +2139,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 ## 12. Observability and errors
 
 - Structured JSON logs (request id, user id, dataset id, job id, duration). LLM calls to `llm_calls`; sandbox runs to `sandbox_runs`.
+- Tavily calls to `llm_calls` too, with `role = 'web'`, `cached` and `results` and no tokens (§3.6, Schema §2.18). A failed web call is also a `sherlock.web` warning in the log.
 - `GET /healthz` and `GET /metrics` (counts of jobs by status, LLM error rate, p95 latencies) for the demo day.
 - As built: the logs are plain text, not JSON. The `sherlock.*` loggers write `LEVEL: logger: message` lines to stderr at `LOG_LEVEL` (default INFO; `main._app_logging`), and uvicorn writes its access log. Each response carries its request ID in `X-Request-ID`, and an error body in `request_id`; log lines don't carry it (`errors.RequestIdMiddleware`). `GET /metrics` is not built yet; the same figures can be read from `jobs` and `llm_calls`. `/healthz` is built (§11).
 - Error policy: every exception is caught at the router boundary → `error` response with a request id; pipelines record failures on the job and continue to a clean end state (partial report, dashboard from what exists).
@@ -2211,4 +2237,5 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
   - 300 an hour leaves room for judges behind one office network and for repeated private-window tests. The app-wide token ceiling (§3.5) bounds the cost either way.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).
   - Every name, title, label, error and value from the file, the user or a web page is fenced with `fence()`, which defuses every spelling of a data tag (§3.5); `tests/test_prompt_hygiene.py` runs a malicious file through every prompt builder.
+- **Web retrieval (§3.6).** No data leaves the machine: outbound Tavily requests hold only the user's own words, column names and a URL the user typed, never cell values. Tavily is used for retrieval only (no `research()`, no `include_answer`), web text is fenced as untrusted, and its numbers are shown only inside quoted excerpts, never as chips. With no `TAVILY_API_KEY` nothing is sent at all (the client never runs "keyless"). The key lives only in `.env` and Render's environment, and the notebook's secret scan refuses an export that holds it.
 - Dependencies pinned; licenses recorded in `THIRD_PARTY.md`.

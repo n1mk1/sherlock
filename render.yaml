@@ -53,3 +53,7 @@ services:
         value: ""
       - key: LLM_TOOLS_MODE
         value: native
+      # Web search, extract and map through Tavily (TRD §3.6). Empty or unset: every web feature is off and
+      # says so in one line. Set it in the Render dashboard to turn web on; never in the repo.
+      - key: TAVILY_API_KEY
+        sync: false

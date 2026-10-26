@@ -31,6 +31,13 @@ nothing references Bklit Studio (checked by searching the code and dependencies 
 Sherlock calls NVIDIA Nemotron models (Nemotron 3 Ultra, Super and Nano) through Nebius Token Factory's
 API, under Nebius's and NVIDIA's terms of service. No model weights are in this repository or the image.
 
+## Web retrieval
+
+With `TAVILY_API_KEY` set, Sherlock calls Tavily's search, extract and map API (`tavily-python`, above),
+under Tavily's terms of service, for outside-world questions, column meanings and a data dictionary the
+user links (TRD §3.6). It uses retrieval only: Tavily's own answer and research features, which a
+non-NVIDIA model writes, are never called. Search results are shown as quoted excerpts with their URL.
+
 ## Fonts
 
 | Font | Package | License |
@@ -123,11 +130,13 @@ and never reach the browser.
 | scikit-learn | 1.5.2 | BSD 3-Clause License | direct |
 | sqlglot | 30.24.0 | MIT | direct |
 | statsmodels | 0.14.4 | BSD License | direct |
+| tavily-python | 0.8.5 | MIT | direct: web search, extract and map (TRD §3.6); off until `TAVILY_API_KEY` is set |
 | uvicorn | 0.54.0 | BSD-3-Clause | direct |
 | annotated-doc | 0.0.5 | MIT | |
 | annotated-types | 0.8.0 | MIT | |
 | anyio | 4.15.1 | MIT | |
 | attrs | 26.1.0 | MIT | |
+| certifi | 2026.10.23 | MPL-2.0 | (through tavily-python's requests and httpx) |
 | click | 8.5.0 | BSD-3-Clause | |
 | cloudpickle | 3.1.2 | BSD-3-Clause | |
 | contourpy | 1.4.0 | BSD-3-Clause | |
@@ -135,8 +144,10 @@ and never reach the browser.
 | fastjsonschema | 2.22.2 | BSD-3-Clause | |
 | fonttools | 4.67.0 | MIT | |
 | h11 | 0.16.0 | MIT | |
+| httpcore | 1.0.9 | BSD-3-Clause | (through tavily-python) |
 | httpcore2 | 2.16.0 | BSD-3-Clause | |
 | httptools | 0.9.0 | MIT | |
+| httpx | 0.28.1 | BSD-3-Clause | (through tavily-python) |
 | httpx2 | 2.16.0 | BSD-3-Clause | |
 | idna | 3.20 | BSD-3-Clause | |
 | jiter | 0.18.0 | MIT | |
@@ -159,12 +170,14 @@ and never reach the browser.
 | pytz | 2026.5 | MIT | |
 | referencing | 0.37.0 | MIT | |
 | regex | 2026.9.29 | Apache-2.0 AND CNRI-Python | |
+| requests | 2.34.2 | Apache-2.0 | (through tavily-python) |
 | rpds-py | 2026.9.1 | MIT | |
 | scipy | 1.18.1 | BSD License | |
 | six | 1.17.0 | MIT | |
 | sniffio | 1.3.1 | MIT OR Apache-2.0 | |
 | starlette | 1.10.0 | BSD-3-Clause | |
 | threadpoolctl | 3.7.0 | BSD-3-Clause | |
+| tiktoken | 0.14.0 | MIT | (through tavily-python) |
 | traitlets | 5.16.1 | BSD 3-Clause License | |
 | truststore | 0.10.5 | MIT | |
 | typeguard | 4.6.0 | MIT | |
@@ -173,6 +186,7 @@ and never reach the browser.
 | typing_extensions | 4.16.0 | PSF-2.0 | |
 | tzdata | 2026.5 | Apache-2.0 | |
 | tzlocal | 5.4.5 | MIT | |
+| urllib3 | 2.8.0 | MIT | (through tavily-python's requests) |
 | uvloop | 0.23.0 | MIT OR Apache-2.0 (dual) | (Linux only; through uvicorn[standard]) |
 | watchfiles | 1.3.0 | MIT | |
 | wcwidth | 0.9.4 | MIT License | |

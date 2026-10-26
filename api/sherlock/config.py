@@ -73,7 +73,15 @@ class Settings(BaseSettings):
     clean_max_steps: int = 20
     clean_max_seconds: int = 300
 
+    # Web retrieval through Tavily (TRD §3.6): search, extract and map only. Empty key: every web feature is
+    # off and says so in one line. WEB_SEARCH=off turns it off with a key set.
     tavily_api_key: str = ""
+    web_search: Literal["on", "off"] = "on"
+    tavily_timeout_s: float = 8.0
+    web_rate_limit: int = 20  # Tavily calls per user per hour (cache hits don't count); 0 = no cap
+    # Answer Tavily calls from recorded fixtures (a JSON file or a directory of them) instead of the network
+    # (the offline `sherlock eval web`, tests), like LLM_MOCK. Used even without a key; WEB_SEARCH=off still wins.
+    web_mock: str = ""
     notebook_pins: str = (
         "pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,"
         "statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,"
