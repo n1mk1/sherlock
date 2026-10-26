@@ -90,6 +90,12 @@ def test_the_findings_code_checks():
     found = k.findings(result([("a", "DOUBLE")], [[None]]), sql)
     assert found == ["The result column a is empty (null) in every row.",
                      "sex = 'Male' matches no row: sex has 'male', 'female'."]
+    # A group the result doesn't show (live: "Units sold by product" grouped by product and selected only the sum).
+    sql = "SELECT SUM(fare) AS total FROM t WHERE {{rows}} GROUP BY pclass ORDER BY pclass"
+    found = k.findings(result([("total", "DOUBLE")], [[1.0], [2.0], [3.0]]), sql)
+    assert found[-1] == "The query groups by pclass but doesn't show it, so the result's rows can't be told apart: select it too."
+    sql = "SELECT pclass, SUM(fare) AS total, age FROM t WHERE {{rows}} GROUP BY 1, pclass, age"
+    assert "groups by" not in " ".join(k.findings(result([("pclass", "BIGINT")], [[1]]), sql))
     # A clean result has nothing to say; `lower(sex)` and `SELECT *` are left alone.
     sql = "SELECT * FROM t WHERE {{rows}} AND lower(sex) = 'female'"
     assert k.findings(result([("pclass", "BIGINT")], [[1]]), sql) == []

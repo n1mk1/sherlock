@@ -894,7 +894,12 @@ Built in the `chat-checks` worktree (Tier 2 rows run in parallel, as the owner a
 - **Decisions:**
   - Add to Flow **refuses** rather than labels an older answer: a card labelled "from v3" would still sit on the canvas beside current cards, and the trust rule (slice 5) keeps non-`ready` cards out of other outputs anyway. Asking again costs one message.
   - A message from before the migration whose time is before the file's first version keeps `version` NULL, and is treated as current (no refusal), since nothing says otherwise.
-- **Not pushed yet.** Ask eval with this row: **48/50**, 0 unsourced, median 10.2 s. Misses: "Which passengers paid more than 500?" (routed to `ask_data`, as in slice 12's runs) and "Units sold by product" (the query grouped by `product` without selecting it, so the table had no product names). Neither touches what this row changed, but a run below 49 isn't pushed: rerun the eval, then the full gate (pytest, vitest, e2e), before pushing. Targeted tests passed (`test_chat_versions.py`, `test_chat_actions.py`, `test_chat.py`, `test_db.py`, `test_canvas.py`: 37 passed).
+- **Ask eval** (`eval-locked.sh <worktree> ask`):
+  - First run: **48/50**, 0 unsourced, median 10.2 s. Misses: "Which passengers paid more than 500?" (routed to `ask_data`, as in slice 12's runs) and "Units sold by product" (`SELECT SUM(units) … GROUP BY product`, with no product names). Not pushed.
+  - Both misses showed up in slice 12's runs without this row too, so the rerun looked for a cause in the answers rather than in 2b.4. Second run: **48/50**, 0 unsourced, median 12.0 s. Misses: the same routing one, and "Average fare by port of embarkation" with the same shape of query (grouped by `embarked`, which it didn't select).
+  - **Fix, generic (its own commit):** the result check (plan 2.7) finds a column the outer query groups by but doesn't select, and the one repair adds it (`answerers._hidden_groups`; a group by position or by an expression is left alone). TRD §8.1, `test_chat_checks.py`.
+  - Third run, with the fix: **49/50**, 0 unsourced, median 10.9 s. Miss: "What does sibsp mean?" (the general sentence named neither siblings nor spouses, the base run's miss).
+- **Gate** (rebased on `7c8cf4e`, with both commits): `uv run pytest` 492 passed, 3 skipped; `corepack pnpm test` 116 passed; `corepack pnpm build` ok; `pnpm e2e` 1 passed.
 
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 

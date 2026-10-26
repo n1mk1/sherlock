@@ -181,8 +181,8 @@ class Toolkit:
     def findings(self, res: Result, template: str) -> list[str]:
         """What code sees wrong with a result that ran (plan 2.7, TRD §8.1 step 5): no rows; a column of
         the result that is empty in every row; a column the message names (one that groups, measures or
-        dates the rows) that the query never uses; and a text literal compared to a column whose values
-        (the value index) don't include it."""
+        dates the rows) that the query never uses; a column the query groups by but doesn't show; and a
+        text literal compared to a column whose values (the value index) don't include it."""
         out = []
         if res.row_count == 0:
             out.append("The query returned no rows.")
@@ -204,6 +204,8 @@ class Toolkit:
         if not star:
             out += [f"The question names {col} (“{text}”), but the query never uses that column."
                     for col, text in named.items() if col in self.types and col not in used]
+        out += [f"The query groups by {col} but doesn't show it, so the result's rows can't be told apart: select it too."
+                for col in _hidden_groups(tree)]
         index = self._value_index()
         for col, literal in _compared_literals(tree):
             col = by_lower.get(col.lower())
@@ -367,6 +369,18 @@ def widget_title(title: str, spec: dict) -> str:
     (plan 2.9, PRD STORY-3), otherwise the templated title from the spec, as the builder falls back."""
     title = (title or "").strip()
     return ws.templated_title(spec) if title_problem(title) else title
+
+
+def _hidden_groups(tree: exp.Expression) -> list[str]:
+    """The columns the outer query groups by but doesn't select: "units by product" grouped by `product`
+    without showing it gives one number per row and no way to tell the rows apart. A group by position or
+    by an expression, and the inner queries, are left alone."""
+    if not isinstance(tree, exp.Select) or not tree.args.get("group"):
+        return []
+    shown = {c.name.lower() for e in tree.expressions for c in e.find_all(exp.Column)}
+    shown |= {e.alias_or_name.lower() for e in tree.expressions}
+    return list(dict.fromkeys(g.name for g in tree.args["group"].expressions
+                              if isinstance(g, exp.Column) and g.name.lower() not in shown))
 
 
 def _compared_literals(tree: exp.Expression) -> list[tuple[str, str]]:
