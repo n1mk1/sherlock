@@ -371,3 +371,18 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - **Synthesis fallback rate checked.** Four live "make sense" refreshes on the new seed: three written by the model; the misses were a number in words and chip markup in a text run, not the new derivation or comparison checks.
   - **The example notebook** (`docs/examples/titanic3-v4.ipynb`) re-exported and run in a fresh venv: 29 code cells, "Rebuilt version 4", and the run cell reproduced the model card (accuracy 0.782, sex 1.00, pclass 0.0998, ticket 0).
 - **Token Factory spend:** about 100k Super tokens (two seed builds, the synthesis rewrite and the four checks), roughly $0.07.
+
+### 2026-10-25 (night): the docs, the reviews and the worktrees, trimmed
+
+- **Done:**
+  - `reviews/` is gone from the tree: the nine Day 1–9 reports (190 KB of Markdown) with their 78 screenshots and 3 timing files (3.7 MB in all). Every finding still open after `f064fd9` is now in one list, `docs/BACKLOG.md`, with the Day 10 submission steps and the owner's pending decisions. The reports, with their evidence and transcripts, stay in git history (`git show 9051876:reviews/day-7.md`).
+  - The nine review worktrees (`.claude/worktrees/review-day*`) are unregistered from git. All were merged into `main` with nothing uncommitted.
+  - Stale doc lines brought up to date:
+    - TRD §2 has an as-built note for the layout (Day 7 F15).
+    - TRD §7.7 and §8.1 no longer read as if `repro_render.py`, `ask_story` and `update_widget` were still to come, and §7.4 gives the whole causal word list (Day 8 F11).
+    - Plan: the header has today's status, §3's finished lines are ticked (cut parts don't hold a line open), and D7.1 and D7.5 name the modules as built.
+    - CLAUDE.md lists the backlog, the log and the user tests, and names `pnpm e2e` for the end-to-end flow (the script builds the app first).
+    - `docs/official_page.md` says where the live rules differ: the video must be under three minutes.
+  - Kept: the six specs, this log, `USER-TESTS.md`, the rules and rubric, `help/` (shipped in the image), `examples/`, `architecture.png`, `screenshot.jpg`, and `Sherlock UI examples-png/`, which UI/UX §1 makes part of the spec.
+- **Not done:** the worktree folders are still on disk, held open by the idle review sessions; archiving those sessions frees them.
+- **Decision:** open work lives in `docs/BACKLOG.md` from now on. A fix removes its line in the same commit.

@@ -11,6 +11,8 @@
 
 > **Source distinction:** Sections labeled **Official** summarize Devpost's published materials. Sections labeled **Panel guidance** come from the user-provided judges' session transcript. Sections labeled **Recommended** are independent preparation advice, not additional competition rules.
 
+> **Checked against the live rules on 2026-10-25** (the Day 9 review). They agree with this report on the dates, tracks, stages and judging criteria, and differ on one point: the demo video must be **less than three minutes**, not "3 minutes or shorter". The live rules win, so plan §9's script finishes by 2:55 (PRD §12.2).
+
 ---
 
 ## 1. Executive Summary
@@ -131,7 +133,7 @@ All submissions **must**:
 ### 5.1 Demo-video requirements
 
 - Publicly accessible **YouTube** video.
-- Maximum length: **3 minutes**.
+- Maximum length: **3 minutes**. The live rules (checked 2026-10-25) say less than three minutes, so aim under 3:00.
 - Demonstrate a working project.
 - Explain/show how NVIDIA open-source models and Nebius infrastructure are used.
 - **Physical AI:** include at least one minute of relevant hardware operation or key application modules in action.

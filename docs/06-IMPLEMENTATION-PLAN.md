@@ -2,6 +2,8 @@
 
 Version 1.2 · 2026-10-24 (replan after a five-day slip with all nine cuts applied, §2.0; v1.1 added the submission artifact contents, §7) · Day-by-day build order from an empty folder to a submitted project. Deadline 2026-10-30 13:00 EDT; internal deadline 2026-10-29.
 
+**Status, 2026-10-25 (evening):** Days 1–9 are built within the nine cuts, reviewed, merged to `main` and deployed (https://sherlock-anw3.onrender.com). Day 10 (submission) is left. What's still open, from the Day 10 steps to every unfixed review finding, is in `docs/BACKLOG.md`.
+
 ---
 
 ## 1. Working rules
@@ -191,11 +193,11 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 ### Day 7 · Oct 26: ML
 
 **Must**
-1. `ml/common.py`: scope → DataFrame, framing, leakage check, split, preprocessing pipeline, baselines, explain, predictions, OOD, calibration. Planted-truth tests pass.
+1. `ml/common.py` (as built: `ml/plan.py`, `ml/core.py` and `ml/analysis.py`, TRD §2): scope → DataFrame, framing, leakage check, split, preprocessing pipeline, baselines, explain, predictions, OOD, calibration. Planted-truth tests pass.
 2. Recipes `driver_analysis` and `predict`, each with the methods Auto, `linear_regression` and `logistic_regression` (statsmodels, with assumption checks; method chooser is cut 4 and `predict` is cut 7 if solo); registry and manifests; `GET /recipes` with compatibility; runs API; caching; `run.updated` events; the Dashboard builder adds the driver widget.
 3. Answerers: `ask_why`, `ask_stats`, `ask_model` (+ explain-row), `ask_meaning`, `app_help` with `docs/help/*.md`; tool exposure by tab.
 4. Frontend: analysis dropdown with disabled reasons, setup form generated from the manifest (target, feature chips with exclusions, scope chip, method segmented control (pair only: cut 4 if solo), More), run progress, result views (importance, the partial-dependence mini chart on a factor bar, confusion and ROC; coefficients table and residuals are pair only: cut 4 if solo; predictions table is pair only: cut 7 if solo), model card drawer (Compare with Auto is pair only: cut 4 if solo), "who did it get wrong?" → CSV tab via `?rows=`, predicted cell style and explain tooltip (pair only: cut 7 if solo), outdated/re-run.
-5. `repro.py` generation per method (`ml/runner.py` writes it at completion; `notebook/repro_render.py` renders it), `GET /runs/{rid}/code`, run cells in the notebook export with embedded metrics and importance/coefficients tables; the execution test asserts metrics within 0.5 pp.
+5. `repro.py` generation per method (`ml/runner.py` writes it at completion; `notebook/repro_render.py` renders it; as built, `ml/repro.py` generates it and `notebook/cells.py` embeds it, TRD §2), `GET /runs/{rid}/code`, run cells in the notebook export with embedded metrics and importance/coefficients tables; the execution test asserts metrics within 0.5 pp.
 
 **Stretch**: none. Spare time goes to Day 8's Flow work; P1 items wait until P0 is complete.
 
@@ -284,6 +286,8 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 
 ## 3. Task inventory by module (checklist)
 
+A box is ticked when everything on its line is built except what a cut removed (§2.0). A line stays open while a part outside the cuts is missing. The open findings from the Day 1–9 reviews, the bugs and gaps inside built work, are in `docs/BACKLOG.md`, not here.
+
 ### Backend
 
 - [ ] `config.py`, `main.py` lifespan (migrations, job runner), `/healthz`, `/metrics`: all but `/metrics` done 2026-10-24 (the job runner starts in the lifespan since D2.5)
@@ -293,39 +297,39 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 - [x] `ingest/` sniff, import, `_row_id`, sample loader (2026-10-24)
 - [ ] `profile/` types, roles, stats, histograms, top values, issues, value index, embeddings (optional): all but embeddings done 2026-10-24 (the catalog has no NVIDIA embedding model), and the typing step done 2026-10-24 (D2.8)
 - [x] `cleaning/detectors/*` (16 detectors) (2026-10-24)
-- [ ] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts: verifiers, gate and helpers done 2026-10-24 (D3.1); the loop, prompts, `POST /clean`, `GET /report` and the `clean` job done 2026-10-24 (D3.2); the owner's two cleaning-quality decisions (missing values stay missing; reviewer concerns don't block a commit) applied 2026-10-24
+- [x] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts: verifiers, gate and helpers done 2026-10-24 (D3.1); the loop, prompts, `POST /clean`, `GET /report` and the `clean` job done 2026-10-24 (D3.2); the owner's two cleaning-quality decisions (missing values stay missing; reviewer concerns don't block a commit) applied 2026-10-24
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol (2026-10-24)
 - [x] `steps/` commit, undo latest, undo with replay, lineage queries, user-edited cells: commit, undo latest and user-edited cells done 2026-10-24; lineage queries done 2026-10-24 (D2.6); replay done 2026-10-25 (D5.5)
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: runner, events, SSE with replay, cancellation, heartbeats and the `profile` job done 2026-10-24 (D2.5); checkpoints and the purge job (D8.6) and the `nebius` stub remain; checkpoints (the `stories` job) and the purge job done 2026-10-25 (D8.6), so only the `nebius` stub remains
 - [x] `widgets/` spec, compile, validate, execute, cache, explain: done 2026-10-24 (D4.1) for SQL widgets, with CRUD, layout and selections; ML widgets done 2026-10-25 (D7: a widget becomes an analysis, its data is its run's importance)
 - [x] `dashboard/` candidates, scoring, curation, validation, layout, job: done 2026-10-24 (D4.2) for the P0 views; the custom-chart candidates done 2026-10-25 (D6.5); the driver widget done 2026-10-25 (D7.2)
 - [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade, material hash: done 2026-10-25 (D6) without the material hash (cut 6)
-- [ ] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto: done 2026-10-25 within cuts 4 and 7 (plan, core, analysis, repro, registry, runner, artifacts: `driver_analysis` with Auto); explain-row, predictions and compare-auto are cut
-- [ ] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9; `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help` and tool exposure by tab done 2026-10-25 (D7.3); `ask_story`, the planner, the running summary, `update_widget`, `edit_cells` and `clean_selection` done 2026-10-25 (D8.1, D8.5)
+- [x] `ml/` common, registry, 2 recipes with 3 methods, runner, artifacts, explain-row, predictions, compare-auto: done 2026-10-25 within cuts 4 and 7 (plan, core, analysis, repro, registry, runner, artifacts: `driver_analysis` with Auto); explain-row, predictions and compare-auto are cut
+- [x] `agent/` loop, router, resolve, 10 answerers, actions, verify, compose, focus, summaries, suggestions: v1 done 2026-10-25 (D4.3) with `ask_data`, `find_rows`, `explain_widget`, `ask_history`, `create_widget`, compose, verify and focus; the other answerers are D7–D8, summaries and the planner D8.5, suggestions cut 9; `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help` and tool exposure by tab done 2026-10-25 (D7.3); `ask_story`, the planner, the running summary, `update_widget`, `edit_cells` and `clean_selection` done 2026-10-25 (D8.1, D8.5)
 - [x] `llm/` client, schemas, repair, budgets, logging (2026-10-24, D2.7; later shapes join `schemas.py` with their work)
 - [x] `canvas/` model, persistence, pruning (2026-10-25, D8.1)
-- [ ] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5)
-- [ ] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5; proposals done 2026-10-25 (D8.5, `agent/actions.py`, `routers/proposals.py`)
+- [x] `notebook/` exporter job, cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test: v0 done 2026-10-25 (D5.6) with every part but the card, run and note cells and repro code (D6.6, D7.5, D8.3); run cells and repro code done 2026-10-25 (D7.5) Card and note cells done too (D6.6, D8.3: `cells.card`, `cells.note`).
+- [x] `chat/` threads, messages, proposals: threads, messages and pin done 2026-10-25 (D4.3, in `routers/chat.py` and `agent/loop.py`); proposals are D8.5; proposals done 2026-10-25 (D8.5, `agent/actions.py`, `routers/proposals.py`)
 - [ ] `routers/*` for every endpoint in TRD §4: the rows API (rows, cell history, edits, find, column values, `export.csv`) done 2026-10-24 (D2.6); selections are D4.1
-- [ ] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`); planted-truth done 2026-10-25 (D7, `uv run sherlock eval ml`); grounding done 2026-10-25 (Day 6 review, `uv run sherlock eval grounding`, TRD §14)
-- [ ] `scripts/` smoke_llm, seed_sample, deploy
+- [x] `eval/` corruption benchmark, planted-truth, grounding, ask-anything: the corruption benchmark done 2026-10-24 (D3.3); ask-anything v0 done 2026-10-25 (D4.3, `uv run sherlock eval ask`); planted-truth done 2026-10-25 (D7, `uv run sherlock eval ml`); grounding done 2026-10-25 (Day 6 review, `uv run sherlock eval grounding`, TRD §14)
+- [x] `scripts/` smoke_llm, seed_sample, deploy: all three exist, with `live_check.py`, `example_notebook.py`, `architecture.py`, `make_samples.py`, `fetch_sample.py` and `dump_openapi.py` (§4)
 - [ ] tests: unit, integration (mocked LLM), fixtures
 
 ### Frontend
 
 - [ ] theme tokens (light and dark, five accents), fonts, ThemeProvider with mode and accent, reduce-motion
 - [ ] API client (generated), SSE hook with resume, TanStack Query setup, error boundaries: all but error boundaries done 2026-10-24 (D2.9)
-- [ ] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings: the ui store (panels, the import file, live progress) done 2026-10-24 (D2.9); settings live in the `me` query; the filters store (global filter) and the ui store's panel sizes, rail, Edit layout, focused widget and chat thread done 2026-10-25 (D4); the selection waits for brushing (cut 8) and the edits buffer is D5.2
-- [ ] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the settings dialog with the four cut-1 settings done 2026-10-24 (matching the owner's design canvas); the rail, resizing and job tray are D4.4, done 2026-10-25 (the shortcuts sheet is cut 9)
+- [x] stores: ui (panels, tab, chatbar), filters (global filter, selection), edits buffer, settings: the ui store (panels, the import file, live progress) done 2026-10-24 (D2.9); settings live in the `me` query; the filters store (global filter) and the ui store's panel sizes, rail, Edit layout, focused widget and chat thread done 2026-10-25 (D4); the selection waits for brushing (cut 8) and the edits buffer is D5.2; the edits buffer done 2026-10-25 (D5.2, `src/state/edits.ts`)
+- [x] shell: panels, rail, tabs, header rows, job tray, settings dialog, shortcuts sheet, toasts: panels (fixed widths; slide-overs below 1024px), tabs, header rows, the disabled chat bar and toasts done 2026-10-24 (D2.9); the settings dialog with the four cut-1 settings done 2026-10-24 (matching the owner's design canvas); the rail, resizing and job tray are D4.4, done 2026-10-25 (the shortcuts sheet is cut 9)
 - [x] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete: all but rename/delete (D4.5) done 2026-10-24 (D2.10); rename and delete with Undo done 2026-10-25 (D4.5)
-- [ ] cleaning: offer, in-progress (log, so-far, checks), report view
+- [x] cleaning: offer, in-progress (log, so-far, checks), report view: done 2026-10-24 (D3.6, `components/dataset/CleaningOffer.tsx`, `CleaningProgress.tsx`, `CleaningReport.tsx`)
 - [ ] dashboard: grid, widget shell (all states), filter bar, add-widget drawer, explain drawer, KPI tile: done 2026-10-25 (D4.6–D4.7) except the filter builder button; the outdated state done 2026-10-25 with runs (D7)
-- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom histogram, heatmap and box plot (and scatter) done 2026-10-25 (D6.5), each with an accessible summary as its label; brushing is cut 8
-- [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats)
-- [ ] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells: done 2026-10-25 (D7.4) within cuts 4 and 7 (importance with partial dependence; no confusion or ROC views, no predicted cells)
+- [ ] charts: Bklit components via registry, adapter, custom heatmap/histogram/box, highlight/point, brush, click-to-filter, table view, accessible summary: the Bklit components, adapter, point, click-to-filter and table view done 2026-10-25 (D4.7); custom histogram, heatmap and box plot (and scatter) done 2026-10-25 (D6.5), each with an accessible summary as its label; brushing is cut 8. Open: the Bklit charts have no accessible summary yet (`docs/BACKLOG.md` §4)
+- [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, filter row, review drawer, changes panel, clean-with-AI popover, status bar, context menus: done 2026-10-25 (D5) within cut 5 (no filter row, review drawer or context menus; the status bar shows the row count, cell count and position, not stats). Open: the type-aware editors (PRD CSV-5, P0), which cut 5 doesn't cover (`docs/BACKLOG.md` §2)
+- [x] ml: dropdown, setup form from manifest, progress, result views, model card drawer, predicted cells: done 2026-10-25 (D7.4) within cuts 4 and 7 (importance with partial dependence; no confusion or ROC views, no predicted cells) The confusion and ROC views were added later the same day, when D7 was finished (`MlResult.tsx`, from the run's out-of-fold predictions).
 - [x] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight: done 2026-10-25 (D6.3)
-- [ ] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist: all but the direction checklist (cut 3) done 2026-10-25 (D8.2)
-- [ ] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9; the proposal and plan renderers and Add to Flow done 2026-10-25 (D8.5, D8.2)
+- [x] flow: canvas, node types, edges + labels, connect mode, palette, minimap, context chip, direction checklist: all but the direction checklist (cut 3) done 2026-10-25 (D8.2)
+- [x] chat: bar, thread, renderers (number/table/chart/text/proposal/clarification/plan), sources, pin/add-to-flow, suggested questions: the bar, thread, number/table/chart/text/clarification renderers, sources and Pin done 2026-10-25 (D4.8); proposals, plans and Add to Flow are D8.5, suggested questions cut 9; the proposal and plan renderers and Add to Flow done 2026-10-25 (D8.5, D8.2)
 - [ ] export: dataset menu (⋯), Download menu, export dialog (options, preview sentence, notes, Save and export), progress toast with Download again, Ctrl+Shift+E, Flow palette and Changes panel entry points: done 2026-10-25 (D5.6) but the Flow palette entry (D8) and the dialog's Save and export button (the note tells the user to save first); the Flow palette entry and "export a notebook" from chat done 2026-10-25 (D8.3)
 - [x] Playwright flow test (ends with Export notebook → file downloaded): 2026-10-25 (D8.6, `pnpm e2e`)
 
