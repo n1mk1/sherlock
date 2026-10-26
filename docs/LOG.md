@@ -529,6 +529,7 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - Cards being written right now (`updating`, or a synthesis citing one) aren't the audit's to fix: their job settles them. Everything else that isn't usable and still says `ready` is.
   - A card whose widget was deleted isn't usable, but a synthesis citing it isn't marked for that: Restore brings the widget and its card back.
 - **Eval:** `uv run sherlock eval grounding` (live): titanic3 10 cards (10 by the model), 25 of 25 chips, 23 of 23 facts holding; sales_dated 11 cards (11), 37 of 37 chips, 35 of 35 facts; 0 text runs with numbers, 0 causal, 0 bad labels, both syntheses by the model. **Grounded 62 of 62 chips, no problems.** Stale reuse: titanic3 edited `fare` (synthesis after the delete `sources_changed`, overview `outdated`, 4 cards outdated, 6 notebook notes for 6 cards not ready, audit 0); sales_dated edited `revenue` (`sources_changed`, `outdated`, 5, 7 of 7, 0).
+- **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
 ### Slice 6 (plan 1.4): export consistency
 
@@ -543,6 +544,8 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - No new setting for the wait (the goal's "no new settings"); 20 s is the plan's number and a module constant.
   - A failing widget's card still follows its note: it's `outdated` by then (slice 4) and says so in its own note.
   - BACKLOG: no line closes and none is added.
+- **Eval:** `uv run sherlock eval notebook` (live, through `eval-locked.sh`, at the first `6253c5a`): titanic3, 2 steps, 8 widgets, runs in a fresh venv and rebuilds the version, 149 s.
+- **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
 ### Slice 7 (plan 1.5): the widget data key carries its spec
 
@@ -839,6 +842,7 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
 - **Decisions:**
   - Tier 2 rows run in parallel across sessions now, not strictly 2b.1 → 2b.10 (the owner asked for parallel work; `.claude/plans/parallel.md`).
   - Moved numbers make an answer card `outdated` rather than updating it silently: its words were written by the model about the old numbers and aren't re-composed. Refresh is the user taking the new numbers, and the changed badge says so.
+- **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
 ### Tier 2 row 2b.3: change-detection gaps
 
@@ -854,6 +858,8 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
   - An aliased `t` resolves to the columns it names rather than to every column (the plan's wording): that's exact, and a `*` still reads everything.
   - A switch to Automatic re-tells every card left `outdated`, not only those an edit since touched: the user asked for the cards to update on their own, and outdated cards were waiting for exactly that.
   - BACKLOG: no line closes (A3–A5, A19 were audit findings) and none is added.
+- `PUT /me/settings`'s new docstring changed the route's OpenAPI description: `openapi.json` and `schema.d.ts` regenerated (`scripts/dump_openapi.py`, `pnpm openapi`).
+- **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
 ### Tier 2 row 2b.6: the rest of the backend
 
@@ -869,6 +875,8 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
   - A synthesis is rewritten by a queued stories job rather than inside the cascade, so the cascade makes no extra model call and its own failure hook stays simple.
   - The plan's "validate drops unknown card nodes" is limited to cards that were on the stored canvas; dropping any unknown id would also accept another dataset's card IDs silently, which `test_canvas.py` rightly refuses.
   - Once purge has hard-deleted a widget, its runs lose their widget and count as finished runs no widget shows again (purge clears `runs.widget_id`). Left as is: a hard-deleted widget is ten minutes past its Undo.
+- `test_only_usable_cards_feed_another_output` (slice 5) failed once in the gate: it took "the fare card" from a set, whose order changes with the hash seed, and expected no usable synthesis even when the synthesis didn't cite that card. It now takes the first fare widget in sorted order and expects the synthesis among the usable cards when it cites none; it passes under three hash seeds.
+- **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
