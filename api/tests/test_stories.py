@@ -738,7 +738,7 @@ def test_only_usable_cards_feed_another_output(mocked, client):
     ml = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "ml"}
     cards = {c["widget_id"] or "overview": c for c in client.get(f"{API}/datasets/{ds}/cards").json()}
     others = [cards[w]["id"] for w in cards if w not in fare | ml | {"overview"}]
-    fare_card = cards[next(iter(fare))]["id"]
+    fare_card = cards[sorted(fare)[0]]["id"]
     settings = client.app.state.settings
     db = connect(settings)
     try:
@@ -764,7 +764,8 @@ def test_only_usable_cards_feed_another_output(mocked, client):
         dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
         assert trust.audit(db, None, dataset) == 0
         usable = {r["id"] for r in trust.usable_cards(db, dataset)}
-        assert usable == set(others), "only the cards that read no fare stay usable"
+        # Only the cards that read no fare stay usable, and the synthesis when it doesn't cite the fare card.
+        assert usable == set(others) | (set() if cites_fare else {syn["id"]})
         left: list[str] = []
         cited = synthesis.sources(db, ds, [fare_card, *others[:2]], left)
         assert [r["id"] for r, _ in cited] == others[:2]
@@ -794,7 +795,7 @@ def test_only_usable_cards_feed_another_output(mocked, client):
 
         # A purged widget's card can't be cited any more: the synthesis citing it says its sources changed.
         db.execute("UPDATE cards SET status = 'ready' WHERE id = ?", (syn["id"],))
-        db.execute("UPDATE widgets SET deleted_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", (cards[next(iter(fare))]["widget_id"],))
+        db.execute("UPDATE widgets SET deleted_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", (cards[sorted(fare)[0]]["widget_id"],))
         purge(settings, db, None)
         assert service.fact_for(db, ds, f"{fare_card}.n") is None
         assert db.execute("SELECT status FROM cards WHERE id = ?", (syn["id"],)).fetchone()[0] == (
