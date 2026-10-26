@@ -220,7 +220,7 @@ def test_eval_checks():
     assert not ask_eval.check({"blocks": [{"type": "number", "value": 12}]}, {"value": 13})[0]
     assert ask_eval.unsourced({"blocks": [{"type": "number", "value": 1}], "sources": []})
     questions = ask_eval.load()
-    assert sum(len(q) for q in questions.values()) == 50  # D8.4: about fifty, every ASK-2 area
+    assert sum(len(q) for q in questions.values()) == 61  # D8.4: about fifty, every ASK-2 area; 11 more from the live test
     assert ask_eval.check({"text": "See Undo in the help.", "sources": [{"kind": "help"}], "blocks": []},
                           {"source": "help", "text_any": ["undo"]})[0]
     assert not ask_eval.check({"text": "x", "sources": [{"kind": "sql"}], "blocks": []}, {"source": "run"})[0]

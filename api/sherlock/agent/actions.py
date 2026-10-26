@@ -14,6 +14,7 @@ import sqlite3
 
 from sherlock.agent import prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
+from sherlock.agent.compose import fmt, fmt_kind
 from sherlock.cleaning import plan as plans
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
@@ -24,6 +25,7 @@ from sherlock.profile import service as profile_service
 from sherlock.rows.query import ident
 from sherlock.widgets import service as ws
 
+NUMERIC = re.compile(r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|FLOAT|DOUBLE|REAL|DECIMAL)", re.I)
 EXPORT = re.compile(r"\b(export|download|save|give me)\b.*\b(notebook|ipynb|jupyter)\b|\b(notebook|ipynb|jupyter)\b.*\b(export|download)\b", re.I)
 SYSTEM_COLUMNS = ("_row_id", "_quarantine_reason")
 MAX_PROMPT_CELLS = 60
@@ -98,6 +100,12 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
         used = sorted({e.column for e in edits})
         found = {r[0]: dict(zip(used, r[1:], strict=True)) for r in conn.execute(
             f"SELECT _row_id, {', '.join(ident(c) for c in used)} FROM t WHERE _row_id IN ({', '.join(map(str, ids))})").fetchall()}  # noqa: S608
+        numeric = [c for c in used if NUMERIC.match(types.get(c) or "")]
+        ranges = {}
+        if numeric:  # each number column's range in the usable rows, to flag a new value outside it
+            got = conn.execute(f"SELECT {', '.join(f'min({ident(c)}), max({ident(c)})' for c in numeric)} "  # noqa: S608
+                               "FROM t WHERE _quarantine_reason IS NULL").fetchone()
+            ranges = {c: (got[2 * i], got[2 * i + 1]) for i, c in enumerate(numeric)}
     missing = [i for i in ids if i not in found]
     if missing:
         raise CantAnswer(f"Row {missing[0]} isn't in this version of the file, so I can't change it.")
@@ -112,7 +120,27 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
                f"{'row' if rows_hit == 1 else 'rows'}: {', '.join(cols_hit)}")
     payload = {"summary": summary, "edits": changed,
                "impact": {"cells_changed": len(changed), "rows_affected": len({e["row_id"] for e in changed})}}
+    warnings = out_of_range(changed, ranges)
+    if warnings:
+        payload["warnings"] = warnings
     return _store(kit.env.db, kit.dataset, kit.scope.message_id, "edit_cells", payload)
+
+
+def out_of_range(edits: list[dict], ranges: dict[str, tuple]) -> list[str]:
+    """A sentence, written by code, for each new number outside the range its column holds in the usable rows
+    (live: "set the <a column> of row <n> to <a value>" proposed a value far past the column's largest with no
+    word). Approving it is still the user's call; at most three, then how many more."""
+    out = []
+    for e in edits:
+        lo, hi = ranges.get(e["column"], (None, None))
+        try:
+            v = float(e["value"])
+        except (TypeError, ValueError):
+            continue
+        if lo is not None and hi is not None and not lo <= v <= hi:
+            out.append(f"Check row {e['row_id']} before you approve: {e['value']} is outside the range {e['column']} holds "
+                       f"in this version ({fmt(lo, fmt_kind(lo, e['column']))} to {fmt(hi, fmt_kind(hi, e['column']))}).")
+    return out[:3] + ([f"{len(out) - 3} more new values are outside their column's range."] if len(out) > 3 else [])
 
 
 def _same(before, value: str | None) -> bool:

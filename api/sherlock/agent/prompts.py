@@ -10,19 +10,19 @@ Refer to yourself as "I"."""
 
 # One line per intent; the route prompt lists only the intents the current tab exposes (TRD §8.2).
 INTENT_LINES = {
-    "ask_data": "ask_data: a question answered by querying the data: counts, totals, averages, rates, breakdowns by a category, comparisons, top values, trends, and follow-ups like \"and only for <a value>?\" or \"what about <another value>?\"",
-    "find_rows": "find_rows: list the matching records themselves, not a number about them. A question that starts with \"which\", \"who\", \"show\" or \"list\" and asks for the records that meet a condition is find_rows (\"which <records> <did something> more than <an amount>?\", \"who has no <a column>?\", \"list the <records> whose <a column> mentions <a word>\"). \"How many ...\" is ask_data, and so is \"which <group> has the highest ...\" (a group, not records).",
+    "ask_data": "ask_data: a question answered by querying the data: counts, totals, averages, rates, breakdowns by a category, comparisons, top values, rankings of records (\"the <n> <records> with the highest <a column>\", \"the oldest <records>\"), trends, and follow-ups like \"and only for <a value>?\" or \"what about <another value>?\"",
+    "find_rows": "find_rows: list the matching records themselves, not a number about them. A question that starts with \"which\", \"who\", \"show\" or \"list\" and asks for the records that meet a condition is find_rows (\"which <records> <did something> more than <an amount>?\", \"who has no <a column>?\", \"list the <records> whose <a column> mentions <a word>\"). \"How many ...\" is ask_data, and so is \"which <group> has the highest ...\" (a group, not records). A ranking of records (\"the <n> <records> with the highest <a column>\", \"the <n> youngest <records>\", \"top <n>\") is ask_data too: a row list can't sort or stop at <n>.",
     "create_widget": "create_widget: only when the user asks to add or put something on the dashboard (\"add a chart of <a measure> by <a group> to the dashboard\", \"pin a KPI of <a measure>\"). \"Show it as a chart\" or \"plot that\" without the dashboard is ask_data.",
     "update_widget": "update_widget: change an existing widget (\"make this a line chart\", \"only show <a value>\")",
     "explain_widget": "explain_widget: how a dashboard widget was made, where its numbers come from",
-    "ask_history": "ask_history: what Sherlock's cleaning or the user's edits changed in this file, and why (\"what did you do to <a column>?\"). History in the world, outside the file, is web_context.",
+    "ask_history": "ask_history: what Sherlock's cleaning or the user's edits changed in this file, and why (\"what did you do to <a column>?\", \"why were some rows quarantined?\"). History in the world, outside the file, is web_context, and how to do something in the app (\"how do I undo a step?\") is app_help.",
     "ask_why": "ask_why: what drives, affects, predicts or explains a column (\"what drives <an outcome>?\", \"which factors matter for <an outcome>?\")",
     "ask_stats": "ask_stats: only when the user asks whether a difference or a relationship between columns is statistically significant, for a p-value or a named test (\"is <a measure> significantly different between <two groups>?\"). Questions about a model's accuracy are ask_model.",
     "ask_model": "ask_model: questions about the model of an analysis that already ran (\"how accurate is the model?\", \"why was <a column> left out?\", \"what did it compare against?\", \"who did the model get wrong?\")",
     "ask_meaning": "ask_meaning: what a column of this file, or a code in one of its columns, means (\"what does <a column> mean?\", \"what is <a code> in <a column>?\"). A term that is neither a column nor one of its values is web_context.",
     "web_context": "web_context: a question about the outside world that any file would get the same answer to: what a term, score or abbreviation means in general, how something works, typical values elsewhere, rules and standards, history, or recent events (\"what is <a term>?\", \"what does <an abbreviation> stand for?\", \"what is a typical <measure> for <a kind of business>?\", \"historically, what was <something>?\", \"what are the latest <topic> trends?\"). It searches the web. A question about this file's own numbers or rows is never web_context, and what a column of this file means is ask_meaning.",
-    "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I export a notebook?\")",
-    "edit_cells": "edit_cells: change values in particular cells or rows (\"set <a column> of row <n> to <a value>\", \"make these empty\", \"fix the typo in <a value>\")",
+    "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I undo a cleaning step?\", \"how do I export a notebook?\")",
+    "edit_cells": "edit_cells: change values in particular cells or rows (\"set <a column> of row <n> to <a value>\", \"make these empty\", \"fix the typo in <a value>\"), on any tab; it never changes a widget",
     "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file (\"clean these rows\", \"clean up the selection\")",
     "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave <a column> alone\", \"also trim spaces in <a column>\", \"fill <a column> by <a group> instead\")",
     "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about <a column>?\", \"make sense of this\")",
@@ -53,6 +53,8 @@ Rules:
 - Medians and percentiles are exact: MEDIAN(col) or QUANTILE_CONT(col, 0.5), never APPROX_QUANTILE.
 - Each row of t is one record of the file. "Per <thing>" where each row is one <thing> (per order, per visit) is an average over the rows.
 - Group and order so the answer reads well: categories in their natural order or by the value, time in order. At most 50 result rows unless the question asks for more.
+- A number that says how many rows the user wants ("the <n> youngest <records>", "top <n>", "the first <n>") is the LIMIT, never a value to filter on, even when a column holds that number.
+- Answer the quantity the question asks for. When it asks for something no column records, set answerable to false; never put another column in its place because it is the nearest number.
 - Almost every question about these columns is answerable. Set answerable to false only when no column of this file is about what the question asks (for example a quantity the file never records). If no column can answer it, set answerable to false, return SELECT 1 AS none FROM t WHERE {{{{rows}}}} LIMIT 0 as sql, and suggest the closest question this file can answer.
 
 {context}
@@ -66,13 +68,14 @@ Fix it and return the whole corrected query."""
 
 RESULT_REPAIR = """That query ran, and code checked its result. What it found (it may quote the file's names and values):
 {findings}
-If the question needs a different query, fix it and return the whole corrected query. If the result already answers the question (some questions really match no rows), return the same query."""
+If the question needs a different query, fix it and return the whole corrected query. If the result already answers the question (some questions really match no rows), return the same query. If no column of this file answers the question, set answerable to false and give the closest question it can answer."""
 
 PREDICATE = """Write the DuckDB condition that selects the rows the user is asking for.
 
 Rules:
 - A boolean expression over the columns of t, without WHERE, without subqueries.
 - Quote column names with double quotes when they contain anything but lowercase letters, digits and underscores.
+- A number that says how many rows the user wants ("the <n> <records> …") is not a condition: leave it out.
 - Rows that "mention" or "talk about" something in a free-text column may word it another way ("<a> <b>" written as "<b> was <a>"): match each meaningful word on its own, ignoring case, joined with AND ("<column>" ILIKE '%<word>%' AND "<column>" ILIKE '%<other word>%').
 
 {context}

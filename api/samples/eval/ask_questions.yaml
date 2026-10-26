@@ -76,6 +76,30 @@ titanic3.csv:
     expect: {source: help, text_any: ["undo"]}
   - q: What did cleaning change?
     expect: {source: step, text_any: ["typed"]}
+  # Added 2026-10-26 from the live end-to-end test's misses (routing, honest limits, edit requests). The
+  # edit request leaves a pending proposal and changes nothing, so the questions after it read the same data.
+  - q: List the 5 passengers who paid the highest fare, with their names and fares
+    expect: {rows: {"Cardeza, Mr. Thomas Drake Martinez": 512.3292, "Lesurer, Mr. Gustave J": 512.3292}}
+  - q: Who are the 10 youngest survivors?
+    expect: {value: 0.4167}
+  - q: What was the average income of first-class passengers?
+    expect: {text_any: ["no column"]}
+  - q: Why were some rows quarantined?
+    expect: {source: sql, text_any: ["quarantined"]}
+  - q: How many rows are quarantined and why?
+    expect: {source: sql, text_any: ["quarantined"]}
+  - q: how do I undo a cleaning step?
+    expect: {source: help, text_any: ["undo"]}
+  - q: Search the web for what happened to passenger Allen, Miss. Elisabeth Walton after the voyage
+    expect: {text_any: ["web"]}
+  - q: Why did first class passengers survive more often?
+    expect: {source: run, rows: {"1": 0.61920, "3": 0.25529}}
+  - q: delete all the male passengers
+    expect: {text_any: ["can't delete"]}
+  - q: set the age of row 5 to 200
+    expect: {text_any: ["outside the range"]}
+  - q: What will the survival rate be next year?
+    expect: {text_any: ["can't forecast"]}
 
 sales_dated.csv:
   - q: What is the total revenue?

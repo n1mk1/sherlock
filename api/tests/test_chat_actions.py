@@ -97,7 +97,11 @@ def test_an_unknown_row_is_refused_and_actions_stay_on_their_tab(client, ready):
     ds = ready["id"]
     _, msg = send(client, ds, "set the fare of row 999999 to 5", **csv())
     assert "proposal" not in msg and "isn't in this version" in msg["text"]
-    _, msg = send(client, ds, "set the fare of row 1 to 100")  # dashboard: cells change from the CSV tab
+    # A cell edit is a proposal on every tab (live, 2026-10-26: the Dashboard asked "Which widget?")…
+    _, msg = send(client, ds, "set the fare of row 1 to 100")
+    assert msg["proposal"]["kind"] == "edit_cells" and msg["proposal"]["edits"][0]["row_id"] == 1
+    # …and cleaning the selection stays on the CSV tab, where the rows are selected.
+    _, msg = send(client, ds, "clean these rows")
     assert "proposal" not in msg and "CSV tab" in msg["text"]
 
 

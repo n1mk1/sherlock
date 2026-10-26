@@ -273,12 +273,71 @@ def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, filters: li
             runs.append(text(" and " if i == len(named_top) - 1 else ", "))
         runs += [label(f["column"]), text(" ("), chip(imp, i, 1, f"{f['value']:.2f}"), text(")")]
     runs.append(text(". These are associations, not causes."))
-    return Reply(blocks=[text_block(runs), table_block(imp)],
-                 sources=[{"kind": "run", "run_id": run["id"],
+    blocks, sources = [text_block(runs), table_block(imp)], []
+    group = next((c for c in named_columns(question, resolved, [c["name"] for c in card["columns"]])
+                  if c != target and 2 <= (_col(card, c).get("distinct") or 0) <= MAX_GROUPS), None)
+    if group:  # "why did <a group> <do something> more?": that column's place in the model and the outcome by its groups
+        g_blocks, g_sources = _group_part(kit, mc, target, group, rid, _col(card, target))
+        blocks, sources = [*g_blocks, *blocks], g_sources
+    return Reply(blocks=blocks,
+                 sources=[*sources, {"kind": "run", "run_id": run["id"],
                            "label": f"What drives {target}: {mc['chosen_model'].replace('_', ' ')} by "
                                     f"{mc['split']['folds']}-fold cross-validation on version {mc['version']}"}],
                  actions=[{"kind": "open_model_card", "run_id": run["id"]}],
                  focus={"run_id": run["id"], "target": target})
+
+
+def _col(card: dict, name: str) -> dict:
+    return next(c for c in card["columns"] if c["name"] == name)
+
+
+def named_columns(question: str, resolved: dict, columns: list[str]) -> list[str]:
+    """The columns a message names: resolved, as a bare word, or by a word within `LOOKS_LIKE` of the name
+    ("class" for `pclass`), in that order."""
+    out = mentioned(resolved, columns)
+    norm = lambda t: re.sub(r"[\s._-]+", "", t.lower())  # noqa: E731
+    for w in re.findall(r"[\w.]+", question.lower()):
+        if len(w) < 3 or w in STOP:
+            continue
+        best = max(columns, key=lambda c: fuzz.ratio(norm(w), norm(c)), default=None)
+        if best and (best.lower() == w or fuzz.ratio(norm(w), norm(best)) >= LOOKS_LIKE) and best not in out:
+            out.append(best)
+    return out
+
+
+def _group_part(kit: Toolkit, mc: dict, target: str, group: str, rid: str, target_col: dict) -> tuple[list, list]:
+    """For "why did <a group> …?" (live, the drivers answer said nothing about the group): where the group's
+    column ranks among the model's factors, and the target's average (its rate for a yes/no) in each group,
+    both written in code with chips."""
+    ranked = [i["column"] for i in mc["importance"]]
+    runs = [label(group)]
+    if group in ranked:
+        item = mc["importance"][ranked.index(group)]
+        place = memory_result(f"{rid}c", f"permutation importance of {group} in the model card",
+                              [("feature", "VARCHAR"), ("rank", "BIGINT"), ("of", "BIGINT"), ("importance", "DOUBLE")],
+                              [[group, ranked.index(group) + 1, len(ranked), item["value"]]])
+        runs += [text(" ranks "), chip(place, 0, 1), text(" of "), chip(place, 0, 2), text(" among the model's factors, "
+                 "with an importance of "), chip(place, 0, 3, f"{item['value']:.2f}"), text(". ")]
+    else:
+        why = next((e["reason"] for e in mc["excluded"] if e["column"] == group), None)
+        runs.append(text(" isn't one of the model's factors" + (f" ({why}). " if why and not any(ch.isdigit() for ch in why) else ". ")))
+    blocks, sources = [], []
+    if target_col["type"] in ("int", "float", "bool"):
+        q, t = ident(group), ident(target)
+        by = kit._run(f"SELECT {q} AS {q}, count(*) AS n, AVG(CAST({t} AS DOUBLE)) AS {ident('mean_' + target)} FROM t "
+                      f"WHERE {{{{rows}}}} AND {q} IS NOT NULL AND {t} IS NOT NULL GROUP BY 1 ORDER BY 1", f"{rid}b")
+        stats_ = target_col.get("stats") or {}
+        rate = target_col["type"] == "bool" or (stats_.get("min"), stats_.get("max")) == (0, 1)
+        runs += [text("The rate of " if rate else "The average of "), label(target), text(" by "), label(group), text(" is ")]
+        for i, row in enumerate(by.rows[:6]):
+            if i:
+                runs.append(text(", " if i < min(len(by.rows), 6) - 1 else " and "))
+            runs += [{"type": "label", "ref": f"value:{group}:{row[0]}", "text": str(row[0])}, text(": "),
+                     chip(by, i, 2, f"{row[2] * 100:.1f}%" if rate else None)]
+        runs.append(text(". That's a difference between groups, not its cause."))
+        blocks.append(table_block(by))
+        sources.append({"kind": "sql", "sql": by.sql, "label": f"{target} by {group}"})
+    return [text_block(runs), *blocks], sources
 
 
 def _verdict_runs(mc: dict, target: str, metric: str, shown, scores: Result) -> list:
@@ -306,6 +365,31 @@ def _verdict_runs(mc: dict, target: str, metric: str, shown, scores: Result) -> 
         runs += [text(f"The model does no better than the best simple rule ({metric} "), chip(scores, 0, 1, shown(m["value"])),
                  text(" against "), chip(scores, 1, 1, shown(best["value"])), text("), so read these factors as weak. ")]
     return runs
+
+
+# --- the quarantine ---------------------------------------------------------------------------------
+
+def quarantined(kit: Toolkit, rid: str) -> Reply:
+    """"How many rows are quarantined, and why?": counted in code on the current version, by reason. The rows
+    in quarantine are exactly the ones `{{rows}}` leaves out, so this reads `t` without it."""
+    from sherlock.widgets import compile as wc
+    from sherlock.widgets.execute import run_query
+
+    sql = wc.validate_select("SELECT _quarantine_reason AS reason, count(*) AS n FROM t WHERE _quarantine_reason IS NOT NULL "
+                             "GROUP BY 1 ORDER BY n DESC, 1 LIMIT 20")
+    total_sql = wc.validate_select("SELECT count(*) AS quarantined FROM t WHERE _quarantine_reason IS NOT NULL")
+    with ws.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
+        out, total = run_query(conn, sql), run_query(conn, total_sql)
+    res = Result(rid, sql, "", out["columns"], out["rows"], out["row_count"])
+    count = Result(f"{rid}n", total_sql, "", total["columns"], total["rows"], total["row_count"])
+    sources = [{"kind": "sql", "sql": total_sql, "label": "The quarantined rows"},
+               {"kind": "sql", "sql": sql, "label": "The quarantined rows by reason"}]
+    if not count.rows[0][0]:
+        return Reply(blocks=[text_block([text("No rows are quarantined in this version.")])], sources=sources[:1])
+    runs = [chip(count, 0, 0), text(" rows are quarantined in this version: they're kept in the file but left out of "
+            "answers, widgets and models. Each row's reason is below, and the steps that set them follow. Restore in the "
+            "CSV tab puts a row back as a step you can undo.")]
+    return Reply(blocks=[text_block(runs), table_block(res)], sources=sources, focus={"quarantined": True})
 
 
 # --- ask_model ------------------------------------------------------------------------------------

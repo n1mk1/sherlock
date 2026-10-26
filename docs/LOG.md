@@ -1092,3 +1092,25 @@ From the live end-to-end test of `9bfd863` (the report is outside the repo). All
 - **KPI titles (F23).** Widget titles wrap to two lines (16px line) before an ellipsis, with the full title as the tooltip; the e2e flow checks that no widget title is clipped at 1440px. Docs: UI/UX §5.5.
 - **BACKLOG:** §4's "drag handle has no role, separators have no `aria-valuenow`" now says only that the handle has no keyboard move.
 - **Gate** (rebased on `6bea315`): `uv run pytest` 539 passed, 3 skipped; `corepack pnpm typecheck` clean; `corepack pnpm test` 125 passed in 21 files; `corepack pnpm e2e` passed three times in a row (axe 0 violations on five screens, no CSP refusal). Not deployed.
+
+## 2026-10-26 (Mon, afternoon): the live test's chat findings (2, 3, 4, 11, 12, 13)
+
+From the live end-to-end test of this morning (`9bfd863`); one of five sessions fixing its findings by area. All in `api/sherlock/agent/`.
+
+- **Done:**
+  - **Rankings (2).** A ranking ("top <n>", a superlative) routed to `find_rows` now goes to `ask_data` (`loop.RANKING`), since a row filter can't sort or stop at <n>; the `find_rows` and `ask_data` intent lines say so. "List the 5 passengers who paid the highest fare" answers the five rows, not all 1,309.
+  - **A count isn't a value (3).** `resolve.drop_counts` takes "the 10 youngest", "top 5" and the like out of the resolved values, so the context no longer says "“10” is the value '10' of column boat"; the SQL and predicate prompts say such a number is the `LIMIT`, never a filter.
+  - **No silent column swap (4).** `Toolkit.substituted`: a word the router marked as a column, that nothing resolved, which the reading maps to a column named nothing like it ("income → fare"), is a result-check finding; when the repair says no column records it, the answer is the honest limit. The SQL prompt says never to put another column in place of the quantity asked for.
+  - **Misroutes (11).** Route guards: an explicit web search goes to `web_context` (before the "happened" history word); "how do I …" goes from `ask_history`/`ask_model` to `app_help` (also D7 F12); a question about the quarantine goes to `ask_history`, which now counts the quarantined rows by reason in code (`insight.quarantined`, reading `t` without `{{rows}}`). "Why did <a group> …?" adds the group's rank among the model's factors and the target's rate by that column, in code with chips (`insight._group_part`).
+  - **Edit requests (12).** A delete request runs `find_rows` with code's refusal first ("I can't delete rows from chat, and there's no chat proposal to quarantine them either …"; no proposal kind quarantines rows, so none is offered). `edit_cells` is exposed on every tab, and "set … row <n> …" routed to a widget becomes `edit_cells`. A new number outside its column's range gets a code-written warning on the proposal (`warnings`) and in the answer.
+  - **Forecasts (13).** A question about the future is answered without a model call: there's no forecast, and whether the file has a time column (`Agent._forecast`).
+  - **Eval:** 11 questions added to `ask_questions.yaml` (61 in all), each also checked offline against its expectation in `tests/test_chat_routing.py` (recorded replies in `tests/fixtures/llm/chat_routing.json`).
+  - Docs: TRD §4.4 and §6.8 (`warnings`), §8.1 (the guards, `drop_counts`, the substitution finding, `find_rows`, `ask_history`'s quarantine count, tool exposure, the eval at 61), §8.2 (`ask_why`'s group part, tool exposure); PRD ASK-8 and ASK-10 acceptance; App Flow §10; Schema §2.15's payload.
+  - BACKLOG: removed D7 F12 ("how do I …" to `ask_model`); amended the unanswerable-questions line; added the English-only guards, the `TRUE` predicate, the category-target gap and the substitution check's limits.
+- **Checks:** `uv run pytest` on the branch rebased onto `6bea315`: 552 passed, 3 skipped (a first run, before that rebase, had one failure in `test_jobs.py::test_a_save_cascades_to_every_widget_once` that didn't recur; the cascade isn't touched here). After rebasing onto `8acd30e` (security headers in `main.py`), the chat tests and `test_deploy_bits.py` again: 82 passed. `tests/test_chat_routing.py` has 14 tests.
+- **Not done:** `uv run sherlock eval ask` live (it spends Token Factory credit; offline, the 11 new questions pass on recorded replies, which says nothing about Nano's and Super's real replies). In BACKLOG.
+- **Decisions:**
+  - Ranking questions go to `ask_data` rather than giving `find_rows` an `ORDER BY` and `LIMIT`: `ask_data` already writes, validates and checks that SQL, and "show the top 3 oldest" was already right there.
+  - The guards are keyword rules after the route, like the existing meaning and history guards, so they cost no call. The forecast check comes before the route, like the notebook export.
+  - A cell edit is a proposal, so it's offered on every tab; cleaning the selection stays on the CSV tab, which has the selection. `test_chat_actions.py`'s "cells change from the CSV tab" check now checks the reverse.
+  - The range warning is a fact about the file ("outside the range age holds in this version"), not a judgment that the value is wrong.

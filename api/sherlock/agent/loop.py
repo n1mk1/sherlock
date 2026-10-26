@@ -23,7 +23,7 @@ from sherlock.agent import flow, insight, prompts
 from sherlock.agent import web as aw
 from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
-from sherlock.agent.resolve import resolve, widget_options
+from sherlock.agent.resolve import drop_counts, resolve, widget_options
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.client import (
@@ -44,17 +44,18 @@ NOT_YET: dict[str, str] = {}
 # Tool exposure by tab (TRD §8.2): the answerers everywhere, actions where they belong.
 ANSWERERS = ("ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats", "ask_model",
              "ask_meaning", "app_help", "web_context")
+# A cell edit is a proposal, so it's offered on every tab (live, "set the <a column> of row <n> to <a value>" on the
+# Dashboard asked which widget); cleaning the selection needs the CSV tab's selection.
 TOOLS = {
-    "dashboard": ANSWERERS + ("create_widget", "update_widget"),
+    "dashboard": ANSWERERS + ("create_widget", "update_widget", "edit_cells"),
     "csv": ANSWERERS + ("edit_cells", "clean_selection"),
-    "flow": ANSWERERS + ("ask_story",),
+    "flow": ANSWERERS + ("ask_story", "edit_cells"),
 }
 PLAN_TOOLS = ("edit_plan",)  # added to the tab's tools while a cleaning plan is open (`context.plan_id`)
 ELSEWHERE = {
     "create_widget": "Adding a widget works from the Dashboard tab; ask there, or use Add widget.",
     "update_widget": "Changing a widget works from the Dashboard tab.",
     "ask_story": "Questions about the story cards work from the Flow tab.",
-    "edit_cells": "Changing cells from chat works from the CSV tab, where you can see them.",
     "clean_selection": "Cleaning from chat works from the CSV tab; select rows there, or use Clean with AI.",
     "edit_plan": "Changing a cleaning plan from chat works while the plan is open; press Clean with AI to open one.",
 }
@@ -79,6 +80,37 @@ MEANING_WORDS = re.compile(r"\b(mean\w*|stand\w*|represent\w*|refer\w*|defin\w*|
                            r"what are|what kind|what type|code\w*|abbreviat\w*|unit\w*|column\w*|field\w*|tell me about)\b", re.I)
 STATS_WORDS = re.compile(r"\b(significan\w*|p[- ]?values?|statistic\w*|tests?|chance|random|correlat\w*|relat\w*|"
                          r"associat\w*|differen\w*|compare|versus|vs|between)\b", re.I)
+# Guards on the route (TRD §8.1), each from a live miss (the end-to-end test of 2026-10-26):
+# A ranking needs ORDER BY and LIMIT, which a row filter can't hold: "list the 5 <records> who paid the highest
+# <a column>" went to find_rows and listed every row.
+RANKING = re.compile(r"\b(top|bottom)\s+(\d+|two|three|four|five|six|seven|eight|nine|ten|twenty|fifty|hundred)\b|"
+                     r"\b(highest|lowest|largest|smallest|biggest|greatest|oldest|youngest|longest|shortest|cheapest|"
+                     r"earliest|latest|newest|most|least|best|worst)\b", re.I)
+# A question about the quarantine itself: "why were some rows quarantined?" went to ask_why, "how many rows are
+# quarantined and why?" to ask_data, which reads only usable rows.
+QUARANTINE_ASK = re.compile(r"\b(why|reasons?|how many|number of|count)\b[^.?!]*\bquarantin\w*|\bquarantin\w*[^.?!]*\b(why|reasons?)\b|"
+                            r"\b(which|what)\b[^.?!]*\b(are|were|is|was|got|been)\s+quarantin\w*", re.I)
+# How to use the app: "how do I undo a cleaning step?" went to ask_history, "how do I re-run …" to ask_model.
+HOW_TO = re.compile(r"^\W*(how|where)\s+(do|can|could|should)\s+(i|we)\b|^\W*how\s+to\b", re.I)
+# An explicit web search: "search the web for what happened to <someone>" went to ask_history ("happened").
+WEB_ASK = re.compile(r"\b(search|look\s+up|google)\b[^.?!]*\b(web|internet|online)\b|\b(on|from)\s+the\s+(web|internet)\b", re.I)
+# A request to delete rows: chat never deletes (Rule 3); live, "delete all the <records> …" only listed them.
+DELETE_ASK = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(delete|remove|drop|erase|purge|wipe|get\s+rid\s+of)\b"
+                        r"(?![^.?!]*\b(filters?|widgets?|charts?|cards?|kpis?|notes?|steps?|selections?|columns?)\b)", re.I)
+DELETE_NOTE = ("I can't delete rows from chat, and there's no chat proposal to quarantine them either: data only changes "
+               "through a step you make. These are the rows that match; open them in the CSV tab, where Delete row takes "
+               "them out as a step you can undo.")
+# A cell edit named by its row: on the Dashboard, "set the <a column> of row <n> to <a value>" went to update_widget.
+ROW_EDIT = re.compile(r"\b(set|change|make|replace|update|put|correct|fix|edit)\b[^.?!]*\brows?\s+#?\d+|"
+                      r"\brows?\s+#?\d+\b[^.?!]*\b(set|change|make|replace|update|put|correct|fix|edit)\b", re.I)
+# A question about the future: there's no forecast recipe (PRD ML-11, P1), and the model never makes up a number.
+FORECAST = re.compile(r"\b(forecast\w*|predict\w*|project\w*|extrapolat\w*)\b[^.?!]*\b(next|future|coming|upcoming|tomorrow|ahead)\b|"
+                      r"\b(next|coming|upcoming)\s+(\d+\s+|few\s+)?(years?|months?|weeks?|quarters?|seasons?|decades?|days?)\b|\bin the future\b", re.I)
+
+
+def swap(intents: list[str], old: tuple[str, ...], new: str) -> list[str]:
+    """The intents with each of `old` replaced by `new`, each intent once."""
+    return list(dict.fromkeys(new if i in old else i for i in intents))
 
 
 def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None, current_version: int | None = None) -> dict:
@@ -270,6 +302,8 @@ class Agent:
             return self._export(mid, question, context, scope)
         if aw.DICTIONARY_ASK.search(question) and aw.typed_url(question):
             return self._dictionary(mid, question, context, scope, columns)
+        if FORECAST.search(question):
+            return self._forecast(mid, question, context, card)
         if tab == "flow" and flow.MAKE_SENSE.search(question):
             # "Make sense of this" on the canvas is the synthesis action; no routing call is needed.
             route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
@@ -284,6 +318,7 @@ class Agent:
             return out
 
         resolved = resolve(self.db, dataset["id"], [e.model_dump() for e in route.entities], columns)
+        drop_counts(resolved, question)
         if chosen:
             choose(resolved, chosen)
         ctx_text = self._context(card, rows_scope, history, focus, resolved, context)
@@ -302,12 +337,27 @@ class Agent:
             intents = list(dict.fromkeys("ask_data" if i == "ask_stats" else i for i in intents))
         # Outside-world questions the router took for the file's: a meaning of nothing the file has ("what is
         # <a term>?") or that asks no meaning, or a history with no word about changes, goes to the web (live, T-1 eval).
+        if WEB_ASK.search(question) and "web_context" not in intents:
+            intents = swap(intents, ("ask_history", "ask_meaning"), "web_context")
+            if "web_context" not in intents:
+                intents = swap(intents, (intents[0],), "web_context")
         if "ask_meaning" in intents and not (insight.names_a_column(question, resolved, columns) and MEANING_WORDS.search(question)):
-            intents = list(dict.fromkeys("web_context" if i == "ask_meaning" else i for i in intents))
+            intents = swap(intents, ("ask_meaning",), "web_context")
         if "ask_history" in intents and not HISTORY_WORDS.search(question):
-            intents = list(dict.fromkeys("web_context" if i == "ask_history" else i for i in intents))
+            intents = swap(intents, ("ask_history",), "web_context")
+        if HOW_TO.search(question):
+            intents = swap(intents, ("ask_history", "ask_model"), "app_help")
+        if QUARANTINE_ASK.search(question):
+            intents = swap(intents, ("ask_data", "find_rows", "ask_why", "ask_stats", "ask_model"), "ask_history")
+        if RANKING.search(question):
+            intents = swap(intents, ("find_rows",), "ask_data")
+        if ROW_EDIT.search(question):
+            intents = swap(intents, ("update_widget", "explain_widget"), "edit_cells")
+        deleting = bool(DELETE_ASK.search(question))
+        if deleting:
+            intents = ["find_rows"]
         steps = [(i, question) for i in intents]
-        if route.multi_step:
+        if route.multi_step and not deleting:
             steps = self._plan(question, ctx_text, scope, tools) or steps
         plan = [{"text": f"{STEP_LABELS.get(i, i)}: {q}" if q != question else STEP_LABELS.get(i, i), "status": "pending"}
                 for i, q in steps] if len(steps) > 1 else None
@@ -389,9 +439,15 @@ class Agent:
                         blocks += made
                         sources += cited
                 elif intent == "ask_history":
+                    if QUARANTINE_ASK.search(q):  # how many rows are quarantined and why, counted in code
+                        reply = insight.quarantined(kit, f"r{len(results) + len(computed) + 1}")
+                        blocks += reply.blocks
+                        sources += reply.sources
                     vrow = ws.version_row(self.db, dataset["id"], dataset["current_version"])
                     found = ask_history(self.db, dataset["id"], q, json.loads(vrow["effective_step_ids_json"]))
                     if not found:
+                        if QUARANTINE_ASK.search(q):
+                            continue
                         raise CantAnswer("Nothing has changed this file yet.")
                     runs = []
                     for s in found:
@@ -439,6 +495,8 @@ class Agent:
                     blocks.append(text_block([{"type": "text", "text": "Nothing has changed yet. Approve to apply this, "
                                                "or reject it." if intent == "edit_cells" else
                                                "Approve to start Clean with AI; each fix it makes is a step you can undo."}]))
+                    for warning in proposal.get("warnings") or []:  # a value outside its column's range, said by code
+                        blocks.append(text_block([{"type": "text", "text": warning}]))
                 else:
                     raise CantAnswer(NOT_YET.get(intent, "I can't do that yet."))
             except Clarify as exc:
@@ -485,6 +543,9 @@ class Agent:
                 composed = [b for b in composed
                             if not (b["type"] == "table" and b.get("result") in computed and b["result"] not in cited)]
             blocks = composed + blocks
+        if deleting:  # the refusal first, then the rows it would have deleted
+            blocks.insert(0, text_block([{"type": "text", "text": DELETE_NOTE}]))
+        if results:
             for i, b in enumerate(blocks):
                 if b["type"] == "chart" and "widget_id" not in b:
                     actions.append({"kind": "pin", "block_index": i})
@@ -568,6 +629,24 @@ class Agent:
         out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], context=context,
                          focus={"question": question, "intents": ["open_export"],
                                 "actions": [{"kind": "open_export", "options": options}]})
+        self.emit("message", out)
+        return out
+
+    def _forecast(self, mid: str, question: str, context: dict, card: dict) -> dict:
+        """A question about the future (`FORECAST`), answered without a model call: there's no forecast recipe
+        (PRD ML-11, P1), and a number nobody computed is never given. It says whether the file has a time
+        column to show the trend so far, and offers the closest question this file can answer (ASK-8)."""
+        times = [c["name"] for c in card["columns"] if c["role"] == "time" or c["type"] in ("date", "datetime")]
+        if times:
+            text = (f"I can't forecast: Sherlock has no forecasting model yet, and I only give numbers from queries "
+                    f"that ran on the rows you have. I can show how it changed over time so far, by {times[0]}.")
+        else:
+            example = example_question(card)
+            text = ("I can't forecast that: this file has no date or time column, so there's no trend over time to "
+                    "extend, and I only give numbers from queries that ran on the rows you have."
+                    + (f" I can describe the data as it is, for example “{example}”." if example else ""))
+        out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], context=context,
+                         focus={"question": question, "intents": ["forecast"]})
         self.emit("message", out)
         return out
 

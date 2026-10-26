@@ -10,10 +10,11 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
+from rapidfuzz import fuzz
 from sqlglot import exp
 
 from sherlock.agent import prompts
-from sherlock.agent.resolve import candidates
+from sherlock.agent.resolve import CLOSE_FUZZ, _norm, candidates
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
@@ -30,6 +31,8 @@ log = logging.getLogger("sherlock.agent")
 TABLE_ROWS = 20
 SHOWN_VALUES = 8  # a finding about a literal lists this many of the column's values
 NAMED_ROLES = ("dimension", "measure", "target_like", "time")  # a named column of these roles must be used
+READ_PAIR = re.compile(r"([^,;→]+?)\s*(?:→|->)\s*([^,;]+)")  # "<their word> → <column>" pairs of a reading
+COMPARED = re.compile(r"=|<|>|\b(in|like|ilike|between|is)\b", re.I)
 
 
 class CantAnswer(Exception):
@@ -157,7 +160,7 @@ class Toolkit:
         """Plan 2.7: a result that ran is checked in code; what was found goes back for one repair. The
         repaired query replaces the first when it runs and shows no more findings; otherwise, or when the
         repair fails, the first result stands (it ran, and the question may really have no rows)."""
-        found = self.findings(res, draft.sql)
+        found = self.findings(res, draft.sql) + self.substituted(draft.reading)
         if not found:
             return res
         log.info("ask_data result check: %s", " | ".join(found))
@@ -167,13 +170,16 @@ class Toolkit:
             again = self.llm.structured("medium", ask, SqlDraft, purpose="sql_check", scope=self.scope).value
         except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
             return res
+        if not again.answerable and self.substituted(draft.reading):
+            # The repair agrees that no column records what the question asks for: the honest limit (ASK-8).
+            raise self._unanswered(self._closest(again.closest))
         if not again.answerable or " ".join(again.sql.split()) == " ".join(draft.sql.split()):
             return res
         try:
             fixed = self._read_as(self._run(again.sql, rid), again.reading)
         except ApiError:
             return res
-        left = self.findings(fixed, again.sql)
+        left = self.findings(fixed, again.sql) + self.substituted(again.reading)
         log.info("ask_data result check: the repaired query %s (%d findings left)", "is kept" if len(left) <= len(found) else
                  "is dropped", len(left))
         return res if len(left) > len(found) else fixed
@@ -214,6 +220,28 @@ class Toolkit:
                 continue
             shown = ", ".join(f"'{v}'" for v in values[:SHOWN_VALUES]) + (", …" if len(values) > SHOWN_VALUES else "")
             out.append(f"{col} = '{literal}' matches no row: {col} has {shown}.")
+        return out
+
+    def substituted(self, reading: str) -> list[str]:
+        """A word the router took for a column, that no column is named like and nothing resolved, which the query
+        reads as a column named nothing like it ("income → fare"): live, "the average income of <a group>" was
+        answered with another column's average, without a word. The repair decides whether that column records
+        what the word means ("port → embarked" does) or no column does."""
+        words = [t for t in self.resolved.get("unresolved") or []
+                 if (self.resolved.get("unresolved_kinds") or {}).get(t, "column") == "column"]
+        by_lower = {c.lower(): c for c in self.types}
+        out = []
+        for left, right in READ_PAIR.findall(reading or ""):
+            left = left.strip(" \"'“”").lower()
+            word = next((w for w in words if w.lower() in left or left in w.lower()), None)
+            if not word or COMPARED.search(right):  # a value read as a filter ("women → sex = 'female'") is fine
+                continue
+            col = next((by_lower[t.lower()] for t in re.findall(r"[\w.]+", right) if t.lower() in by_lower), None)
+            a, b = _norm(word), _norm(col or "")
+            if col and fuzz.ratio(a, b) < CLOSE_FUZZ and a not in b and b not in a:
+                out.append(f"The question asks about “{word}”, and no column is named like it; the query reads it as {col}. "
+                           f"Keep {col} only if it records {word} itself. If no column of this file records {word}, set "
+                           "answerable to false and give the closest question this file can answer.")
         return out
 
     def _value_index(self) -> dict[str, list[str]]:

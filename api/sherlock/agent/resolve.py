@@ -97,6 +97,21 @@ def column_options(question: str, columns: list[str], limit: int = 3) -> list[tu
     return [(c, {"column": c}) for c in ranked[:limit]]
 
 
+# A number that says how many rows the message wants: "the 10 youngest", "top 5", "first 3 rows", "5 highest".
+COUNT_NUMBER = re.compile(r"\b(?:top|bottom|first|last|the)\s+(\d+)\b(?!\s*(?:%|percent|st|nd|rd|th)\b)|\b(\d+)\s+(?:\w+est|most|least)\b", re.I)
+
+
+def drop_counts(resolved: dict, question: str) -> None:
+    """Take out of the message's names the numbers it uses as a count of rows, so "the 10 youngest" isn't read
+    as the value '10' of some column (live: `boat = '10'`). A number used as a value ("in boat 10") stays."""
+    counts = {a or b for a, b in COUNT_NUMBER.findall(question)}
+    for text in [t for t in resolved["values"] if t.strip() in counts]:
+        del resolved["values"][text]
+    for text in [t for t in resolved["unresolved"] if t.strip() in counts]:
+        resolved["unresolved"].remove(text)
+        resolved["unresolved_kinds"].pop(text, None)
+
+
 def resolve(db: sqlite3.Connection, dataset_id: str, entities: list[dict], columns: list[str]) -> dict:
     """`{columns: {text: column}, values: {text: [column, value]}, widgets: {text: widget_id}, unresolved: [text],
     unresolved_kinds: {text: kind}}`."""
