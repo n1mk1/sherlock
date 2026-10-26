@@ -51,6 +51,9 @@ LABELS = {
 NEVER_CHANGE = {"leakage": "Records the outcome, so it is marked as leakage and not changed",
                 "id_candidates": "Looks like an ID column, so it is left as is"}
 SKIP_TEXT = {"leakage": "excluded from models", "id_candidates": "left as is"}
+# Fixes that only make values readable (a placeholder becomes missing, "$4.20" becomes 4.2): an ID
+# flag doesn't block them, so a column taken for an ID by mistake still gets its types fixed.
+TYPE_FIXES = ("sentinels", "numbers_as_text")
 USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
@@ -67,15 +70,16 @@ def key(issue: dict) -> str:
 
 
 def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
-    """Columns that record the outcome or identify rows are marked, never changed, whatever the issue:
-    (reason, kind), kind being a `SKIP_TEXT` key, or None for an issue the Cleaner may fix."""
+    """Columns that record the outcome or identify rows are marked, never changed, whatever the issue
+    but a type fix on an ID column (`TYPE_FIXES`): (reason, kind), kind being a `SKIP_TEXT` key, or
+    None for an issue the Cleaner may fix."""
     reason = NEVER_CHANGE.get(issue["detector"])
     if reason is not None:
         return reason, issue["detector"]
     leaking = {c["column"] for c in card.get("leakage_candidates", [])}
     if issue["column"] in leaking:
         return f"{issue['column']} records the outcome, so it is not changed", "leakage"
-    if issue["column"] in set(card.get("id_columns", [])):
+    if issue["column"] in set(card.get("id_columns", [])) and issue["detector"] not in TYPE_FIXES:
         return f"{issue['column']} looks like an ID column, so it is left as is", "id_candidates"
     return None
 

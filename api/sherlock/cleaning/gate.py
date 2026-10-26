@@ -15,6 +15,12 @@ cells (`cells_affected`): it leaves every widget, model and story, so it isn't o
 A step the user asked for in the cleaning plan (`requested`, PRD CLEAN-8b) that would be skipped for
 low confidence commits with a flag instead, so it can be undone; with no candidate passing the hard
 checks it is still skipped.
+A domain-rule issue (`impossible_values`: a negative age, an age of 999; `domain_rule`) is kept the
+same way, flagged rather than skipped at low confidence. When the critic objects to its fix and the
+fix only quarantines the rows the rule names, the loop flags it (`overrule`) instead of skipping it:
+the rule, not the model, says those values are impossible.
+A near-duplicate merge that joins two spellings that are both common (a letter left out, "Wst" /
+"West", `details.review_pairs`) is never a plain commit: it is flagged for review (`review`).
 """
 
 from dataclasses import dataclass
@@ -46,7 +52,7 @@ def cells_affected(cells_changed: int, rows_quarantined: int, columns: int, tota
 
 
 def decide(scores: list[float], agree: float, review_ok: bool, cells_changed: int, total_cells: int,
-           requested: bool = False) -> Decision:
+           requested: bool = False, domain_rule: bool = False) -> Decision:
     best = max(scores) if scores else 0.0
     confidence = round(0.6 * best + 0.2 * agree + 0.2 * (1.0 if review_ok else 0.0), 4)
     blast = cells_changed / total_cells if total_cells else 0.0
@@ -59,4 +65,21 @@ def decide(scores: list[float], agree: float, review_ok: bool, cells_changed: in
         return Decision("flag", confidence, agree, blast, reason)
     if requested:
         return Decision("flag", confidence, agree, blast, f"low confidence ({confidence:.2f}); kept because you asked for it")
+    if domain_rule:
+        return Decision("flag", confidence, agree, blast,
+                        f"low confidence ({confidence:.2f}); kept because the values break the column's domain rule")
     return Decision("skip", confidence, agree, blast, f"low confidence ({confidence:.2f})")
+
+
+def overrule(decision: Decision, rule: str | None) -> Decision:
+    """A domain rule's quarantine the critic objected to: committed with a flag, never skipped."""
+    why = (f"the review objected, but every row it sets aside breaks the rule ({rule})" if rule
+           else "the review objected, but every row it sets aside breaks the column's domain rule")
+    return Decision("flag", decision.confidence, decision.agreement, decision.blast, why)
+
+
+def review(decision: Decision, pairs: list) -> Decision:
+    """A merge of two common spellings: flagged for review rather than committed."""
+    shown = "; ".join(f"{a} → {b}" for a, b in pairs[:3])
+    return Decision("flag", decision.confidence, decision.agreement, decision.blast,
+                    f"merges spellings that are both common ({shown}); check them")

@@ -7,7 +7,8 @@ Rules every helper keeps:
 - A parse never hides a failure: `parse_failures(original, parsed)` gives the rows that didn't
   parse, and the caller quarantines them.
 - A merge never joins categories that are different on purpose (`_merge_refusal`, plan 2.5): values
-  that differ only in their numbers ("Region 1", "Region 2"), or two values that are both common.
+  that differ only in their numbers ("Region 1", "Region 2"), or two values that are both common,
+  unless one is the other with an inner letter left out ("Wst", "West": a typo, `_dropped_letter`).
 """
 
 import re
@@ -159,7 +160,8 @@ def _merge_refusal(a, b, counts, rows):
     both common", else None. Values equal but for case and spacing always may be. Otherwise the
     merge is refused when they differ only in their numbers ("Region 1", "Region 2"; "Region 01" and
     "Region 1" are the same number) or when both are common, each on at least 5% of the rows and on
-    more than one ("Austria", "Australia"): then each is a category of its own. A value seen once is
+    more than one ("Austria", "Australia"): then each is a category of its own, unless one is the
+    other with an inner letter left out (`_dropped_letter`, "Wst" / "West"). A value seen once is
     never common, so a typo in a small file can still merge. `counts` maps `_merge_key` values to
     their row counts; `rows` is the column's length."""
     ka, kb = _merge_key(a), _merge_key(b)
@@ -168,9 +170,19 @@ def _merge_refusal(a, b, counts, rows):
     if (_NUMBERS.sub("#", ka) == _NUMBERS.sub("#", kb)
             and [int(n) for n in _NUMBERS.findall(ka)] != [int(n) for n in _NUMBERS.findall(kb)]):
         return "differ only in their numbers"
-    if min(counts.get(ka, 0), counts.get(kb, 0)) >= max(2, _COMMON_SHARE * rows):
+    if min(counts.get(ka, 0), counts.get(kb, 0)) >= max(2, _COMMON_SHARE * rows) and not _dropped_letter(ka, kb):
         return "are both common"
     return None
+
+
+def _dropped_letter(a: str, b: str) -> bool:
+    """One spelling is the other with one inner letter left out ("wst" / "west"): a typo even when both
+    are common. Only an inner letter, and the shorter keeps at least three letters: "sale" / "sales",
+    "car" / "card" and "mr." / "mrs." are values of their own."""
+    short, long_ = sorted((a, b), key=len)
+    if len(long_) != len(short) + 1 or sum(ch.isalpha() for ch in short) < 3:
+        return False
+    return any(long_[i].isalpha() and long_[:i] + long_[i + 1:] == short for i in range(1, len(long_) - 1))
 
 
 def canonicalize_categories(s: pd.Series, mapping=None, threshold=90) -> pd.Series:

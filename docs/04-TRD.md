@@ -1025,7 +1025,7 @@ As built:
 }
 ```
 
-Types: `int | float | bool | date | datetime | category | text | id | empty`. Roles: `measure | dimension | time | id | target_like | free_text | empty`. A column with no non-null values gets type and role `empty`: it is flagged, kept unchanged, and excluded from widgets, targets and features. Role inference, first match wins, in this order: empty → empty; unique ratio > 0.95 and name matches id patterns or is text → id; date-typed → time; binary or low-cardinality with name in a target-ish list (`target, label, outcome, survived, churn, converted, default, y`) or last column → target_like; integer columns with ≤ 12 distinct values → dimension; numeric non-id → measure; ≤ 50 distinct or ≤ 5% unique → dimension/category; mean text length > 40 → free_text.
+Types: `int | float | bool | date | datetime | category | text | id | empty`. Roles: `measure | dimension | time | id | target_like | free_text | empty`. A column with no non-null values gets type and role `empty`: it is flagged, kept unchanged, and excluded from widgets, targets and features. Role inference, first match wins, in this order: empty → empty; unique ratio > 0.95 and name matches id patterns or is text → id (text that mostly reads as amounts is excepted unless its name matches, §7.1); date-typed → time; binary or low-cardinality with name in a target-ish list (`target, label, outcome, survived, churn, converted, default, y`) or last column → target_like; integer columns with ≤ 12 distinct values → dimension; numeric non-id, or text that mostly reads as amounts → measure; ≤ 50 distinct or ≤ 5% unique → dimension/category; mean text length > 40 → free_text.
 
 DataCard as implemented (`sherlock/profile/datacard.py`):
 - **Top level.** The card adds `quarantined`: rows with a `_quarantine_reason`, which are left out of the card, so `row_count` counts the usable rows. `column_count` counts user columns, not `_row_id` or `_quarantine_reason`. `target_candidates`, `time_columns` and `id_columns` list the columns whose role is `target_like`, `time` and `id`, in file order. A `target_like` column is a target candidate only when a driver analysis could explain it (`ml.registry.target_ok`, §6.5): a free-text column that repeats a few long values keeps its role but is not a candidate.
@@ -1358,7 +1358,7 @@ Implementation of steps 3–5 (`sherlock/profile/`, `sherlock/cleaning/detectors
   3. `float`: `pd.to_numeric`
   4. `date` or `datetime`: ISO 8601, then the format set (`%d/%m/%Y`, `%m/%d/%Y`, `%d.%m.%Y`, `%Y/%m/%d`, `%d-%m-%Y`, `%m-%d-%Y`, named months, two-digit years); `datetime` if any value has a time
      - Timestamps with more than one UTC offset in a column (daylight saving, `-05:00` and `-04:00`) don't count as dates: pandas can't hold them as one datetime column, so the column falls through to the text rules and isn't typed.
-  5. `id`: text with > 95% unique values and at least 20 values
+  5. `id`: text with > 95% unique values and at least 20 values, unless at least half of its values read as amounts (`infer.measure_like`: a number with a decimal part, or written as money, a percentage or with thousands separators, such as "36.74", "$4.20", "1,250", "12%"; a bare whole number such as "1001" isn't one). Such a column is a measure stored as text ("36.74" with a few "$4.20" and "n/a"), not an ID: it falls through to the rules below (PRD CLEAN-4d).
   6. `category`: ≤ 50 distinct or ≤ 5% unique
   7. otherwise `text`
 
@@ -1369,25 +1369,27 @@ Implementation of steps 3–5 (`sherlock/profile/`, `sherlock/cleaning/detectors
   - "low-cardinality" means ≤ 10 distinct values
   - the id rule needs at least 20 values
   - a text column that matches no rule is a `dimension`
+  - a text or category column that reads as amounts (`measure_like`) is never `id` unless its name matches the id patterns, and its role is `measure`: the Cleaner's numbers-as-text and placeholder fixes make it a number. Widgets and models still take measures only of type `int` or `float`, so it joins them once parsed.
 - **Detectors.** 16 modules, one per detector, each with unit tests on synthetic columns. All are generic: name-based rules use word lists, never dataset names. Severity = min(count / rows, 1) × the weight above.
   - `missing`: per column. Columns whose missing masks overlap ≥ 90% (Jaccard) are listed as `missing_with`.
   - `mixed_types`: 50–99% of values numeric (formatted numbers count as numeric), counting the rest. It skips columns whose odd values mostly contain digits, since those are alphanumeric codes. The same test applies for dates.
   - `sentinels`: the sentinel strings (blank included), plus -99999, -9999, -999, -99, 999, 9999 and 99999 when the value repeats and lies beyond 3 × IQR of the other values (at least 10 of them).
   - `whitespace_case`: stray or doubled spaces, and spellings that differ only by case or spacing (the minority spellings).
-  - `near_duplicate_categories`: category or text columns with role dimension or target-like and 3–200 distinct values. Pairs of values (≥ 4 characters) with rapidfuzz ratio ≥ 85; the rarer one counts. As built, a pair the merge rule refuses isn't one (`helpers._merge_refusal`, §7.2): values that differ only in their numbers ("region 1" / "region 2" scored 87.5) or that are both common (each on at least 5% of the rows and on more than one, "austria" / "australia"). `details.pairs` lists the pairs that may merge, `[rare, common]`, at most 20.
+  - `near_duplicate_categories`: category or text columns with role dimension or target-like and 3–200 distinct values. Pairs of values (≥ 4 characters, or three letters such as "wst") with rapidfuzz ratio ≥ 85; the rarer one counts. As built, a pair the merge rule refuses isn't one (`helpers._merge_refusal`, §7.2): values that differ only in their numbers ("region 1" / "region 2" scored 87.5) or that are both common (each on at least 5% of the rows and on more than one, "austria" / "australia"), unless one is the other with one inner letter left out and the shorter keeps at least three letters (`helpers._dropped_letter`: "wst" / "west" is a typo; "sale" / "sales", a last letter, and "mr." / "mrs.", two letters, are values of their own). `details.pairs` lists the pairs that may merge, `[rare, common]`, at most 20, and `details.review_pairs` those of them that are both common: the step that merges them is flagged for review (§7.2, PRD CLEAN-4b).
   - `duplicates`: exact rows, and rows equal after trimming and case-folding.
   - `impossible_values`:
     - negatives where the name says quantity (age, price, fare, amount, count, weight, salary, duration, …)
     - ages over 120
     - percentages outside 0–100
     - dates in the future or before 1800
+    - `details` holds the column's rule: `rule` in words ("customer_age must be between 0 and 120"), `low` and `high` for numbers (either may be null), `earliest` and `after` (ISO dates; a value later than `after`'s midnight is in the future) for dates. The Cleaner builds the rule's own fix from it (§7.2, PRD CLEAN-4c).
   - `numbers_as_text`: currency symbols and codes, thousands separators (`,` or `.` or space in groups of three), comma decimals, `%`, `(300)` and trailing-minus negatives.
   - `ambiguous_dates`: d/m/y-shaped values where no part exceeds 12 (ambiguous), or where both orders appear (mixed).
   - `mojibake`: ftfy's `is_bad` where `fix_text` changes the value.
   - `unit_mixes`: ≥ 50% of values are number + unit, with two or more units.
   - `cross_column`: name pairs start/end, begin/end, from/to, min/max, open/close, created/updated, birth/death, departure/arrival, check_in/check_out, where the later value is smaller.
   - `functional_dependency`: between the first 12 dimension or target-like columns (category, text, bool or int, 2–1,000 values). A → B holds for at least 95% but not all of the rows in repeated A groups, at least 20 points above B's majority share, with A at least as distinct as B and at least 3 values, and with the repeated groups at least half the rows.
-  - `id_candidates`: role id, or ≥ 98% unique and ≥ 95% present (in a file of at least 20 rows).
+  - `id_candidates`: role id, or ≥ 98% unique and ≥ 95% present (in a file of at least 20 rows) and not amounts: a `float` column or text that reads as amounts (`infer.measure_like`) is a measure however unique (PRD CLEAN-4d). Whole numbers and codes still count.
   - `outliers`: measures with at least 20 values. Robust z (MAD) > 5, or 3 × IQR when MAD is 0. Skewed non-negative columns (skew > 2) are scored on `log1p`.
   - `leakage`: for each target-like column, a column leaks when either rule holds:
     - Value rule: its values (missing as a value, ≤ 50% unique) predict the target at ≥ 95% accuracy and ≥ 20 points above the majority class.
@@ -1446,7 +1448,7 @@ Schemas as built (`sherlock/llm/schemas.py`): `Diagnosis` adds two fields to `{c
 
 The loop as built (`sherlock/cleaning/loop.py`, `sherlock/jobs/clean.py`):
 - **Order of an issue.**
-  1. Diagnose (`large`). With `leave_as_is`, the issue is skipped as "Left as is: <cause>" and no code is proposed.
+  1. Diagnose (`large`). With `leave_as_is`, the issue is skipped as "Left as is: <cause>" and no code is proposed, unless the step was requested or the issue is a domain rule's (below).
   2. Candidates (`large`, up to 6,000 tokens). As built, a candidate whose code doesn't parse but does once its literal `
 ` are read as line breaks (Ultra sometimes escapes them twice, so the code arrives as one line) runs with the line breaks back (`loop.runnable`); that code is the step's code. A candidate the sandbox refuses names its first violation in the skip reason ("The code uses something the sandbox doesn't allow. (line 1: syntax error: …)").
   3. Each candidate in the sandbox on the sample, scored by the verifiers.
@@ -1465,7 +1467,16 @@ The loop as built (`sherlock/cleaning/loop.py`, `sherlock/jobs/clean.py`):
   - Code that removes rows isn't rewritten to quarantine them: the `row_ledger` check fails it, so the candidate scores 0. The prompts tell the model to call `quarantine_rows` instead.
 
   A newly quarantined row counts as all of its cells in the blast (`gate.cells_affected`, capped at the dataset's cells), since it leaves every widget, model and story.
-- **The queue.** After every attempt, the next issue is the most severe one on the current version's card whose `detector|column` hasn't been attempted. Leakage and ID-candidate issues are never changed: they're logged as skipped ("Records the outcome, so it is marked as leakage and not changed", "Looks like an ID column, so it is left as is") with no model call, and they don't count against the 20-issue budget. The same goes for every other issue on a column in the card's `leakage_candidates` or `id_columns` ("body records the outcome, so it is not changed").
+- **The queue.** After every attempt, the next issue is the most severe one on the current version's card whose `detector|column` hasn't been attempted (a column's placeholders go before its domain rule, below). Leakage and ID-candidate issues are never changed: they're logged as skipped ("Records the outcome, so it is marked as leakage and not changed", "Looks like an ID column, so it is left as is") with no model call, and they don't count against the 20-issue budget. The same goes for every other issue on a column in the card's `leakage_candidates` or `id_columns` ("body records the outcome, so it is not changed"), except the type fixes on an ID column (`plan.TYPE_FIXES`: `sentinels` and `numbers_as_text`, which only make values readable), so a column taken for an ID by mistake still gets its placeholders and formatted numbers fixed (PRD CLEAN-4d).
+- **Domain rules** (PRD CLEAN-4c; `loop.DOMAIN_RULES`, the `impossible_values` detector). A value outside its column's plausible domain is quarantined, not kept and not replaced by a guess:
+  - The queue takes a column's `sentinels` issue just before its domain rule, whatever their severities (`loop.queue`), so a placeholder such as "-999" in an age becomes a missing value rather than quarantining its row; the rule then takes what is left (a −5, or a placeholder whose fix was skipped).
+  - The diagnosis' `leave_as_is` doesn't end the issue.
+  - `loop.rule_candidate` builds the rule's own fix from the issue's `details` and adds it after the model's candidates, labelled "Quarantine impossible values": `values = pd.to_numeric(df['customer_age'], errors='coerce')`, `bad = (values < 0) | (values > 120)`, `result = quarantine_rows(df, bad, 'impossible: customer_age')` (`pd.to_datetime` and the two dates for a date rule). If the propose call's output is invalid, it is the only candidate.
+  - When it passes the checks it is the chosen fix, whatever the model's candidates score: clipping an age of 999 to 120 is a guess. The model's candidates stay as alternatives and count in the agreement.
+  - `gate.decide(…, domain_rule=True)` turns a low-confidence skip into a flag ("low confidence (0.42); kept because the values break the column's domain rule").
+  - When the critic says the fix changed something it shouldn't have, and the fix only quarantines rows, rewrites no cell and leaves none of the issue (`loop.rule_only`), the step is committed with a flag (`gate.overrule`: "the review objected, but every row it sets aside breaks the rule (customer_age must be between 0 and 120)") instead of skipped. Any other fix the critic objects to is still skipped.
+- **Merges of two common spellings** (PRD CLEAN-4b). A near-duplicate issue with `details.review_pairs` ("wst" / "west", both common) whose step the gate would commit is flagged instead (`gate.review`: "merges spellings that are both common (wst → west); check them"), so the merge waits in the report for review and can be undone.
+- **Progress** (PRD CLEAN-2). `job.progress` is "Step <attempted> · <column>" with `of` = the issues the run expected when it started (`RunState.planned`: the user's steps plus one per key of the card's issues `_next_issue` would attempt rather than skip, `Cleaner._attemptable`, at most `CLEAN_MAX_STEPS`). It grows only when the run attempts more than that (issues a fix exposed); a run that ends earlier, because fixes settled later issues, jumps to 100% at `done`. Before, the total was the attempted count plus 5, so it grew with every step.
 - **The sample.** Datasets of up to 2,000 rows are used whole. A larger one gets up to 1,000 rows that have the issue (missing cells for `missing`, the issue's example values otherwise, its example `_row_id`s for row-level detectors) and fills the rest at random (seed 42). It's copied from the version's Parquet, so column types are the real ones.
 - **The vote.** `ambiguous_dates` diagnoses three times at temperature 0.7 and takes the majority `preferred_option`. With no majority it takes option 0, the most conservative by the prompt's ordering.
 - **A date order the user picked** (plan 2b.9). `plan.run_params` gives `date_orders` by key (ticked items with an order). `_next_issue` returns such an issue `requested`, with `date_order` and the instruction `plan.order_instruction` ("Read every date in visit_date day-first (dd/mm/yyyy): parse it with order_hint \"dmy\"."), after the user's own rewrite of the fix if there is one. `_diagnose` then makes one call instead of the vote's three, and the step's decision and the report's `your_steps` show the instruction (`report._your_steps` lists items with a `date_order` as well as those with an instruction).
@@ -1475,7 +1486,7 @@ The loop as built (`sherlock/cleaning/loop.py`, `sherlock/jobs/clean.py`):
   - Hand-edited cells (`user_edited_cells`) keep their values unless `include_user_edited`, and are listed in the report's `hand_edited_skipped`.
   - A candidate that changes a column's type can't be limited to some rows, so in a scoped clean it scores 0 ("it changes the type of …"). In a whole-dataset clean, a hand-edited cell in a column the step retypes is parsed with the rest of the column.
 - **The step.** Kind `clean`, `created_by` `cleaner`.
-  - The summary is "<candidate label> (<column>)".
+  - The summary is "<candidate label> (<column>)", or the label alone when it already names the column in brackets (`loop.step_summary`: "Parse numbers (units)", never "… (units) (units)").
   - `notebook_code` is the code plus `df = result`.
   - `helpers_used` lists the helpers the code calls.
   - `parse_failures` is the rows the step quarantined.

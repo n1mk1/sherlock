@@ -6,7 +6,9 @@ For each issue, most severe first, while the budget lasts (`CLEAN_MAX_STEPS` iss
   scored by the verifiers → the best on the full data, verified again → critic (medium) →
   gate → commit_step (commit or flag) or skip; then re-profile and pick the next issue.
 
-Leakage and ID-like columns are never changed: they are logged as skipped without a model call.
+Leakage and ID-like columns are never changed: they are logged as skipped without a model call
+(an ID column's placeholders and formatted numbers are still fixed, `plan.TYPE_FIXES`). A value
+that breaks the column's domain rule (`DOMAIN_RULES`) is quarantined by the rule's own fix.
 A run started from a cleaning plan (`params.plan`, PRD CLEAN-8a) skips the fixes the plan leaves
 unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted.
 The user's own steps (CLEAN-8b) run first, then the issues; a step the user asked for, or a fix they
@@ -43,7 +45,7 @@ from sherlock.config import Settings
 from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobCancelled, JobContext
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, cap_values, escape_data
-from sherlock.llm.schemas import Candidates, Critique, Diagnosis
+from sherlock.llm.schemas import Candidate, Candidates, Critique, Diagnosis
 from sherlock.profile import service as profile_service
 from sherlock.sandbox import runner as sandbox
 from sherlock.sandbox.worker import output_select
@@ -58,6 +60,13 @@ USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data b
 LEFT_AS_IS = "the values look legitimate"  # when the diagnosis' own cause has digits
 VOTE_DETECTORS = ("ambiguous_dates",)
 VOTES = 3
+# A detector whose finding breaks the column's domain rule (a negative age, an age of 999): the
+# diagnosis' "leave as is" doesn't end it, the rule's own quarantine joins the candidates and is the
+# fix whenever it passes the checks (no guessed replacement), and a low confidence or the critic's
+# objection to a fix that only quarantines what the rule names flags the step instead of skipping it
+# (TRD §7.2).
+DOMAIN_RULES = ("impossible_values",)
+RULE_LABEL = "Quarantine impossible values"
 
 
 @dataclass
@@ -68,6 +77,7 @@ class RunState:
     ended_by: str = "done"
     waited_for_model_s: float = 0.0
     attempted: int = 0
+    planned: int = 0                                            # issues expected at the start: the progress total
     started: float = field(default_factory=time.monotonic)
     handled: list[str] = field(default_factory=list)          # "detector|column" keys already attempted
     skipped: list[dict] = field(default_factory=list)          # {issue_id, column, detector, reason}
@@ -115,6 +125,55 @@ def short_line(issue: dict) -> str:
         text = issue["instruction"]
         return f"Your step: {text if len(text) <= 80 else text[:79] + '…'}"
     return f"{issue['count']:,} {issue_words(issue)}"
+
+
+def rule_candidate(issue: dict) -> Candidate | None:
+    """The domain rule's own fix for an impossible-values issue: quarantine the rows it names, built by
+    code from the detector's `details`, so a value outside the column's domain has a fix whatever the
+    model proposes. None for other issues, or a rule the details don't give."""
+    column, d = issue.get("column"), issue.get("details") or {}
+    if issue.get("user") or issue["detector"] not in DOMAIN_RULES or column is None:
+        return None
+    if d.get("earliest") and d.get("after"):
+        load = f"values = pd.to_datetime(df[{column!r}], errors='coerce')"
+        tests = [f"(values < pd.Timestamp({d['earliest']!r}))", f"(values > pd.Timestamp({d['after']!r}))"]
+    else:
+        load = f"values = pd.to_numeric(df[{column!r}], errors='coerce')"
+        tests = [f"(values {op} {d[k]!r})" for k, op in (("low", "<"), ("high", ">")) if d.get(k) is not None]
+    if not tests:
+        return None
+    code = f"{load}\nbad = {' | '.join(tests)}\nresult = quarantine_rows(df, bad, {'impossible: ' + column!r})"
+    return Candidate(label=RULE_LABEL, code=code,
+                     expected_effect="Sets aside the rows whose value breaks the column's domain rule.")
+
+
+def queue(issues: list[dict]) -> list[dict]:
+    """The card's issues in the order the Cleaner attempts them: most severe first, except that a
+    column's placeholders go just before its domain rule, so a "-999" age becomes a missing value
+    rather than quarantining its row; the rule then takes what is left."""
+    rule: dict[str, float] = {}
+    for i in issues:
+        if i["detector"] in DOMAIN_RULES:
+            rule[i["column"]] = max(rule.get(i["column"], 0.0), i["severity"])
+
+    def rank(i: dict) -> tuple[float, int]:
+        if i["detector"] == "sentinels" and i["column"] in rule:
+            return -max(i["severity"], rule[i["column"]]), 0
+        return -i["severity"], 1
+
+    return sorted(issues, key=rank)
+
+
+def rule_only(report: verifiers.Report) -> bool:
+    """A fix that only quarantines rows and leaves none of the issue: no cell rewritten."""
+    return report.quarantined > 0 and report.cells_changed == 0 and report.issue_after == 0
+
+
+def step_summary(label: str, column: str | None) -> str:
+    """"<label> (<column>)", without naming the column twice when the label already does ("(units)")."""
+    if not column or f"({column})" in label:
+        return label
+    return f"{label} ({column})"
 
 
 def runnable(code: str) -> str:
@@ -280,6 +339,7 @@ class Cleaner:
         self.protected = self.protected_cells()
         self._checkpoint()  # the report (and the live screen's counts) can read the run from the start
         self._log_typing_step()
+        self.state.planned = min(s.clean_max_steps, self._planned())
         try:
             while True:
                 self.ctx.check_cancel()
@@ -324,6 +384,18 @@ class Cleaner:
             self.ctx.log(f"{row['summary']} (automatic step {row['no']})", icon="check", column="all columns",
                          gate="commit", step_id=row["id"], step_no=row["no"])
 
+    def _attemptable(self, issue: dict, card: dict) -> bool:
+        """Whether `_next_issue` would attempt the issue rather than skip it with no model call."""
+        k = key(issue)
+        return (never_change(issue, card) is None and k not in self.skip_keys
+                and not (needs_order(issue) and k not in self.date_orders and k not in self.instructions))
+
+    def _planned(self) -> int:
+        """The issues the run expects to attempt, for the progress total: the user's steps, then one per
+        key of the card's issues it would attempt. Fixes can expose more, or settle some before their turn."""
+        card = self._card()
+        return len(self.user_steps) + len({key(i) for i in card["issues"] if self._attemptable(i, card)})
+
     def _next_issue(self) -> dict | None:
         for step in self.user_steps:  # the user's own steps first, in the plan's order
             if f"user|{step['id']}" not in self.state.handled:
@@ -331,7 +403,7 @@ class Cleaner:
                         "severity": USER_SEVERITY, "proposal": step["instruction"], "examples": [], "details": {},
                         "user": True, "requested": True, "instruction": step["instruction"], "plan_item_id": step["id"]}
         card = self._card()
-        for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
+        for issue in queue(card["issues"]):
             if key(issue) in self.state.handled:
                 continue
             # Columns that record the outcome or identify rows are marked, never changed, whatever the issue.
@@ -405,9 +477,11 @@ class Cleaner:
         self.state.attempted += 1
         column = issue["column"]
         requested = bool(issue.get("requested"))
+        rule = rule_candidate(issue)  # a domain rule (impossible values): no diagnosis or review leaves it be
         detector = None if issue.get("user") else issue["detector"]  # a user step has no detector to re-run
-        cap = min(self.settings.clean_max_steps, self.state.attempted + 5)
-        self.ctx.progress(self.state.attempted, cap, f"Step {self.state.attempted} · {column or 'rows'}")
+        # The total is the issues the run expected at its start; it grows only if a fix exposes more.
+        self.ctx.progress(self.state.attempted, max(self.state.planned, self.state.attempted),
+                          f"Step {self.state.attempted} · {column or 'rows'}")
         self.ctx.log(short_line(issue), icon="running", column=column, detail="checking candidates", issue_id=issue["id"])
         version, path = self._current_parquet()
         before = self._read(path)
@@ -416,18 +490,22 @@ class Cleaner:
             diagnosis = self._diagnose(issue, card, before)
         except StructuredOutputError:
             return self._skip(issue, "model output invalid")
-        if diagnosis.leave_as_is and not requested:  # the user asked for it: the diagnosis doesn't end it
+        if diagnosis.leave_as_is and not requested and rule is None:  # asked for, or a domain rule: not ended here
             return self._skip(issue, f"Left as is: {prose(diagnosis.cause) or LEFT_AS_IS}")
         try:
-            proposed = self._propose(issue, diagnosis, before)
+            proposed = list(self._propose(issue, diagnosis, before).candidates)
         except StructuredOutputError:
-            return self._skip(issue, "model output invalid")
+            if rule is None:
+                return self._skip(issue, "model output invalid")
+            proposed = []
+        if rule is not None:
+            proposed.append(rule)
         sample_path = self.work / f"sample_{uuid.uuid4().hex}.parquet"
         _copy_rows(path, sample_path, self._sample_ids(before, issue))
         sample = self._read(sample_path)
         scored = []
         results: list[pd.DataFrame | None] = []  # each candidate's result on the sample, None when it failed
-        for cand in proposed.candidates:
+        for cand in proposed:
             self.ctx.check_cancel()
             out = self.work / f"cand_{uuid.uuid4().hex}.parquet"
             r = sandbox.execute(self.settings, cand.code, sample_path, out, db=self.db,
@@ -451,6 +529,8 @@ class Cleaner:
             results.append(after if report.passed else None)
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         best_i = best_candidate(scored, len([c for c in sample.columns if c not in verifiers.SYSTEM]))
+        if rule is not None and scored[-1][1] > 0.0:  # the domain rule's quarantine (last) beats a guessed value
+            best_i = len(scored) - 1
         if best_i is None or scored[best_i][1] == 0.0:
             why = next((e for *_, e in scored if e), "no candidate passed the checks")
             return self._skip(issue, f"No candidate passed the checks ({why})", candidates=chips)
@@ -490,16 +570,25 @@ class Cleaner:
             review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
         except StructuredOutputError:
             critique, review_ok = None, False
+        overruled = False
         if critique is not None and critique.changed_something_it_shouldnt:
             # The critic's verdict skips the step (owner's decision, 2026-10-25): its 0.2 share of the
             # confidence couldn't stop a commit with a flag (Day 3 review H2). Concerns alone still don't.
-            return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", candidates=chips,
-                              checks=full_report.hard)
+            # A domain rule's fix that only quarantines the rows the rule names is flagged instead: the
+            # rule, not the model, says those values are impossible.
+            if rule is None or not rule_only(full_report):
+                return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", candidates=chips,
+                                  checks=full_report.hard)
+            overruled = True
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
         total_cells = len(before) * max(len(user_cols), 1)
         affected = gate.cells_affected(full_report.cells_changed, full_report.quarantined, len(user_cols), total_cells)
         decision = gate.decide([s for _, s, *_ in scored], compared.agreement, review_ok, affected, total_cells,
-                               requested=requested)
+                               requested=requested, domain_rule=rule is not None)
+        if overruled:
+            decision = gate.overrule(decision, (issue.get("details") or {}).get("rule"))
+        elif decision.gate == "commit" and (issue.get("details") or {}).get("review_pairs"):
+            decision = gate.review(decision, issue["details"]["review_pairs"])
         if decision.gate == "skip":
             return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
         restricted = full_out
@@ -511,7 +600,7 @@ class Cleaner:
         if concerns and decision.gate == "flag":
             flag_reason = f"{decision.reason}; the review noted: {concerns[0]}"
         spec = StepSpec(
-            kind="clean", summary=f"{best.label} ({column})" if column else best.label, created_by="cleaner",
+            kind="clean", summary=step_summary(best.label, column), created_by="cleaner",
             notebook_code=self._notebook_code(best.code), code=best.code, column_targets=[column] if column else [],
             helpers_used=[h for h in HELPER_NAMES if h + "(" in self._notebook_code(best.code)], confidence=decision.confidence,
             gate=decision.gate, flag_reason=flag_reason, parse_failures=full_report.quarantined,

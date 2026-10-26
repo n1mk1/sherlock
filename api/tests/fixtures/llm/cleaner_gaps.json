@@ -1,0 +1,18 @@
+[
+  {"purpose": "diagnose", "match": ["Column: customer_age", "impossible_values"],
+   "content": {"cause": "These look like legitimate entries.", "approach_options": ["Leave them", "Quarantine them"],
+               "preferred_option": 0, "risk": "high", "leave_as_is": true}},
+  {"purpose": "propose", "match": ["Column: customer_age", "impossible values"],
+   "content": {"candidates": [{"label": "Clip ages", "code": "result = df.copy()\nresult['customer_age'] = result['customer_age'].clip(lower=0, upper=120)",
+                               "expected_effect": "Clips the ages into a plausible range."}]}},
+  {"purpose": "critic", "match": ["Column: customer_age", "Quarantine impossible values"],
+   "content": {"changed_something_it_shouldnt": true, "concerns": ["Some of these ages may be real."]}},
+  {"purpose": "diagnose", "match": ["Column: region", "near_duplicate_categories", "wst"],
+   "content": {"cause": "A letter was left out of one region's name.", "approach_options": ["Merge the listed pairs", "Leave them"],
+               "preferred_option": 0, "risk": "medium", "leave_as_is": false}},
+  {"purpose": "propose", "match": ["Column: region", "wst"],
+   "content": {"candidates": [{"label": "Merge the listed pairs (region)", "code": "result = df.copy()\nresult['region'] = canonicalize_categories(df['region'], mapping={'Wst': 'West'})",
+                               "expected_effect": "Merges the misspelt region into its neighbour."}]}},
+  {"purpose": "critic", "match": ["Column: region", "Merge the listed pairs"],
+   "content": {"changed_something_it_shouldnt": false, "concerns": []}}
+]

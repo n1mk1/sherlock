@@ -114,6 +114,10 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - Exact and near duplicate rows share one issue key, `duplicates|None` (`detectors/duplicates.py`), so the cleaning plan shows, and the Cleaner attempts, only the more severe of the two; the other is never tried or listed (App Flow §4.1, TRD §4.4; `cleaning/plan.py`, `loop.py` `handled`). Give near duplicates a key of their own.
 - Chat answers given during cleaning don't say which version or step they read ("as of step 5", App Flow §5).
   - Since plan 2b.4 every message carries `version` (TRD §4.9) and older answers lose Add to Flow, but the thread shows no "v3" mark on an answer from an older version; `ChatBar.tsx` would need the dataset's current version beside each message.
+- Left from the live test of 2026-10-26 (findings 5, 6, 18–20 fixed on the Cleaner side; LOG 2026-10-26 "Cleaner gaps"):
+  - One Ultra `propose` call was cut off at its 6,000-token cap on the hostile file (finding 19); the candidate list then fails and the issue is skipped as "model output invalid". Raise the cap for propose or ask for shorter code.
+  - A merge flagged for review names its pairs case-folded ("wst → west"), as the detector's `details.pairs` holds them, not as the file spells them ("Wst → West").
+  - `canonicalize_categories` without a mapping uses a ratio of 90, so a letter left out of a short value ("Wst" / "West", 85.7) merges only when the model passes the detector's pairs as a `mapping` (the prompts ask it to). The fix wasn't run live (no live Cleaner run in this slice).
 - The CSV tab's Clean with AI (`CleanButton` in `CsvTab.tsx`) has no dot before the first clean, and neither the cleaning plan nor the cleaning report offers to include hand-edited cells ("Include these next time"): `api/queries.ts` always sends `include_user_edited: false` (App Flow §4, §8.4; PRD CLEAN-8).
 
 ### Dashboard and chat

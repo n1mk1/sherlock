@@ -4,6 +4,8 @@ Types are inferred from the text of each value, because version 1 is imported al
 A type wins when at least 99% of the non-missing values parse as it. A column of dates that every
 one reads both ways (day-first and month-first, no part over 12, the readings apart) isn't a date:
 no order is guessed, and the Cleaner's plan asks for one (plan 2.6, TRD §7.1).
+Mostly-unique values that read as amounts (`measure_like`: "36.74", "$4.20", "1,250", "12%") are a
+measure stored as text, not an ID: an ID is codes or whole numbers, or a column named like one.
 """
 
 import re
@@ -28,6 +30,11 @@ SWAPPED = {"%d/%m/%Y": "%m/%d/%Y", "%m/%d/%Y": "%d/%m/%Y", "%d-%m-%Y": "%m-%d-%Y
 ID_NAME = re.compile(r"(^id$|_id$|^id_|uuid|guid|(^|_)key$|(^|_)code$|(^|_)number$|^no$|_no$|^num$)", re.I)
 TARGET_NAMES = frozenset({"target", "label", "outcome", "survived", "churn", "converted", "default", "y"})
 NUMERIC_TYPES = frozenset({"int", "float"})
+# An amount: a number with a decimal part, or written as money, a percentage or with thousands
+# separators. A bare whole number ("1001", "00123") isn't one: it may be an ID.
+AMOUNT = re.compile(r"[+-]?\(?[+-]?(?:[$€£¥₹]\s?)?(?:\d{1,3}(?:[, ]\d{3})+|\d+)(?:[.,]\d+)?\)?\s?(?:%|[$€£¥₹])?")
+AMOUNT_SHARE = 0.5
+AMOUNT_SAMPLE = 5000  # a longer column is judged on a fixed sample of its values
 
 
 @dataclass
@@ -142,10 +149,20 @@ def _from_db_type(db_type: str) -> str:
     return "text"
 
 
+def measure_like(text: pd.Series) -> bool:
+    """At least half of the values are amounts (`AMOUNT`, not bare whole numbers): a measure stored as
+    text, such as prices with a few "$4.20" among them, never an ID however unique its values."""
+    if text.empty:
+        return False
+    if len(text) > AMOUNT_SAMPLE:
+        text = text.sample(AMOUNT_SAMPLE, random_state=0)
+    return bool((text.str.fullmatch(AMOUNT) & ~text.str.fullmatch(INT_RE)).mean() >= AMOUNT_SHARE)
+
+
 def _textual_type(col: Column) -> str:
     n = len(col.text)
     unique_ratio = col.text.nunique() / n
-    if unique_ratio > 0.95 and n >= 20:
+    if unique_ratio > 0.95 and n >= 20 and not measure_like(col.text):
         return "id"
     if col.text.nunique() <= 50 or unique_ratio <= 0.05:
         return "category"
@@ -160,7 +177,8 @@ def infer_role(col: Column, is_last: bool) -> None:
         return
     distinct = col.text.nunique()
     unique_ratio = distinct / n if n else 0.0
-    if unique_ratio > 0.95 and n >= 20 and (ID_NAME.search(col.name) or col.type in ("text", "id")):
+    amounts = col.type in ("text", "category") and measure_like(col.text)
+    if unique_ratio > 0.95 and n >= 20 and (ID_NAME.search(col.name) or (col.type in ("text", "id") and not amounts)):
         col.role = "id"
     elif col.type in ("date", "datetime"):
         col.role = "time"
@@ -168,7 +186,7 @@ def infer_role(col: Column, is_last: bool) -> None:
         col.role = "target_like"
     elif col.type == "int" and distinct <= 12:
         col.role = "dimension"
-    elif col.type in NUMERIC_TYPES:
+    elif col.type in NUMERIC_TYPES or amounts:  # amounts stored as text: the Cleaner parses them
         col.role = "measure"
     elif distinct <= 50 or unique_ratio <= 0.05:
         col.role = "dimension"
