@@ -1060,7 +1060,9 @@ export interface paths {
         get?: never;
         /**
          * Put Settings
-         * @description Accepts a full or partial Settings; fields left out keep their stored value.
+         * @description Accepts a full or partial Settings; fields left out keep their stored value. Switching "Story
+         *     updates" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,
+         *     so they're brought up to date without a new edit (plan 2b.3).
          */
         put: operations["put_settings_api_v1_me_settings_put"];
         post?: never;

@@ -4471,7 +4471,7 @@
   },
   "/api/v1/me/settings": {
    "put": {
-    "description": "Accepts a full or partial Settings; fields left out keep their stored value.",
+    "description": "Accepts a full or partial Settings; fields left out keep their stored value. Switching \"Story\nupdates\" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,\nso they're brought up to date without a new edit (plan 2b.3).",
     "operationId": "put_settings_api_v1_me_settings_put",
     "requestBody": {
      "content": {
