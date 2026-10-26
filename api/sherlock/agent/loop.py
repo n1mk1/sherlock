@@ -3,7 +3,8 @@
 Per message: context → route (`small`, schema `Route`, reasoning off) → clarification if ambiguous →
 resolve names → run up to two intents → compose → verify → save the message with its focus. The
 intents are `ask_data`, `find_rows`, `explain_widget`, `ask_history` and `create_widget` (D4.3), and
-`ask_stats`, `ask_why`, `ask_model`, `ask_meaning` and `app_help` (D7.3, `insight.py`); each tab
+`ask_stats`, `ask_why`, `ask_model`, `ask_meaning` and `app_help` (D7.3, `insight.py`), and `web_context`
+(outside-world questions answered from a web search, PRD ASK-11, `web.py`); each tab
 exposes its own set (TRD §8.2), plus `edit_plan` while a cleaning plan is open (`context.plan_id`, PRD CLEAN-8b).
 Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
 the message is saved even if nobody is listening any more.
@@ -19,6 +20,7 @@ from collections.abc import Callable
 
 from sherlock.agent import actions as acts
 from sherlock.agent import flow, insight, prompts
+from sherlock.agent import web as aw
 from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import resolve, widget_options
@@ -30,6 +32,7 @@ from sherlock.llm.client import (
 from sherlock.llm.schemas import Plan, Route
 from sherlock.profile import service as profile_service
 from sherlock.stories.wording import wording_problem
+from sherlock.web.client import WebClient
 from sherlock.widgets import compile as wc
 from sherlock.widgets import service as ws
 
@@ -40,7 +43,7 @@ CARD_CHARS = 16_000  # about 4k tokens
 NOT_YET: dict[str, str] = {}
 # Tool exposure by tab (TRD §8.2): the answerers everywhere, actions where they belong.
 ANSWERERS = ("ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats", "ask_model",
-             "ask_meaning", "app_help")
+             "ask_meaning", "app_help", "web_context")
 TOOLS = {
     "dashboard": ANSWERERS + ("create_widget", "update_widget"),
     "csv": ANSWERERS + ("edit_cells", "clean_selection"),
@@ -62,10 +65,18 @@ STEP_LABELS = {"ask_data": "Query the data", "find_rows": "Find the rows", "expl
                "edit_cells": "Propose the edits", "clean_selection": "Propose a clean", "edit_plan": "Change the plan"}
 SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at a time (TRD §8.1 step 1)
 DATA_INTENTS = ("ask_data", "find_rows")
-INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help")
+INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help", "web_context")
 DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
 # A significance test only when the message asks about one: live (D8.4 eval), Nano sent "what is the
 # overall survival rate?" and "what is the return rate?" to ask_stats.
+# The cleaning history only when the message is about what changed in the file: live (T-1 eval), Nano sent
+# "historically, what were <two ports>?" to ask_history.
+HISTORY_WORDS = re.compile(r"\b(clean\w*|edit\w*|chang\w*|step\w*|undo\w*|undid|fix\w*|did you|you did|done to|happen\w*|"
+                           r"modif\w*|replac\w*|quarantin\w*|remov\w*|fill\w*|typed|why)\b", re.I)
+# A column's meaning only when the message asks what something means or is: live (T-1 eval), Nano sent "what did
+# a <column word> on <something> usually include?" to ask_meaning.
+MEANING_WORDS = re.compile(r"\b(mean\w*|stand\w*|represent\w*|refer\w*|defin\w*|describ\w*|explain\w*|what is|what's|"
+                           r"what are|what kind|what type|code\w*|abbreviat\w*|unit\w*|column\w*|field\w*|tell me about)\b", re.I)
 STATS_WORDS = re.compile(r"\b(significan\w*|p[- ]?values?|statistic\w*|tests?|chance|random|correlat\w*|relat\w*|"
                          r"associat\w*|differen\w*|compare|versus|vs|between)\b", re.I)
 
@@ -129,6 +140,7 @@ class Agent:
     def __init__(self, env: ws.Env, llm: LLMClient, dataset: sqlite3.Row, emit: Callable[[str, dict], None]) -> None:
         self.env, self.llm, self.dataset, self.emit = env, llm, dataset, emit
         self.db = env.db
+        self.web = WebClient(env.settings)  # off (each web step says so in one line) without TAVILY_API_KEY
         self.started = time.monotonic()
 
     # --- persistence --------------------------------------------------------------------------
@@ -194,6 +206,9 @@ class Agent:
                 prev += f"\nIts query: {focus['sql']}"
             parts.append("Use this only if the message is incomplete on its own and continues it (like \"and only for "
                          "<a value>?\"); a message that makes sense by itself is a new question:\n" + fence(prev))
+        notes = aw.notes_context(self.db, self.dataset["id"], [c["name"] for c in card["columns"]])
+        if notes:  # what the columns mean, from a data dictionary the user linked or the web (PRD LOAD-7, TRD §8.2)
+            parts.append("What some columns mean (from a data dictionary or the web, not from the data):\n" + fence(notes))
         summary = self.db.execute("SELECT summary FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
         if summary:
             parts.append("Earlier in this conversation (a summary):\n" + fence(summary["summary"]))
@@ -253,6 +268,8 @@ class Agent:
         tools = TOOLS[tab] + (PLAN_TOOLS if context.get("plan_id") else ())
         if acts.EXPORT.search(question):
             return self._export(mid, question, context, scope)
+        if aw.DICTIONARY_ASK.search(question) and aw.typed_url(question):
+            return self._dictionary(mid, question, context, scope, columns)
         if tab == "flow" and flow.MAKE_SENSE.search(question):
             # "Make sense of this" on the canvas is the synthesis action; no routing call is needed.
             route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
@@ -283,6 +300,12 @@ class Agent:
             intents.remove("create_widget")
         if "ask_stats" in intents and not STATS_WORDS.search(question):
             intents = list(dict.fromkeys("ask_data" if i == "ask_stats" else i for i in intents))
+        # Outside-world questions the router took for the file's: a meaning of nothing the file has ("what is
+        # <a term>?") or that asks no meaning, or a history with no word about changes, goes to the web (live, T-1 eval).
+        if "ask_meaning" in intents and not (insight.names_a_column(question, resolved, columns) and MEANING_WORDS.search(question)):
+            intents = list(dict.fromkeys("web_context" if i == "ask_meaning" else i for i in intents))
+        if "ask_history" in intents and not HISTORY_WORDS.search(question):
+            intents = list(dict.fromkeys("web_context" if i == "ask_history" else i for i in intents))
         steps = [(i, question) for i in intents]
         if route.multi_step:
             steps = self._plan(question, ctx_text, scope, tools) or steps
@@ -471,6 +494,8 @@ class Agent:
             focus_out["result_ids"] = [r.id for r in results]
         if notes and not blocks and any(n in NOT_YET.values() for n in notes):
             notes.append(self._suggestion(card))  # ASK-8: say what is answerable instead
+        if results and "web_context" in [i for i, _ in steps] and any(b.get("labeled") == "web" for b in blocks):
+            notes.append(aw.SIDE_BY_SIDE)  # a data step's chips beside a web step's text: never compared (TRD §8.2)
         for note in notes:
             blocks.append(text_block([{"type": "text", "text": note}]))
         # Narrative answers with numbers can go on the canvas (PRD ASK-4); a synthesis is already there.
@@ -586,7 +611,8 @@ class Agent:
     def _insight(self, intent: str, kit: Toolkit, question: str, resolved: dict, card: dict, context: dict,
                  focus: dict | None, rid: str) -> "insight.Reply":
         status = {"ask_stats": "Running a test", "ask_why": "Finding what drives it", "ask_model": "Reading the model card",
-                  "ask_meaning": "Looking at the column", "app_help": "Looking in the help"}[intent]
+                  "ask_meaning": "Looking at the column", "app_help": "Looking in the help",
+                  "web_context": "Searching the web"}[intent]
         self.emit("status", {"text": status})
         if intent == "ask_stats":
             return insight.ask_stats(kit, question, resolved, card, rid)
@@ -599,7 +625,29 @@ class Agent:
             return insight.ask_model(kit, question, resolved, context, focus, rid)
         if intent == "ask_meaning":
             return insight.ask_meaning(kit, question, resolved, card, rid)
+        if intent == "web_context":
+            return aw.web_context(kit, self.web, question, [c["name"] for c in card["columns"]])
         return insight.app_help(question)
+
+    def _dictionary(self, mid: str, question: str, context: dict, scope: CallScope, columns: list[str]) -> dict:
+        """"Use the codebook at <url>" (PRD LOAD-7, TRD §7.1.1): read the data dictionary at the URL the user
+        typed, without a routing call, and say which columns it describes."""
+        self.emit("status", {"text": "Reading the data dictionary"})
+        url = aw.typed_url(question)
+        got = aw.read_dictionary(self.llm, scope, self.web, self.db, self.dataset["id"], url, columns)
+        if got["notes"]:
+            named = [n["column"] for n in got["notes"]]
+            text = (f"I read the data dictionary: it describes {', '.join(named[:12])}"
+                    + (" and more" if len(named) > 12 else "") + ". Hover a column's header in the CSV tab to see its note.")
+            sources = [{"kind": "web", "url": u, "title": t, "label": f"{t} ({aw._domain(u)}), retrieved {d}: from the web, not "
+                        "from your data"} for u, t, d in dict.fromkeys((n["source_url"], n["source_title"] or aw._domain(n["source_url"]),
+                                                                          n["retrieved_at"]) for n in got["notes"])]
+        else:
+            text, sources = got["note"], []
+        out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], sources=sources,
+                         context=context, focus={"question": question, "intents": ["dictionary"]}, tokens=scope.message_tokens[0])
+        self.emit("message", out)
+        return out
 
     @staticmethod
     def _suggestion(card: dict) -> str:

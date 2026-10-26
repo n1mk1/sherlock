@@ -267,6 +267,15 @@ export type Run =
   | { type: "chip"; id: string; key: string | null; value: string; raw?: unknown; unverified: boolean }
   | { type: "label"; ref: string; text?: string };
 
+/** A citation of a web source in a chat answer (TRD §8.2 web_context): its number is the source's, not
+ * data. Only chat answers have it; a web answer added to Flow keeps it as a label. */
+export type CiteRun = { type: "cite"; n: number; url: string; title: string };
+export type AnswerRun = Run | CiteRun;
+
+export interface AnswerBody {
+  blocks: { type: "paragraph" | "bullets"; runs: AnswerRun[] }[];
+}
+
 export interface CardBody {
   blocks: { type: "paragraph" | "bullets"; runs: Run[] }[];
 }
@@ -275,11 +284,24 @@ export type AnswerBlock =
   | { type: "number"; value: unknown; formatted: string; format: string; label: string; result?: string }
   | { type: "table"; columns: Column[]; rows: unknown[][]; total: number; selection_id?: string | null; result?: string; widget_id?: string }
   | { type: "chart"; spec: WidgetSpec; data: WidgetData; result?: string; widget_id?: string }
-  | { type: "text"; body: CardBody; labeled?: "general" };
+  | { type: "text"; body: AnswerBody; labeled?: "general" | "web"; web?: "context" | "meaning" }
+  | { type: "web_sources"; query: string; cached: boolean; results: WebResult[] };
+
+/** One web search result as Tavily returned it (TRD §3.6): its excerpt is verbatim, numbers included. */
+export interface WebResult {
+  n: number;
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+  retrieved_at: string;
+}
 
 export interface Source {
-  kind: "sql" | "run" | "step" | "card" | "help" | "general";
+  kind: "sql" | "run" | "step" | "card" | "help" | "general" | "web";
   run_id?: string;
+  url?: string; // a web source's address
+  title?: string;
   sql?: string | null;
   step_id?: string;
   label: string;

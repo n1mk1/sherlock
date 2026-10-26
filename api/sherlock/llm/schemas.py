@@ -72,7 +72,7 @@ class Entity(Strict):
 INTENTS = Literal[
     "ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats",
     "ask_model", "ask_meaning", "app_help", "create_widget", "update_widget", "ask_story",
-    "edit_cells", "clean_selection", "edit_plan",
+    "edit_cells", "clean_selection", "edit_plan", "web_context",
 ]
 
 
@@ -218,7 +218,28 @@ class Plan(Strict):
     steps: list[PlanStep] = Field(min_length=2, max_length=5)
 
 
-# --- Column notes (TRD §7.1.1, PRD LOAD-7) ---------------------------------------------------
+# --- Web answers (TRD §3.6, §8.2 `web_context`, PRD ASK-11) ---------------------------------
+
+
+class WebQuery(Strict):
+    query: str = Field(description="a web search query of at most 400 characters, from the question's own words and the "
+                                   "file's column names only; never a value from the file")
+    recent: bool = Field(description="true only when the question asks about recent events or the latest figures")
+
+
+class CiteRun(Strict):
+    cite: int = Field(ge=1, le=5, description="the number of the source the sentence before it comes from")
+
+
+WebRun = TextRun | CiteRun  # a union, so strict decoding enforces one kind per run
+
+
+class WebAnswer(Strict):
+    """What the web sources say, in text runs and citations: no digits, so a number from a page can only be
+    shown inside its quoted excerpt."""
+    prose: list[WebRun] = Field(min_length=1, max_length=30,
+                                description="one to three plain sentences, each followed by a cite of its source")
+    unanswered: bool = Field(description="true when the sources don't answer the question")
 
 
 class ColumnNote(Strict):

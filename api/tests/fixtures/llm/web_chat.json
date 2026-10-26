@@ -1,0 +1,314 @@
+[
+ {
+  "purpose": "route",
+  "match": [
+   "how do couriers usually assign a status_code to a parcel?"
+  ],
+  "content": {
+   "intents": [
+    "ask_meaning"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": [
+    {
+     "text": "status_code",
+     "kind": "column"
+    }
+   ]
+  }
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "couriers"
+  ],
+  "content": {
+   "query": "how couriers assign shipping status codes",
+   "recent": false
+  }
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "couriers"
+  ],
+  "content": {
+   "prose": [
+    {
+     "text": "Couriers scan a parcel at each stop and record a status code for it"
+    },
+    {
+     "cite": 1
+    }
+   ],
+   "unanswered": false
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "what is a fiscal year, in plain words?"
+  ],
+  "content": {
+   "intents": [
+    "ask_meaning"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": [
+    {
+     "text": "fiscal year",
+     "kind": "column"
+    }
+   ]
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "historically, what was a fiscal year?"
+  ],
+  "content": {
+   "intents": [
+    "ask_history"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "what does a shipping status code usually mean in general?"
+  ],
+  "content": {
+   "intents": [
+    "web_context"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "what is a fiscal year in general?"
+  ],
+  "content": {
+   "intents": [
+    "web_context"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "what is the history of this kind of order?"
+  ],
+  "content": {
+   "intents": [
+    "web_context"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "what does status_code mean?"
+  ],
+  "content": {
+   "intents": [
+    "ask_meaning"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": [
+    {
+     "text": "status_code",
+     "kind": "column"
+    }
+   ]
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "total amount by region, and what a fiscal year is in general"
+  ],
+  "content": {
+   "intents": [
+    "ask_data",
+    "web_context"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": [
+    {
+     "text": "region",
+     "kind": "column"
+    }
+   ]
+  }
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "shipping status code"
+  ],
+  "content": {
+   "query": "shipping status code meaning",
+   "recent": false
+  }
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "fiscal year"
+  ],
+  "content": {
+   "query": "fiscal year definition",
+   "recent": false
+  }
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "history of this kind of order"
+  ],
+  "content": {
+   "query": "Ashford Lane order history",
+   "recent": false
+  }
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "shipping status code"
+  ],
+  "content": {
+   "prose": [
+    {
+     "text": "A status code records where a parcel is in delivery"
+    },
+    {
+     "cite": 1
+    }
+   ],
+   "unanswered": false
+  }
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "fiscal year"
+  ],
+  "content": {
+   "prose": [
+    {
+     "text": "A fiscal year is the yearly period a business uses for its accounts"
+    },
+    {
+     "cite": 1
+    }
+   ],
+   "unanswered": false
+  }
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: status_code"
+  ],
+  "content": {
+   "prose": [
+    {
+     "text": "It usually records the delivery status of an order as a code"
+    },
+    {
+     "cite": 1
+    }
+   ],
+   "unanswered": false
+  }
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: status_code"
+  ],
+  "content": {
+   "general": "It most likely records the status of each order as a code."
+  }
+ },
+ {
+  "purpose": "sql",
+  "match": [
+   "total amount by region"
+  ],
+  "content": {
+   "reading": "amount by region",
+   "sql": "SELECT region, sum(amount) AS total FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1",
+   "answerable": true,
+   "closest": null
+  }
+ },
+ {
+  "purpose": "compose",
+  "match": [
+   "total amount by region"
+  ],
+  "content": {
+   "prose": [
+    {
+     "text": "The total for "
+    },
+    {
+     "label": "value:region:North"
+    },
+    {
+     "text": " is "
+    },
+    {
+     "chip": "r1:0:1"
+    },
+    {
+     "text": "."
+    }
+   ],
+   "shape": "table",
+   "number": null,
+   "label": null,
+   "chart": null
+  }
+ },
+ {
+  "purpose": "dictionary",
+  "match": [],
+  "content": {
+   "notes": [
+    {
+     "column": "status_code",
+     "description": "The delivery status of the order, as a code.",
+     "excerpt": 1
+    }
+   ]
+  }
+ }
+]

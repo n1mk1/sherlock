@@ -275,7 +275,7 @@ Mixed types · sentinels (`-999`, `N/A`, `null`, `?`, empty) · whitespace and c
 | STORY-6 (P0) | Updated cards show a "changed" badge. With "Story updates: Ask first", they show "outdated, click to refresh" instead. | With "Ask first", the overview and the syntheses citing an outdated card show "outdated" too. A card that isn't current carries an "Out of date" note in the notebook. |
 | STORY-7 (P0) | Cards are editable inline. A user-edited card is never overwritten; it gets a "data changed" badge with a suggested revision to accept, edit or dismiss. Hand-typed numbers are marked "unverified". A number chip saved with an edit shows its fact's value, and one with no fact behind it is marked "unverified" too. A number typed in words ("zero", "twice") is marked "unverified" like one typed in digits. Once the data moves past the version the user's words were written on, the card says so ("Written on v5, data is now v7"), also after the suggestion is dismissed, and a card with hand-typed numbers asks for them to be checked ("Has numbers you typed; check them"), since no code keeps them current. | Editing on the canvas and in the panel edits the same object. Both badges show on the panel's card and on its canvas node. |
 | STORY-8 (P0) | Wording rules enforced in prompts and checked post-hoc: no causal language for correlational findings; mention small samples (n < 30). The words around a chip may not claim more than its fact: no name said twice, an importance stays next to its column, a level isn't read as a gap, and a synthesis neither works a number out of its cards' chips nor compares two cards' numbers in a way code hasn't checked. Chat answers name only category values the data has. A ranking ("highest", "lowest", "comes third") names the group or factor the facts rank there, and a trend word ("rising", "decreases") goes with a trend, change or correlation that does. | Reviewed in the eval set. The grounding eval counts the claims checked and failed (target: 0 failed). The chat's model-written text (answer prose, the closest question, clarification options, the reading, widget titles) passes the same wording check, and a chat value label shows only a cell of a result's non-number column or a value the DataCard knows; a count or an average is always a chip (TRD §8.1). |
-| STORY-9 (P1) | "Changed" badges say what changed. Tavily context on anomaly cards with citations. | — |
+| STORY-9 (P1) | "Changed" badges say what changed. Tavily context on anomaly cards with citations. | — The Tavily part is not built (plan T-4, Tier 3): it would send a period taken from the data, which needs the owner's decision. |
 
 ### 7.8 Flow canvas
 
@@ -303,7 +303,7 @@ Mixed types · sentinels (`-999`, `N/A`, `null`, `?`, empty) · whitespace and c
 | ASK-8 (P0) | Honest limits: when the data can't answer, the reply says so and suggests the closest answerable question. | — |
 | ASK-9 (P0) | Suggested questions appear under the input, generated from the data card (3 at a time). | They are answerable (checked against the eval harness for the sample). Removed by cut 9 (Implementation Plan §2.0). |
 | ASK-10 (P0) | Data changes requested in chat arrive as proposals (approve / reject). Additive actions (new widget, new card) apply immediately and are undoable. | — |
-| ASK-11 (P1) | Outside-world questions answered via Tavily with citations. | — |
+| ASK-11 (P1) | Outside-world questions answered via Tavily with citations. | A question about the outside world (what a term means in general, typical values elsewhere, rules, history, recent events) is answered from a web search: one to three sentences, each with a numbered citation to its page, labelled "From the web (not from your data)", then "Searched the web for: …" and the sources with their address, the date they were retrieved and their own words quoted. The sentences have no digits: any number from the web is only in the quoted page text, and none becomes a chip or is compared with the data. Only the user's words and column names are sent, never a value from the file. With no Tavily key, or when the search fails, the answer is one line saying so, never an error. |
 
 ### 7.10 Settings
 
@@ -446,6 +446,7 @@ Ties are broken by the first criterion in the table, then the next.
 
 - One overall award or the Best Apps and Agents track award.
 - Best Use of Tavily (bonus) only if a Tavily API call runs in the deployed app (ASK-11, STORY-9). It is not claimed otherwise.
+  - As built: Tavily answers outside-world questions (ASK-11) and reads a linked data dictionary (LOAD-7), retrieval only. The calls run in the deployed app once `TAVILY_API_KEY` is set in Render's environment; with no key nothing is sent, and the bonus can't be claimed until it is.
 - Most Valuable Feedback (bonus), judged on completeness, viability and potential impact: `FEEDBACK.md` is written to those three criteria (Implementation Plan §7).
 - A City Winner award only if an IRL Builders & Brews event was attended.
 

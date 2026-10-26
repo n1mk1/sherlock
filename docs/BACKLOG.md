@@ -21,6 +21,7 @@ The owner's, unless a line says otherwise.
   - Ultra's cost per sample run, from the account's console (the README still says "on the account's console"), so plan D9.3's cost per role is complete;
   - the medians come from the local database's 111 calls of 2026-10-25, before the overnight changes. Before submitting, run `uv run sherlock llm stats` against the deployed app's database (a Render shell in `/app/api`) and refresh the README's medians and tokens per message from it;
   - read the Token Factory sentence over for the Devpost text, which says the same in its own words.
+- **The Tavily key, for Best Use of Tavily** (plan open decision 1). Get a key (the Nebius Builder Program includes Tavily credits) and set `TAVILY_API_KEY` in Render's environment (it's declared `sync: false` in `render.yaml`) and in `.env`. Until then no Tavily call runs in the deployed app, so the bonus can't be claimed (PRD §12.4).
 - **Keep it running through judging** (D9 C5): Render's paid plan and the Token Factory credit until Dec 15, 2026 (PRD §9).
 
 ## 2. Decisions only the owner can make
@@ -37,6 +38,7 @@ The owner's, unless a line says otherwise.
   - TRD §12: JSON logs with the request ID on every line, and `GET /metrics`;
   - TRD §10–§11: `JOB_BACKEND=nebius` and `python -m sherlock.jobs.run` (TRD §1 calls it optional);
   - TRD §14: the mocked clean → build → stories run on all five files of the end-to-end set (it runs on Titanic and small made-up files).
+- **Tavily context on anomaly cards** (PRD STORY-9, plan T-4, Tier 3). Not built: its query would hold a period (a month or a year) taken from the data, which plan open decision 3 leaves to the owner. Say whether a period may go out, shown before it's sent, or whether T-4 stays names-only.
 - **Narration temperature** (TRD §8.3). The spec says 0.4; every narrate and synthesis call runs at 0 (`stories/narrate.py`, `stories/synthesis.py`), and §8.3's as-built line says so. Keep 0 and change the spec, or pass 0.4.
 
 ## 3. Honesty and Rule 2
@@ -55,6 +57,8 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - **Replay doesn't re-run the Cleaner's verifiers** (TRD §7.8). `steps/replay.py` checks only the file, `_row_id` and the row count, though the spec aborts a replay when "its verifiers fail". Run `verifiers.verify` for each replayed cleaner step.
 
 ## 4. Accessibility (UI/UX §2.4, §6, §8)
+
+- **Column notes are hover-only** (PRD LOAD-7). Glide draws the CSV header on a canvas with no keyboard focus, so a keyboard user can't open a column's note there; chat's "what does <column> mean?" answers with the same note.
 
 - Click-to-filter needs a mouse, and a click with no `mousemove` before it only focuses the widget (D4 F2, D7 F20). Touch isn't checked on a device.
 - Widgets and story cards can't be focused, so card ↔ widget linking has no keyboard path, and a widget's menu has no keyboard route (D4 F11, D6 F13). Canvas nodes can be focused (React Flow's default), but they have no accessible name, only `role="group"` (D8 F12).

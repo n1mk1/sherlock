@@ -345,6 +345,8 @@ Column notes (PRD LOAD-7): a column with a note starts its type line with ⓘ (t
   - As built: a dashed `--accent` box with the summary, a table of the cells it changes (Row · Column · Now · After, up to 20), Approve and Reject. Once decided, it reads "Approved", "Rejected" or "Expired: the data changed since".
   - Not built yet (docs/BACKLOG.md): the "Show code" disclosure and the impact line.
 
+Web answers (TRD §8.2): the web block has a 1px dashed `--info` border at 50% opacity (the general-knowledge block's is `--border`), 13px `--foreground-2` text and the tooltip "From the web pages cited below, not computed from your data". A citation is a superscript 10.5px `--accent` link "[n]" that opens the page in a new tab. The sources list is 12.5px: "Searched the web for: “…”" in `--muted-foreground`, then a `<details>` "n sources"; each source is "[n] <title>" (an `--accent` link) "· <site> · retrieved <date>" and its excerpt as an italic `<q>` with a 2px `--border` rule on the left.
+
 ### 4.9 Drawers and dialogs
 
 - Drawers (How do you know?, model card, Review changes, Changes slide-over): slide from the right over the right panel, 420px wide, `--popover`, drawer shadow, title row with ×. The Review changes drawer is removed by cut 5 (Implementation Plan §2.0). As built, Add widget and the cleaning report's summary are drawers too; the full cleaning report is a 720px dialog.

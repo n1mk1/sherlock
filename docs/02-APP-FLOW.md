@@ -448,6 +448,16 @@ Quality of life as built (the `?` sheet is cut 9):
 - **Error boundaries** around the page, each tab's content, the library and the side panel: a crash shows "Something went wrong showing the …" with Try again and Reload, and the rest keeps working.
 - **Offline banner** when the network or the server is unreachable; it clears itself.
 
+**Answers from the web (PRD ASK-11, TRD §8.2 `web_context`).** A question about the outside world (what a term or an abbreviation means in general, typical values elsewhere, rules, history, recent events) is answered from a web search, never from the data:
+- The status line says "Searching the web".
+- The answer is a dashed block that begins "From the web (not from your data):", one to three sentences with a small linked number after each ([1], [2]) naming the page it comes from. It has no number chips: any number from the web stays in the quoted page text.
+- Under it, "Searched the web for: “<the query>”" and a collapsed "3 sources" list: each page's title (a link that opens in a new tab), its site, the day it was retrieved, and the page's own words in quotes.
+- "How do you know?" lists the same pages (each a link), then the receipt, where the search is a step of its own: "Searched the web" with its time, or "cached" when the 24 h cache answered it.
+- When a plan has a data step and a web step, the data's chips and the web's cited text sit side by side with the line "The web part comes from the pages cited, not from your data; I didn't compare it with the numbers above."
+- No key, the hourly limit, a timeout or an error: the answer is one line instead ("Web search isn't set up on this server, so I didn't look this up on the web.", …), never an error, and the rest of the answer still comes.
+- **Column meanings** ("what does <column> mean?") keep what the data says; with a data dictionary linked, the general part comes from the dictionary ("From the data dictionary you linked (not from your data): …"), otherwise from the model as before.
+- **"Use the codebook at <url>"** reads that page as the data dictionary (PRD LOAD-7) and answers which columns it describes; the notes then show in the CSV tab's headers.
+
 ### 10.3 Chat on each tab
 
 | Tab | Context | Typical actions |

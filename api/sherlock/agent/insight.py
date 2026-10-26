@@ -81,6 +81,21 @@ def mentioned(resolved: dict, columns: list[str]) -> list[str]:
     return [n for n in dict.fromkeys(names) if n in columns]
 
 
+LOOKS_LIKE = 75  # a word this close to a column's name (rapidfuzz ratio) may be a misspelling of it ("sibs")
+
+
+def names_a_column(question: str, resolved: dict, columns: list[str]) -> bool:
+    """Whether a message names a column of the file, directly, through one of its values, as a bare word, or
+    by a word close to a column's name (which chat then asks about with buttons)."""
+    if mentioned(resolved, columns):
+        return True
+    words = set(re.findall(r"[\w.]+", question.lower()))
+    if any(c.lower() in words for c in columns):
+        return True
+    norm = lambda t: re.sub(r"[\s._-]+", "", t.lower())  # noqa: E731
+    return any(fuzz.ratio(norm(w), norm(c)) >= LOOKS_LIKE for w in words if len(w) >= 3 and w not in STOP for c in columns)
+
+
 def _p(p: float) -> str:
     return "<0.001" if p < 0.001 else f"{p:.3f}"
 
@@ -388,13 +403,14 @@ def _wrong_table(kit: Toolkit, sel: dict, rid: str) -> Result:
 
 def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str) -> Reply:
     """What a column means: what the data says (counts, common values, from queries) and, labelled
-    apart, what such a column usually records (general knowledge, no digits)."""
+    apart, what such a column usually records: from a data dictionary the user linked (its note, PRD
+    LOAD-7), else from the model's general knowledge (no digits)."""
     cols = {c["name"]: c for c in card["columns"]}
     names = mentioned(resolved, list(cols))
     if not names:  # a bare name in the question ("what is <column>?")
         words = re.findall(r"[\w.]+", question.lower())
         names = [c for c in cols if c.lower() in words]
-    if not names:
+    if not names:  # in chat a meaning of nothing the file has went to web_context; this is a plan's own step
         fallback = f"Which column? Name it, for example “what does {next(iter(cols), 'a column')} mean?”."
         if len(cols) < 2:
             raise CantAnswer(fallback)
@@ -417,6 +433,13 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
                {"kind": "sql", "sql": common.sql, "label": "Its most common values"}]
     about = (f"column: {col['name']}\nfile: {kit.dataset['name']}\ntype: {col['type']}\nexamples: "
              + ", ".join(str(r[0])[:40] for r in common.rows))
+    from sherlock.agent import web as aw
+
+    focus = {"columns": [col["name"]]}
+    linked = next((n for n in aw.notes_for(kit.env.db, kit.dataset["id"], kinds=("dictionary",)) if n["column"] == col["name"]),
+                  None)
+    if linked:  # the user's own data dictionary wins over a search
+        return Reply(blocks=[*blocks, aw.note_block(linked)], sources=[*sources, aw.note_source(linked)], focus=focus)
     try:
         general = kit.llm.structured("medium", kit._messages(prompts.MEANING.format(about=fence(about))), Meaning,
                                      purpose="meaning", scope=kit.scope).value.general.strip()
@@ -427,7 +450,7 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
         block["labeled"] = "general"
         blocks.append(block)
         sources.append({"kind": "general", "label": "General knowledge from the model, not computed from your data"})
-    return Reply(blocks=blocks, sources=sources, focus={"columns": [col["name"]]})
+    return Reply(blocks=blocks, sources=sources, focus=focus)
 
 
 # --- app_help -------------------------------------------------------------------------------------

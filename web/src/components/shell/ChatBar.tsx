@@ -459,7 +459,11 @@ export function Sources({ sources, messageId }: { sources: Source[]; messageId: 
       <div className="mt-2 flex flex-col gap-2">
         {sources.map((s, i) => (
           <div key={i} className="flex flex-col gap-1">
-            <span className="text-[12px] text-muted-foreground">{s.label}</span>
+            {s.url ? ( // a web source (TRD §8.2 web_context): its page, opened in a new tab
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-accent hover:underline">{s.label}</a>
+            ) : (
+              <span className="text-[12px] text-muted-foreground">{s.label}</span>
+            )}
             {s.sql && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.sql}</pre>}
           </div>
         ))}
