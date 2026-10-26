@@ -260,6 +260,20 @@ Chat messages with model calls: 3; tokens per message p50 6,717, p95 7,288.
 - **Failures.** The only failed attempts were three narrate calls that got HTTP 529 (`server_error`, overloaded) from Token Factory, each after about 3.4 s, and were retried. That is 19% of narrate's attempts and 6% of Super's. A 529 is retried like a 5xx (TRD §3.5).
 - **Suggestion:** a `Retry-After` on the 529 would let clients wait exactly as long as needed instead of backing off blind; and a documented per-model rate limit would let us size the per-role gates (`LLM_CONCURRENCY_*`) from the numbers instead of from trial.
 
+## Tavily web retrieval, live (2026-10-26, plan T-6)
+
+`uv run sherlock eval web --live` with a real `TAVILY_API_KEY` in the local `.env`. The deployed app has no key yet, so web retrieval is off there. Each question is asked three times: with the web on, with Tavily failing (a stand-in that answers a 502 or a timeout at once) and with the web off. Tavily is used for `search`, `extract` and `map` only; Nemotron writes every sentence.
+
+| Run | Web on | Web failing | Web off | Cell values sent | Tavily calls | Tavily p50 |
+|---|---|---|---|---|---|---|
+| All three files (20 questions) | 14 of 20 | 13 of 20 | 17 of 20 | 0 | 17 | 2,030 ms |
+| `reviews_text.csv` again (7 questions) | 6 of 7 | 7 of 7 | 6 of 7 | 0 | 7 | 1,187 ms |
+
+- **Privacy held in both runs:** no outbound request held a cell of the file, or a digit run the question didn't contain.
+- **The first run's six failures were a Token Factory stall, not the web.** Six answers in a row on `reviews_text` ran into the 90 s message deadline ("This answer ran out of time."), five of them with the failing stand-in, which returns at once, so the time went to the model calls. The rerun of that file, minutes later, failed soft on all seven questions (2–16 s each) with no error.
+- **The misses are routing**, in BACKLOG: a few outside-world questions that use one of the file's words go to the file's answerers or the help, and "what does posted mean?" (a date column) was answered from the data with no web source.
+- Median answer with the web on: 9.9–10.3 s, against 4.2–5.3 s with it off.
+
 ## Nebius hosting (Serverless Endpoint / AI Cloud VM)
 
 **What we used it for:** the planned host was one CPU-only Serverless Endpoint with a shared filesystem at `/data` (`scripts/deploy.sh`). We moved hosting to Render on 2026-10-24 because of the problems below. Inference stays on Token Factory.
