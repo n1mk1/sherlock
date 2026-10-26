@@ -994,6 +994,7 @@ As built:
 - **Plans and proposals.** `plan` (`{ steps }`), `plan.step` (`{ index, status }`) and `proposal` (the `Proposal`) are sent as described in §8.1 and §4.4. A `Message` adds `plan` (`{ steps }` with final statuses) and `proposal`, and its `actions` may hold `undo_widget` (`widget_id`) and `open_export` (`options`).
 - **Order.** Each query's results go out as a `table` block as soon as the query has run, before the prose is written. Then come the final blocks that weren't already sent, then `sources`. The final `message` holds the answer's blocks in their order, which the client renders in place of what streamed.
 - **Ending.** The stream always ends with `message`. When the model is unavailable or over budget it is preceded by `error` (`{ code, message }`), and the message says so. An unexpected failure ends with `error` alone.
+- **The hand-over in the client** (`ChatBar.tsx`). The stream stays open after `message` while the server folds older messages into the thread summary (§8.1 step 1, a model call), so the client swaps at `message`, not at the end: the saved answer goes into the thread with a local stand-in for the question (`withAnswer`, replaced by the refetch when the stream ends) and the streamed copy goes at once, so the answer never shows twice. Send stays disabled until the stream ends, so the next question doesn't run alongside the summary. `chatbar.test.tsx` holds the stream open after `message` and checks for one copy.
 
 ---
 

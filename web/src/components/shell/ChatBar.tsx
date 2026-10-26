@@ -68,6 +68,15 @@ interface Pending {
   plan?: PlanStep[];
 }
 
+/** The thread once the saved answer arrives: the question (a local stand-in until the refetch brings
+ * the saved one) and the answer. The streamed copy goes at once, so the answer shows once even while
+ * the stream stays open for the thread summary that follows it (TRD §8.1 step 1). */
+export function withAnswer(list: Message[] | undefined, question: string, answer: Message): Message[] {
+  const asked: Message = { id: `local-${answer.id}`, role: "user", text: question, blocks: [], sources: [],
+    created_at: answer.created_at, clarification_of: null };
+  return [...(list ?? []), asked, answer];
+}
+
 function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; placeholder: string }) {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
@@ -87,7 +96,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     input.current?.focus();
   }, [chatDraft, setChatDraft, setOpen]);
   const [pending, setPending] = useState<Pending | null>(null);
-  const focused = widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
+  const [busy, setBusy] = useState(false); // from send until the stream ends, which can be after the answer shows
+  const focused =widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
   const selectedCards = useFlow((s) => s.selectedCardIds);
   const csvSelection = useUi((s) => s.csvSelection);
   const planId = useUi((s) => s.planId); // a cleaning plan is open: the chat can change it (App Flow §10)
@@ -122,6 +132,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
       ...extra,
     };
     setOpen(true);
+    setBusy(true);
     setPending({ text: message, status: "Thinking…", blocks: [] });
     try {
       await sendChat(dataset.id, body, ({ type, data }) => {
@@ -133,7 +144,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
           setPending((p) => (p?.plan ? { ...p, plan: p.plan.map((s, i) => (i === index ? { ...s, status } : s)) } : p));
         } else if (type === "message") {
           const m = data as unknown as Message;
-          qc.setQueryData<Message[]>(keys.chat(dataset.id), (list) => [...(list ?? []), m]);
+          qc.setQueryData<Message[]>(keys.chat(dataset.id), (list) => withAnswer(list, message, m));
+          setPending(null); // the saved answer replaces the streamed one, so it never shows twice
           if (m.actions?.some((a) => a.kind === "open_widget")) {
             qc.invalidateQueries({ queryKey: keys.widgets(dataset.id) });
           }
@@ -146,6 +158,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
       toast.error((e as Error).message);
     } finally {
       setPending(null);
+      setBusy(false);
       qc.invalidateQueries({ queryKey: keys.chat(dataset.id) }); // the saved user message and its reply
     }
   };
@@ -153,14 +166,14 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   // A message another part of the page asked to send (the Flow header's "Make sense of this").
   const { chatOutbox, sendChat: queueChat } = useUi();
   useEffect(() => {
-    if (chatOutbox === null || pending) return;
+    if (chatOutbox === null || busy) return;
     queueChat(null);
     void send(chatOutbox);
-  }, [chatOutbox]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
+  }, [chatOutbox, busy]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
 
   const submit = () => {
     const message = text.trim();
-    if (!message || pending) return;
+    if (!message || busy) return;
     setText("");
     void send(message);
   };
@@ -222,7 +235,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         <button
           type="button"
           aria-label="Send"
-          disabled={!text.trim() || !!pending}
+          disabled={!text.trim() || busy}
           onClick={submit}
           className="inline-flex size-10 items-center justify-center rounded-[10px] bg-primary text-primary-foreground disabled:opacity-40"
         >
