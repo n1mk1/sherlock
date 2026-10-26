@@ -25,6 +25,7 @@ export function mockApi(routes: Record<string, unknown>) {
     }
     const value = routes[key];
     const body = typeof value === "function" ? await (value as (u: URL, i?: RequestInit) => unknown)(url, init) : value;
+    if (body instanceof Response) return body; // a route can answer with an error status
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   });
   vi.stubGlobal("fetch", fetchMock);

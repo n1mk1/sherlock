@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -24,6 +26,23 @@ def test_healthz_reports_db_llm_and_model_roles(app):
 
 def test_healthz_reports_unreachable_llm_without_credentials(client):
     assert client.get("/healthz").json()["llm"] == {"reachable": False}
+
+
+def test_healthz_reports_the_deployed_commit(monkeypatch):
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "fb4406f1e2d3c4b5a6978877665544332211aabb")
+    get_settings.cache_clear()
+    with TestClient(create_app()) as client:
+        assert client.get("/healthz").json()["commit"] == "fb4406f1e2d3"
+
+
+def test_log_level_applies_to_the_app_loggers(monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "warning")
+    get_settings.cache_clear()
+    try:
+        create_app()
+        assert logging.getLogger("sherlock").level == logging.WARNING
+    finally:
+        logging.getLogger("sherlock").setLevel(logging.INFO)
 
 
 def test_startup_fails_on_a_non_nvidia_role(monkeypatch):

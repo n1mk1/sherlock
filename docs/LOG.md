@@ -505,3 +505,19 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A card told before Cancel took effect stays `ready` on the new version (its numbers are current); only the cards not yet told become `outdated`.
   - A widget whose title alone the user changed mid-cascade keeps its old `version_built` until the next cascade; the footer's version stamp of a SQL widget comes from its data, so nothing shows it.
   - BACKLOG: no line closes (A1, A16–A18 were audit findings, not BACKLOG lines). D6 F11 (the progress line clears only on `cascade.done`) stays open: a cancelled cascade ends with `job.failed`.
+
+## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
+
+The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.
+
+- **Cause:** every request without a cookie got `429` "Too many new visitors from your network". Render's logs showed a `new user: ip <hash>, 2 forwarded hop(s)` line every 5.3 s, all `GET /api/v1/me` and all one hash, which was the hash of the owner's own public IP. Two background shells left by earlier Claude Code sessions were still running on the owner's machine: one (since 2026-10-24 22:21 local) looped `until curl …/api/v1/me … && [ now -gt now ]; do sleep 5; done`, whose second test can never pass, so it made a new user every 5 s for about 27 hours and kept that IP's window at the 300 cap; the other waited forever for `"boots":2x` in `/healthz` (boots is past 40). Both were stopped, and a fresh browser profile loaded the library at once. The Day 9 refusals (D9 H1) fit the same loop, which was running then; the logs show the cap keys on each visitor's own IP, so that backlog line is gone.
+- **Done:**
+  - Purge (Schema §6): users with no dataset at all, unseen for 24 h, are deleted, which also clears the loop's users; Cleaner work folders under `/data/.clean/` older than an hour are deleted unless their job is queued or running. `tests/test_purge.py` covers both.
+  - The web app shows a refused first visit as a whole page ("Sherlock can't open a new workspace yet", the server's message, Try again), and any other failure of `GET /me` as "Sherlock couldn't start", instead of an app shell where every request fails. `useMe` doesn't retry a `429` (`StartupError.tsx`; `App.test.tsx`).
+  - The empty library says that CSVs stay with the browser (App Flow §18's small print, which wasn't built).
+  - `/healthz` reports `commit`, from `GIT_COMMIT` or Render's `RENDER_GIT_COMMIT`, so a deploy by hand can check that the new build is serving (D9 F13). `LOG_LEVEL` now sets the `sherlock.*` loggers' level.
+  - The notebook's requirements cell says how to get pip into a uv venv (D9 F14).
+  - Dropped `@radix-ui/react-tooltip` and `@visx/gradient`, which nothing imported; `THIRD_PARTY.md` lists what the web dependencies install, by license (D9 F11).
+  - README and TRD §11: the deploy check compares `commit` with `main`, and says to poll `/healthz`, not `/api/…`, from scripts.
+- **Decision:** 24 h for an empty workspace matches the other purge ages. A visitor who comes back later with no CSV loses only their settings.
+- **How it was done:** in a separate worktree (`sherlock-cleanup`, branch `cleanup`), because another session was committing to `main` in the main checkout at the same time; the branch was rebased onto `main` and fast-forwarded in.

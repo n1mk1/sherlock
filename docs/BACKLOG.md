@@ -21,7 +21,6 @@ The owner's, unless a line says otherwise.
   - one sentence on where Token Factory accelerated the work, which the live rules ask for in so many words (for example, one OpenAI-compatible endpoint for all three sizes, and strict JSON schema with one repair round);
   - a committed source for three numbers: the per-role median latencies (put the `llm_calls` query and its output in `FEEDBACK.md` or TRD §14), "78–116 s" per notebook, and "about 1,500 tokens per chat message";
   - plan D9.3's cost per role (Ultra's says "on the account's console") and the `llm_calls` purposes by name.
-- **The new-user cap on the live site** (D9 H1). The Day 9 session was turned away with "Too many new visitors" four times after creating about 20 users, against a cap of 300 an hour. Render's logs have `new user: ip <hash>, N forwarded hop(s)` for each new user. Many hashes means the key is fine. One hash for everyone, or 3 hops (Cloudflare in front of Render), means every visitor shares one bucket, and a judge's first visit can fail.
 - **Keep it running through judging** (D9 C5): Render's paid plan and the Token Factory credit until Dec 15, 2026 (PRD §9).
 
 ## 2. Decisions only the owner can make
@@ -77,15 +76,12 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 ### Identity, limits, operations
 
 - `POST …/use-as-is` (the Clean it myself button) and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So does `POST /cards/{cid}/refresh` (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
-- `LOG_LEVEL` is read but never applied: `main.py` sets the `sherlock.*` loggers to INFO (TRD §10). Fix: `setLevel(settings.log_level.upper())`.
 - `JOB_BACKEND=nebius` is accepted and silently ignored, so jobs run locally (TRD §10). Refuse it at startup until it's built.
 - `PATCH /widgets/{wid}` with `{ prompt }` answers `422` with the stale message "needs chat, which isn't built yet", though `update_widget` exists (TRD §4.5). Route it to `update_widget` under `llm_rate_limit`, or fix the message.
 - Widget and card restore have no 10-minute check, unlike dataset restore; they work until the purge runs (TRD §4.5–§4.6). Low priority.
-- A stopped or failed clean leaves `/data/.clean/<job_id>/` behind, and the purge never clears it (Schema §4; `cleaning/loop.py`). Clean up in a `finally`, or purge `.clean` folders older than an hour.
 - `folder_bytes` isn't recomputed when a run or an export finishes, so run artifacts and notebooks count against the storage limit only after the next purge pass (Schema §4).
 - `llm_calls` is never purged, and the app-wide budget scans it on every model call with no `created_at` index. A cost that grows with use, not a mismatch.
 - `uv run sherlock clean sample` times out after 900 s. With the cached seed, the sample is cloned already `ready`, and the CLI waits for `offer` or `failed` (`cli.py`, `routers/datasets.py`). Set `SAMPLE_SEED_DIR=off` inside `clean()`, or import `samples/titanic3.csv` directly. Also, the `--sets` help names only `corruption` and `ask`, though `notebook` and `grounding` take it too.
-- `/healthz` doesn't report the build's commit (D9 F13). A `GIT_COMMIT` build argument echoed there would make "the deployed commit matches `main`" one request.
 - `scripts/live_check.py --files all` says it checks that each notebook "rebuilds the version", but it only executes it (D9 F12). `sherlock eval notebook` does compare values.
 - The focused widget's title is read without a dataset check (`agent/loop.py`, `SELECT title FROM widgets WHERE id = ?`), so another user's title could reach the prompt (D4 F7). Low risk: the IDs are random ULIDs.
 
@@ -139,7 +135,6 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - Hitting the 40k-token message budget mid-answer throws away the earlier steps' results and returns only the budget sentence; TRD §8.1 says to compose what exists with a note (`agent/loop.py`).
 - Proposals expire lazily: a stale one keeps its Approve button until it's clicked and answers `409`, instead of reading "Expired: the data changed since" (App Flow §10; `agent/actions.py`). Expire pending proposals in `commit_step`, or compare against `current_version` when listing them.
 - A wide file gets no note that the dashboard used only its 30 most informative columns (App Flow §18; the builder keeps `columns_used` in the job result only).
-- The empty library's small print doesn't say that clearing the cookie loses the library, with no recovery (App Flow §18).
 - Save doesn't retry by itself once the connection is back; pressing it again works (App Flow §18).
 - Questions ignore the cells selected in the CSV tab: the chip says "n rows selected" and the loop never reads `selected_cells` (PRD CSV-13; `ChatBar.tsx`, `agent/loop.py`). Create a selection from their `row_ids` and pass it as `selection_id`.
 - A refusal never offers a closer question: `NOT_YET` is empty, so `_suggestion` never runs (PRD ASK-8; `agent/loop.py`, e.g. `insight.py`'s refusals). Append the suggestion to every can't-answer.
@@ -196,8 +191,6 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Ship
 
-- `THIRD_PARTY.md` lists only the web app's direct dependencies. The bundle also ships the d3 modules (ISC), `d3-ease` (BSD-3-Clause), `robust-predicates` (Unlicense) and `tslib` (0BSD); `corepack pnpm licenses list --prod` gives the whole set (D9 F11).
-- The notebook's `%pip` cell needs pip in the kernel's environment: in a `uv venv` without `--seed` it installs nothing, then fails at `import duckdb`. A Markdown line above the cell is enough (D9 F14).
 - At phone width, KPI titles are cut to a few letters (D9 F15).
 
 ### Look and feel (UI/UX brief)
@@ -229,6 +222,5 @@ Each of these carries a "Not built yet" marker in the brief's section.
 
 ## 7. Docs (Rule 1)
 
-- `web/package.json` declares `@radix-ui/react-tooltip` and `@visx/gradient`, but nothing imports them (THIRD_PARTY.md says so). Drop them, or use the tooltip for the missing icon-button tooltips (§4).
 - `FEEDBACK.md`'s Bklit and Glide spike records say "passed", though a pass rule wasn't tried: shared hover, and range paste (not needed after cut 5). Say "pass rule partly met" (D1 #3, D4 F18).
 - TRD §7.1 step 1 says an upload over the limit is aborted "while streaming", but Starlette spools the multipart body before the handler runs (D2, not probed).

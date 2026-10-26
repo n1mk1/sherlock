@@ -25,7 +25,12 @@ export const keys = {
 };
 
 export function useMe() {
-  return useQuery({ queryKey: keys.me, queryFn: () => unwrap(api.GET("/api/v1/me")) as Promise<Me> });
+  return useQuery({
+    queryKey: keys.me,
+    queryFn: () => unwrap(api.GET("/api/v1/me")) as Promise<Me>,
+    // The new-visitor cap won't lift within the retries, so its screen shows at once.
+    retry: (count, err) => !(err instanceof ApiError && err.status === 429) && count < 3,
+  });
 }
 
 export function useSaveSettings() {

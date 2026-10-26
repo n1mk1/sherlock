@@ -37,6 +37,8 @@ CREATE TABLE users (
 );
 ```
 
+A user with no datasets who hasn't been seen for 24 h is deleted by the purge (§6). `last_seen_at` is refreshed at most once a minute.
+
 ### 2.2 datasets
 
 ```sql
@@ -663,11 +665,15 @@ A `purge` job runs every 10 minutes:
 3. Delete `job_events` older than 24 h, `widget_cache` rows older than 24 h, and `exports` rows and files older than 24 h.
 4. Delete sandbox temp directories (`/tmp/sherlock-sandbox/`, outside `/data`) older than 1 h.
 5. Recompute `users.storage_bytes`.
+6. Delete Cleaner work folders (`/data/.clean/<job_id>/`) older than 1 h whose job isn't queued or running. A stopped or crashed clean leaves its folder behind.
+7. Delete empty workspaces: users with no dataset at all (soft-deleted ones count) not seen for 24 h. A browser that drops its cookie, or a script that calls the API without one, makes a new user on every request; this keeps them from piling up. Their `llm_calls` rows stay (no foreign key), so the budgets still see them.
 
 As built (`sherlock/jobs/purge.py`):
 - Hard-deleting a dataset removes its folder and its rows. The tables with a cascading foreign key go with it (`clean_plans` among them); `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals` and `value_index` are cleared explicitly. `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend figures read them.
 - A purged widget takes its card and fact sheets with it, and a run that pointed at it is unlinked. Canvas nodes of purged cards are pruned on the next canvas read (§2.12).
 - An export's file is deleted with its row.
+- The job reports six progress steps, in this order: deleted CSVs, expiry, events, caches and exports, temp folders (sandbox and `.clean`), empty workspaces, and the storage recount last. Its result counts `clean_dirs` and `users` beside the others.
+- Only `datasets` references `users` with a foreign key (`ON DELETE CASCADE`), so deleting a user with no datasets removes that row alone.
 - `storage_bytes` counts every dataset still on disk, soft-deleted ones included, since their files remain until they are purged. Each dataset's `folder_bytes` is measured again first.
 - **Schedule.** The job runner's sweep (every 30 s) queues a purge at its first pass after a start, then once every `PURGE_INTERVAL_S` (default 600; `0` turns it off), and never while one is queued or running. No purge is queued when `JOB_WORKERS` is 0. Its `jobs` row has `user_id = 'system'` and no dataset (`jobs/runner.py`).
 - **Ages.** Soft deletes and expiry compare against `deleted_at` and `expires_at`; `job_events`, `widget_cache` and `exports` against `created_at`; sandbox folders against their modification time, under `SANDBOX_TMP` (or `<system temp>/sherlock-sandbox` when it's empty).

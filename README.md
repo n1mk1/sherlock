@@ -128,7 +128,9 @@ While GitHub Actions can't start jobs on this account (billing, since 2026-10-25
 1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
 2. Push to `main`.
 3. Start a **Manual Deploy** of the service in the Render dashboard (or through the Render API).
-4. Check `/healthz` and that the site serves the new build.
+4. Check `/healthz`: `ok` is `true` and `commit` matches `git rev-parse --short=12 main`.
+
+When you wait for a deploy from a script, poll `/healthz` with a bounded loop. A loop on `/api/…` without a cookie creates a new user on every call, and after 300 in an hour every new browser on your network is turned away (TRD §15).
 
 ### Nebius alternative
 
