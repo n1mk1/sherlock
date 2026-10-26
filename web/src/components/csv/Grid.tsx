@@ -3,14 +3,16 @@
 // pending row, struck through when quarantined or marked for deletion). Cells show the marks from
 // the rows API (changed, flagged, invalid) and the pending edits from the buffer (unsaved), each
 // drawn so it doesn't rely on color alone. Clicking a header sorts by it (asc → desc → none); sorting
-// is a view, never a change to the data.
+// is a view, never a change to the data. A column with a note (a data dictionary the user linked, or
+// the web) has ⓘ in its header, and hovering the header shows the note and its quoted source.
 import "@glideapps/glide-data-grid/dist/index.css";
 import {
   DataEditor, GridCellKind, CompactSelection,
   type DataEditorRef, type DrawCellCallback, type DrawHeaderCallback, type EditableGridCell, type GridCell,
-  type GridColumn, type GridSelection, type Item, type Rectangle, type Theme,
+  type GridColumn, type GridMouseEventArgs, type GridSelection, type Item, type Rectangle, type Theme,
 } from "@glideapps/glide-data-grid";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { notesByColumn, useColumnNotes, type ColumnNote } from "@/api/columnNotes";
 import { fetchRows, type RowsPage, type Sort } from "@/api/csv";
 import type { ColumnCard, Column } from "@/api/types";
 import { displayValue, fitsType, isNumericType, typeLabel } from "@/lib/cells";
@@ -73,6 +75,9 @@ export const Grid = forwardRef<GridHandle, {
   const [columns, setColumns] = useState<Column[]>([]);
   const [total, setTotal] = useState(0);
   const [generation, setGeneration] = useState(0);
+  const notesQuery = useColumnNotes(datasetId);
+  const notes = useMemo(() => notesByColumn(notesQuery.data?.notes), [notesQuery.data]);
+  const [hovered, setHovered] = useState<{ note: ColumnNote; bounds: Rectangle } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sel, setSel] = useState<GridSelection>({ columns: CompactSelection.empty(), rows: CompactSelection.empty() });
   const viewKey = `${datasetId}:${version}:${sort?.column ?? ""}:${sort?.dir ?? ""}:${selectionId ?? ""}`;
@@ -220,7 +225,7 @@ export const Grid = forwardRef<GridHandle, {
     const info = byName[name];
     ctx.font = "11px Inter Variable, sans-serif";
     ctx.fillStyle = t.muted;
-    const sub = `${typeLabel(types[name] ?? "VARCHAR")}${info ? ` · ${info.missing_pct}% missing` : ""}`;
+    const sub = `${notes[name] ? "ⓘ " : ""}${typeLabel(types[name] ?? "VARCHAR")}${info ? ` · ${info.missing_pct}% missing` : ""}`;
     ctx.fillText(clip(ctx, sub, rect.width - 16), x, rect.y + 32);
     const counts = info?.histogram?.counts ?? info?.top_values?.map((v) => v.count) ?? [];
     if (counts.length) {
@@ -232,7 +237,12 @@ export const Grid = forwardRef<GridHandle, {
         ctx.fillRect(x + i * w, rect.y + rect.height - 6 - h, Math.max(1, w - 1), h);
       });
     }
-  }, [t, byName, types, sort]);
+  }, [t, byName, types, sort, notes]);
+
+  const onItemHovered = useCallback((args: GridMouseEventArgs) => {
+    const name = args.kind === "header" ? (gridCols[args.location[0]]?.id as string | undefined) : undefined;
+    setHovered(name && notes[name] ? { note: notes[name], bounds: args.bounds } : null);
+  }, [gridCols, notes]);
 
   const theme = useMemo<Partial<Theme>>(() => ({
     accentColor: t.accent, accentLight: t.accentSoft, textDark: t.fg, textMedium: t.muted, textLight: t.muted,
@@ -306,6 +316,7 @@ export const Grid = forwardRef<GridHandle, {
           theme={theme}
           gridSelection={sel}
           onGridSelectionChange={onSelectionChange}
+          onItemHovered={onItemHovered}
           onHeaderClicked={(col) => {
             const name = gridCols[col]?.id as string;
             if (!name || name === ROW_COL) return;
@@ -323,9 +334,32 @@ export const Grid = forwardRef<GridHandle, {
           height="100%"
         />
       )}
+      {hovered && <NoteTooltip note={hovered.note} bounds={hovered.bounds} />}
     </div>
   );
 });
+
+/** A column's note under its header: Sherlock's sentence, the source's own words quoted, and where they're from. */
+function NoteTooltip({ note, bounds }: { note: ColumnNote; bounds: Rectangle }) {
+  let host = note.source_url;
+  try {
+    host = new URL(note.source_url).hostname.replace(/^www\./, "");
+  } catch { /* shown as given */ }
+  return (
+    <div
+      role="tooltip"
+      data-testid="column-note"
+      className="pointer-events-none fixed z-50 max-w-[340px] rounded-lg border border-border bg-card px-3 py-2 text-[12.5px] shadow-md"
+      style={{ left: bounds.x, top: bounds.y + bounds.height + 4 }}
+    >
+      <p className="text-foreground">{note.description}</p>
+      {note.excerpt && <p className="mt-1 border-l-2 border-border pl-2 italic text-foreground-2">“{note.excerpt}”</p>}
+      <p className="mt-1 text-[11.5px] text-muted-foreground">
+        {note.kind === "dictionary" ? "From the data dictionary" : "From the web"} at {host}, retrieved {note.retrieved_at}. Not computed from your data.
+      </p>
+    </div>
+  );
+}
 
 /** Draw a cell's mark over its content: a server mark, "unsaved" for a pending edit (`invalid` when it
  * doesn't fit the type), or "struck" for a row number. Glide reuses the context for the next cell and

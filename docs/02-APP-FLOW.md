@@ -89,6 +89,7 @@ Contents:
 - **Encoding** (auto-detected; dropdown: UTF-8, UTF-8 with BOM, Latin-1, Windows-1252, UTF-16).
 - **Header row** (auto-detected; number input; 0 = no header, columns get `col_1…`).
 - **Skip rows** before the header (number, default 0).
+- **Data dictionary URL** (optional, PRD LOAD-7): the address of a page that describes the columns, such as a codebook.
 - A preview table of the first 20 rows as currently parsed, with column names in the header.
 - A line: "Detected 14 columns · about 1,309 rows".
 - Buttons: **Import** (primary) and **Cancel**.
@@ -100,6 +101,8 @@ Rules:
 - Files over 50 MB are refused before upload with "This file is 73 MB. The limit is 50 MB."
 - Files that look binary (NUL bytes in the first 64 KB, outside UTF-16) show "Couldn't read this as text. Is it a spreadsheet or a zip? Export it as CSV first."
 - As built, the delimiter dropdown lists Comma, Tab, Semicolon and Pipe, plus "Other (…)" only when the detected delimiter is none of those. There's no field to type another delimiter. Not built yet (docs/BACKLOG.md).
+
+**The data dictionary (PRD LOAD-7).** When the field holds a URL, the web app sends it to `POST /datasets/{id}/dictionary` once the upload is accepted, and the dialog closes as usual without waiting. Sherlock reads the page with Tavily (TRD §7.1.1) while the file profiles. When it's done, a toast says "Read the data dictionary: notes on 3 columns.", or gives the one line saying why it wasn't read ("Web search isn't set up on this server, so I didn't look this up on the web.", "I couldn't find column descriptions on that page.", …). The import is never held up or failed by it. The notes show in the CSV tab's column headers (§8.1).
 
 Import uploads the raw file (with a progress bar for files > 2 MB), creates the dataset, and navigates to `/d/:id/dashboard` (or the default tab) in the **profiling** state. As built, the Import button shows a spinner while the upload runs; the byte-level progress bar for large files isn't built yet. Only the settings the user changed from what the preview detected are sent as import options; the server detects the rest itself. Until the status is **ready**, the centre panel of every tab route shows the profiling, offer, cleaning or build screen, except that the CSV tab shows the grid once the dataset has left profiling (offer, cleaning and building too; read-only, with a banner, while cleaning or building; §5, §8.1). Dashboard and Flow are disabled until then, with the tooltip "Available after cleaning" during cleaning and "Available once the dataset is ready" otherwise.
 
@@ -292,6 +295,7 @@ As built:
 As built (cut 5):
 - **Toolbar.** Add row · Delete row (the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (CSV · Notebook (.ipynb)) · the legend. Add column, the Filter row and quick views aren't there (P1 and cut 5).
 - **Header.** "n unsaved changes", Discard and Save changes (n) sit in the context row on the right, before the job tray, when there are pending edits. Review changes is cut (cut 5); the Changes panel's "Unsaved (yours)" list removes single lines instead.
+- **Column notes (PRD LOAD-7).** A column with a note (from a data dictionary the user linked) has ⓘ before its type line. Hovering its header shows the note: Sherlock's sentence, the source's own words in quotes, and "From the data dictionary at <site>, retrieved <date>. Not computed from your data." Hover only: the canvas header has no keyboard focus, so the same meaning is also answered in chat ("what does <column> mean?").
 - **Grid.** A frozen first column shows `_row_id` ("new" for a pending row), struck through for quarantined rows and rows marked for deletion. New rows appear at the top until saved. A header click sorts by that column (ascending, descending, off); the status bar says the sort is a view only.
 - **Status bar.** The number of selected cells, the row count (and sort), the unsaved count, and the current cell ("Row 9 · home.dest"). Selection stats are cut (cut 5).
 

@@ -1,7 +1,9 @@
 // Import preview (App Flow §3.2, UI brief §5.2): parsed locally; nothing uploads until Import.
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { readDictionary } from "@/api/columnNotes";
 import { useUpload } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -27,7 +29,9 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
   const [bytes, setBytes] = useState<Uint8Array | null>(null);
   const [detected, setDetected] = useState<PreviewSettings | null>(null);
   const [settings, setSettings] = useState<PreviewSettings | null>(null);
+  const [dictionaryUrl, setDictionaryUrl] = useState("");
   const upload = useUpload();
+  const qc = useQueryClient();
   const navigate = useNavigate();
   const tooBig = sizeError(file.size);
 
@@ -64,6 +68,16 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
         onSuccess: (ds) => {
           onDone();
           navigate(`/d/${ds.id}`);
+          const url = dictionaryUrl.trim();
+          if (url) {
+            // Read after the upload: the column notes arrive in the CSV tab's header tooltips (PRD LOAD-7).
+            readDictionary(qc, ds.id, url).then(
+              (out) => out.note
+                ? toast.message(out.note)
+                : toast.success(`Read the data dictionary: notes on ${out.notes.length} ${out.notes.length === 1 ? "column" : "columns"}.`),
+              (err: Error) => toast.error(err.message),
+            );
+          }
         },
         onError: (err) => toast.error((err as Error).message),
       },
@@ -116,6 +130,17 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
               onChange={(e) => set({ skipRows: clamp(e.target.valueAsNumber, 0, 1000) })}
             />
           </Field>
+          <div className="col-span-2 sm:col-span-4">
+            <Field label="Data dictionary URL (optional)">
+              <input
+                type="url" inputMode="url" maxLength={2000}
+                placeholder="https://… a page that describes the columns"
+                className="h-9 w-full rounded-md border border-input bg-card px-2"
+                value={dictionaryUrl}
+                onChange={(e) => setDictionaryUrl(e.target.value)}
+              />
+            </Field>
+          </div>
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-auto px-6 py-4">

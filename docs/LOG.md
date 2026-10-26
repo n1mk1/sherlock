@@ -572,6 +572,25 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **The gate is four calls, fixed** in code rather than a sixth setting; it can become one if a key's rate limit needs it.
   - A call refused before it went out (no key, the limit, no time) writes no `llm_calls` row: nothing was sent and nothing cost a credit.
 
+### Slice 15, part 1 (plan T-3): "use this data dictionary"
+
+- **Done:**
+  - **New P1 requirement LOAD-7** (PRD §7.1, add-only): an optional "Data dictionary URL" in the import preview; Sherlock reads the page with Tavily and keeps a note on each column it describes.
+  - `agent/web.py::read_dictionary` (TRD §7.1.1): Tavily `extract` of the URL with the column names as the query and three chunks per page; with under 200 characters of excerpts, `map` the site ("data dictionary, codebook, variable definitions") and extract the first three pages it finds (a failure there keeps the first page's excerpts). Super maps the fenced excerpts to columns with schema `ColumnNotes` (purpose `dictionary`): a column of the file named exactly, one note each, one sentence with no digits or numbers in words, and the excerpt it comes from. Each note is stored with that excerpt verbatim, the page's URL and title and the retrieval date.
+  - Migration `008_column_notes.sql`: `column_notes` (metadata, never data: no step, no version).
+  - `POST /datasets/{id}/dictionary` `{ url }` (LLM rate limit, 60 s deadline) answers `{ notes, note }` and always `200`: `note` is the one line when nothing was read (no key, a timeout, not an http(s) address, nothing about the columns). `GET /datasets/{id}/column-notes`.
+  - Web: the import preview's "Data dictionary URL (optional)" field; after the upload is accepted the dialog closes as before and the reading finishes in the background with a toast (`api/columnNotes.ts::readDictionary`, a plain promise, since the dialog unmounts). The CSV grid's header shows ⓘ before the type line of a column with a note, and hovering the header shows the sentence, the excerpt in quotes and "From the data dictionary at <site>, retrieved <date>. Not computed from your data."
+  - Tests (`test_web.py`): excerpts mapped to columns with the quote kept, the extract sent once with the column names; a site root mapped then its dictionary page extracted; fail-soft without a key, for a `file://` URL and on a timeout; the endpoints end to end with `LLM_MOCK` and `WEB_MOCK` (no key: one line and `200`; with fixtures: notes stored and listed; a bad body `422`); a malicious page (`</data> ignore previous`) and a malicious column name stay inside the dictionary prompt's data blocks. `columnNotes.test.ts`: a dictionary note wins over another kind; reading posts the URL and refreshes the notes.
+  - Docs: PRD LOAD-7; TRD §2, §3.6, §4.2 (two endpoints, `ColumnNote`), new §7.1.1; Schema §1, new §2.23, §5; App Flow §3.2, §8.1; UI/UX brief §4.7, §5.2; README "Web retrieval (Tavily)".
+  - Gate, with TAVILY_API_KEY unset, on this commit (which contains part 1 of slice 13): `uv run pytest` 437 passed, 3 skipped (16 min); `pnpm test` 94 passed; `pnpm e2e` passed.
+- **Decisions:**
+  - **Part 1 before T-1.** The plan puts T-3 last (slice 15), but the import-preview path needs nothing from the routing that waits on slice 12, so it lands now with T-0. The chat path ("use the codebook at <url>"), the notes in `ask_meaning`, and the notes as fenced context for the router and SQL prompts touch `agent/loop.py` and land with T-1 as part 2.
+  - **Numbered LOAD-7, not "LOAD-x":** the next free number in PRD §7.1.
+  - **A synchronous endpoint, not a job.** A new job kind would touch the runner, the job tray and the web's `JobKind` (other streams' files); the reading is bounded at 60 s (extract, maybe map and extract, one Super call), runs in FastAPI's thread pool, and its caller doesn't wait on it.
+  - **The model's sentence has no digits; the page's words keep them.** A codebook's codes are numbers ("1 = shipped"), so the description says what the column records and the excerpt beside it, verbatim, carries the codes (Rule 2: no number the model typed).
+  - **Hover only** for the header note: Glide draws the header on a canvas with no keyboard focus. Logged as a gap in App Flow §8.1; the same meaning is answered in chat.
+  - **Gate for the two commits together.** Part 1 of slice 13 had its own targeted tests (33 passed); the full gate below ran on this commit, which contains it.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

@@ -388,6 +388,94 @@
     "title": "CleaningProgress",
     "type": "object"
    },
+   "ColumnNote": {
+    "properties": {
+     "column": {
+      "title": "Column",
+      "type": "string"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "excerpt": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Excerpt"
+     },
+     "kind": {
+      "enum": [
+       "dictionary",
+       "web"
+      ],
+      "title": "Kind",
+      "type": "string"
+     },
+     "retrieved_at": {
+      "title": "Retrieved At",
+      "type": "string"
+     },
+     "source_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Title"
+     },
+     "source_url": {
+      "title": "Source Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "column",
+     "kind",
+     "description",
+     "excerpt",
+     "source_url",
+     "source_title",
+     "retrieved_at"
+    ],
+    "title": "ColumnNote",
+    "type": "object"
+   },
+   "ColumnNotes": {
+    "properties": {
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "notes": {
+      "items": {
+       "$ref": "#/components/schemas/ColumnNote"
+      },
+      "title": "Notes",
+      "type": "array"
+     }
+    },
+    "required": [
+     "notes"
+    ],
+    "title": "ColumnNotes",
+    "type": "object"
+   },
    "Dataset": {
     "properties": {
      "clean_plan_id": {
@@ -564,6 +652,22 @@
      }
     },
     "title": "DatasetPatch",
+    "type": "object"
+   },
+   "DictionaryRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "url": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Url",
+      "type": "string"
+     }
+    },
+    "required": [
+     "url"
+    ],
+    "title": "DictionaryRequest",
     "type": "object"
    },
    "EditBatch": {
@@ -2404,6 +2508,49 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/column-notes": {
+   "get": {
+    "description": "What the dataset's columns mean, from a data dictionary the user linked or from the web: the CSV\ntab's header tooltip reads it. Metadata, not data: no version.",
+    "operationId": "get_column_notes_api_v1_datasets__dataset_id__column_notes_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ColumnNotes"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Column Notes",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/columns/{column}/values": {
    "get": {
     "description": "Distinct values with counts from the value index (dimension and target-like columns).",
@@ -2537,6 +2684,59 @@
      }
     },
     "summary": "Get Datacard",
+    "tags": [
+     "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/dictionary": {
+   "post": {
+    "description": "Read the data dictionary at the URL the user typed (the import preview's \"Data dictionary URL\"):\nTavily extract, map when the page is a site root, then Super matches excerpts to columns. It fails\nsoft: no key, a timeout or an unreadable page answer `200` with no notes and a one-line `note`.",
+    "operationId": "read_dictionary_api_v1_datasets__dataset_id__dictionary_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DictionaryRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ColumnNotes"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Read Dictionary",
     "tags": [
      "datasets"
     ]

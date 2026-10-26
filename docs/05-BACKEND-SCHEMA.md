@@ -12,7 +12,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, `003_plan_scope.sql` adds `clean_plans.scope_json`, `004_llm_calls_indexes.sql` adds `llm_calls.cached` and three `llm_calls` indexes (§2.18), and `005_web_cache.sql` adds `web_cache` (§2.22) and `llm_calls.results`. From 004 on, each slice of work that changes the schema has its own numbered file, so files written in parallel land in any order: `migrate()` applies every file it hasn't applied, by number. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, `003_plan_scope.sql` adds `clean_plans.scope_json`, `004_llm_calls_indexes.sql` adds `llm_calls.cached` and three `llm_calls` indexes (§2.18), `005_web_cache.sql` adds `web_cache` (§2.22) and `llm_calls.results`, and `008_column_notes.sql` adds `column_notes` (§2.23). From 004 on, each slice of work that changes the schema has its own numbered file, so files written in parallel land in any order: `migrate()` applies every file it hasn't applied, by number. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
@@ -605,6 +605,30 @@ CREATE INDEX web_cache_created ON web_cache(created_at);
 - A row older than 24 h is ignored when read and deleted by the purge (§6). A failed call isn't cached.
 - `created_at` is when Tavily returned it, so a cached answer shows the date it was retrieved, not the date it was read.
 
+### 2.23 column_notes
+
+What a column means, from a data dictionary the user linked (PRD LOAD-7, TRD §7.1.1). `kind` is `dictionary`; `web`, a column meaning read from the web when chat explains a column, isn't written yet. Added by migration `008_column_notes.sql`.
+
+```sql
+CREATE TABLE column_notes (
+  dataset_id   TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  column       TEXT NOT NULL,
+  kind         TEXT NOT NULL,                  -- dictionary|web
+  description  TEXT NOT NULL,                  -- Super's sentence from the source, no digits
+  excerpt      TEXT,                           -- the source's own words, verbatim
+  source_url   TEXT NOT NULL,
+  source_title TEXT,
+  retrieved_at TEXT NOT NULL,                  -- when Tavily returned the page
+  created_at   TEXT NOT NULL,
+  PRIMARY KEY (dataset_id, column, kind)
+);
+```
+
+- **Metadata, not data** (CLAUDE.md Rule 3): a note describes a column and never changes a value, so it isn't a step and has no version. A note is keyed by the column's name; after a rename the old name's note no longer matches a column and isn't shown.
+- **`description`** is written by Super from the excerpt, one sentence with no digits or numbers in words (`ColumnNotes`, TRD §7.1). Codes and their numbers stay in **`excerpt`**, the chunk of the page Tavily returned, shown verbatim beside it (at most 600 characters).
+- One note per column and kind: reading a dictionary again replaces the column's `dictionary` note. Readers show a column's `dictionary` note before any other kind.
+- Deleted with the dataset: the foreign key cascades on hard delete (§6).
+
 ---
 
 ## 3. DuckDB (in-memory, cached per version)
@@ -685,6 +709,7 @@ As built:
 | Pending edits | client only | browser local storage (`sherlock:edits:<dataset>:<version>`) |
 | Cleaning plan (draft) | `clean_plans` | none; a draft on an older version is merged onto the current one when read |
 | Web search, extract and map results | Tavily | `web_cache` (24 h, §2.22) |
+| Column notes (a data dictionary) | the linked page, read by Tavily | `column_notes` (kept with the dataset, §2.23) |
 | UI state (tab, scroll, panel widths) | client | browser local storage; `datasets.last_tab` server-side |
 
 ---

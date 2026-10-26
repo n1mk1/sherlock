@@ -136,7 +136,7 @@ As built. The tree above is the plan. Where the code differs:
 - **`cleaning/`.** Also `plan.py` (the cleaning plan: items, ops, merge, §4.4) and `report.py` (the `CleaningReport`, §6.8).
 - **`notebook/`.** `cells.py` is one module, not a `cells/` folder; `scan.py` is the allowlist scan; there's no `repro_render.py` (§7.7).
 - **No `chat/` package.** Threads and messages are in `routers/chat.py` and `agent/loop.py`, proposals in `agent/actions.py` and `routers/proposals.py`.
-- **`web/`** (Python, `api/sherlock/web/`): `client.py` (the Tavily client, §3.6) and `fixtures.py` (recorded responses for tests and `WEB_MOCK`).
+- **`web/`** (Python, `api/sherlock/web/`): `client.py` (the Tavily client, §3.6) and `fixtures.py` (recorded responses for tests and `WEB_MOCK`). The data dictionary reader is in `agent/web.py` (§7.1.1).
 - **Also:** `llm/models.py` (the NVIDIA-only role rules, §3.5), `llm/text.py` (stripping reasoning, pulling out JSON), `llm/fixtures.py` (recorded responses for tests and `LLM_MOCK`) and `llm/calls.py` (receipts: reading `llm_calls` back per message and per job, §4.9); `canvas/service.py`; `api/samples/seed/` (the cached sample). In `web/src/components/`, `dataset/` holds the dataset page with the offer, the cleaning plan (`CleanPlanPanel.tsx`), the status, cleaning and report screens (there's no `cleaning/` folder), and `ui/` the shadcn-style primitives. `chat/` holds the message renderers (`Blocks.tsx`) and "How I worked it out" (`Receipts.tsx`, also used by the cleaning report); the chat bar, thread and proposal cards are in `shell/ChatBar.tsx`. `src/app/` is the theme (`ThemeSync.tsx`, `theme.css`; the routes are in `src/App.tsx`); `src/state/` is `ui`, `filters`, `edits` and `flow` (the CSV selection is in `ui`); `src/lib/` is `cells`, `format`, `importPreview`, `tokens` and `utils`, with no keyboard module. `web/e2e/flow.spec.ts` and `web/playwright.config.ts` hold the end-to-end flow (§14).
 - **CI.** `.github/workflows/ci.yml` is correct but doesn't run, because Actions won't start jobs on this account (billing). Tests run locally and deploys are by hand (§11).
 
@@ -384,14 +384,14 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
 
 ### 3.6 Web client
 
-Tavily, for retrieval only: `search`, `extract` and `map`, through `tavily-python` (pinned in `api/pyproject.toml`, `THIRD_PARTY.md`). It has no caller yet: reading a data dictionary the user links (PRD LOAD-7), outside-world questions (PRD ASK-11, §8.2 `web_context`) and what a column usually means (§8.2 `ask_meaning`) are built on it next. It is optional: with no key every web feature is off and says so in one line, and the rest of the app is unchanged.
+Tavily, for retrieval only: `search`, `extract` and `map`, through `tavily-python` (pinned in `api/pyproject.toml`, `THIRD_PARTY.md`). Its job so far is reading a data dictionary the user links (PRD LOAD-7, §7.1.1); outside-world questions (PRD ASK-11, §8.2 `web_context`) and what a column usually means (§8.2 `ask_meaning`) are next, built on the same client. It is optional: with no key every web feature is off and says so in one line, and the rest of the app is unchanged.
 
 - **Retrieval only (CLAUDE.md Rule 2).** Tavily's own model never writes text a user reads, so `research()` and `include_answer` are never used, and `crawl` isn't either (`map` and `extract` cover the data dictionary at a bounded cost). Every parameter is fixed in `sherlock/web/client.py`; a caller chooses only the query (or the URLs and the instructions), the topic and a time range:
   - `search`: `search_depth: basic`, `max_results: 5`, `include_answer: false`, `include_raw_content: false`, `include_images: false`, `auto_parameters: false`, `topic` `general` or `news`, and `time_range` (`day`, `week`, `month` or `year`) only when the caller asks for recent results. The query is whitespace-collapsed and cut to 400 characters (Tavily's advice).
   - `extract`: `extract_depth: basic`, `format: markdown`, a `query` (the chunks are ranked by it) with `chunks_per_source: 3`, `include_images: false`, at most three URLs.
   - `map`: `max_depth: 1`, `max_breadth: 20`, `limit: 20`, `allow_external: false`, with `instructions`.
   - No other keyword reaches the client, so `include_answer: true` can't be asked for (`tests/test_web.py`).
-- **What goes out (TRD §15).** Queries are built from the user's own words and the file's column names, never from cell values. Every caller has to keep to this.
+- **What goes out (TRD §15).** Queries are built from the user's own words and the file's column names, never from cell values. Each caller enforces it: a data dictionary is read only from a URL the user typed, with the column names as the extract's query (§7.1.1).
 - **What comes back is untrusted.** Snippets and pages go into prompts fenced (§3.5, `fence()`), and what the model writes from them follows the narrator's rules: text runs with no digits, numbers in words, causal wording or markup. Numbers from the web are shown only inside the quoted excerpts, as Tavily returned them, with their URL and the date they were retrieved. Web facts never enter a fact sheet or a chip.
 - **Fail-soft.** No key, `WEB_SEARCH=off`, the hourly limit, too little time before the call's deadline, a timeout, a `4xx`, a `5xx`, a connection error or a reply that isn't an object: the call raises `WebUnavailable` with the one line the answer shows instead (`web/client.py::NOTES`), and only that feature degrades. Nothing else is raised. The lines: "Web search isn't set up on this server, so I didn't look this up on the web." (no key or off), "I've already searched the web a lot this hour, so I didn't search again." (the limit), "There wasn't enough time left in this answer to search the web." (the deadline), "The web search took too long, so I left it out." (a timeout), "The web search didn't work just now, so I left it out." (anything else).
 - **Never keyless.** `tavily-python` sends unauthenticated "keyless" requests when it has no key. Sherlock never does: with an empty `TAVILY_API_KEY` there is no transport and no request leaves the process, and the live transport refuses to be made without a key.
@@ -432,6 +432,8 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 | DELETE | `/datasets/{id}` | — | `204`; soft delete, purged after 10 min unless restored |
 | POST | `/datasets/{id}/restore` | — | `Dataset` |
 | GET | `/datasets/{id}/datacard` | `?version=` (default current) | `DataCard` |
+| GET | `/datasets/{id}/column-notes` | — | `{ notes: ColumnNote[] }`: what the columns mean, from a data dictionary (§7.1.1) |
+| POST | `/datasets/{id}/dictionary` | `{ url }` | `{ notes: ColumnNote[], note: string \| null }`: reads the data dictionary at the URL (PRD LOAD-7, §7.1); fail-soft |
 | GET | `/datasets/{id}/export.csv` | `?version=` | CSV stream |
 | GET | `/datasets/{id}/raw.csv` | — | the original upload, unmodified, with `Content-Disposition: attachment; filename="<name>-raw.csv"` |
 | POST | `/datasets/{id}/exports/notebook` | `NotebookOptions` | `{ export_id, job_id, cached: bool, download_url? }` (cached → `download_url` immediately) |
@@ -473,6 +475,11 @@ Implementation:
   - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
   - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
   - **Built by the job.** The profile job builds the card right after import, so a later request reads the cached one. Builds of one dataset are serialized: a request that arrives while the job is building waits and gets the same card, with the same issue IDs.
+
+Column notes and the data dictionary (`routers/datasets.py`, PRD LOAD-7):
+- **`ColumnNote`**: `{ column, kind: "dictionary"|"web", description, excerpt, source_url, source_title, retrieved_at }` (Schema §2.23). `description` is Sherlock's sentence, with no digits; `excerpt` is the source's own words, verbatim.
+- **`GET /datasets/{id}/column-notes`** lists the dataset's notes, by column. Notes have no version: they describe columns, not values.
+- **`POST /datasets/{id}/dictionary`** takes `{ url }` (1–2,000 characters) and reads it as §7.1 says, within 60 s. It counts against the LLM rate limit (§15). It answers `200` whether or not the page could be read: `{ notes, note }`, where `notes` are the dictionary notes now stored and `note` is the one line to show when nothing was read (no Tavily key, a timeout, not an http(s) address, no column descriptions on the page). An unknown key in the body is `422`.
 
 Rename, delete and restore:
 - **`PATCH /datasets/{id}`** takes `{ name?, last_tab? }`; unknown keys are `422`. A name is trimmed and may not be empty or longer than 200 characters. The web app sends `last_tab` when a tab opens, which `/d/:id` uses to choose a tab.
@@ -1346,6 +1353,18 @@ Implementation of steps 3–5 (`sherlock/profile/`, `sherlock/cleaning/detectors
   - It marks `survived` as target-like and `name` as the ID.
   - It flags `boat` (value rule, 0.98) and `body` (presence rule, 1.00) as leakage.
   - In a 512 MB container the app peaks at about 110 MB.
+
+### 7.1.1 Data dictionary (PRD LOAD-7)
+
+A data dictionary or codebook the user links is read with Tavily (§3.6) and kept as column notes (Schema §2.23): metadata about the columns that never changes a value, so no step and no version.
+
+1. **Where the URL comes from.** Only a URL the user typed is fetched: the import preview's optional "Data dictionary URL" field (App Flow §3.2), which the web app sends to `POST /datasets/{id}/dictionary` once the upload is accepted. It must be `http` or `https`, at most 2,000 characters.
+2. **Extract.** Tavily `extract` of that URL with the file's column names as the `query` (as many as fit 400 characters), `chunks_per_source: 3`. The page's chunks (Tavily joins them with `[...]`) are numbered excerpts, each at most 600 characters.
+3. **Map when the page is a site root.** With fewer than 200 characters of excerpts, `map` the URL with the instructions "data dictionary, codebook, variable definitions" (limit 20, no external links) and `extract` the first three pages it finds other than the URL itself. A failure here keeps what the first page had.
+4. **Match excerpts to columns.** `medium` with schema `ColumnNotes` (`{ notes: [{ column, description, excerpt }] }`, purpose `dictionary`) reads the column names and the fenced excerpts. Each note names a column of the file exactly, one per column, and the number of the excerpt it comes from; its description is one sentence with no digits or numbers in words, so a code's numbers stay in the quoted excerpt. A note that breaks these rules gets the client's one repair.
+5. **Store.** Each note is saved with its excerpt verbatim, the page's URL and title and the day Tavily returned it, replacing the column's earlier dictionary note. The model call and the Tavily calls are `llm_calls` rows (purpose `dictionary`).
+6. **Where notes show.** The CSV tab's column header has ⓘ and, on hover, the note, the quoted excerpt and where it's from (App Flow §8, UI/UX brief §4.7).
+7. **Fail-soft.** No key, a timeout, a `4xx` or `5xx`, a page with no column descriptions, a reply that fails twice or the model service down: no notes are stored and the response's `note` says so in one line; the import itself is never affected.
 
 ### 7.2 Cleaner (headless)
 

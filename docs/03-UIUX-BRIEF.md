@@ -312,6 +312,8 @@ Row height 32px; header 56px. Editors open in place with the same height.
 
 As built: Glide draws on a canvas, so each style is drawn in code from the resolved tokens. Changed: `--changed` fill and the 2px `--info` top line. Flagged: a dashed `--warning` inset outline. Invalid: a 1px `--destructive` underline. Unsaved: `--unsaved` fill, a 1px `--accent` outline and a 4px `--accent` dot. Find matches: `--accent-soft` fill. Quarantined and to-be-deleted rows: muted text and a struck-through row number. The header draws the name (600, with ↑/↓ when sorted), "type · n% missing" and a 14px mini histogram (numeric bins, or category counts) in `--chart-3`. Number and boolean cells are mono; numbers right-aligned. The header and the row-number column are filled with `--background` rather than `--muted`.
 
+Column notes (PRD LOAD-7): a column with a note starts its type line with ⓘ (the 11px `--muted-foreground` line: "ⓘ category · 0% missing"). Hovering the header shows a tooltip under it: `--card` fill, `--border`, radius 8px, shadow-md, at most 340px wide, 12.5px text. It holds Sherlock's sentence in `--foreground`, the source's words in italic `--foreground-2` with a 2px `--border` rule on the left and curly quotes, and an 11.5px `--muted-foreground` line naming where it's from, the site and the date, ending "Not computed from your data."
+
 ### 4.8 Chat bar and thread
 
 - Bar: max 680px wide, centred, `--card` surface, 1px `--border`, radius 14, 52px tall, input 14px, send button 40 × 40 primary. Context chip on the left when present. `/` hint on the right.
@@ -400,7 +402,7 @@ As built (`EmptyLibrary.tsx`, `DropOverlay.tsx`): the zone is at most 640px wide
 
 ### 5.2 Import preview dialog
 
-Header "Import titanic3.csv · 61 KB". A row of four controls (delimiter, encoding, header row, skip rows) as labeled selects/inputs. The preview table (shadcn Table, mono numbers, 20 rows, horizontal scroll). The detection line. Footer: Cancel (ghost), Import (primary).
+Header "Import titanic3.csv · 61 KB". A row of four controls (delimiter, encoding, header row, skip rows) as labeled selects/inputs, and under them a full-width "Data dictionary URL (optional)" text input (type url, placeholder "https://… a page that describes the columns", PRD LOAD-7). The preview table (shadcn Table, mono numbers, 20 rows, horizontal scroll). The detection line. Footer: Cancel (ghost), Import (primary).
 
 ### 5.3 Cleaning offer (centre)
 

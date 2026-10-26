@@ -216,3 +216,25 @@ class PlanStep(Strict):
 
 class Plan(Strict):
     steps: list[PlanStep] = Field(min_length=2, max_length=5)
+
+
+# --- Column notes (TRD §7.1.1, PRD LOAD-7) ---------------------------------------------------
+
+
+class ColumnNote(Strict):
+    column: str = Field(description="a column of the file, exactly as named")
+    description: str = Field(description="one plain sentence, no digits: what the column records, from the excerpt")
+    excerpt: int = Field(ge=1, description="the number of the excerpt the description comes from")
+
+    @model_validator(mode="after")
+    def no_digits(self) -> "ColumnNote":
+        if has_digits(self.description):
+            raise ValueError(f"digits in the description of {self.column!r}: the excerpt keeps the numbers")
+        if not self.description.strip():
+            raise ValueError(f"the description of {self.column!r} is empty")
+        return self
+
+
+class ColumnNotes(Strict):
+    """A data dictionary mapped to the file's columns (T-3, TRD §7.1)."""
+    notes: list[ColumnNote] = Field(max_length=200, description="one note per column an excerpt describes")

@@ -32,6 +32,16 @@ Every model call goes to **NVIDIA Nemotron on Nebius Token Factory** (its OpenAI
 - **Nebius services used by the deployed app:** Token Factory only. The app is hosted on Render because the account's Nebius AI Cloud tenant was suspended; the same image runs as a Nebius Serverless Endpoint with `scripts/deploy.sh` (see Deploy).
 - **Structured output.** Every structured call uses Token Factory's strict `response_format` JSON schema, validated again in code, with one repair round that sends the error back.
 
+## Web retrieval (Tavily)
+
+Sherlock can read the web through **Tavily**, for retrieval only: `search`, `extract` and `map`. Tavily's own answer and research features are never used, because a non-NVIDIA model writes them; every sentence a user reads is still written by Nemotron, from the pages Tavily returned, and the pages' own words are shown as quotes with their address.
+
+- **What it does today:** reads a **data dictionary** you link in the import preview ("Data dictionary URL"): Tavily extracts the page (or maps a site for its dictionary page), Super matches its passages to your columns, and each column's note shows on hover over its header in the CSV tab, with the passage quoted.
+- **What it never sends:** cell values. Outbound requests hold only your own words, column names and a URL you typed (TRD §3.6, §15).
+- **Turning it on:** set `TAVILY_API_KEY` in `.env` (local) or in the Render service's environment variables (`render.yaml` declares it with `sync: false`, so the value is never in the repo), then restart. Nothing else changes: no code, no setting in the app. `WEB_SEARCH=off` turns it off again.
+- **Without a key** (the default here) the app runs the same, and each web feature says in one line that web search isn't set up instead of failing.
+- Responses are cached for 24 h, each user has 20 Tavily calls an hour, and every call is logged next to the model calls (`llm_calls`, `role = 'web'`).
+
 ![Architecture: the browser, the Sherlock API on Render, Nemotron on Nebius Token Factory, the persistent disk, DuckDB, the sandbox and the exported notebook](docs/architecture.png)
 
 The same flow as a diagram GitHub draws (`scripts/architecture.py` renders the image above):
@@ -118,7 +128,7 @@ cd web && pnpm install && pnpm dev
 Sherlock is hosted on **Render**: one Docker web service built from `api/Dockerfile` with a persistent disk at `/data`, defined in [`render.yaml`](render.yaml). Every model call still goes to Nemotron on Nebius Token Factory.
 
 1. In the Render dashboard, choose **New → Blueprint** and pick this repository.
-2. When asked, enter `LLM_API_KEY`. It's `sync: false`, so it never lives in the repo.
+2. When asked, enter `LLM_API_KEY`, and `TAVILY_API_KEY` to turn on web retrieval (leave it empty to keep it off). Both are `sync: false`, so they never live in the repo.
 3. Apply. Render builds the image, attaches the disk and deploys.
 
 Later pushes to `main` that touch `api/`, `web/` or `render.yaml` redeploy once CI passes.

@@ -26,6 +26,7 @@ from sherlock.jobs.events import emit
 from sherlock.jobs.runner import cancel_job
 from sherlock.ownership import check_dataset, owned_dataset
 from sherlock.profile import service as profile_service
+from sherlock.ratelimit import llm_rate_limit
 from sherlock.storage import dataset_dir, raw_path
 
 router = APIRouter(tags=["datasets"])
@@ -242,3 +243,60 @@ RESTORE_MINUTES = 10
 
 def _minutes_ago(minutes: int) -> str:
     return (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+# --- Column notes and the data dictionary (PRD LOAD-7, TRD §4.2, §7.1) ------------------------------
+
+
+class ColumnNote(BaseModel):
+    column: str
+    kind: Literal["dictionary", "web"]
+    description: str             # Sherlock's sentence from the source, with no digits
+    excerpt: str | None          # the source's own words, as the page has them
+    source_url: str
+    source_title: str | None
+    retrieved_at: str            # the day Tavily returned the page
+
+
+class ColumnNotes(BaseModel):
+    notes: list[ColumnNote]
+    note: str | None = None      # the one line shown when the dictionary couldn't be read (fail-soft)
+
+
+class DictionaryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=1, max_length=2000)
+
+
+@router.get("/datasets/{dataset_id}/column-notes", response_model=ColumnNotes)
+def get_column_notes(row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)):
+    """What the dataset's columns mean, from a data dictionary the user linked or from the web: the CSV
+    tab's header tooltip reads it. Metadata, not data: no version."""
+    from sherlock.agent.web import notes_for
+
+    return {"notes": notes_for(db, row["id"])}
+
+
+@router.post("/datasets/{dataset_id}/dictionary", response_model=ColumnNotes, dependencies=[Depends(llm_rate_limit)])
+def read_dictionary(
+    body: DictionaryRequest,
+    request: Request,
+    row: sqlite3.Row = Depends(owned_dataset),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Read the data dictionary at the URL the user typed (the import preview's "Data dictionary URL"):
+    Tavily extract, map when the page is a site root, then Super matches excerpts to columns. It fails
+    soft: no key, a timeout or an unreadable page answer `200` with no notes and a one-line `note`."""
+    import time
+
+    from sherlock.agent.web import DICTIONARY_WALL_S
+    from sherlock.agent.web import read_dictionary as read
+    from sherlock.llm.client import CallScope, LLMClient
+    from sherlock.web.client import WebClient
+    from sherlock.widgets import service as ws
+
+    settings = request.app.state.settings
+    env = ws.Env(settings, db, request.app.state.duckdb, request.app.state.bus)
+    columns = list(ws.user_types(env, row, row["current_version"]))
+    scope = CallScope(user_id=row["user_id"], dataset_id=row["id"], deadline=time.monotonic() + DICTIONARY_WALL_S)
+    return read(LLMClient(settings), scope, WebClient(settings), db, row["id"], body.url.strip(), columns)

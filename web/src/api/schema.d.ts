@@ -373,6 +373,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/column-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Column Notes
+         * @description What the dataset's columns mean, from a data dictionary the user linked or from the web: the CSV
+         *     tab's header tooltip reads it. Metadata, not data: no version.
+         */
+        get: operations["get_column_notes_api_v1_datasets__dataset_id__column_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/columns/{column}/values": {
         parameters: {
             query?: never;
@@ -407,6 +428,28 @@ export interface paths {
         get: operations["get_datacard_api_v1_datasets__dataset_id__datacard_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/dictionary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Dictionary
+         * @description Read the data dictionary at the URL the user typed (the import preview's "Data dictionary URL"):
+         *     Tavily extract, map when the page is a site root, then Super matches excerpts to columns. It fails
+         *     soft: no key, a timeout or an unreadable page answer `200` with no notes and a one-line `note`.
+         */
+        post: operations["read_dictionary_api_v1_datasets__dataset_id__dictionary_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1507,6 +1550,33 @@ export interface components {
             /** Step */
             step: number;
         };
+        /** ColumnNote */
+        ColumnNote: {
+            /** Column */
+            column: string;
+            /** Description */
+            description: string;
+            /** Excerpt */
+            excerpt: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "dictionary" | "web";
+            /** Retrieved At */
+            retrieved_at: string;
+            /** Source Title */
+            source_title: string | null;
+            /** Source Url */
+            source_url: string;
+        };
+        /** ColumnNotes */
+        ColumnNotes: {
+            /** Note */
+            note?: string | null;
+            /** Notes */
+            notes: components["schemas"]["ColumnNote"][];
+        };
         /** Dataset */
         Dataset: {
             /** Clean Plan Id */
@@ -1549,6 +1619,11 @@ export interface components {
             last_tab?: ("csv" | "dashboard" | "flow") | null;
             /** Name */
             name?: string | null;
+        };
+        /** DictionaryRequest */
+        DictionaryRequest: {
+            /** Url */
+            url: string;
         };
         /** EditBatch */
         EditBatch: {
@@ -2648,6 +2723,37 @@ export interface operations {
             };
         };
     };
+    get_column_notes_api_v1_datasets__dataset_id__column_notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ColumnNotes"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     column_values_api_v1_datasets__dataset_id__columns__column__values_get: {
         parameters: {
             query?: {
@@ -2707,6 +2813,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_dictionary_api_v1_datasets__dataset_id__dictionary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DictionaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ColumnNotes"];
                 };
             };
             /** @description Validation Error */
