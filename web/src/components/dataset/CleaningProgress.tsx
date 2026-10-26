@@ -1,14 +1,15 @@
-// Cleaning in progress (App Flow §5, UI brief §5.4): the live log from the dataset's event stream,
-// "So far" counts, the checks on the latest step, the budget line, and Stop. A step's line is built in
-// code from its verifier report; the model's own sentence (`note`, never with digits) and the issue's
-// model calls (`calls`) sit under it.
+// Cleaning in progress (App Flow §5, UI brief §5.4): the job's log so far (GET /jobs/{jid}/log) and
+// its live lines from the dataset's event stream, "So far" counts, the checks on the latest step, the
+// budget line, and Stop. A step's line is built in code from its verifier report; the model's own
+// sentence (`note`, never with digits) and the issue's model calls (`calls`) sit under it.
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, CircleDot, Clock, Flag, Redo2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { request } from "@/api/client";
 import { keys, useCancelJob, useJobs, useReport } from "@/api/queries";
 import { useEventStream } from "@/api/sse";
-import type { Dataset, JobLogEntry, JobProgressEvent } from "@/api/types";
+import type { Dataset, JobLogEntry, JobProgressEvent, Progress } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
   const { data: report } = useReport(dataset.id, job?.id, !!job);
   const cancel = useCancelJob(dataset.id);
   const [entries, setEntries] = useState<JobLogEntry[]>([]);
-  const [progress, setProgress] = useState<JobProgressEvent | null>(null);
+  const [live, setProgress] = useState<JobProgressEvent | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -45,14 +46,28 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
   }, []);
   useEffect(() => setEntries([]), [job?.id]);
 
-  // Replay the dataset's events from the start, keeping this job's log lines.
+  // The log so far comes from the job's own log, which keeps every line (the dataset's event replay can
+  // be cut short); live lines come from the stream, opened first, and a line in both is kept once.
+  useEffect(() => {
+    if (!job?.id) return;
+    let cancelled = false;
+    request<{ entries: JobLogEntry[] }>("GET", `/api/v1/jobs/${job.id}/log`)
+      .then((r) => {
+        if (!cancelled) setEntries((live) => mergeLog(r.entries, live));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id]);
+
   useEventStream(
     job ? `/api/v1/datasets/${dataset.id}/events` : null,
     {
       "job.log": (data) => {
         const e = data as JobLogEntry;
         if (e.job_id !== job?.id) return;
-        setEntries((list) => [...list, e]);
+        setEntries((list) => mergeLog(list, [e]));
         qc.invalidateQueries({ queryKey: keys.report(dataset.id, job?.id) });
         if (e.step_id) qc.invalidateQueries({ queryKey: keys.dataset(dataset.id) }); // a new version: the header's pill
       },
@@ -61,9 +76,10 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
         if (p.job_id === job?.id) setProgress(p);
       },
     },
-    0,
   );
 
+  // The stream is live only, so before its first progress event the job's own progress stands in.
+  const progress: Progress | null = live ?? job?.progress ?? null;
   const log = useMemo(() => collapse(entries), [entries]);
   const started = job?.started_at ? Date.parse(job.started_at) : null;
   const elapsed = started ? (now - started) / 1000 : 0;
@@ -156,6 +172,19 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
 
 /** A "running" line is replaced by its outcome for the same issue, also when "Waiting for the
  * model…" lines came in between (those stay, after it). */
+/** The log lines of both lists in time order, each line once (by its time and text). */
+export function mergeLog(a: JobLogEntry[], b: JobLogEntry[]): JobLogEntry[] {
+  const seen = new Set<string>();
+  const out: JobLogEntry[] = [];
+  for (const e of [...a, ...b]) {
+    const key = `${e.ts}|${e.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out.sort((x, y) => (x.ts < y.ts ? -1 : x.ts > y.ts ? 1 : 0));
+}
+
 export function collapse(entries: JobLogEntry[]): JobLogEntry[] {
   const out: JobLogEntry[] = [];
   for (const e of entries) {

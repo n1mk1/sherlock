@@ -658,6 +658,8 @@ Steps API as implemented (`sherlock/routers/steps.py`):
 
 `WidgetData`: `{ version, columns: [{name, type}], rows: any[][], row_count, truncated: bool, highlight?: { kind: "bar"|"point"|"cell"|"series", key: string } }`
 
+As built (plan 2b.6), `WidgetData` also has `total`: the query's real row count. `row_count` counts the rows returned (at most 2,000, `truncated` when there were more); when they were capped, `total` is counted again with `SELECT count(*)` over the query. A result cached before `total` existed has none, and readers fall back to `row_count`.
+
 `Layout`: `{ lg: [{ i: widget_id, x, y, w, h, collapsed?: bool }], md?: [...], sm?: [...] }`
 
 Widgets API as implemented (`sherlock/routers/widgets.py`, `sherlock/widgets/`):
@@ -767,11 +769,13 @@ Canvas API as implemented (`sherlock/canvas/service.py`, `sherlock/routers/canva
   - At most 400 nodes and 800 edges. IDs are 1–64 characters and unique.
   - A node's `type` is `text`, `file`, `link` or `group`. `x` and `y` are numbers within ±1,000,000, and `width` and `height` within 1–4,000. `text`, `file`, `url` and `label` are at most 4,000 characters.
   - A card node's `sherlock.card_id` names a card of this dataset (a soft-deleted one counts), at most once per canvas; its `text` is stored empty.
+  - A card node whose card is gone for good but was on the stored canvas is dropped with its edges, not refused (plan 2b.6). The save then reads the stored canvas, whose pruning changed its etag, so a tab saving what it read before the card went gets `409` and reloads rather than a `422` about a card it never chose. A card the stored canvas never had must still be this dataset's.
   - An edge joins two different nodes on the canvas. `fromSide` and `toSide` are `top`, `right`, `bottom` or `left`, and a label is at most 200 characters. `sherlock` defaults to `{ made_by: "user", kind: "custom" }`.
   - Only the JSON Canvas keys and `sherlock` are kept; anything else is dropped.
   - A value of the wrong type is `422` too, not `500`: an edge's `fromNode` or `toNode` that isn't a string, an edge's `sherlock` that isn't an object, and a `card_id` that isn't a string.
 - **A save** that changes the document bumps `datasets.state_rev` (so the notebook export cache sees it) and emits `canvas.updated` with `{ etag }`.
 - **Pruning on read.** A card node whose card no longer exists, and its edges, are removed; the canvas is written back, so the etag changes. A soft-deleted card's node stays, and the client hides it until the card is restored.
+- **Pruning by the purge job** (plan 2b.6). When purge hard-deletes cards, it prunes each affected canvas at once, bumps `state_rev` and emits `canvas.updated` with the new etag, so an open Flow tab refetches instead of finding out at its next save.
 - **AI writes** (`add_canvas_node`, `add_canvas_edge`) go through `mutate`: read, change, validate and store in one `BEGIN IMMEDIATE` transaction, so they can't race a tab's save. The tab then gets `canvas.updated`, and its next `PUT` with the old etag is `409`.
 - **Placement.** An AI-placed card is 240 × 170. A synthesis goes right of its sources (160px past the rightmost), level with their centroid, so it doesn't cover them; a card with no placed sources goes right of everything.
 - **Ownership.** Another user's dataset is `404`, as for every dataset route.
@@ -894,7 +898,7 @@ Implementation (`sherlock/routers/jobs.py`):
   - A running job gets `cancel_requested = 1` and stops at its next `check_cancel` (§3.3).
   - Cancelling a finished job does nothing. It is always `204`.
 - **`POST /jobs/{jid}/retry`.** It answers `201` with a new queued job of the same kind, dataset and params. Only a `failed` or `cancelled` job can be retried; any other is `409 conflict`.
-- **`GET /jobs/{jid}/log`.** It returns the job's `job.log` event data, oldest first.
+- **`GET /jobs/{jid}/log`.** It returns the job's `job.log` event data, oldest first. The cleaning screen loads the log so far from it and follows the live stream for new lines (plan 2b.6), since the dataset's event replay can be cut short.
 - **`GET /jobs/{jid}/calls` (receipts).** The `llm_calls` rows whose `job_id` is the job's, in the `Receipt` shape of §4.9, through the same query. The cleaning report shows a clean's as "How I worked it out" (App Flow §5): each diagnose, propose and critic call with its model, latency, tokens and repairs, and the total. Another user's job is `404`.
 - **`progress`.** Before a job reports, it is `{ step: 0, of: 0, label: "", pct: 0 }`.
 - **Kinds.** `undo` is in the kind list (`jobs/runner.py::KINDS`) but no job of it is ever made: an undo and its replay run inside `POST …/undo` (§4.4, §7.8). Every other kind has a handler.
@@ -1622,6 +1626,7 @@ As built (`sherlock/stories/synthesis.py`, `sherlock/agent/flow.py`), with cuts 
 - **The card.** `kind: "synthesis"`, `source_card_ids` the selection, no fact sheet, `status: "ready"`, the current version, `narrated_by` the model or null. `Card.facts` for it is built from its chips, each read from the cited card's current sheet.
 - **Evidence.** A chip keyed `<card_id>.<fact key>` resolves through that card's sheet. The answer adds `card_id`, the card the fact came from.
 - **`sources_changed`.** With cut 6 there is no material hash. After every stories run, cascade or refresh, each `ready` synthesis card (and each `answer` card without a fact sheet; `synthesis.check_sources`) compares its chips' values with the cited facts' current `formatted` values. If one differs, or its fact is gone, the card becomes `sources_changed`.
+- **Under "Automatic"** (plan 2b.6), a cascade that leaves a synthesis `sources_changed` queues a `stories` job with `{ synthesis_ids: [...], reason: "cascade" }` once its cards are told, which writes those syntheses again with the changed badge (an edited one gets a suggestion). Only syntheses whose sources still give at least two usable cards are queued; the others keep Refresh. Under "Ask first" nothing is rewritten.
 - **Refresh** (`POST /cards/{cid}/refresh` on a synthesis card) queues a `stories` job with `{ synthesis_ids: [cid], reason: "refresh" }`, which writes the synthesis again from its sources' current facts. A card the user edited gets it as a suggestion. The card keeps its ID and its place on the canvas, and gets the changed badge. Such a job is never merged with a waiting widget stories job.
 - **Only usable sources** (§7.4.2): a synthesis and an `ask_story` answer cite only cards whose numbers hold on the current version, and say which they left out.
 
@@ -1884,6 +1889,8 @@ As implemented (`sherlock/notebook/`):
   - `counts.runs` and the preview count them.
   - The execution test (`tests/test_notebook.py`) runs the notebook and checks that each run cell's metric is within 0.5 points of its model card, after edits, a clean step and an undo with replay. They match exactly.
 - **Story cards:** with Include story cards, the overview follows the load cell as a `##` section, and each widget's card follows its widget as a `###` headline, its body (chips as their current fact-sheet values; bullets as a list), a "Related:" line, and the SQL of its chips in a closed `<details><summary>Evidence</summary>` block. Unverified numbers get `*` and the footnote "Typed by hand in Sherlock, not computed." With no cards yet, the first cell says so. `counts.cards` counts the cards included.
+- **The real row count** (plan 2b.6): a widget's table output says "first 50 of N rows" with the query's real count (`WidgetData.total`), not the 2,000-row cap.
+- **A deleted widget's runs** aren't emitted as extra runs (plan 2b.6): the user took that analysis off the dashboard. (Once purge has hard-deleted the widget, its runs keep no widget and count as finished runs no widget shows.)
 - **Cards that aren't current** (§7.4.2): a story card or Flow card that isn't usable gets an italic note under its heading, like an outdated run's: "Out of date (<why>): its words may not match the numbers shown. It was written for version N; this notebook rebuilds version M. Refresh it in Sherlock to bring it up to date." (the middle sentence only when its version is older). Its chips still show its sheet's facts.
 - **Flow cards and canvas notes:** with Include story cards, synthesis and answer cards follow the dashboard in a `## From the Flow canvas` section, oldest first, each rendered like a story card with the facts its chips name (a synthesis's from the cards it cites) and their evidence. With Include canvas notes, each note with text follows as a quoted Markdown cell (`> **Note**`), in reading order: by `y` in 40px bands, then `x`. The counts and the dialog's preview add `notes`, and `cards` includes the Flow cards. The Flow reading-path order stays P1.
 

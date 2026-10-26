@@ -263,3 +263,21 @@ def test_other_users_cannot_reach_widgets(app, client, typed):
         assert other.get(f"{API}/widgets/{w['id']}/data").status_code == 404
         assert other.delete(f"{API}/widgets/{w['id']}").status_code == 404
         assert other.get(f"{API}/datasets/{typed['id']}/widgets").status_code == 404
+
+
+def test_a_capped_result_reports_its_real_row_count():
+    """Plan 2b.6 (A33): `row_count` counts the rows returned, capped at `MAX_RESULT_ROWS`; `total` is the
+    query's real count, which the notebook's "first 50 of N rows" now shows."""
+    import duckdb
+
+    from sherlock.notebook import outputs
+    from sherlock.widgets.execute import run_query
+
+    conn = duckdb.connect()
+    conn.execute(f"CREATE TABLE t AS SELECT range AS v FROM range({wc.MAX_RESULT_ROWS + 500})")
+    out = run_query(conn, "SELECT v FROM t")
+    assert out["truncated"] and out["row_count"] == wc.MAX_RESULT_ROWS and out["total"] == wc.MAX_RESULT_ROWS + 500
+    small = run_query(conn, "SELECT v FROM t LIMIT 3")
+    assert not small["truncated"] and small["row_count"] == small["total"] == 3
+    note = outputs.table(out["columns"], out["rows"], out["total"])["data"]["text/plain"]
+    assert f"first 50 of {wc.MAX_RESULT_ROWS + 500:,} rows" in note

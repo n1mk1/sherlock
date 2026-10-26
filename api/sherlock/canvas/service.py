@@ -59,13 +59,26 @@ def _text(value, what: str, limit: int) -> str:
 
 def validate(db: sqlite3.Connection, dataset_id: str, doc) -> dict:
     """The document as stored: known keys only, numbers checked, card nodes naming this dataset's cards,
-    edges between existing nodes. Anything else is `422`."""
+    edges between existing nodes. A card node whose card is gone for good but was on the stored canvas (a
+    tab saving what it read before the purge) is dropped with its edges rather than refused (plan 2b.6).
+    Anything else is `422`."""
     if not isinstance(doc, dict) or not isinstance(doc.get("nodes", []), list) or not isinstance(doc.get("edges", []), list):
         raise _invalid("expected {nodes: [...], edges: [...]}")
     nodes, edges = doc.get("nodes", []), doc.get("edges", [])
     if len(nodes) > MAX_NODES or len(edges) > MAX_EDGES:
         raise _invalid(f"at most {MAX_NODES} nodes and {MAX_EDGES} edges")
     cards = {r["id"] for r in db.execute("SELECT id FROM cards WHERE dataset_id = ?", (dataset_id,))}
+    # Cards that were on the stored canvas and are gone for good: their nodes are dropped, not refused.
+    # A card node the stored canvas never had must still name one of this dataset's cards.
+    row = db.execute("SELECT canvas_json FROM canvases WHERE dataset_id = ?", (dataset_id,)).fetchone()
+    had = {(n.get("sherlock") or {}).get("card_id") for n in json.loads(row["canvas_json"])["nodes"]} if row else set()
+    gone = {n["id"] for n in nodes if isinstance(n, dict) and isinstance(n.get("sherlock"), dict)
+            and isinstance(n["sherlock"].get("card_id"), str) and n["sherlock"]["card_id"] in had - cards
+            and isinstance(n.get("id"), str)}
+    if gone:  # anything malformed is left for the checks below to refuse
+        nodes = [n for n in nodes if not (isinstance(n, dict) and isinstance(n.get("id"), str) and n["id"] in gone)]
+        edges = [e for e in edges if not (isinstance(e, dict) and any(isinstance(e.get(k), str) and e[k] in gone
+                                                                      for k in ("fromNode", "toNode")))]
     out_nodes, ids, placed = [], set(), set()
     for n in nodes:
         if not isinstance(n, dict):

@@ -10,7 +10,7 @@ import { useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel, DateOrder } from "./CleanPlanPanel";
-import { callsLine, collapse, LogEntry, mmss } from "./CleaningProgress";
+import { callsLine, CleaningProgress, collapse, LogEntry, mergeLog, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
 import { OfferActions } from "./OfferActions";
 
@@ -60,6 +60,25 @@ describe("cleaning screens", () => {
     expect(screen.getByText("Fills each age from its group.")).toBeInTheDocument();
     expect(screen.getByText("3 model calls · Nemotron-3-Ultra, nemotron-3-super · 12.3 s")).toBeInTheDocument();
     expect(callsLine({ count: 1, models: ["nvidia/x"], latency_ms: 800 })).toBe("1 model call · x · 0.8 s");
+  });
+
+  it("loads the log so far from the job's own log and keeps each line once (plan 2b.6)", async () => {
+    const base = { job_id: "job_1", level: "info", icon: "check" };
+    const first = { ...base, ts: "2026-10-24T00:00:01Z", text: "Trimmed spaces in name" };
+    const second = { ...base, ts: "2026-10-24T00:00:02Z", text: "Filled age by title" };
+    expect(mergeLog([second], [first, second]).map((e) => e.text)).toEqual(["Trimmed spaces in name", "Filled age by title"]);
+    const fetchMock = mockApi({
+      "GET /api/v1/jobs": [{ id: "job_1", dataset_id: "ds_1", kind: "clean", status: "running", created_at: "",
+                             started_at: "2026-10-24T00:00:00Z", finished_at: null, error: null, result: null, automatic: false,
+                             progress: { step: 2, of: 5, label: "Fixing age", pct: 20 } }],
+      "GET /api/v1/jobs/job_1/log": { entries: [first, second] },
+      "GET /api/v1/datasets/ds_1/report": new Response(JSON.stringify({ error: { code: "not_found", message: "none" } }), { status: 404 }),
+    });
+    renderAt(<CleaningProgress dataset={{ ...DS, status: "cleaning" }} />);
+    expect(await screen.findByText("Trimmed spaces in name")).toBeInTheDocument();
+    expect(screen.getByText("Filled age by title")).toBeInTheDocument();
+    expect(screen.getByText("Fixing age")).toBeInTheDocument(); // the job's own progress before the stream's first event
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/v1/jobs/job_1/log"))).toBe(true);
   });
 
   it("Clean with AI makes the plan and can remember the choice", async () => {

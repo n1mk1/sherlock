@@ -202,6 +202,12 @@ def _cascade(ctx: JobContext) -> dict:
                            (version, wid, stamp))
     # Answer cards re-run their stored queries (plan 2b.2), or go outdated under Ask first.
     answers = stories.recheck_answers(env, dataset, since_version, ask_first=ask, job_id=ctx.id)
+    # Under Automatic a synthesis whose cited numbers moved is written again (plan 2b.6), by a stories job
+    # that runs once this cascade ends; one with fewer than two usable sources keeps its Refresh.
+    rewrite = [] if ask else _syntheses_to_rewrite(ctx.db, dataset)
+    if rewrite:
+        insert_job(ctx.db, dataset["user_id"], dataset["id"], "stories", {"synthesis_ids": rewrite, "reason": "cascade"})
+        ctx.runner.wake()
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
               "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
     # The invariant (plan 1.3): no `ready` card shows numbers that may not hold on this version. 0 when the
@@ -213,6 +219,18 @@ def _cascade(ctx: JobContext) -> dict:
     ctx.db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset["id"],))
     ctx.emit("cascade.done", {"version": version, "counts": counts})
     return {"version": version, **counts, "answers": answers, "audited": audited}
+
+
+def _syntheses_to_rewrite(db: sqlite3.Connection, dataset: sqlite3.Row) -> list[str]:
+    """Synthesis cards showing `sources_changed` whose sources still give at least two usable cards."""
+    from sherlock.stories import synthesis
+
+    out = []
+    for r in db.execute("SELECT id, source_card_ids_json FROM cards WHERE dataset_id = ? AND kind = 'synthesis' "
+                        "AND deleted_at IS NULL AND status = 'sources_changed'", (dataset["id"],)).fetchall():
+        if len(synthesis.sources(db, dataset["id"], json.loads(r["source_card_ids_json"] or "[]"))) >= 2:
+            out.append(r["id"])
+    return out
 
 
 async def run(ctx: JobContext) -> dict:

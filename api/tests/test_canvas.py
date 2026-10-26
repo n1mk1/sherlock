@@ -189,3 +189,46 @@ def test_pruning_drops_nodes_of_cards_that_are_gone(client):
     db_rows("DELETE FROM cards WHERE id = 'crd_x'")  # purged: the node and its edge go
     after = _canvas(client, ds)
     assert [n["id"] for n in after["canvas"]["nodes"]] == ["n"] and after["canvas"]["edges"] == [] and after["etag"] != etag
+
+
+def test_purge_prunes_the_canvas_and_a_save_drops_a_card_that_is_gone(client):
+    """Plan 2b.6 (A34): purge prunes the nodes of the cards it hard-deletes and emits `canvas.updated`, so
+    an open canvas reloads; a tab that saves a canvas it read before a card was hard-deleted loses that
+    node instead of getting a 422. A card the canvas never had must still be this dataset's."""
+    from sherlock.db.connection import connect
+    from sherlock.db.util import now_iso
+    from sherlock.jobs.purge import purge
+
+    ds = upload(client, b"a,b\n1,2\n")["id"]
+    now = now_iso()
+    for cid in ("crd_keep", "crd_gone", "crd_purged"):
+        db_rows("INSERT INTO cards (id, dataset_id, kind, headline_json, body_json, status, version, created_at, updated_at) "
+                "VALUES (?, ?, 'synthesis', '{\"blocks\": []}', '{\"blocks\": []}', 'ready', 1, ?, ?)", cid, ds, now, now)
+
+    def node(nid, cid, x):
+        return {"id": nid, "type": "text", "x": x, "y": 0, "width": 240, "height": 170, "sherlock": {"card_id": cid}}
+
+    doc = {"nodes": [node("k", "crd_keep", 0), node("g", "crd_gone", 300), node("p", "crd_purged", 600)],
+           "edges": [{"id": "e", "fromNode": "k", "toNode": "g"}]}
+    etag = client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": doc, "etag": _canvas(client, ds)["etag"]}).json()["etag"]
+
+    db_rows("DELETE FROM cards WHERE id = 'crd_gone'")  # gone for good, before any read pruned the canvas
+    # The save reads (and prunes) the stored canvas, so the tab is told to reload, not that its card is bad.
+    stale = client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": doc, "etag": etag})
+    assert stale.status_code == 409, stale.text
+    saved = client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": doc, "etag": stale.json()["error"]["etag"]})
+    assert saved.status_code == 200, saved.text  # the reloaded tab's save: the gone card's node is dropped
+    after = _canvas(client, ds)["canvas"]
+    assert [n["id"] for n in after["nodes"]] == ["k", "p"] and after["edges"] == []
+
+    db_rows("UPDATE cards SET deleted_at = '2000-01-01T00:00:00.000Z' WHERE id = 'crd_purged'")
+    before = len([r for r in db_rows("SELECT type FROM job_events WHERE dataset_id = ?", ds) if r["type"] == "canvas.updated"])
+    db = connect(client.app.state.settings)
+    try:
+        purge(client.app.state.settings, db, None)
+    finally:
+        db.close()
+    events = [r["type"] for r in db_rows("SELECT type FROM job_events WHERE dataset_id = ?", ds)]
+    assert events.count("canvas.updated") == before + 1
+    stored = db_rows("SELECT canvas_json FROM canvases WHERE dataset_id = ?", ds)[0]["canvas_json"]
+    assert "crd_purged" not in stored and "crd_keep" in stored

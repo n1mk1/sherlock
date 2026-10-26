@@ -189,8 +189,9 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
             failed += 1
         else:
             point = json.loads(w["point_json"])["key"] if w["point_json"] else None
-            nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], data["row_count"]),
-                                     point)
+            # The note under a capped table gives the query's real row count (plan 2b.6), not the cap.
+            total = data.get("total", data["row_count"])
+            nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], total), point)
             emitted += 1
         if w["id"] in cards:
             nb.cells += _card(cards[w["id"]])
@@ -231,12 +232,15 @@ def _finished_run(db, run_id: str | None) -> sqlite3.Row | None:
 
 def _extra_runs(db, dataset_id: str, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
     """Finished runs that no live widget shows, newest first (at most ten). A widget's earlier runs
-    (before a re-run or a change of settings) are left out: the widget is emitted with its current one."""
+    (before a re-run or a change of settings) are left out: the widget is emitted with its current one.
+    So are the runs of a deleted widget (plan 2b.6): the user took that analysis off the dashboard."""
     live = {w["id"] for w in rows}
+    deleted = {r["id"] for r in db.execute("SELECT id FROM widgets WHERE dataset_id = ? AND deleted_at IS NOT NULL",
+                                           (dataset_id,))}
     shown = {w["run_id"] for w in rows if w["run_id"] and json.loads(w["spec_json"])["op"]["type"] == "ml"}
     out = db.execute("SELECT * FROM runs WHERE dataset_id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL "
                      "ORDER BY finished_at DESC", (dataset_id,)).fetchall()
-    return [r for r in out if r["id"] not in shown and r["widget_id"] not in live][:MAX_EXTRA_RUNS]
+    return [r for r in out if r["id"] not in shown and r["widget_id"] not in live | deleted][:MAX_EXTRA_RUNS]
 
 
 def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title: str) -> list:

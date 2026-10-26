@@ -829,3 +829,46 @@ def test_switching_to_automatic_brings_outdated_cards_and_runs_up_to_date(mocked
     rerun = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["id"] == ml["id"])
     assert rerun["run_id"] != ml["run_id"]
     assert client.get(f"{API}/runs/{rerun['run_id']}").json()["status"] == "done"
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_under_automatic_a_synthesis_is_written_again_and_a_deleted_widgets_run_leaves_the_notebook(mocked, client):
+    """Plan 2b.6 (A15): under "Automatic" a synthesis whose cited numbers moved is written again by a
+    stories job after the cascade, with the changed badge, instead of waiting on Refresh. (A33) A deleted
+    widget's run isn't exported as an extra run."""
+    from sherlock.db.connection import connect
+    from sherlock.llm.client import CallScope, LLMClient
+    from sherlock.notebook import exporter
+    from sherlock.stories import synthesis
+
+    ds = _ready_with_stories(client)
+    cards = [c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"]
+    settings = client.app.state.settings
+    db = connect(settings)
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        syn = synthesis.create(db, None, LLMClient(settings), CallScope(), dataset, [c["id"] for c in cards[:3]],
+                               dataset_columns(client, ds))
+        # One cited number as it was before the edit, so the cascade's check finds it moved.
+        body = json.loads(db.execute("SELECT body_json FROM cards WHERE id = ?", (syn["id"],)).fetchone()[0])
+        chip = next(r for b in body["blocks"] for r in b["runs"] if r["type"] == "chip")
+        chip["value"] = "-1"
+        db.execute("UPDATE cards SET body_json = ? WHERE id = ?", (json.dumps(body), syn["id"]))
+    finally:
+        db.close()
+    _edit(client, ds, "fare", "500")
+    jobs = _settled(client, ds)
+    rewrites = [j for j in jobs if j["kind"] == "stories" and j["result"] and j["result"].get("widgets") == 0]
+    assert rewrites and rewrites[0]["status"] == "done", [(j["kind"], j["status"], j["result"]) for j in jobs]
+    after = client.get(f"{API}/cards/{syn['id']}").json()
+    assert after["status"] == "ready" and after["changed_badge"]
+    assert all(r["value"] != "-1" for b in after["body"]["blocks"] for r in b["runs"] if r["type"] == "chip")
+
+    ml = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["spec"]["op"]["type"] == "ml")
+    assert client.delete(f"{API}/widgets/{ml['id']}").status_code == 204
+    db = connect(settings)
+    try:
+        live = exporter._widgets(db, ds)
+        assert ml["run_id"] not in [r["id"] for r in exporter._extra_runs(db, ds, live)]
+    finally:
+        db.close()

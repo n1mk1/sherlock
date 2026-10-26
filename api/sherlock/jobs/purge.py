@@ -94,10 +94,20 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
     counts["cards"] = db.execute("DELETE FROM cards WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,)).rowcount
     from sherlock.stories import synthesis
 
+    from sherlock.canvas import service as canvas
+    from sherlock.jobs.events import emit
+
     for ds_id in touched:
         dataset = db.execute("SELECT * FROM datasets WHERE id = ? AND deleted_at IS NULL", (ds_id,)).fetchone()
         if dataset is not None:
             synthesis.check_sources(db, bus, dataset)
+            # Prune the gone cards' nodes now and tell open canvases (plan 2b.6), rather than at the next read.
+            stored = db.execute("SELECT etag FROM canvases WHERE dataset_id = ?", (ds_id,)).fetchone()
+            if stored is not None:
+                _, etag = canvas.read(db, ds_id)
+                if etag != stored["etag"]:
+                    db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (ds_id,))
+                    emit(db, bus, ds_id, dataset["user_id"], "canvas.updated", {"etag": etag})
 
     progress(2, 6, "Expiring old CSVs")
     counts["expired"] = db.execute("UPDATE datasets SET deleted_at = ? WHERE deleted_at IS NULL AND expires_at < ?",

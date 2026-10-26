@@ -855,6 +855,21 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
   - A switch to Automatic re-tells every card left `outdated`, not only those an edit since touched: the user asked for the cards to update on their own, and outdated cards were waiting for exactly that.
   - BACKLOG: no line closes (A3–A5, A19 were audit findings) and none is added.
 
+### Tier 2 row 2b.6: the rest of the backend
+
+- **Done:**
+  - **Syntheses are written again under Automatic** (A15): a cascade that leaves a synthesis `sources_changed` queues a `stories` job with its `synthesis_ids` (after the cascade, since stories jobs wait for it), which rewrites it with the changed badge; only syntheses with at least two usable sources are queued, the others keep Refresh. Under Ask first nothing is rewritten.
+  - **The real row count** (A33): `run_query` adds `total`, the query's real row count, counted again only when the rows were capped at 2,000; the notebook's "first 50 of N rows" uses it.
+  - **A deleted widget's runs** aren't exported as extra runs.
+  - **Canvases and gone cards** (A34): purge prunes the canvases of the cards it hard-deletes and emits `canvas.updated`; a save that still holds a gone card's node drops it instead of answering `422` about it (a node for a card the canvas never had is still refused, so ownership holds), and the pruned etag makes the stale tab reload with `409`.
+  - **The cleaning log** (A28): the cleaning screen loads the log so far from `GET /jobs/{jid}/log` and follows the live stream for new lines, each line once (`mergeLog`), instead of replaying the dataset's whole event stream; until the stream's first progress event it shows the job's stored progress.
+  - Tests: `test_stories.py::test_under_automatic_a_synthesis_is_written_again_and_a_deleted_widgets_run_leaves_the_notebook`; `test_widgets.py::test_a_capped_result_reports_its_real_row_count`; `test_canvas.py::test_purge_prunes_the_canvas_and_a_save_drops_a_card_that_is_gone`; `cleaning.test.tsx` "loads the log so far from the job's own log and keeps each line once".
+  - Docs: TRD §4.5 (`WidgetData.total`), §4.7 (validation, pruning by purge), §4.10 (`GET /jobs/{jid}/log` for the cleaning screen), §7.4.1 (rewritten under Automatic), §7.7 (the real count, a deleted widget's runs); App Flow §5 (the log).
+- **Decisions:**
+  - A synthesis is rewritten by a queued stories job rather than inside the cascade, so the cascade makes no extra model call and its own failure hook stays simple.
+  - The plan's "validate drops unknown card nodes" is limited to cards that were on the stored canvas; dropping any unknown id would also accept another dataset's card IDs silently, which `test_canvas.py` rightly refuses.
+  - Once purge has hard-deleted a widget, its runs lose their widget and count as finished runs no widget shows again (purge clears `runs.widget_id`). Left as is: a hard-deleted widget is ten minutes past its Undo.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.
