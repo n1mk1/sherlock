@@ -240,7 +240,8 @@ export const Grid = forwardRef<GridHandle, {
   }, [t, byName, types, sort, notes]);
 
   const onItemHovered = useCallback((args: GridMouseEventArgs) => {
-    const name = args.kind === "header" ? (gridCols[args.location[0]]?.id as string | undefined) : undefined;
+    if (args.kind !== "header") return setHovered(null); // only a header event has `bounds` to place the note by
+    const name = gridCols[args.location[0]]?.id as string | undefined;
     setHovered(name && notes[name] ? { note: notes[name], bounds: args.bounds } : null);
   }, [gridCols, notes]);
 

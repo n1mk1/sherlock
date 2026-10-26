@@ -607,6 +607,10 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **Hover only** for the header note: Glide draws the header on a canvas with no keyboard focus. Logged as a gap in App Flow §8.1; the same meaning is answered in chat.
   - **Gate for the two commits together.** Part 1 of slice 13 had its own targeted tests (33 passed); the full gate below ran on this commit, which contains it.
 
+### Fix: `pnpm build` failed on the column-note hover's type
+
+- `Grid.tsx`'s `onItemHovered` (slice 15, T-3) read `args.bounds` on any `GridMouseEventArgs`, but only a header event has `bounds`, so `tsc -b` failed and with it `pnpm build`, the Docker image's web step (`api/Dockerfile`). vite alone doesn't type-check, so vitest and the e2e passed. The handler now returns early for anything but a header; behaviour is the same (a non-header event already cleared the note). Checked: `tsc -b`, `pnpm build`, the CSV and column-note vitest files. Found by the `web-state` session while rebasing 2b.5.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.
