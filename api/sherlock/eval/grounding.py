@@ -13,6 +13,9 @@ check it by hand:
   numerals included), and none uses causal wording.
 - **Labels.** Every label resolves to a name, and every `value:` label names a value that is in its
   column.
+- **Claims (plan 2b.10).** "Highest" and "most" sit next to a top the facts name, "lowest" and "least"
+  next to the bottom group, a rank next to the factor of that rank, and "rising" or "falling" go with a
+  trend that does (`narrate.claims`). The report counts the claims checked and the ones that failed.
 
 A card the user edited holds their words: its text isn't the model's, and its chips show the latest
 sheet's values (TRD §4.6), so only its facts and labels are checked.
@@ -55,6 +58,8 @@ class Tally:
     text_with_numbers: int = 0
     causal: int = 0
     labels_bad: int = 0
+    claims_checked: int = 0
+    claims_failed: int = 0
     synthesis: str = "not written"
     problems: list[str] = field(default_factory=list)
     stale: "StaleReuse | None" = None
@@ -77,6 +82,19 @@ def _runs(card: dict):
             yield from b["runs"]
 
 
+def card_claims(card: dict) -> tuple[int, list[str]]:
+    """(claims checked, claims that fail) in a card's headline and body, its chips read through its facts."""
+    facts = card.get("facts") or {}
+    checked, wrong = 0, []
+    for part in ("headline", "body"):
+        for b in card[part]["blocks"]:
+            chip_facts = {r["id"]: (r.get("key") or "", facts.get(r.get("key") or "")) for r in b["runs"]
+                          if r["type"] == "chip" and r.get("id")}
+            n, bad = nr.claims(b["runs"], chip_facts, facts)
+            checked, wrong = checked + n, wrong + bad
+    return checked, wrong
+
+
 def check_card(db, cache, settings, dataset, card: dict, tally: Tally, what: str) -> None:
     from sherlock.rows.query import ident
     from sherlock.stories import service as stories
@@ -84,6 +102,11 @@ def check_card(db, cache, settings, dataset, card: dict, tally: Tally, what: str
     from sherlock.widgets import service as ws
 
     edited = bool(card.get("edited_by_user"))
+    if not edited:  # a card the user edited holds their words, not the model's claims
+        n, wrong = card_claims(card)
+        tally.claims_checked += n
+        tally.claims_failed += len(wrong)
+        tally.problems += [f"{what}: {w}" for w in wrong]
     by_sheet: dict[str, list[str]] = {}
     value_labels: list[str] = []
     for run in _runs(card):
@@ -302,11 +325,12 @@ def evaluate(client, files: list[str]) -> list[Tally]:
 
 def report(tallies: list[Tally]) -> str:
     lines = ["| File | Cards (by the model) | Chips matching their fact | Facts re-run and holding | Text runs with numbers | "
-             "Causal wording | Bad labels | Synthesis |", "|---|---|---|---|---|---|---|---|"]
+             "Causal wording | Bad labels | Claims checked | Claims failed | Synthesis |",
+             "|---|---|---|---|---|---|---|---|---|---|"]
     for t in tallies:
         lines.append(f"| {t.file} | {t.cards} ({t.by_model}) | {t.chips_ok} of {t.chips} | "
                      f"{t.facts_checked - t.facts_stale} of {t.facts_checked} | {t.text_with_numbers} | {t.causal} | "
-                     f"{t.labels_bad} | {t.synthesis} |")
+                     f"{t.labels_bad} | {t.claims_checked} | {t.claims_failed} | {t.synthesis} |")
     stale = [t.stale for t in tallies if t.stale]
     if stale:
         lines += ["", "Stale reuse (plan 1.3): one card of the synthesis deleted, then one cell edited under Ask first.", "",
@@ -316,7 +340,8 @@ def report(tallies: list[Tally]) -> str:
                   f"{r.notebook_notes} ({r.notes_expected}) | {r.audited} |" for r in stale]
     chips, ok = sum(t.chips for t in tallies), sum(t.chips_ok for t in tallies)
     problems = [p for t in tallies for p in t.problems]
-    lines += ["", f"Grounded {ok} of {chips} chips.",
+    lines += ["", f"Grounded {ok} of {chips} chips. claims_checked {sum(t.claims_checked for t in tallies)}, "
+                  f"claims_failed {sum(t.claims_failed for t in tallies)}.",
               "No problems found." if not problems else "Problems:\n" + "\n".join(f"- {p}" for p in problems)]
     return "\n".join(lines)
 

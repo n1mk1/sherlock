@@ -45,6 +45,7 @@ Rules:
 - Text runs carry the words, including the spaces around chips and labels. A label or a name chip already says the name: don't also write the name as a word in that sentence.
 - Keep each number in the sentence of the name it belongs to, with that name the nearest one before it: [{{"chip": "driver_1"}}, {{"text": " comes first, at "}}, {{"chip": "driver_1_importance"}}, {{"text": "."}}]. A number followed by "higher than" or "lower than" reads as a gap, so write that only for a fact that is a difference or a ratio; to compare two numbers, give both.
 - Say what the widget shows and what stands out. These are associations in the data: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
+- Say "highest", "most", "lowest", "least", a rank ("first", "second") or that something rises or falls only of what the facts name: the top and bottom groups, the factors in their numbered order, the trend's direction.
 - {small}
 - You may mention a related widget by what it shows, without numbers.
 
@@ -64,6 +65,7 @@ Rules:
 - Every number is a chip: {{"chip": "<widget>.<fact key>"}}, using only the keys listed. Text runs never contain digits.
 - Column names and values are labels: {{"label": "column:<name>"}}, or a category value as {{"label": "value:<column>:<value>"}} chosen from the allowed value labels.
 - Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
+- Say "highest", "lowest", a rank or that something rises or falls only of what a widget's facts name: its top and bottom groups, its factors in order, its trend.
 - A bullet that compares numbers uses numbers from one widget, or exactly two numbers of the same kind from two widgets, saying which is higher.
 - Each bullet is a list of runs, with placeholders: [{{"text": "<The measure> was highest for "}}, {{"label": "value:<column>:<value>"}}, {{"text": ", at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
@@ -193,7 +195,8 @@ def sentences(out: list[dict]) -> list[list[dict]]:
 def check_wording(out: list[dict], chip_facts: dict, facts: dict) -> None:
     """Claims around the chips that the facts don't back, though each number is right (Day 7 review F4):
     a name said twice ("Sex sex"), an importance placed away from its column ("influenced by 1.00"),
-    and a level read as a gap ("0.373 lower than unit_price")."""
+    a level read as a gap ("0.373 lower than unit_price"), and a ranking or a trend the facts don't
+    show (`claims`, plan 2b.10)."""
     for i, item in enumerate(out):
         name = _name(item, chip_facts)
         if name:
@@ -225,6 +228,9 @@ def check_wording(out: list[dict], chip_facts: dict, facts: dict) -> None:
             if owner and (not near or near[0] != owner):
                 raise ValueError(f"chip {key!r} is the importance of {owner}: put it right after {owner}'s name")
         check_comparison(sent, chip_facts)
+    _, wrong = claims(out, chip_facts, facts)
+    if wrong:
+        raise ValueError(wrong[0])
 
 
 def check_comparison(sent: list[dict], chip_facts: dict) -> None:
@@ -243,6 +249,130 @@ def check_comparison(sent: list[dict], chip_facts: dict) -> None:
     up, down = UP.search(text), DOWN.search(text)
     if (up and down) or (up and not a > b) or (down and not a < b):
         raise ValueError(f"the comparison is wrong or unclear: {numbers[0][1]['formatted']} against {numbers[1][1]['formatted']}")
+
+
+# --- Claims around the names (plan 2b.10, D6 F8) -------------------------------------------------
+
+# A ranking or a trend the words claim: "highest", "most" and "top" must name a top of the facts (the top group,
+# the peak period, the heatmap's highest cell, the first factor), "lowest" and "least" the bottom group, an
+# ordinal the factor of that rank ("ticket comes third" needs driver_3 = ticket), and "rising" or "falling" a
+# trend, a change or a correlation that goes that way.
+HIGH = re.compile(r"\b(highest|most|top|largest|biggest|greatest|maximum)\b", re.I)
+LOW = re.compile(r"\b(lowest|least|fewest|smallest|bottom|minimum)\b", re.I)
+RISING = re.compile(r"\b(ris(?:e|es|ing)|rose|increas(?:e|es|ed|ing)|grow(?:s|ing)?|grew|climb(?:s|ed|ing)?|upward)\b", re.I)
+FALLING = re.compile(r"\b(fall(?:s|ing)?|fell|declin(?:e|es|ed|ing)|decreas(?:e|es|ed|ing)|drop(?:s|ped|ping)?|downward)\b", re.I)
+ORDINAL = re.compile(r"\b(first|second|third|fourth|fifth)\b", re.I)
+RANKS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+CLAUSE = re.compile(r"[,;:]|\b(?:and|but|while|whereas)\b", re.I)
+TOP_KEYS = ("top_group", "peak_period", "max_x", "max_y", "driver_1")
+BOTTOM_KEYS = ("bottom_group",)
+NOT_NAMES = ("trend", "direction")  # text facts that say a direction, not a name
+DRIVER = re.compile(r"^driver_(\d+)$")
+
+
+def _suffix(key: str) -> str:
+    """A fact key without its widget or card prefix (`w3.top_group`, `crd_x.top_group` → `top_group`)."""
+    return key.rpartition(".")[2]
+
+
+def _value(f: dict | None):
+    """A fact's value; a card read back through the API may carry only its formatted text."""
+    return None if not f else f.get("value", f.get("formatted"))
+
+
+def _names_of(facts: dict, keys: tuple[str, ...]) -> set[str]:
+    return {str(_value(f)) for k, f in facts.items() if _suffix(k) in keys}
+
+
+def _name_value(item: dict, chip_facts: dict) -> str | None:
+    """The category a run names, as its fact holds it: a value label's value, or a name chip's value."""
+    if item["type"] == "label" and (item.get("ref") or "").startswith("value:"):
+        return item["ref"].split(":", 2)[2]
+    if item["type"] == "chip" and item.get("id") in chip_facts:
+        key, f = chip_facts[item["id"]]
+        if f and f.get("format") == "text" and _suffix(key) not in NOT_NAMES:
+            return str(_value(f))
+    return None
+
+
+def _column_name(item: dict, chip_facts: dict) -> str | None:
+    """The column a run names, for a rank: a `column:` label, or a factor's chip (`driver_2`)."""
+    if item["type"] == "label" and (item.get("ref") or "").startswith("column:"):
+        return item["ref"][len("column:"):]
+    if item["type"] == "chip" and item.get("id") in chip_facts:
+        key, f = chip_facts[item["id"]]
+        if f and DRIVER.match(_suffix(key)):
+            return str(_value(f))
+    return None
+
+
+def _nearest(clause: list[dict], j: int, name_of) -> str | None:
+    """The name nearest the text run `j` in its clause: the first after it, else the last before it."""
+    after = [n for x in clause[j + 1:] if (n := name_of(x)) is not None]
+    before = [n for x in clause[:j] if (n := name_of(x)) is not None]
+    return after[0] if after else (before[-1] if before else None)
+
+
+def _clauses(sent: list[dict]) -> list[list[dict]]:
+    """A sentence's runs split into clauses at a comma, a semicolon or a colon, and at and, but, while, whereas."""
+    out, cur = [], []
+    for item in sent:
+        if item["type"] != "text":
+            cur.append(item)
+            continue
+        for j, piece in enumerate(CLAUSE.split(item["text"])):
+            if j:
+                out.append(cur)
+                cur = []
+            if piece:
+                cur.append({**item, "text": piece})
+    return [c for c in out + [cur] if c]
+
+
+def claims(out: list[dict], chip_facts: dict, facts: dict) -> tuple[int, list[str]]:
+    """(claims checked, what's wrong with them) in a story, a bullet or a synthesis (plan 2b.10). A ranking word
+    is checked against the name nearest it in its clause (the one after it, else the one before); a clause
+    with no name claims nothing about a group ("the highest fare is 512.33"). A trend word is always checked."""
+    checked, wrong = 0, []
+    tops, bottoms = _names_of(facts, TOP_KEYS), _names_of(facts, BOTTOM_KEYS)
+    ranked = {int(m.group(1)): str(_value(f)) for k, f in facts.items() if (m := DRIVER.match(_suffix(k)))}
+    trends = {str(_value(f)) for k, f in facts.items() if _suffix(k) == "trend"}
+    signs = [f["value"] for k, f in facts.items() if _suffix(k) in ("change", "correlation")
+             and isinstance(f.get("value"), (int, float)) and not isinstance(f.get("value"), bool)]
+    for sent in sentences(out):
+        for clause in _clauses(sent):
+            for j, item in enumerate(clause):
+                if item["type"] != "text":
+                    continue
+                name = _nearest(clause, j, lambda x: _name_value(x, chip_facts))
+                column = _nearest(clause, j, lambda x: _column_name(x, chip_facts))
+                for pattern, allowed, what in ((HIGH, tops, "the top"), (LOW, bottoms, "the bottom")):
+                    for m in pattern.finditer(item["text"]):
+                        if name is None:
+                            continue
+                        checked += 1
+                        if name not in allowed:
+                            wrong.append(f"“{m.group(0)}” is said of {name}, but the facts name "
+                                         + (" or ".join(sorted(allowed)) if allowed else "no such group")
+                                         + f" as {what}: say only what the facts show")
+                for m in ORDINAL.finditer(item["text"]):
+                    if column is None or not ranked:
+                        continue  # a rank is of a column ("ticket comes third"); "first class" names a value
+                    checked += 1
+                    rank = RANKS[m.group(0).lower()]
+                    if ranked.get(rank) != column:
+                        wrong.append(f"“{m.group(0)}” is said of {column}, but factor number {rank} is "
+                                     + (ranked.get(rank) or "not one of the facts") + ": give the rank as its chip")
+                for pattern, up in ((RISING, True), (FALLING, False)):
+                    for m in pattern.finditer(item["text"]):
+                        checked += 1
+                        want, other = ("rising", "falling") if up else ("falling", "rising")
+                        backed = want in trends or (other not in trends and any((v > 0) if up else (v < 0) for v in signs))
+                        if not backed:
+                            wrong.append(f"“{m.group(0)}” claims a {want} trend, but "
+                                         + (f"the facts' trend is {', '.join(sorted(trends))}" if trends
+                                            else "no trend, change or correlation in the facts goes that way"))
+    return checked, wrong
 
 
 def plain(runs: list) -> str:

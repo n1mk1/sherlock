@@ -547,14 +547,18 @@ def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
     labels, so any `value:` label was shown as written."""
     from sherlock.stories import synthesis
 
-    facts = {"c1.top_value": {"value": 0.7, "formatted": "70.0%", "label": "rate"}}
-    values = synthesis._values(["column:sex", "value:sex:female"])
+    # A card's sheet names its top group with its top value, and "highest" must name it (plan 2b.10).
+    facts = {"c1.top_group": {"value": "female", "formatted": "female", "format": "text", "label": "sex with the highest rate"},
+             "c1.top_value": {"value": 0.7, "formatted": "70.0%", "label": "rate"}}
+    values = synthesis._values(["column:sex", "value:sex:female", "value:sex:male"])
     ok = [TextRun(text="Survival was highest for "), LabelRun(label="value:sex:female"), TextRun(text=" passengers, at "),
           ChipRun(chip="c1.top_value")]
     synthesis._check([ok], facts, ["sex", "fare"], values)
     for bad in ([TextRun(text="Passengers paid about "), LabelRun(label="value:fare:512.33"), TextRun(text=" while survival was "),
                  ChipRun(chip="c1.top_value")],
-                [TextRun(text="Over XLV passengers survived, at "), ChipRun(chip="c1.top_value")]):
+                [TextRun(text="Over XLV passengers survived, at "), ChipRun(chip="c1.top_value")],
+                [TextRun(text="Survival was highest for "), LabelRun(label="value:sex:male"), TextRun(text=" passengers, at "),
+                 ChipRun(chip="c1.top_value")]):
         with pytest.raises(ValueError):
             synthesis._check([bad], facts, ["sex", "fare"], values)
 

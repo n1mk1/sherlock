@@ -901,6 +901,29 @@ Built in the `chat-checks` worktree (Tier 2 rows run in parallel, as the owner a
   - Third run, with the fix: **49/50**, 0 unsourced, median 10.9 s. Miss: "What does sibsp mean?" (the general sentence named neither siblings nor spouses, the base run's miss).
 - **Gate** (rebased on `7c8cf4e`, with both commits): `uv run pytest` 492 passed, 3 skipped; `corepack pnpm test` 116 passed; `corepack pnpm build` ok; `pnpm e2e` 1 passed.
 
+### Tier 2 row 2b.10: claim checks in code
+
+Built in the `chat-checks` worktree.
+
+- **Done:**
+  - **`narrate.claims`**, run by `check_wording` on every story, overview bullet and synthesis (a failure is a repair, then the fallback). A sentence is split into clauses (commas, semicolons, colons, and, but, while, whereas); in each clause a ranking word is checked against the name nearest it (the first after it, else the last before it):
+    - "highest", "most", "top" (and largest, biggest, greatest, maximum) must name `top_group`, `peak_period`, `max_x`, `max_y` or `driver_1`;
+    - "lowest", "least" (and fewest, smallest, bottom, minimum) must name `bottom_group`;
+    - "first" to "fifth" next to a column (a `column:` label or a `driver_<n>` chip) must be that factor's rank, where the facts rank factors at all: "Ticket comes third" needs `driver_3` = ticket (BACKLOG D6 F8). "First class" next to a value label isn't a rank.
+    - "rises", "increases", "grows" (and "falls", "declines", "decreases", "drops") need a `trend` that says so or, when no trend says the opposite, a `change` or `correlation` of that sign: "survival decreases for lower classes" on a bar chart (D6 F8) has none.
+    - A clause with no name claims nothing about a group and isn't counted. On merged sheets (`w3.top_group`, `c1.top_group`) keys are read without their prefix.
+  - The story and overview prompts say to use these words only of what the facts name.
+  - **The grounding eval counts them** (`grounding.card_claims`): "Claims checked" and "Claims failed" columns, `claims_checked` and `claims_failed` in the summary line, and each failure as a problem. A card the user edited isn't read (their words).
+  - Tests: new `tests/test_claims.py` (the top and bottom groups, two clauses in one sentence, a name chip, a clause with no name; "Ticket comes third" against `driver_3`, `driver_1` as the top, "first class" not a rank; trend, change and correlation; the narrator refuses a wrong claim, on a merged sheet too; the eval's count). `test_grounding_eval.py`: the planted card's "It rose by 12 points" is now also an unbacked trend (three problems, not two). `test_stories.py`: the synthesis test's facts carry the card's `top_group`, as a real synthesis's do, and "highest for male" is refused.
+  - Docs: TRD §7.4 (the claims check), §14 (the grounding eval's claims); PRD STORY-8 (requirement and acceptance).
+  - BACKLOG: removed "Rankings the narrator states with no fact behind them" (D6 F8).
+- **Decisions:**
+  - The nearest name in the clause, not the sentence: "First class paid the most, and third class the least" checks "most" against first class and "least" against third.
+  - A trend word is backed by a change or a correlation of the same sign when no trend fact contradicts it, so "increased from the first month to the last" passes on a `flat` trend with a positive `change`.
+  - Comparatives ("higher", "more") aren't claims here: comparing two numbers across cards was already checked (`check_comparison`), and inside one card both numbers are chips.
+- **Grounding eval** (`eval-locked.sh <worktree> grounding`, live): titanic3 9 cards and sales_dated 11, every one by the model; 68 of 68 chips grounded, every cited fact holding (65), 0 text runs with numbers, 0 causal phrases, 0 bad labels; **claims_checked 12, claims_failed 0**; both syntheses by the model; the stale-reuse scenario passes on both files. The claims check sent one story back for its repair ("most" said of `pclass` where the top factor is `sex`), and the repair passed.
+- **Gate:** `uv run pytest` 497 passed, 3 skipped; `corepack pnpm test` 116 passed; `corepack pnpm build` ok; `pnpm e2e` failed once (its output wasn't kept), then passed twice in a row, with no change in between.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

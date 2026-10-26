@@ -41,4 +41,6 @@ def test_the_sample_is_grounded_and_a_bad_chip_is_caught(mocked, client):
             "body": {"blocks": [{"type": "paragraph", "runs": [{"type": "chip", "id": "c0", "key": "nope", "value": "1.0"}]}]},
             "facts": {}, "fact_sheet_id": None}
     grounding.check_card(None, None, get_settings(), None, card, bad, "planted")
-    assert bad.chips == 1 and bad.chips_ok == 0 and bad.text_with_numbers == 1 and len(bad.problems) == 2
+    # "Rose" with no trend in the facts is a claim no fact makes (plan 2b.10), a third problem.
+    assert bad.chips == 1 and bad.chips_ok == 0 and bad.text_with_numbers == 1 and len(bad.problems) == 3
+    assert bad.claims_checked == 1 and bad.claims_failed == 1 and "rising trend" in bad.problems[0]
