@@ -15,6 +15,8 @@ stories up to date, touching only what depends on what changed.
   instead; then the overview.
 - **Debounce.** A commit queues one cascade per dataset: one already queued, or running but still in
   its 2 s wait, absorbs the next, so saves within 2 s cascade once.
+- **Audit.** Last, `stories.trust.audit` marks any `ready` card whose numbers may not hold on the
+  version `outdated`; the result's `audited` counts them, and 0 means the cascade did its job.
 """
 
 import asyncio
@@ -182,8 +184,14 @@ def _cascade(ctx: JobContext) -> dict:
                            (version, wid, stamp))
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
               "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
+    # The invariant (plan 1.3): no `ready` card shows numbers that may not hold on this version. 0 when the
+    # cascade did its job; a newer version's cascade, queued behind this one, checks its own version.
+    from sherlock.stories import trust
+
+    fresh = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (dataset["id"],)).fetchone()
+    audited = trust.audit(ctx.db, ctx.bus, fresh, ctx.id) if fresh["current_version"] == version else 0
     ctx.emit("cascade.done", {"version": version, "counts": counts})
-    return {"version": version, **counts}
+    return {"version": version, **counts, "audited": audited}
 
 
 async def run(ctx: JobContext) -> dict:

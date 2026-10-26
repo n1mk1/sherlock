@@ -47,10 +47,13 @@ def build_sheet(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, version:
     """Compute, verify and store a widget's fact sheet on `version`."""
     spec = json.loads(widget["spec_json"])
     if spec["op"]["type"] != "sql":
-        # An analysis widget tells its run's facts (from the model card, TRD §7.5 step 10).
-        run = env.db.execute("SELECT fact_sheet_id FROM runs WHERE id = ? AND status IN ('done', 'outdated')",
+        # An analysis widget tells its run's facts (from the model card, TRD §7.5 step 10), and only a
+        # finished run's: an outdated run's numbers are for an earlier version (plan 1.3).
+        run = env.db.execute("SELECT status, fact_sheet_id FROM runs WHERE id = ?",
                              (widget["run_id"],)).fetchone() if widget["run_id"] else None
-        sheet = get_sheet(env.db, run["fact_sheet_id"]) if run else None
+        if run is not None and run["status"] == "outdated":
+            raise ApiError(409, "conflict", "This analysis ran on an earlier version; re-run it for its story.")
+        sheet = get_sheet(env.db, run["fact_sheet_id"]) if run is not None and run["status"] == "done" else None
         if sheet is None:
             return _store_sheet(env.db, dataset["id"], widget["id"], version, {}, [])
         return _store_sheet(env.db, dataset["id"], widget["id"], version, sheet["facts"], sheet["depends_columns"])
@@ -161,9 +164,11 @@ def to_card(db: sqlite3.Connection, r: sqlite3.Row) -> dict:
 
 
 def fact_for(db: sqlite3.Connection, dataset_id: str, key: str) -> dict | None:
-    """The fact a `<card_id>.<fact key>` chip names, from that card's current fact sheet."""
+    """The fact a `<card_id>.<fact key>` chip names, from that card's current fact sheet. A deleted card
+    names none, so a synthesis citing it shows `sources_changed` (plan 1.3)."""
     cid, _, fkey = key.partition(".")
-    r = db.execute("SELECT fact_sheet_id FROM cards WHERE id = ? AND dataset_id = ?", (cid, dataset_id)).fetchone()
+    r = db.execute("SELECT fact_sheet_id FROM cards WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL",
+                   (cid, dataset_id)).fetchone()
     sheet = get_sheet(db, r["fact_sheet_id"]) if r else None
     return sheet["facts"].get(fkey) if sheet else None
 
@@ -287,6 +292,14 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
             if cid:
                 emit_card(db, env.bus, dataset, cid, scope.job_id)
                 marked.append(cid)
+        if marked:  # the overview reads those cards' numbers: outdated too, until Refresh (plan 1.3)
+            ov = db.execute("SELECT id FROM cards WHERE dataset_id = ? AND kind = 'overview' AND deleted_at IS NULL "
+                            "AND status = 'ready'", (dataset["id"],)).fetchone()
+            if ov:
+                emit_card(db, env.bus, dataset, _set_overview_outdated(db, ov["id"]), scope.job_id)
+            from sherlock.stories import trust  # and the syntheses that cite them
+
+            trust.outdate_citing(db, env.bus, dataset, scope.job_id)
         _bump(db, dataset["id"])
         return {"cards": 0, "outdated": len(marked)}
 
@@ -344,12 +357,20 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
             on_told(w["id"])  # the stories job's checkpoint (D8.6)
             done += 1
     told = {w["id"] for w, _, _ in jobs} - overtaken
+    from sherlock.stories import trust
+
+    t = trust.Trust(db, dataset)
     for w in chosen:  # never leave a card spinning: a failed query asks for Refresh, no facts keeps the text
         if w["id"] in overtaken:
             # Its numbers are for a version that's gone: outdated, which the newer version's cascade tells again.
             cid = _set_status(db, dataset["id"], w["id"], "outdated", version)
         elif w["id"] not in told:
-            cid = _set_status(db, dataset["id"], w["id"], "outdated" if w["id"] in failed else "ready", version)
+            # No facts now keeps the text only while its old numbers still hold on this version (plan 1.3).
+            card = db.execute("SELECT fact_sheet_id FROM cards WHERE dataset_id = ? AND widget_id = ? AND deleted_at IS NULL",
+                              (dataset["id"], w["id"])).fetchone()
+            old = get_sheet(db, card["fact_sheet_id"]) if card else None
+            stale = w["id"] in failed or (old is not None and t.stale_sheet(old))
+            cid = _set_status(db, dataset["id"], w["id"], "outdated" if stale else "ready", version)
         else:
             continue
         if cid:
@@ -381,25 +402,42 @@ class _Offline:
 
 
 def tell_overview(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, rows, dataset_columns, changed=False):
+    """The overview from the usable widget cards only (`trust`): a card that is outdated, updating, or
+    told on a version whose numbers no longer hold isn't read into it. Its sheet depends on the columns
+    of the cards it read, so a later change to them makes it stale too."""
+    from sherlock.stories import trust
+
     db = env.db
+    t = trust.Trust(db, dataset)
     widgets = []
     for i, w in enumerate(rows, 1):
-        r = db.execute("SELECT c.fact_sheet_id FROM cards c WHERE c.widget_id = ? AND c.deleted_at IS NULL", (w["id"],)).fetchone()
-        sheet = get_sheet(db, r["fact_sheet_id"]) if r else None
+        r = db.execute("SELECT * FROM cards c WHERE c.widget_id = ? AND c.deleted_at IS NULL", (w["id"],)).fetchone()
+        sheet = get_sheet(db, r["fact_sheet_id"]) if r is not None and t.usable(r) else None
         if sheet and sheet["facts"]:
             widgets.append({"prefix": f"w{i}", "title": w["title"], "facts": sheet["facts"], "score": w["score"],
                             "widget_id": w["id"], "spec": json.loads(w["spec_json"]), "columns": sheet["depends_columns"]})
-    if not widgets:
+    if not widgets:  # nothing usable to read: an overview whose numbers may not hold says so
+        ov = db.execute("SELECT * FROM cards WHERE dataset_id = ? AND kind = 'overview' AND deleted_at IS NULL "
+                        "AND status = 'ready'", (dataset["id"],)).fetchone()
+        if ov is not None and t.why_not(ov):
+            return emit_card(db, env.bus, dataset, _set_overview_outdated(db, ov["id"]), scope.job_id)
         return None
     try:
         merged, body, by_model = nr.overview(llm, scope, widgets, dataset_columns)
     except Exception:  # noqa: BLE001 - the overview is never worth failing the job
         merged, body, by_model = nr.overview(_Offline(), scope, widgets, dataset_columns)
-    sheet = _store_sheet(db, dataset["id"], None, dataset["current_version"], merged, [])
+    depends = sorted({c for w in widgets for c in w["columns"]})
+    sheet = _store_sheet(db, dataset["id"], None, dataset["current_version"], merged, depends)
     headline = {"blocks": [{"type": "paragraph", "runs": [{"type": "text", "text": "What stands out"}]}]}
     cid = _upsert(db, dataset["id"], "overview", None, headline, body, sheet["id"], dataset["current_version"],
                   llm.settings.model_medium if by_model else None, changed=changed)
     return emit_card(db, env.bus, dataset, cid, scope.job_id) if cid else None
+
+
+def _set_overview_outdated(db, card_id: str) -> str:
+    """Like `_set_status`'s `outdated`, written whatever version is current."""
+    db.execute("UPDATE cards SET status = 'outdated', updated_at = ? WHERE id = ?", (now_iso(), card_id))
+    return card_id
 
 
 def _datacard(env: ws.Env, dataset: sqlite3.Row) -> dict:

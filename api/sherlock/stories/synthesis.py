@@ -5,7 +5,8 @@ writes runs like a story card, with chips naming `<alias>.<fact key>` (`c1.top_v
 them with the narrator's rules and stores them keyed `<card_id>.<fact key>`, so each chip resolves
 through its source card's fact sheet (evidence, the latest value, the `sources_changed` check). A
 synthesis card has no fact sheet of its own. When the model can't write a valid synthesis, the card
-lists each source card's headline, chips included.
+lists each source card's headline, chips included. Only usable cards are cited (`trust`): the others
+are left out, and the answer says which.
 """
 
 import json
@@ -91,22 +92,43 @@ def chip_keys(card: sqlite3.Row | dict) -> list[str]:
     return [r["key"] for p in parts for b in p.get("blocks", []) for r in b["runs"] if r["type"] == "chip" and r.get("key")]
 
 
-def sources(db: sqlite3.Connection, dataset_id: str, card_ids: list[str]) -> list[tuple[sqlite3.Row, dict]]:
+def sources(db: sqlite3.Connection, dataset_id: str, card_ids: list[str],
+            left_out: list[str] | None = None) -> list[tuple[sqlite3.Row, dict]]:
     """The cards whose facts can be cited, with their facts. A card with a fact sheet is cited
-    directly; a synthesis or answer card without one stands for the cards its chips name."""
+    directly; a synthesis or answer card without one stands for the cards its chips name. Only usable
+    cards are cited (`trust`, plan 1.3): one that is outdated, updating, deleted or told on a version
+    whose numbers no longer hold is left out, and `left_out` gets "<title> (<why>)" for each."""
+    from sherlock.stories import trust
+
+    dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
+    t = trust.Trust(db, dataset)
     out: dict[str, tuple[sqlite3.Row, dict]] = {}
+    seen: set[str] = set()
     queue = list(card_ids)
     while queue and len(out) < MAX_SOURCES:
         cid = queue.pop(0)
-        r = db.execute("SELECT * FROM cards WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL", (cid, dataset_id)).fetchone()
-        if r is None or r["id"] in out:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        r = db.execute("SELECT * FROM cards WHERE id = ? AND dataset_id = ?", (cid, dataset_id)).fetchone()
+        if r is None:
             continue
         sheet = stories.get_sheet(db, r["fact_sheet_id"])
         if sheet and sheet["facts"]:
-            out[r["id"]] = (r, sheet["facts"])
-        else:
+            why = t.why_not(r)
+            if why is None:
+                out[r["id"]] = (r, sheet["facts"])
+            elif left_out is not None and why != "deleted":
+                left_out.append(f"{title(db, r)} ({why})")
+        elif not r["deleted_at"]:
             queue += [k.partition(".")[0] for k in chip_keys(r)]
     return list(out.values())
+
+
+def left_out_note(left_out: list[str]) -> str:
+    """The sentence an answer or a synthesis adds for the cards it couldn't use."""
+    return ("I left out " + "; ".join(left_out) + ": their numbers may not hold on this version. "
+            "Refresh them to use them.") if left_out else ""
 
 
 def _listing(db, cards: list[tuple[sqlite3.Row, dict]]) -> tuple[str, dict, dict, list[str]]:
@@ -197,10 +219,11 @@ def synthesize(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: 
 
 def create(db: sqlite3.Connection, bus, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, card_ids: list[str],
            columns: list[str], kind: str = "synthesis") -> dict:
-    """Write, store and emit a synthesis card for the selected cards. `422` with fewer than two."""
-    cards = sources(db, dataset["id"], card_ids)
+    """Write, store and emit a synthesis card for the selected cards. `422` with fewer than two usable."""
+    left: list[str] = []
+    cards = sources(db, dataset["id"], card_ids, left)
     if len(cards) < 2:
-        raise ApiError(422, "invalid", "Select at least two cards to make sense of them.")
+        raise ApiError(422, "invalid", "Select at least two cards to make sense of them." + (" " + left_out_note(left) if left else ""))
     headline, body, by_model = synthesize(llm, scope, db, cards, columns)
     return store(db, bus, dataset, kind, card_ids, headline, body, llm.settings.model_medium if by_model else None)
 
@@ -259,12 +282,15 @@ def check_sources(db: sqlite3.Connection, bus, dataset: sqlite3.Row, job_id: str
 
 
 def refresh(db: sqlite3.Connection, bus, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, card_id: str,
-            columns: list[str]) -> dict:
-    """Write a synthesis card again from its sources' current facts (its Refresh)."""
+            columns: list[str], left_out: list[str] | None = None) -> dict:
+    """Write a synthesis card again from its sources' current facts (its Refresh), citing only usable
+    sources; `left_out` gets the others."""
     r = stories.card_row(db, card_id)
-    cards = sources(db, dataset["id"], json.loads(r["source_card_ids_json"] or "[]"))
+    left = left_out if left_out is not None else []
+    cards = sources(db, dataset["id"], json.loads(r["source_card_ids_json"] or "[]"), left)
     if len(cards) < 2:
-        raise ApiError(409, "conflict", "Fewer than two of this card's sources are left.")
+        raise ApiError(409, "conflict", "Fewer than two of this card's sources are left up to date." +
+                       (" " + left_out_note(left) if left else ""))
     headline, body, by_model = synthesize(llm, scope, db, cards, columns)
     if r["edited_by_user"]:
         db.execute("UPDATE cards SET suggestion_json = ?, status = 'ready', changed_badge = 1, updated_at = ? WHERE id = ?",

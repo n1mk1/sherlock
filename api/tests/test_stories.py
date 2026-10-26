@@ -716,3 +716,92 @@ def test_a_failed_rerun_leaves_its_card_outdated(mocked, client, monkeypatch):
         "SELECT data_json FROM job_events WHERE dataset_id = ? AND type = 'card.updated' ORDER BY id", ds))
     told = [d["status"] for d in events if d["id"] == card["id"]]
     assert told[-2:] == ["updating", "outdated"]
+
+
+# --- the trustworthy-source rule (plan 1.3) -------------------------------------------------------
+
+@pytest.mark.usefixtures("run_jobs")
+def test_only_usable_cards_feed_another_output(mocked, client):
+    """Plan 1.3: a card that is outdated, or told on a version whose numbers no longer hold, feeds no
+    overview, synthesis or answer; the overview and the syntheses citing such cards are outdated too,
+    the cascade's audit finds nothing left to fix, and the notebook says which cards aren't current."""
+    from sherlock.db.connection import connect
+    from sherlock.errors import ApiError
+    from sherlock.jobs.purge import purge
+    from sherlock.llm.client import CallScope, LLMClient
+    from sherlock.notebook import exporter
+    from sherlock.stories import service, synthesis, trust
+
+    ds = _ready_with_stories(client)
+    fare = _fare_widgets(client, ds)
+    widgets = {w["id"]: w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
+    ml = {wid for wid, w in widgets.items() if w["spec"]["op"]["type"] == "ml"}
+    cards = {c["widget_id"] or "overview": c for c in client.get(f"{API}/datasets/{ds}/cards").json()}
+    others = [cards[w]["id"] for w in cards if w not in fare | ml | {"overview"}]
+    fare_card = cards[next(iter(fare))]["id"]
+    settings = client.app.state.settings
+    db = connect(settings)
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        scope = CallScope(user_id=dataset["user_id"], dataset_id=ds)
+        syn = synthesis.create(db, None, LLMClient(settings), scope, dataset, [fare_card, *others[:2]], list(dataset_columns(client, ds)))
+    finally:
+        db.close()
+
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
+    _edit(client, ds, "fare", "500")
+    jobs = _settled(client, ds)
+    cascade = next(j for j in jobs if j["kind"] == "cascade")
+    assert cascade["status"] == "done" and cascade["result"]["audited"] == 0, cascade
+    after = {c["id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json()}
+    assert after[cards["overview"]["id"]]["status"] == "outdated"
+    cites_fare = fare_card in {k.partition(".")[0] for k in synthesis.chip_keys(syn)}
+    assert after[syn["id"]]["status"] == ("outdated" if cites_fare else "ready")  # its fare card went outdated
+    assert all(after[cards[w]["id"]]["status"] == "outdated" for w in fare | ml)
+
+    db = connect(settings)
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        assert trust.audit(db, None, dataset) == 0
+        usable = {r["id"] for r in trust.usable_cards(db, dataset)}
+        assert usable == set(others), "only the cards that read no fare stay usable"
+        left: list[str] = []
+        cited = synthesis.sources(db, ds, [fare_card, *others[:2]], left)
+        assert [r["id"] for r, _ in cited] == others[:2]
+        assert len(left) == 1 and left[0].endswith("(outdated)") and "I left out" in synthesis.left_out_note(left)
+        with pytest.raises(ApiError, match="I left out"):
+            synthesis.create(db, None, LLMClient(settings), CallScope(), dataset, [fare_card, others[0]], ["fare"])
+        # The notebook notes every card that isn't current, in italics under its heading.
+        built = exporter.build(settings, db, client.app.state.duckdb, dataset, exporter.NotebookOptions())
+        md = [c.source for c in built.nb.cells if c.cell_type == "markdown"]
+        not_ready = [c for c in after.values() if c["status"] != "ready"]
+        assert sum("*Out of date (outdated)" in m for m in md) == len(not_ready)
+    finally:
+        db.close()
+
+    # Refreshing the overview reads only the usable cards; an analysis card on an outdated run stays outdated.
+    for cid in (cards["overview"]["id"], cards[next(iter(ml))]["id"]):
+        client.post(f"{API}/cards/{cid}/refresh")
+    _settled(client, ds)
+    overview = client.get(f"{API}/cards/{cards['overview']['id']}").json()
+    assert overview["status"] == "ready"
+    assert client.get(f"{API}/cards/{cards[next(iter(ml))]['id']}").json()["status"] == "outdated"
+    db = connect(settings)
+    try:
+        sheet = service.get_sheet(db, overview["fact_sheet_id"])
+        read = set().union(*(service.get_sheet(db, after[c]["fact_sheet_id"])["depends_columns"] for c in others))
+        assert set(sheet["depends_columns"]) <= read and "fare" not in sheet["depends_columns"]
+
+        # A purged widget's card can't be cited any more: the synthesis citing it says its sources changed.
+        db.execute("UPDATE cards SET status = 'ready' WHERE id = ?", (syn["id"],))
+        db.execute("UPDATE widgets SET deleted_at = '2000-01-01T00:00:00.000Z' WHERE id = ?", (cards[next(iter(fare))]["widget_id"],))
+        purge(settings, db, None)
+        assert service.fact_for(db, ds, f"{fare_card}.n") is None
+        assert db.execute("SELECT status FROM cards WHERE id = ?", (syn["id"],)).fetchone()[0] == (
+            "sources_changed" if cites_fare else "ready")
+    finally:
+        db.close()
+
+
+def dataset_columns(client, ds) -> list[str]:
+    return [c["name"] for c in client.get(f"{API}/datasets/{ds}/datacard").json()["columns"]]

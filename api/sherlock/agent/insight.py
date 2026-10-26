@@ -323,7 +323,11 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
     if run is None:
         raise CantAnswer("There's no analysis yet. Ask “what drives <a column>?”, or use a widget's analysis menu.")
     mc = json.loads(run["model_card_json"])
-    source = {"kind": "run", "run_id": run["id"], "label": f"The model card of “what drives {mc['target']}” (version {mc['version']})"}
+    outdated = run["status"] == "outdated"  # said, never passed off as current (plan 1.3)
+    source = {"kind": "run", "run_id": run["id"], "label": f"The model card of “what drives {mc['target']}” "
+                                                          f"(version {mc['version']}{', outdated' if outdated else ''})"}
+    stale = [text_block([text(f"This model ran on version {mc['version']}, and the data has changed since in columns it "
+                              "reads, so it's outdated. Re-run it to see the current version.")])] if outdated else []
     if ONE_ROW.search(question):
         raise CantAnswer("Explaining one row's prediction needs per-row predictions, which aren't in this release.")
     if WRONG.search(question) and "misclassified" in mc:
@@ -333,7 +337,7 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
                                [["predicted wrong", mc["misclassified"]], ["rows", mc["rows"]["train"]]])
         runs = [text("The model got "), chip(counts, 0, 1), text(" of "), chip(counts, 1, 1),
                 text(" rows wrong when each was predicted by a model that never saw it. Open them in the CSV tab to look for a pattern.")]
-        return Reply(blocks=[text_block(runs), table_block(res)], sources=[source],
+        return Reply(blocks=[text_block(runs), table_block(res), *stale], sources=[source],
                      actions=[{"kind": "open_rows", "selection_id": sel["selection_id"]},
                               {"kind": "open_model_card", "run_id": run["id"]}],
                      focus={"run_id": run["id"], "selection_id": sel["selection_id"]})
@@ -367,7 +371,7 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
     if mc.get("alternatives"):
         results.append(memory_result(f"{rid}a", f"other models Auto tried in run {run['id']}", [("model", "VARCHAR"), ("score", "DOUBLE")],
                                      [[a["label"], a["value"]] for a in mc["alternatives"]]))
-    return Reply(results=results, sources=[source], actions=[{"kind": "open_model_card", "run_id": run["id"]}],
+    return Reply(blocks=stale, results=results, sources=[source], actions=[{"kind": "open_model_card", "run_id": run["id"]}],
                  focus={"run_id": run["id"]})
 
 

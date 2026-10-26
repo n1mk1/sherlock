@@ -21,6 +21,12 @@ A synthesis ("make sense of this") of the first three widget cards is written to
 same way, its chips resolving through the cards it cites. The report counts each check, and says
 how many cards the model wrote (the rest fell back to the fact sheet's bullets). The PRD target is
 100% grounded.
+
+Then the **stale-reuse** scenario (plan 1.3), which needs no model call: one of the synthesis's cards
+is deleted and restored, and the synthesis must no longer be `ready`; then, with "Story updates: Ask
+first", one cell of the column most cards read is edited, and after the cascade the overview isn't
+`ready`, the cascade's audit and a fresh `audit()` find 0 cards to fix, and the notebook carries an
+"Out of date" note for every card that isn't ready.
 """
 
 import os
@@ -51,6 +57,7 @@ class Tally:
     labels_bad: int = 0
     synthesis: str = "not written"
     problems: list[str] = field(default_factory=list)
+    stale: "StaleReuse | None" = None
 
 
 def _wait_stories(client, ds_id: str, timeout_s: float = 900) -> None:
@@ -148,6 +155,117 @@ def check_dataset(client, db, settings, filename: str, ds_id: str) -> Tally:
     return tally
 
 
+@dataclass
+class StaleReuse:
+    file: str
+    column: str = ""
+    synthesis_after_delete: str = "not checked"
+    overview: str = "none"
+    outdated_cards: int = 0
+    notebook_notes: int = 0
+    notes_expected: int = 0
+    audited: int | None = None
+    problems: list[str] = field(default_factory=list)
+
+
+def _settle(client, ds_id: str, timeout_s: float = 300) -> list[dict]:
+    end = time.monotonic() + timeout_s
+    while time.monotonic() < end:
+        jobs = client.get(f"{API}/jobs?dataset_id={ds_id}").json()
+        if isinstance(jobs, list) and all(j["status"] in ("done", "failed", "cancelled") for j in jobs):
+            return jobs
+        time.sleep(1)
+    raise TimeoutError("the jobs didn't finish")
+
+
+def _column_to_edit(client, db, ds_id: str) -> tuple[str, str] | None:
+    """The column most widget cards read (a number if one is read, else text), and its type."""
+    from collections import Counter
+
+    from sherlock.stories import service as stories
+
+    types = {c["name"]: c["type"] for c in client.get(f"{API}/datasets/{ds_id}/datacard").json()["columns"]}
+    counts: Counter = Counter()
+    for c in client.get(f"{API}/datasets/{ds_id}/cards").json():
+        sheet = stories.get_sheet(db, c["fact_sheet_id"]) if c["kind"] == "widget" else None
+        counts.update(col for col in (sheet or {}).get("depends_columns", []) if col in types)
+    ranked = [col for col, _ in counts.most_common()]
+    for kinds in (("int", "float"), ("category", "text")):
+        for col in ranked:
+            if types[col] in kinds:
+                return col, types[col]
+    return None
+
+
+def _edited(value, kind: str) -> str:
+    if kind == "int":
+        return str(int(value) + 1)
+    if kind == "float":
+        return str(round(float(value) + 1, 4))
+    return f"{value} (edited)"
+
+
+def stale_reuse(client, db, settings, filename: str, ds_id: str, synthesis_id: str | None) -> StaleReuse:
+    """Plan 1.3's scenario: nothing that isn't usable passes for current (see the module docstring)."""
+    from sherlock.notebook import exporter
+    from sherlock.rows.query import ident
+    from sherlock.stories import trust
+    from sherlock.widgets import service as ws
+
+    out = StaleReuse(filename)
+    if synthesis_id:
+        syn = client.get(f"{API}/cards/{synthesis_id}").json()
+        source = next((r["key"].partition(".")[0] for r in _runs(syn) if r["type"] == "chip" and r.get("key")), None)
+        if source:
+            client.delete(f"{API}/cards/{source}")
+            out.synthesis_after_delete = client.get(f"{API}/cards/{synthesis_id}").json()["status"]
+            if out.synthesis_after_delete == "ready":
+                out.problems.append("a synthesis citing a deleted card stayed ready")
+            client.post(f"{API}/cards/{source}/restore")
+    picked = _column_to_edit(client, db, ds_id)
+    if picked is None:
+        out.problems.append("no card reads a column this scenario can edit")
+        return out
+    out.column, kind = picked
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds_id,)).fetchone()
+        env = ws.Env(settings, db, client.app.state.duckdb, None)
+        col = ident(out.column)
+        with ws.connection(env, dataset, dataset["current_version"]) as conn:
+            row_id, value = conn.execute(f"SELECT _row_id, {col} FROM t WHERE {col} IS NOT NULL ORDER BY _row_id LIMIT 1").fetchone()
+        edits = [{"row_id": row_id, "column": out.column, "value": _edited(value, kind)}]
+        r = client.post(f"{API}/datasets/{ds_id}/edits", json={"base_version": dataset["current_version"], "edits": edits})
+        if r.status_code != 201:
+            out.problems.append(f"the edit was refused: {r.text[:120]}")
+            return out
+        jobs = _settle(client, ds_id)
+        cascade = next((j for j in jobs if j["kind"] == "cascade"), None)  # the newest first
+        out.audited = ((cascade or {}).get("result") or {}).get("audited")
+        if cascade is None or cascade["status"] != "done":
+            out.problems.append(f"the cascade didn't finish: {cascade['status'] if cascade else 'none queued'}")
+        cards = client.get(f"{API}/datasets/{ds_id}/cards").json()
+        out.outdated_cards = sum(c["status"] == "outdated" for c in cards if c["kind"] == "widget")
+        out.overview = next((c["status"] for c in cards if c["kind"] == "overview"), "none")
+        if out.outdated_cards and out.overview == "ready":
+            out.problems.append("the overview stayed ready while cards it reads went outdated")
+        if out.audited:
+            out.problems.append(f"the cascade's audit found {out.audited} ready card(s) whose numbers may not hold")
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds_id,)).fetchone()
+        again = trust.audit(db, None, dataset)
+        if again:
+            out.problems.append(f"audit() found {again} ready card(s) whose numbers may not hold")
+        built = exporter.build(settings, db, client.app.state.duckdb, dataset, exporter.NotebookOptions())
+        md = [c.source for c in built.nb.cells if c.cell_type == "markdown"]
+        out.notebook_notes = sum("*Out of date (" in m for m in md)
+        out.notes_expected = sum(1 for c in cards if c["status"] != "ready")
+        if out.notebook_notes < out.notes_expected:
+            out.problems.append(f"the notebook notes {out.notebook_notes} of {out.notes_expected} cards that aren't ready")
+    finally:
+        client.put(f"{API}/me/settings", json={"story_updates": "auto"})
+    return out
+
+
 def evaluate(client, files: list[str]) -> list[Tally]:
     from sherlock.db.connection import connect
     from sherlock.llm.client import CallScope, LLMClient
@@ -172,6 +290,10 @@ def evaluate(client, files: list[str]) -> list[Tally]:
                 tally.cards += 1
                 tally.by_model += bool(card["narrated_by"])
                 check_card(db, app.state.duckdb, app.state.settings, dataset, card, tally, "synthesis")
+            else:
+                card = None
+            tally.stale = stale_reuse(client, db, app.state.settings, filename, ds_id, card["id"] if card else None)
+            tally.problems += [f"stale reuse: {p}" for p in tally.stale.problems]
         finally:
             db.close()
         out.append(tally)
@@ -185,6 +307,13 @@ def report(tallies: list[Tally]) -> str:
         lines.append(f"| {t.file} | {t.cards} ({t.by_model}) | {t.chips_ok} of {t.chips} | "
                      f"{t.facts_checked - t.facts_stale} of {t.facts_checked} | {t.text_with_numbers} | {t.causal} | "
                      f"{t.labels_bad} | {t.synthesis} |")
+    stale = [t.stale for t in tallies if t.stale]
+    if stale:
+        lines += ["", "Stale reuse (plan 1.3): one card of the synthesis deleted, then one cell edited under Ask first.", "",
+                  "| File | Column edited | Synthesis after the delete | Overview after the edit | Cards outdated | "
+                  "Notebook notes (cards not ready) | Audit after the cascade |", "|---|---|---|---|---|---|---|"]
+        lines += [f"| {r.file} | {r.column or '-'} | {r.synthesis_after_delete} | {r.overview} | {r.outdated_cards} | "
+                  f"{r.notebook_notes} ({r.notes_expected}) | {r.audited} |" for r in stale]
     chips, ok = sum(t.chips for t in tallies), sum(t.chips_ok for t in tallies)
     problems = [p for t in tallies for p in t.problems]
     lines += ["", f"Grounded {ok} of {chips} chips.",

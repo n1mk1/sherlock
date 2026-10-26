@@ -13,6 +13,7 @@ from sherlock.errors import ApiError, not_found
 from sherlock.jobs.stories import queue_stories
 from sherlock.ownership import Owned, owned, owned_dataset
 from sherlock.stories import service as stories
+from sherlock.stories import synthesis
 
 router = APIRouter(tags=["cards"])
 
@@ -123,7 +124,10 @@ def dismiss_badge(cid: str, request: Request, _: Owned = Depends(owned("card")),
 def delete_card(cid: str, request: Request, _: Owned = Depends(owned("card")), db: sqlite3.Connection = Depends(get_db)) -> None:
     db.execute("UPDATE cards SET deleted_at = ? WHERE id = ?", (now_iso(), cid))
     r = _card(db, cid)
-    stories.emit_card(db, request.app.state.bus, _dataset(db, r["dataset_id"]), cid)
+    dataset = _dataset(db, r["dataset_id"])
+    stories.emit_card(db, request.app.state.bus, dataset, cid)
+    # A synthesis citing it can no longer show its numbers: `sources_changed`, with Refresh (plan 1.3).
+    synthesis.check_sources(db, request.app.state.bus, dataset)
 
 
 @router.post("/cards/{cid}/restore")

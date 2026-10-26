@@ -69,6 +69,22 @@ def test_ask_model_and_who_it_got_wrong(client, ready):
     assert page["total"] == wrong
 
 
+def test_ask_model_says_when_its_run_is_outdated(client, ready):
+    """Plan 1.3: `pick_run` may pick an outdated run, and then the answer says so, never as current."""
+    from sherlock.db.connection import connect
+
+    run = driver_done(client, ready["id"])
+    db = connect(client.app.state.settings)
+    try:
+        db.execute("UPDATE runs SET status = 'outdated' WHERE id = ?", (run["id"],))
+    finally:
+        db.close()
+    _, msg = send(client, ready["id"], "who did the model get wrong?")
+    assert msg["sources"][0]["label"].endswith(f"(version {run['model_card']['version']}, outdated)")
+    texts = [r["text"] for b in blocks_of(msg, "text") for p in b["body"]["blocks"] for r in p["runs"] if r["type"] == "text"]
+    assert any("it's outdated. Re-run it" in t for t in texts)
+
+
 def test_ask_meaning_keeps_general_knowledge_apart(client, ready):
     _, msg = send(client, ready["id"], "what does sibsp mean?")
     assert msg["text"].startswith("sibsp is a whole-number column")

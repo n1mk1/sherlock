@@ -1,7 +1,9 @@
 """The purge job (Schema §6, Implementation Plan D8.6). The runner queues one every `PURGE_INTERVAL_S`
 (10 minutes); it belongs to no user's dataset and never shows in anyone's job list.
 
-1. Hard-delete datasets, widgets and cards soft-deleted more than 10 minutes ago (a dataset's files too).
+1. Hard-delete datasets, widgets and cards soft-deleted more than 10 minutes ago (a dataset's files too),
+   then check the syntheses of the datasets that lost cards (`synthesis.check_sources`): one citing a
+   card that's gone shows `sources_changed`.
 2. Soft-delete datasets past `expires_at`; the next pass hard-deletes them.
 3. Delete `job_events`, `widget_cache` and `web_cache` rows older than 24 h, and exports (rows and files) older
    than 24 h.
@@ -68,7 +70,8 @@ def _remove_old_dirs(root: Path, cutoff: float, keep: set[str] | frozenset[str] 
     return removed
 
 
-def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections | None, progress=lambda *_: None) -> dict:
+def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections | None, progress=lambda *_: None,
+          bus=None) -> dict:
     counts = {"datasets": 0, "expired": 0, "widgets": 0, "cards": 0, "events": 0, "cache": 0, "web_cache": 0, "exports": 0,
               "sandbox_dirs": 0, "clean_dirs": 0, "users": 0}
     grace = _ago(GRACE_S)
@@ -78,6 +81,10 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
         hard_delete_dataset(settings, db, cache, row)
         counts["datasets"] += 1
     gone = [r["id"] for r in db.execute("SELECT id FROM widgets WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,))]
+    # The datasets whose cards go now: a synthesis citing one of them is checked again below (plan 1.3).
+    touched = {r["dataset_id"] for r in db.execute(
+        "SELECT dataset_id FROM cards WHERE (deleted_at IS NOT NULL AND deleted_at < ?) OR widget_id IN "
+        "(SELECT id FROM widgets WHERE deleted_at IS NOT NULL AND deleted_at < ?)", (grace, grace))}
     for wid in gone:  # a widget's card goes with it; its canvas node is pruned on the next read
         db.execute("DELETE FROM cards WHERE widget_id = ?", (wid,))
         db.execute("DELETE FROM fact_sheets WHERE widget_id = ?", (wid,))
@@ -85,6 +92,12 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
         db.execute("DELETE FROM widgets WHERE id = ?", (wid,))
     counts["widgets"] = len(gone)
     counts["cards"] = db.execute("DELETE FROM cards WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,)).rowcount
+    from sherlock.stories import synthesis
+
+    for ds_id in touched:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ? AND deleted_at IS NULL", (ds_id,)).fetchone()
+        if dataset is not None:
+            synthesis.check_sources(db, bus, dataset)
 
     progress(2, 6, "Expiring old CSVs")
     counts["expired"] = db.execute("UPDATE datasets SET deleted_at = ? WHERE deleted_at IS NULL AND expires_at < ?",
@@ -122,7 +135,7 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
 
 
 async def run(ctx: JobContext) -> dict:
-    return await asyncio.to_thread(purge, ctx.settings, ctx.db, ctx.cache, ctx.progress)
+    return await asyncio.to_thread(purge, ctx.settings, ctx.db, ctx.cache, ctx.progress, ctx.bus)
 
 
 register("purge", run)

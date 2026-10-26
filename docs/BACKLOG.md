@@ -50,10 +50,10 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - **Rankings the narrator states with no fact behind them** (D6 F8): "Ticket comes third", "decreases for lower classes and for males within each class". Give ranks as chips (`driver_2` is already a fact) and tell the prompt to say only what the listed facts show. Comparisons across cards are checked in code since `f064fd9`.
 - **Number words still accepted** (D8 F1): "one", "single" and "pair" ("Only one group", "A pair of groups"). TRD §7.4 lists ordinals and archaic words as gaps by design, but not these.
 - **`is_nvidia_embed` admits non-NVIDIA IDs** (D9 F10; latent, since embeddings are off). `llm/models.py` accepts "embed" plus "nvidia", "nv-" or "nemotron" anywhere in the ID, so `someorg/conv-embed-v1` passes. Require the `nvidia/` prefix as `is_nemotron_chat` does, and change TRD §3.5 with it.
-- **An outdated synthesis goes into the notebook without a note** (D8 F7). Its chips render from the current sheets beside prose written about the old numbers. An outdated run gets a note; a card doesn't.
 - **Partial dependence for 3+ classes says "predicted <target>"** (D7 F9). It's the share predicted as the most common class.
 - **"Sixfold" to "ninefold" pass the number-word check** (TRD §7.4). The spec refuses twofold to tenfold, but the pattern in `stories/narrate.py` lists only two-, three-, four-, five- and tenfold.
 - **Answer cards never go stale** (TRD §7.6). The cascade picks cards by their widget only, and `synthesis.check_sources` skips cards with a sheet of their own, so a pinned answer keeps its old numbers after its columns change, marked neither outdated nor changed. The pseudocode's `rerun_fact_sql` isn't there. Mark one outdated when its `depends_columns` meet the changed columns, or re-run its stored SQL.
+- **An outdated synthesis doesn't come back by itself** (TRD §7.4.2, plan 1.3). Under "Ask first" a synthesis citing an outdated card is marked `outdated` with it; refreshing the cards leaves the synthesis `outdated` until its own Refresh. Plan 2b.6 rewrites syntheses under "Automatic"; under "Ask first" a cue on the synthesis once its sources are current would help.
 - **Replay doesn't re-run the Cleaner's verifiers** (TRD §7.8). `steps/replay.py` checks only the file, `_row_id` and the row count, though the spec aborts a replay when "its verifiers fail". Run `verifiers.verify` for each replayed cleaner step.
 
 ## 4. Accessibility (UI/UX §2.4, §6, §8)
@@ -124,7 +124,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - The empty-widget message says "No rows match the current filter" with no filter set and has no Clear filter link; "Show as table" resets on reload (UI/UX §5.5); chat answers have no copy button (App Flow §10.2) (D4 F17).
 - A help question ("how do I re-run an outdated analysis?") can route to `ask_model` (D7 F12). A keyword pre-route for "how do I …" to `app_help` would fix it.
 - `ask_meaning` drops the general block without a word when the model returns nothing, though TRD §8.2 says it's shown (D7 F13).
-- "The model" means the newest run once another answer comes between (D7 F14, `insight.pick_run`).
+- "The model" means the newest run once another answer comes between (D7 F14, `insight.pick_run`). Since plan 1.3 an outdated run it picks is labelled "(version N, outdated)" with a Re-run sentence, but a done run of the same target isn't preferred over it.
 - Once, an edit asked right after a question in the same thread got no proposal within 90 s (D9 F5, not reproduced). Worth one scripted repro.
 - The build shows no skeleton widgets, no cards streaming in and no "6 of 8 widgets" banner: the grid appears all at once (App Flow §6).
 - The version pill isn't clickable (App Flow opens the Changes panel from it), and there's no Filter button or filter builder; a filter comes only from clicking a chart (App Flow §7.1, UI/UX §3.2, §5.5).

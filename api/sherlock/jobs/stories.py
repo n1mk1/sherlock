@@ -40,7 +40,10 @@ def _run(ctx: JobContext) -> dict:
         columns = list(ws.user_types(env, dataset, dataset["current_version"]))
         for i, cid in enumerate(ctx.params["synthesis_ids"], 1):
             ctx.progress(i, len(ctx.params["synthesis_ids"]), "Writing the synthesis again")
-            synthesis.refresh(ctx.db, ctx.bus, LLMClient(ctx.settings), scope, dataset, cid, columns)
+            left: list[str] = []  # sources that aren't usable (plan 1.3) are left out, and the log says so
+            synthesis.refresh(ctx.db, ctx.bus, LLMClient(ctx.settings), scope, dataset, cid, columns, left)
+            if left:
+                ctx.log(synthesis.left_out_note(left))
         return {"cards": len(ctx.params["synthesis_ids"]), "widgets": 0}
     # Resume (D8.6): a re-queued job skips the widgets whose cards its last run already stored.
     told = set(ctx.state.get("told", []))

@@ -116,7 +116,7 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     rows = _widgets(db, dataset["id"]) if options.up_to_step is None else []
     if options.up_to_step is not None and _widgets(db, dataset["id"]):
         notes.append("Widgets are left out: they belong to the current version.")
-    cards = _cards(db, dataset["id"]) if options.include_cards and options.up_to_step is None else {}
+    cards = _cards(db, dataset) if options.include_cards and options.up_to_step is None else {}
     if options.include_cards and not cards and options.up_to_step is None:
         notes.append("There are no story cards yet, so this notebook has the widgets only.")
 
@@ -135,7 +135,7 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     nb.cells += cells.load(import_options, [c["name"] for c in v1_columns if c["name"] not in ("_row_id", "_quarantine_reason")],
                            {c["name"]: c["type"] for c in v1_columns})
     if "overview" in cards:
-        nb.cells += cells.card(*cards["overview"], level="##")
+        nb.cells += _card(cards["overview"], level="##")
     for s in chain:
         nb.cells += cells.step(s)
     in_chain = {s["id"] for s in chain}
@@ -165,7 +165,7 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
             nb.cells += _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
             emitted_runs.append(run["id"])
             if w["id"] in cards:
-                nb.cells += cells.card(*cards[w["id"]])
+                nb.cells += _card(cards[w["id"]])
             continue
         sql = widgets.compiled(env, dataset, spec, version, [])
         data = widgets.data(env, dataset, w, [], version)
@@ -173,16 +173,16 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
         nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], data["row_count"]), point)
         emitted += 1
         if w["id"] in cards:
-            nb.cells += cells.card(*cards[w["id"]])
+            nb.cells += _card(cards[w["id"]])
     for run in extra:  # include_runs: finished runs no widget shows
         nb.cells += _run_cells(settings, dataset, run, f"What drives {run['target']}?")
         emitted_runs.append(run["id"])
-    flow_cards = _flow_cards(db, dataset["id"]) if options.include_cards and options.up_to_step is None else []
+    flow_cards = _flow_cards(db, dataset) if options.include_cards and options.up_to_step is None else []
     flow_notes = _canvas_notes(db, dataset["id"]) if options.include_notes else []
     if flow_cards or flow_notes:
         nb.cells += cells.flow_intro(len(flow_cards), len(flow_notes))
-        for c, facts in flow_cards:
-            nb.cells += cells.card(c, facts)
+        for entry in flow_cards:
+            nb.cells += _card(entry)
         for text in flow_notes:
             nb.cells += cells.note(text)
     nb.cells += cells.closing()
@@ -233,24 +233,46 @@ def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title
                      outputs.table(imp["columns"], imp["rows"], imp["row_count"]))
 
 
-def _cards(db, dataset_id: str) -> dict:
-    """widget_id (or "overview") → (card, facts) for the live cards (TRD §7.7)."""
-    from sherlock.stories import service as stories
+def _card(entry: tuple[dict, dict, str | None], level: str = "###") -> list:
+    c, facts, stale = entry
+    return cells.card(c, facts, level=level, stale=stale)
 
+
+def stale_note(why: str | None, card: dict, version: int) -> str | None:
+    """The note under a card that isn't usable (plan 1.3): its words may not match the numbers."""
+    if why is None:
+        return None
+    written = f" It was written for version {card['version']}; this notebook rebuilds version {version}."         if card["version"] < version else ""
+    return (f"Out of date ({why}): its words may not match the numbers shown.{written} "
+            "Refresh it in Sherlock to bring it up to date.")
+
+
+def _cards(db, dataset: sqlite3.Row) -> dict:
+    """widget_id (or "overview") → (card, facts, stale note) for the live cards (TRD §7.7)."""
+    from sherlock.stories import service as stories
+    from sherlock.stories import trust
+
+    t = trust.Trust(db, dataset)
     out = {}
     for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('overview', 'widget')",
-                        (dataset_id,)):
+                        (dataset["id"],)):
         c = stories.to_card(db, r)
         sheet = stories.get_sheet(db, c["fact_sheet_id"])
-        out["overview" if c["kind"] == "overview" else c["widget_id"]] = (c, (sheet or {}).get("facts", {}))
+        why = t.why_not(r)
+        out["overview" if c["kind"] == "overview" else c["widget_id"]] = (
+            c, (sheet or {}).get("facts", {}), stale_note(None if why == trust.WIDGET_DELETED else why, c, dataset["current_version"]))
     return out
 
 
-def _flow_cards(db, dataset_id: str) -> list[tuple[dict, dict]]:
+def _flow_cards(db, dataset: sqlite3.Row) -> list[tuple[dict, dict, str | None]]:
     """Synthesis and answer cards (from the Flow canvas and chat), oldest first, each with the facts its
-    chips name: an answer card's own sheet, or for a synthesis each cited card's fact (TRD §7.4.1)."""
+    chips name (an answer card's own sheet, or for a synthesis each cited card's fact, TRD §7.4.1) and
+    its stale note."""
     from sherlock.stories import service as stories
+    from sherlock.stories import trust
 
+    t = trust.Trust(db, dataset)
+    dataset_id = dataset["id"]
     out = []
     for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('synthesis', 'answer') "
                         "ORDER BY created_at", (dataset_id,)):
@@ -262,7 +284,7 @@ def _flow_cards(db, dataset_id: str) -> list[tuple[dict, dict]]:
             keys = [run["key"] for p in (c["headline"], c["body"]) for b in p["blocks"] for run in b["runs"]
                     if run["type"] == "chip" and run.get("key")]
             facts = {k: f for k in keys if (f := stories.fact_for(db, dataset_id, k))}
-        out.append((c, facts))
+        out.append((c, facts, stale_note(t.why_not(r), c, dataset["current_version"])))
     return out
 
 
@@ -290,7 +312,7 @@ def preview(db: sqlite3.Connection, dataset: sqlite3.Row, options: NotebookOptio
     return {"version": target["version"], "notes": notes,
             "counts": {"steps": len(chain), "widgets": len(widgets) if options.up_to_step is None else 0,
                        "runs": len(runs) if options.up_to_step is None else 0,
-                       "cards": len(_cards(db, dataset["id"])) + len(_flow_cards(db, dataset["id"]))
+                       "cards": len(_cards(db, dataset)) + len(_flow_cards(db, dataset))
                        if options.include_cards and options.up_to_step is None else 0,
                        "notes": len(_canvas_notes(db, dataset["id"])) if options.include_notes else 0}}
 

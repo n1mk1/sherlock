@@ -63,21 +63,28 @@ def make_sense(db, bus, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, 
             canvas.add_edge(doc, n["id"], node["id"], "summarized in", "summarized_in")
 
     canvas.mutate(db, bus, dataset, place)
-    cited = synthesis.sources(db, dataset["id"], selected)
-    blocks = [text_block([{"type": "text", "text": f"I added a synthesis of {len(selected)} cards to the canvas: "},
+    left: list[str] = []
+    cited = synthesis.sources(db, dataset["id"], selected, left)
+    blocks = [text_block([{"type": "text", "text": f"I added a synthesis of {len(cited)} cards to the canvas: "},
                           *card["headline"]["blocks"][0]["runs"]]),
               {"type": "text", "body": card["body"]}]
+    if left:  # cards whose numbers may not hold aren't cited (plan 1.3)
+        blocks.append(text_block([{"type": "text", "text": synthesis.left_out_note(left)}]))
     return blocks, card_sources(db, cited), card
 
 
 def ask_story(db, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, question: str, selected: list[str],
               columns: list[str]) -> tuple[list[dict], list[dict]]:
     ids = _cards_in_view(db, dataset["id"], selected)
-    cards = synthesis.sources(db, dataset["id"], ids)
+    left: list[str] = []
+    cards = synthesis.sources(db, dataset["id"], ids, left)
     if not cards:
-        raise CantAnswer("There are no story cards to answer from yet.")
+        raise CantAnswer(synthesis.left_out_note(left) if left else "There are no story cards to answer from yet.")
     runs = synthesis.answer(llm, scope, db, cards, columns, question)
-    return [text_block(runs)], card_sources(db, cards)
+    blocks = [text_block(runs)]
+    if left:  # only usable cards are read (plan 1.3); the answer says which weren't
+        blocks.append(text_block([{"type": "text", "text": synthesis.left_out_note(left)}]))
+    return blocks, card_sources(db, cards)
 
 
 # --- Add to Flow ----------------------------------------------------------------------------------

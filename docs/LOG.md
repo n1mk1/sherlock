@@ -470,6 +470,7 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **Text search.** The row-filter prompt matches each meaningful word of a "mentions …" request on its own (`ILIKE … AND …`), since the text may word it another way. The baseline's one standing miss ("Which reviews mention damaged packaging?", 167 rows) matched the exact phrase and got 0.
   - Tests: `test_llm_client.py` (an empty draft is repaired; an honest unanswerable draft passes, one without `closest` doesn't). Docs: TRD §8.1 (the route line, `ask_data`, `find_rows`).
   - **Eval:** `uv run sherlock eval ask` **49/50, 0 unsourced**, median 9.8 s. Both earlier misses passed. The one miss was "What does sibsp mean?": the general-knowledge sentence named neither siblings nor spouses this time. It passed in both earlier runs tonight (model variance in the `meaning` call).
+- **Gate:** run once for slices 1–4, the router fix and the cleanup merge together, at `781dc6e` (see slice 4): `uv run pytest` 413 passed, 3 skipped; `corepack pnpm test` 88 passed; `corepack pnpm e2e` 1 passed. Pushed.
 
 ### Slice 2 (plan 0.2): cut-off replies
 
@@ -479,6 +480,7 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - `strip_reasoning` drops an unterminated `<think>` and everything after it, as its docstring already claimed.
   - Tests (`test_llm_client.py`): `length` then `stop` makes two calls with caps 1,000 and 2,000 and no repair message; the cap stops at 8,192 and a reply still cut off isn't repaired; `complete` without a schema does the same; an unterminated `<think>` is stripped.
   - Docs: TRD §3.5 (traces, `Completion`, cut-off replies) and §8.1 step 1. BACKLOG: the `strip_reasoning` half of the D2 LLM client line is gone; the `embed` half stays.
+- **Gate:** run once for slices 1–4, the router fix and the cleanup merge together, at `781dc6e` (see slice 4): `uv run pytest` 413 passed, 3 skipped; `corepack pnpm test` 88 passed; `corepack pnpm e2e` 1 passed. Pushed.
 
 ### Slice 3 (plan 0.3): one shared model gate, the deadline, and refused requests
 
@@ -489,6 +491,7 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **The deadline:** `CallScope.deadline` bounds attempts, the HTTP timeout and retry waits (`DeadlineExceeded`, "This answer ran out of time."). A chat message's scope gets `started + 90 s`; a step that hits it ends the plan with the usual "I stopped early" note and compose still runs on what was found.
   - Tests: 20 threads per role through per-call clients never pass 2 (large) or 6 (medium) in flight; `Retry-After: 3` waits 3 s; a 400 makes one call and raises `LLMRequestError`; `OpenAITransport` maps a 429 (with its header), a 400 and a 503; the deadline stops at 40 s of a 40 s budget and a passed deadline makes no call; a chat message with no time left makes no model call. The two exact-backoff tests inject the jitter.
   - Docs: TRD §3.5, §4 (error codes), §8.1 (budgets as built), §10 (the three settings) and `.env.example`. BACKLOG §6's Day 2 list no longer names the 4xx and `OpenAITransport` cases.
+- **Gate:** run once for slices 1–4, the router fix and the cleanup merge together, at `781dc6e` (see slice 4): `uv run pytest` 413 passed, 3 skipped; `corepack pnpm test` 88 passed; `corepack pnpm e2e` 1 passed. Pushed.
 
 ### Slice 4 (plan 1.1 + 1.2): one update job per dataset, write guards and failure hooks
 
@@ -505,6 +508,27 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A card told before Cancel took effect stays `ready` on the new version (its numbers are current); only the cards not yet told become `outdated`.
   - A widget whose title alone the user changed mid-cascade keeps its old `version_built` until the next cascade; the footer's version stamp of a SQL widget comes from its data, so nothing shows it.
   - BACKLOG: no line closes (A1, A16–A18 were audit findings, not BACKLOG lines). D6 F11 (the progress line clears only on `cascade.done`) stays open: a cancelled cascade ends with `job.failed`.
+- **Gate (slices 1–4, the router fix and the cleanup merge, at `781dc6e`):** `uv run pytest` 413 passed, 3 skipped (11 min 47 s, in the `sherlock-verify` worktree); `corepack pnpm test` 14 files, 88 passed; `corepack pnpm e2e` 1 passed (11.6 s). Pushed to `origin/main` as `781dc6e`. The cleanup branch (`25333fa`, another session's) was merged after this slice; `docs/LOG.md` kept both sides.
+
+### Slice 5 (plan 1.3): the trustworthy-source rule
+
+- **Done:**
+  - **`stories/trust.py`.** A card is usable when it's `ready`, it and its widget aren't deleted, and its numbers hold on the current version: its sheet is on that version, or the steps since its sheet's version touch none of its `depends_columns` and don't change everything. A synthesis or answer card without a sheet is usable when the cards it cites are. `Trust.why_not` says why not in a few words; `usable_cards`, `is_usable`, `outdate_citing` and `audit` use it.
+  - **The overview** reads only usable widget cards, and its sheet now depends on their columns; with nothing usable to read, a stale overview becomes `outdated`. Under "Ask first" the cascade marks the overview and the syntheses citing the outdated cards `outdated` with them.
+  - **Analysis cards** tell only a `done` run (`build_sheet` fails on an outdated one, so the card stays `outdated` until Re-run). A card with no facts on the new version stays `ready` only while its old sheet holds.
+  - **Syntheses, `ask_story` and Make sense of this** cite usable cards only and say which they left out ("I left out <title> (<why>): … Refresh them to use them."); fewer than two usable cards is `422` (Make sense) or `409` (a synthesis's Refresh), with that sentence. `fact_for` ignores deleted cards; `DELETE /cards/{cid}` and purge re-run `check_sources`, so a synthesis citing a gone card shows `sources_changed`.
+  - **`ask_model`** labels an outdated run "(version N, outdated)" and adds a Re-run sentence.
+  - **The notebook** gives every card or Flow card that isn't usable an italic "Out of date (<why>) …" note under its heading (D8 F7).
+  - **The invariant check:** `trust.audit` after every cascade marks any `ready` card that isn't usable `outdated`, logs a warning with the count, and the cascade's result carries `audited`.
+  - **`sherlock eval grounding`** gains the stale-reuse scenario (`grounding.stale_reuse`): delete and restore a card a synthesis cites, then under Ask first edit one cell of the column most cards read; it checks the synthesis left `ready`, the overview isn't `ready`, the cascade's audit and a fresh audit find 0, and the notebook notes every card that isn't `ready`.
+  - Tests: `test_stories.py::test_only_usable_cards_feed_another_output` (Ask first outdates the overview and a synthesis citing a fare card; audit 0; `usable_cards` is exactly the cards that read no fare; `sources` leaves the fare card out with its reason; Make sense with one usable card is refused with the note; the notebook notes each card that isn't ready; Refresh of the overview reads only usable cards, and an analysis card on an outdated run stays outdated; a purged widget's card leaves its synthesis `sources_changed`); `test_grounding_eval.py` asserts the stale-reuse scenario on recorded replies; `test_answerers.py::test_ask_model_says_when_its_run_is_outdated`.
+  - Docs: TRD §7.4 (pipeline), new §7.4.2, §7.6 (the audit), §7.7 (cards that aren't current), §8.2 (`ask_model`, `ask_story`), §14 (stale reuse); PRD STORY-5 and STORY-6 acceptance (no non-ready source feeds another card; the overview and syntheses follow under Ask first); Schema §6 (purge re-checks syntheses); App Flow §12 (left-out cards).
+  - BACKLOG: removed D8 F7 (an outdated synthesis in the notebook without a note). D7 F14 (`pick_run` prefers the newest run) stays, with the new label noted. Added: a synthesis outdated under Ask first doesn't come back by itself.
+- **Decisions:**
+  - "Sheet on the current version" (the plan's words) would make every card the cascade correctly left alone unusable after any edit, so usable means "the sheet's numbers hold on the current version": on that version, or nothing it depends on changed since.
+  - Cards being written right now (`updating`, or a synthesis citing one) aren't the audit's to fix: their job settles them. Everything else that isn't usable and still says `ready` is.
+  - A card whose widget was deleted isn't usable, but a synthesis citing it isn't marked for that: Restore brings the widget and its card back.
+- **Eval:** `uv run sherlock eval grounding` (live): titanic3 10 cards (10 by the model), 25 of 25 chips, 23 of 23 facts holding; sales_dated 11 cards (11), 37 of 37 chips, 35 of 35 facts; 0 text runs with numbers, 0 causal, 0 bad labels, both syntheses by the model. **Grounded 62 of 62 chips, no problems.** Stale reuse: titanic3 edited `fare` (synthesis after the delete `sources_changed`, overview `outdated`, 4 cards outdated, 6 notebook notes for 6 cards not ready, audit 0); sales_dated edited `revenue` (`sources_changed`, `outdated`, 5, 7 of 7, 0).
 
 ### Slice 7 (plan 1.5): the widget data key carries its spec
 

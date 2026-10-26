@@ -247,12 +247,15 @@ def _runs_md(runs: list[dict], facts: dict, notes: list[str]) -> str:
     return "".join(out).strip()
 
 
-def card(c: dict, facts: dict, level: str = "###") -> list:
+def card(c: dict, facts: dict, level: str = "###", stale: str | None = None) -> list:
     """A story card as Markdown (PRD NB-6): the headline as a heading, the body with every chip as
     its number from the fact sheet, related widgets, and the evidence queries in a closed details
-    block. Numbers typed by hand get an asterisk and a footnote."""
+    block. Numbers typed by hand get an asterisk and a footnote. `stale`: why the card isn't current
+    (plan 1.3), said in italics under the heading, like an outdated run's note."""
     notes: list[str] = []
     lines = [f"{level} {_runs_md([r for b in c['headline']['blocks'] for r in b['runs']], facts, notes)}", ""]
+    if stale:
+        lines += [f"*{stale}*", ""]
     for b in c["body"]["blocks"]:
         text = _runs_md(b["runs"], facts, notes)
         lines.append(f"- {text}" if b.get("type") == "bullets" else text)

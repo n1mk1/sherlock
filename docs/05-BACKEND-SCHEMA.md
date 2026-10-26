@@ -719,7 +719,7 @@ As built:
 ## 6. Retention and purge
 
 A `purge` job runs every 10 minutes:
-1. Hard-delete datasets, widgets and cards with `deleted_at` older than 10 minutes (files included).
+1. Hard-delete datasets, widgets and cards with `deleted_at` older than 10 minutes (files included). Then each dataset that lost cards has its synthesis cards checked again (`synthesis.check_sources`): one citing a card that's gone becomes `sources_changed`.
 2. Delete datasets past `expires_at` (soft-delete first, hard-delete on the next pass).
 3. Delete `job_events` older than 24 h, `widget_cache` rows older than 24 h, `web_cache` rows older than 24 h (§2.22), and `exports` rows and files older than 24 h.
 4. Delete sandbox temp directories (`/tmp/sherlock-sandbox/`, outside `/data`) older than 1 h.
