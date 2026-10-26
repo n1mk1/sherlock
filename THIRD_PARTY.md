@@ -12,7 +12,7 @@ not listed.
 |---|---|---|
 | Bklit UI chart components (bar, line, area, pie, ring and their parts), copied through the `@bklit` shadcn registry and edited (TRD §2) | `web/src/components/charts/` | MIT, Copyright (c) 2026 uixmat, https://github.com/bklit/bklit-ui |
 | visx pattern helpers | `web/src/components/charts/patterns/` | MIT, see `LICENSE-visx-pattern` in that folder |
-| shadcn/ui component patterns (buttons, dialog, menu, popover, drawer) | `web/src/components/ui/` | MIT, https://github.com/shadcn-ui/ui |
+| shadcn/ui component patterns (button, dialog, menu, drawer, segmented control) | `web/src/components/ui/` | MIT, https://github.com/shadcn-ui/ui |
 
 **Bklit Studio is not used.** Only the open-source Bklit UI components above are in the repository;
 nothing references Bklit Studio (checked by searching the code and dependencies on 2026-10-25).
@@ -52,7 +52,7 @@ API, under Nebius's and NVIDIA's terms of service. No model weights are in this 
 | @radix-ui/react-dropdown-menu | 2.2.1 | MIT |
 | @radix-ui/react-popover | 1.1.15 | MIT |
 | @radix-ui/react-slot | 1.5.0 | MIT |
-| @radix-ui/react-tooltip | 1.4.1 | MIT |
+| @radix-ui/react-tooltip | 1.4.1 | MIT (declared in `package.json`, not imported, so not in the bundle) |
 | @tanstack/react-query | 5.104.5 | MIT |
 | @tiptap/core | 3.32.0 | MIT |
 | @tiptap/pm | 3.32.0 | MIT |
@@ -60,7 +60,7 @@ API, under Nebius's and NVIDIA's terms of service. No model weights are in this 
 | @tiptap/starter-kit | 3.32.0 | MIT |
 | @visx/curve | 4.0.0 | MIT |
 | @visx/event | 4.0.0 | MIT |
-| @visx/gradient | 4.0.0 | MIT |
+| @visx/gradient | 4.0.0 | MIT (declared in `package.json`, not imported, so not in the bundle) |
 | @visx/grid | 4.0.0 | MIT |
 | @visx/group | 4.0.0 | MIT |
 | @visx/responsive | 4.0.0 | MIT |

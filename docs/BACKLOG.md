@@ -28,6 +28,7 @@ The owner's, unless a line says otherwise.
 
 - **Type-aware cell editors and autocomplete** (PRD CSV-5, P0; D5 O1). Every cell edits as text: no category dropdown (`GET /columns/{col}/values` exists for it), boolean toggle, date picker, number check before saving, or autocomplete from the column's values. Cut 5 doesn't cover these. Build them, or record the drop in the PRD (plan §2.0: any further drop needs a PRD change).
 - **Multi-column sort, column resize and auto-fit** (PRD CSV-8, P0). The grid sorts by one column, with fixed widths (`Grid.tsx`). Plan §5's cut 5 ("beyond … sort") may cover these, but plan §2.0's exact list doesn't name them. Say which.
+- **Cleans that skip the plan.** PRD CLEAN-1 says nothing is cleaned without Start cleaning, but two clicks still start a clean with no plan, attempting every issue: "Clean them" on the toast after saving new rows (`SaveActions.tsx` → `useCleanScoped` in `api/csv.ts`), and Approve on chat's `clean_selection` proposal (`agent/actions.py`). Route both through a plan, or record them as exceptions in CLEAN-8a.
 - **`/` with the chat bar set to Hidden.** PRD ASK-1 says `/` summons the bar; UI/UX §5.11 says Hidden removes it, which is what's built (`/` does nothing). Pick one.
 - The cut-5 P0s (CSV-2, 3, 4, 6, 7, 9, 10, 11, 14) and every other P0 a cut removed now carry a "Removed by cut N" marker in the PRD (the audit); their priorities are unchanged.
 - **Imbalanced two-class targets** (D7 F3). The verdict compares accuracy only, so with 3% positives a model with AUC 0.95 reads "weak, 0.0 points better". Use AUC or balanced accuracy for the verdict and the one-column rule, or require both to agree. That's a PRD and TRD change.
@@ -76,7 +77,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Identity, limits, operations
 
-- `POST …/use-as-is` and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So do `POST /cards/{cid}/refresh` and approving a `clean_selection` proposal (`agent/actions.py`) (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
+- `POST …/use-as-is` (the Clean it myself button) and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So do `POST /cards/{cid}/refresh` and approving a `clean_selection` proposal (`agent/actions.py`) (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
 - `LOG_LEVEL` is read but never applied: `main.py` sets the `sherlock.*` loggers to INFO (TRD §10). Fix: `setLevel(settings.log_level.upper())`.
 - `JOB_BACKEND=nebius` is accepted and silently ignored, so jobs run locally (TRD §10). Refuse it at startup until it's built.
 - `PATCH /widgets/{wid}` with `{ prompt }` answers `422` with the stale message "needs chat, which isn't built yet", though `update_widget` exists (TRD §4.5). Route it to `update_widget` under `llm_rate_limit`, or fix the message.
@@ -118,7 +119,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - The critic prompt says "Effect on a sample", but the effect it's given comes from the full data (`cleaning/prompts/critic.txt`).
 - Exact and near duplicate rows share one issue key, `duplicates|None` (`detectors/duplicates.py`), so the cleaning plan shows, and the Cleaner attempts, only the more severe of the two; the other is never tried or listed (App Flow §4.1, TRD §4.4; `cleaning/plan.py`, `loop.py` `handled`). Give near duplicates a key of their own.
 - Chat answers given during cleaning don't say which version or step they read ("as of step 5", App Flow §5).
-- The CSV tab's Clean with AI has no dot before the first clean, and neither Clean with AI nor the cleaning report offers to include hand-edited cells ("Include these next time") (App Flow §4, §8.4; PRD CLEAN-8).
+- The CSV tab's Clean with AI (`CleanButton` in `CsvTab.tsx`) has no dot before the first clean, and neither the cleaning plan nor the cleaning report offers to include hand-edited cells ("Include these next time"): `api/queries.ts` always sends `include_user_edited: false` (App Flow §4, §8.4; PRD CLEAN-8).
 
 ### Dashboard and chat
 
@@ -139,7 +140,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - "The closest I can answer: …" is plain text, not a button that asks it (App Flow §10.2).
 - Hitting the 40k-token message budget mid-answer throws away the earlier steps' results and returns only the budget sentence; TRD §8.1 says to compose what exists with a note (`agent/loop.py`).
 - Proposals expire lazily: a stale one keeps its Approve button until it's clicked and answers `409`, instead of reading "Expired: the data changed since" (App Flow §10; `agent/actions.py`). Expire pending proposals in `commit_step`, or compare against `current_version` when listing them.
-- Rule 4, Titanic in generic code: the error message "Try naming the columns, e.g. average fare by pclass" (`agent/loop.py`, copied into App Flow §10.2), and the "Survival by class" and `value:sex:female` examples in `dashboard/prompts.py` and `stories/narrate.py`. The prompt test covers only the cleaning prompts. Use placeholders.
+- Rule 4, Titanic in generic code: the error message "Try naming the columns, e.g. average fare by pclass" (`agent/loop.py`, copied into App Flow §10.2), the "Survival by class" and `value:sex:female` examples in `dashboard/prompts.py` and `stories/narrate.py`, and Titanic columns (pclass, sibsp, fare, survived) in the examples of `agent/answerers.py`, `agent/insight.py`, `agent/prompts.py` and `llm/schemas.py`. The prompt test covers only the cleaning prompts. Use placeholders.
 - A wide file gets no note that the dashboard used only its 30 most informative columns (App Flow §18; the builder keeps `columns_used` in the job result only).
 - The empty library's small print doesn't say that clearing the cookie loses the library, with no recovery (App Flow §18).
 - Save doesn't retry by itself once the connection is back; pressing it again works (App Flow §18).
@@ -156,7 +157,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 ### CSV tab
 
 - No "Export up to step k" after a failed export (D5 O2; App Flow §17.5). The backend supports `up_to_step`.
-- The Clean with AI pending-edits note has Discard but no Save (App Flow §8.4); the scope labels have no counts; "1 rows" and "1 cells" (D5 O3).
+- The cleaning plan's pending-edits note has Discard edits but no Save (App Flow §8.4; `CleanPlanPanel.tsx`); its scope labels "Whole dataset" and "Rows added since the last clean" have no counts, and the selection reads "Current selection (1 rows)"; the Changes panel reads "1 cells" (`ChangesPanel.tsx`) (D5 O3).
 - "Keep mine" on a row the newer version deleted can't be saved (`422`) and blocks the buffer until the line is removed (D5 O5, from the code).
 - For about a second after Save, the grid shows the old version's rows under the new header (D5 O6).
 - Select-all offers to delete only the rows whose pages are loaded (D5 O7).
@@ -209,7 +210,9 @@ Each of these carries a "Not built yet" marker in the brief's section.
 - **Motion** (§2.4): only the Bklit charts animate. Widgets, cards, the thread and canvas nodes appear with no enter animation, and drawers don't slide in.
 - **Layout** (§3.1): the centre has no 560px minimum, and the right panel can't collapse at 1024px and up (also PRD P0-03). The slide-over backdrop has no dark-mode variant (`AppShell.tsx`).
 - **Shadows** (§2.3, §10): dialogs, popovers, the chart readout and slide-overs use `--shadow-overlay`, and canvas card nodes have a hard-coded `rgba(0,0,0,0.04)` shadow (`FlowTab.tsx`), against "no card shadows". Drop the node shadow; decide on the rest.
-- **Buttons** (§4.1): secondary buttons show no hover change, since `hover:bg-muted` equals `--secondary`; the loading spinner is added beside the icon instead of replacing it (`ui/button.tsx`). Most icons use lucide's 2px stroke, not 1.75, and many icon-only buttons have no tooltip (`JobTray.tsx`, `DatasetMenu.tsx`, `WidgetShell.tsx`, `ChatBar.tsx`).
+- **Buttons** (§4.1): secondary buttons show no hover change, since `hover:bg-muted` equals `--secondary`; the loading spinner is added beside the icon instead of replacing it (`ui/button.tsx`). Most icons use lucide's 2px stroke, not 1.75, and many icon-only buttons have no tooltip (`JobTray.tsx`, `DatasetMenu.tsx`, `WidgetShell.tsx`, `ChatBar.tsx`, and the ✎, × and chevrons in `CleanPlanPanel.tsx`).
+- **Target sizes** (§4.1): the inline icon buttons in the cleaning plan and the Changes panel are about 18px (`p-0.5` plus a 14–16px icon; `CleanPlanPanel.tsx`, `ChangesPanel.tsx`), under the 32 × 32 minimum, and the CSV toolbar's text buttons are `size="sm"`, 28px (`CsvTab.tsx`), under 36.
+- **Discard edits in the cleaning plan** (§6): it throws away the CSV tab's pending edits at once, with no confirmation; the context row's Discard confirms (`SaveActions.tsx`). Reuse that dialog.
 - **Tooltips** (§4.11): outside the charts, every tooltip is the browser's native `title`, so none of the styling applies. Add a Tooltip primitive. Error toasts close after 4 s (§4.10; also D2).
 - **Widgets** (§4.3, §5.5): a related widget gets the border but no half-strength spotlight; the footer has no "updated 2s ago"; the empty message shows with no filter and has no Clear link (D4 F17); Bklit siblings fade to 40% on hover, not 60%, pie and ring slices don't fade when filtered, and tooltip numbers aren't mono.
 - **Hover linking** (§6): it fires and clears at once, with no 80 ms / 120 ms delay (`WidgetShell.tsx`, `StoryCard.tsx`).
@@ -221,14 +224,14 @@ Each of these carries a "Not built yet" marker in the brief's section.
 ## 6. Evals and tests
 
 - The ask eval passes contradictory answers. Any cell of any table can match; `text_any` passes on one word, so "significant" and "could be chance" both pass; and a source can stand in for an answer (D4 F13, D8 F4). The grounding eval checks each chip against its fact, not what the words claim between chips.
-- `test_sandbox.py::test_happy_path_and_log` asserts the machine-wide `%TEMP%/sherlock-sandbox` is empty, so it fails while another process has a worker open. Set `SANDBOX_TMP` to `tmp_path` (D3 L5, D4 F14).
 - The job-polling helpers don't check the status code, so a `429` under load becomes a `TypeError` (`test_jobs.py`, `test_notebook.py`, `test_stories.py`; D5 O11, D7 F16).
 - No test asserts the `run.updated` event (D7 F17).
 - The ask eval has no unanswerable questions (50 questions: 28, 17 and 5 across three files), so PRD §4's "≥ 95% of unanswerable questions answered with an honest can't" isn't measured. Add some to `ask_questions.yaml`.
-- No component tests for Save, conflicts and Undo: `SaveActions`, `ConflictDialog`, `ChangesPanel`, `CsvTab` (D5 O4).
+- No component tests for Save, conflicts and Undo: `SaveActions` (with its conflict dialog), `ChangesPanel`, and the CSV tab's save path. `csvtab.test.tsx` covers only the read-only lock (D5 O4).
 - Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; a non-retryable 4xx failing at once; `OpenAITransport`'s error classes; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
 
 ## 7. Docs (Rule 1)
 
+- `web/package.json` declares `@radix-ui/react-tooltip` and `@visx/gradient`, but nothing imports them (THIRD_PARTY.md says so). Drop them, or use the tooltip for the missing icon-button tooltips (§4).
 - `FEEDBACK.md`'s Bklit and Glide spike records say "passed", though a pass rule wasn't tried: shared hover, and range paste (not needed after cut 5). Say "pass rule partly met" (D1 #3, D4 F18).
 - TRD §7.1 step 1 says an upload over the limit is aborted "while streaming", but Starlette spools the multipart body before the handler runs (D2, not probed).

@@ -415,3 +415,15 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **Checked:** the Cleaner without a plan is unchanged: `sherlock eval corruption` against Nemotron recovered 92.1% (titanic_clean), 95.9% (sales) and 98.1% (hr) of damaged cells with 0% harm and 0% row loss, in line with D3.3's 92–97%.
 - **Not done:** live runs of user steps against Nemotron (the tests use recorded replies); "Ask me before each fix" stays P1 (CLEAN-10).
 
+### 2026-10-25 (late night): the worktrees gone, the docs checked again after the cleaning plan
+
+- **Done** (owner's instruction: keep the docs, reviews and worktrees only where they're needed, and make the docs match what's built; cut with care):
+  - The nine Day 1–9 review sessions are archived, `.claude/worktrees/` is deleted, and the nine `claude/review-day*` branches are deleted (all were merged into `main`). `reviews/` was already gone (its findings are in `BACKLOG.md`).
+  - Every doc was read again against the code at `b7877dd`, after the cleaning plan's two commits. The fixes:
+    - The After upload options, the offer's two buttons and the plan's Discard are now named as they are, in the TRD (§4.4, §7.1, §14), schema, UI/UX brief, App Flow and help pages.
+    - The plan's API details are complete: `plan.updated`'s emitters, the PATCH op limit, `instruction`, `notes` and the `409` text. `ChatContext.plan_id`, the `undo_widget` and `open_model_card` actions, and `Source.kind` `general` are in TRD §4.9.
+    - TRD §2 lists the real `scripts/`, `cleaning/plan.py`, `report.py`, `docker/entrypoint.sh` and the web folders. The Render plan is `standard`. CLAUDE.md no longer lists SHAP.
+    - The README, THIRD_PARTY.md and the plan are fixed too: the P0 gaps outside the cuts, the unused tooltip and gradient packages, the cleaning plan as a post-freeze exception, and migration 002.
+  - Sentences that only told what used to be true were dropped from the specs: "before the Day N review…", "not yet at D4.2, built since", and the popover the plan replaced. The history stays in this log and in git. No requirement, ID or priority changed.
+  - `BACKLOG.md`: the sandbox temp test line is removed (fixed in `15dcccc`). Five lines now point at the cleaning plan's code. New lines: two cleans that skip the plan (an owner decision), small icon-button targets, a Discard edits that doesn't confirm, and two unused packages.
+- **Kept:** all the docs. Each one is read by CLAUDE.md, the README, the image (`help/`) or the submission (`examples/`, the screenshots, the rules and rubric, `Sherlock UI examples-png/` per UI/UX §1).

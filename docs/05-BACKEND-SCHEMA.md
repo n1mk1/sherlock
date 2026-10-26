@@ -1,18 +1,18 @@
 # Sherlock · Backend Schema
 
-Version 1.1 · 2026-10-24 (migration 001 and the doc-sync test, §1) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
+Version 1.2 · 2026-10-25 (migration 002, `clean_plans`, §2.21) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
 
 ---
 
 ## 1. Conventions
 
-- IDs are strings: a 3–4 letter prefix and a ULID (`ds_01J…`, `ver_`, `stp_`, `wdg_`, `crd_`, `fs_`, `run_`, `job_`, `msg_`, `prp_`, `sel_`, `usr_`). ULIDs sort by creation time.
+- IDs are strings: a 2–4 letter prefix and a ULID (`ds_01J…`, `stp_`, `wdg_`, `crd_`, `fs_`, `run_`, `job_`, `msg_`, `prp_`, `sel_`, `usr_`, `iss_`, `exp_`, `pln_`). ULIDs sort by creation time.
 - Timestamps are ISO-8601 UTC strings (`TEXT`).
 - JSON columns are `TEXT` containing JSON, validated by pydantic models on write; the shape is named in the column comment and defined in the [TRD §6](04-TRD.md).
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2 verbatim. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, and `002_clean_plans.sql` §2.21 (this doc's column comments have grown since; the test compares tables and columns, not comments). `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - `002_clean_plans.sql` (2026-10-25) adds `clean_plans` (§2.21) and its index.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
@@ -343,7 +343,7 @@ CREATE TABLE runs (
 CREATE INDEX runs_dataset ON runs(dataset_id, status);
 ```
 
-As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`; no migration, migration 001 already had the table):
+As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`):
 - **On request.** A run row is written with `status = queued`, `scope_json` (target filled in, any dashboard filter folded into the predicate, `inherit_global_filters: false`), `params_json` (manifest defaults filled in), `target` and `cache_key`. `job_id` is the `ml_run` job's.
 - **Identity.** The `UNIQUE (dataset_id, cache_key)` makes a repeat request return the same row. A failed or cancelled run's row is reset to `queued` and reused.
 - **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json` (the features used), `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json`, `libraries_json` and `finished_at`.
@@ -398,7 +398,7 @@ Implementation notes (2026-10-24, Implementation Plan D2.5):
 - `jobs.owner_pid` is `<hostname>:<pid>:<ulid>`, unique per process start. At startup, every `running` job is re-queued (one process holds the runner). While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
 - `jobs.progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
 - As built (2026-10-25): no `undo` job is ever queued, since an undo, its replay included, runs inside its request (TRD §7.8); `jobs/runner.py` still lists the kind. A `purge` job has `user_id = 'system'` and `dataset_id` NULL (§6).
-- `params_json` of a `clean` job started from a cleaning plan (2026-10-25, PRD CLEAN-8a) carries `plan: {id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits to a plan can't change a running job. A `clean` or `build_dashboard` job queued by the After upload setting rather than a click has `automatic: true` (the `Job` response shows it, TRD §4.10).
+- `params_json` of a `clean` job started from a cleaning plan (2026-10-25, PRD CLEAN-8a) carries `plan: {id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits to a plan can't change a running job. A `build_dashboard` job queued by the After upload setting ("I'll clean it myself") rather than a click has `automatic: true`; no `clean` job is queued without a click, since "Open the cleaning plan" only makes a draft (§2.21) (the `Job` response shows it, TRD §4.10).
 
 ### 2.15 chat
 
@@ -511,7 +511,7 @@ CREATE TABLE sandbox_runs (
 );
 ```
 
-As built (2026-10-25): the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
+As built (2026-10-25): the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
 
 ### 2.19 exports
 
@@ -565,7 +565,7 @@ CREATE TABLE clean_plans (
 CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE status = 'draft';
 ```
 
-- A dataset has at most one `draft` (the partial unique index). `POST /datasets/{id}/clean/plan` returns it or makes it; Discard sets `discarded`; Start sets `started` and `job_id`, and the job's `params_json` keeps a frozen copy of the items (§2.14). Started and discarded plans are kept as history.
+- A dataset has at most one `draft` (the partial unique index). `POST /datasets/{id}/clean/plan` returns it or makes it; Discard sets `discarded`, and so does Clean it myself (`POST /use-as-is`); Start sets `started` and `job_id`, and the job's `params_json` keeps a frozen copy of the items (§2.14). Started and discarded plans are kept as history.
 - `version` moves when a draft is merged onto a newer version (`cleaning/plan.py` `merge`): ticks and instructions are kept by issue key, the user's steps while their column exists.
 - `items_json` holds Sherlock's fixes and the user's own steps (PRD CLEAN-8b: `detector: "user_request"`, `key: null`, `source: "you"|"chat"`), and each fix's rewritten `instruction`. The clean job's `state_json` adds `plan_outcomes` (item ID → outcome), which the report's `your_steps` reads (TRD §7.2).
 - `source` is `after_upload` when the profile job made the draft because After upload is "Open the cleaning plan"; the plan screen then says why it opened.
@@ -583,7 +583,7 @@ CREATE TABLE t AS SELECT * FROM read_parquet('/data/users/<user_id>/datasets/<da
 SET enable_external_access = false;   -- then run the validated SELECT
 ```
 
-Quarantine lives only in the `_quarantine_reason` column of each version. Predictions live only in `runs/<run_id>/results/predictions.parquet` (`run_id`, `_row_id`, `prediction`, `probability`, `interval_low`, `interval_high`, `low_confidence`, `ood`).
+Quarantine lives only in the `_quarantine_reason` column of each version. Predictions live only in `runs/<run_id>/results/predictions.parquet` (`run_id`, `_row_id`, `prediction`, `probability`, `interval_low`, `interval_high`, `low_confidence`, `ood`). Removed by cut 7: no predictions file is written; classification runs keep out-of-fold predictions in `results/oof.json` (§4).
 
 Column conventions inside a version Parquet:
 - `_row_id BIGINT NOT NULL` unique, assigned at import (1…n); new rows take `datasets.next_row_id`, so ids are never reused.
