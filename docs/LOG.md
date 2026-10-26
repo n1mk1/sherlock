@@ -437,3 +437,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Docs: PRD CLEAN-8a, App Flow §8, §10, UI/UX §5.3a, TRD §4.4 and §8.2, Schema §2.15 and §2.21, and the help pages. The BACKLOG decision line is removed, and `clean_selection` no longer counts as a job started without the rate limit.
 - **Checked:** `uv run pytest`, `pnpm test` (four new plan tests: the toast, the approval, the side panel's preset, the centre line), the type checks and `pnpm e2e`.
 - **Not done:** a live run against Nemotron; neither path calls the model before Start.
+
+### 2026-10-25 (late night): the specs read as the app, not the build diary
+
+- **Done** (owner's choice of two cleanups):
+  - `docs/Sherlock UI examples-png/` is deleted (6 MB, the 13 pre-build boards). UI/UX §1 keeps the design canvas link and names the commit that still has them; `docs/` is 1.2 MB.
+  - The six specs lost their build history: dates and D-number tags on "As built" notes, "Day N review Fx, fixed …" provenance, "Before, …"/"used to …" stories, live-run anecdotes and superseded eval runs (TRD §14 keeps the latest numbers per eval). About 14 KB went, most of it from the TRD.
+  - Kept: every heading, requirement ID and P-label, table, code block, `CREATE TABLE` column, "Removed by cut N" and "Not built yet" marker, and every note where the code differs from the spec. The plan keeps its day-by-day structure and D-numbers, which the other docs cite; this log and git keep the history.
+  - Also fixed: UI/UX §2.1's `--changed` row named a corner marker (§4.7 draws a top line), and plan §3 now lists migration 003.
+- **Checked:** headings, IDs and markers compared with the previous commit by script; `tests/test_db.py` and the help retrieval tests pass.

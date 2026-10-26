@@ -22,7 +22,7 @@ Three rules that decide most calls:
 
 Reference mockups of every screen in both modes, with an accent comparison board: the "Sherlock UI examples" design canvas (https://claude.ai/artifact/UoLRwYCQJG7AEgYutXFr48, private to the owner until shared).
 
-**The canvas is the owner's design** (confirmed 2026-10-24). Where it shows a detail this brief doesn't give, the canvas is the spec, and the detail is written into the section it belongs to (marked "as drawn").
+**The canvas is the owner's design**. Where it shows a detail this brief doesn't give, the canvas is the spec, and the detail is written into the section it belongs to (marked "as drawn").
 - **Boards, all at 1440 px wide, in light and dark:**
   1. Empty library (§5.1)
   2. Dashboard (§3, §4.3–§4.8, §5.5)
@@ -32,7 +32,7 @@ Reference mockups of every screen in both modes, with an accent comparison board
   6. Export notebook dialog (§5.13)
 
   Plus the accent options board (§2.1).
-- **PNG exports** of the boards were removed from the repo once the app was built; the canvas link above is the reference, and the PNGs are in git history (`git show 4dfc8ef:"docs/Sherlock UI examples-png/2 · Dashboard.png"`).
+- **PNG exports** of the boards aren't in the repo; the canvas link above is the reference, and the PNGs are in git history (`git show 4dfc8ef:"docs/Sherlock UI examples-png/2 · Dashboard.png"`).
 - **Theme helper.** Each board computes its colors from one theme helper that matches §2.1 exactly: the base tokens per mode, the five accents with a hover shade each, and `--info` switching to brass under Aether.
 
 ---
@@ -66,7 +66,7 @@ Base tokens (the same for every accent):
 | `--destructive` | `#A3362B` | `#E2786C` | Errors, delete |
 | `--info` | `#456A91` | `#8FAACB` | Number chips (data-bound numbers); brass when the accent is Aether |
 | `--info-soft` | `rgba(69,106,145,0.12)` | `rgba(143,170,203,0.12)` | Chip fill |
-| `--changed` | `rgba(69,106,145,0.18)` | `rgba(143,170,203,0.18)` | Cells changed by cleaning (with a corner marker, §4.7) |
+| `--changed` | `rgba(69,106,145,0.18)` | `rgba(143,170,203,0.18)` | Cells changed by cleaning (with a 2px `--info` top line, §4.7) |
 | `--predicted` | `rgba(63,110,77,0.10)` | `rgba(127,176,142,0.12)` | Predicted cells |
 
 Accent tokens. `--accent` is the text-safe shade for its mode; `--accent-soft`, `--spotlight` and `--unsaved` are that shade at 0.12, 0.25 and 0.26 alpha; `--ring` and `--chart-accent` equal `--accent`; `--accent-foreground` is `--primary-foreground`.
@@ -124,7 +124,7 @@ Scale (px / line-height):
 
 Numbers in prose are chips (§4.6), never plain text.
 
-As built (2026-10-25): some screens step off this scale. Story card and canvas headlines, the model card's verdict and the Export notebook title use the serif at weight 600, not 400 (§4.5, §5.9, §5.10, §5.13). Widget titles are 13px, not `title`'s 15px. KPI values are mono at 28px, not the serif `kpi` style (§5.5).
+As built: some screens step off this scale. Story card and canvas headlines, the model card's verdict and the Export notebook title use the serif at weight 600, not 400 (§4.5, §5.9, §5.10, §5.13). Widget titles are 13px, not `title`'s 15px. KPI values are mono at 28px, not the serif `kpi` style (§5.5).
 
 ### 2.3 Spacing, radius, elevation
 
@@ -257,7 +257,7 @@ Minimum target 32 × 32 for icon buttons, 36px tall for text buttons; compact te
   - Not built yet (docs/BACKLOG.md): the message shows whether or not a filter is set, and there is no link.
 - Custom visx charts (heatmap, histogram, box plot) follow the same tokens; the heatmap uses a single-hue grey ramp with the accent for the maximum cell.
 
-As built (2026-10-25, D6.5): the custom charts are plain visx SVG. Histogram bars are radius 2, the tallest bin (or the builder's point) in the accent. The heatmap mixes `--chart-1` into `--card` by value (15–85%), the largest cell in the accent, with the value in mono inside cells big enough to hold it. The box plot draws whiskers to min and max, a `--card` box with a 1.5px series outline and a 2px median line; the point's box in the accent. Scatter points are 2.5px at 55% opacity. Axis labels are 11px in `--chart-label`. Each shows a small readout of the hovered element at its top right, and carries a one-sentence summary as its accessible label.
+As built: the custom charts are plain visx SVG. Histogram bars are radius 2, the tallest bin (or the builder's point) in the accent. The heatmap mixes `--chart-1` into `--card` by value (15–85%), the largest cell in the accent, with the value in mono inside cells big enough to hold it. The box plot draws whiskers to min and max, a `--card` box with a 1.5px series outline and a 2px median line; the point's box in the accent. Scatter points are 2.5px at 55% opacity. Axis labels are 11px in `--chart-label`. Each shows a small readout of the hovered element at its top right, and carries a one-sentence summary as its accessible label.
 
 ### 4.5 Story card
 
@@ -280,14 +280,14 @@ As built (2026-10-25, D6.5): the custom charts are plain visx SVG. Histogram bar
 - Direction card (building): dashed `--accent` border, a four-item checklist with ✓ / spinner / empty circle. Removed by cut 3 (Implementation Plan §2.0).
 - Note node (canvas only, not a story card): `--muted` fill, no overline, no chips.
 
-As built (2026-10-25, D6.3): the overline is the widget's title (11px, uppercase, muted); the headline is the serif at 18px, weight 600; the body 14px in `--foreground-2`; related chips 24px tall. The footer has Evidence (link with a database icon), Edit and Ask why (ghost, small). A card being rewritten is at 70% with a spinning refresh icon. The suggestion sits in a dashed `--warning` box under the body. The "changed" chip clears when clicked, and the outdated chip reads "outdated, click to refresh".
+As built: the overline is the widget's title (11px, uppercase, muted); the headline is the serif at 18px, weight 600; the body 14px in `--foreground-2`; related chips 24px tall. The footer has Evidence (link with a database icon), Edit and Ask why (ghost, small). A card being rewritten is at 70% with a spinning refresh icon. The suggestion sits in a dashed `--warning` box under the body. The "changed" chip clears when clicked, and the outdated chip reads "outdated, click to refresh".
 - Not built yet (docs/BACKLOG.md): in the Stories panel a synthesis card has the muted overline and no "Cites n cards". Only its canvas node has both (§5.10).
 
 ### 4.6 Number chip
 
 Inline, mono 12.5px, `--info-soft` fill, 1px `--info` border at 35%, radius 6, padding 0 5px, `--foreground` text. Hover: underline, cursor pointer; click opens the evidence drawer. Unverified: dashed border, `--muted-foreground` text, tooltip "Typed by you, not computed". Updating: a 400ms highlight pulse to `--accent-soft` when the value changes.
 
-As built (2026-10-25): chips render from the card's latest fact-sheet value (`Card.facts`), and pulse to `--accent-soft` for 400 ms when it changes. The title tooltip is the fact's label. The evidence drawer ("How do you know?") reads "<value> is the <label>, computed on version n". Under it is the SQL in a `--muted` mono block with Copy, or the formula and the test. A hand-typed number says it has no evidence.
+As built: chips render from the card's latest fact-sheet value (`Card.facts`), and pulse to `--accent-soft` for 400 ms when it changes. The title tooltip is the fact's label. The evidence drawer ("How do you know?") reads "<value> is the <label>, computed on version n". Under it is the SQL in a `--muted` mono block with Copy, or the formula and the test. A hand-typed number says it has no evidence.
 
 ### 4.7 Data grid (CSV tab)
 
@@ -300,7 +300,7 @@ Glide Data Grid themed from tokens:
 | Cell | body-sm; numbers mono right-aligned; text left; booleans as "true/false" in mono |
 | Selected cell | 2px `--accent` outline |
 | Selected range | `--accent-soft` fill, 1px `--accent` outline |
-| Changed by cleaning | `--changed` fill plus a 2px `--info` line along the cell's top edge (as drawn on the CSV board, where the legend swatch carries the same top line), so it does not rely on color alone. This replaces the earlier 4px corner triangle |
+| Changed by cleaning | `--changed` fill plus a 2px `--info` line along the cell's top edge (as drawn on the CSV board, where the legend swatch carries the same top line), so it does not rely on color alone |
 | Flagged | 1px dashed `--warning` outline (inset) |
 | Unsaved edit | `--unsaved` fill, 1px `--accent` outline, and a 4px `--accent` dot in the top-left corner so it differs from a selection by shape |
 | Predicted | `--predicted` fill, italic. Removed by cut 7 (Implementation Plan §2.0) |
@@ -310,7 +310,7 @@ Glide Data Grid themed from tokens:
 
 Row height 32px; header 56px. Editors open in place with the same height.
 
-As built (2026-10-25, D5): Glide draws on a canvas, so each style is drawn in code from the resolved tokens. Changed: `--changed` fill and the 2px `--info` top line. Flagged: a dashed `--warning` inset outline. Invalid: a 1px `--destructive` underline. Unsaved: `--unsaved` fill, a 1px `--accent` outline and a 4px `--accent` dot. Find matches: `--accent-soft` fill. Quarantined and to-be-deleted rows: muted text and a struck-through row number. The header draws the name (600, with ↑/↓ when sorted), "type · n% missing" and a 14px mini histogram (numeric bins, or category counts) in `--chart-3`. Number and boolean cells are mono; numbers right-aligned. The header and the row-number column are filled with `--background` rather than `--muted`.
+As built: Glide draws on a canvas, so each style is drawn in code from the resolved tokens. Changed: `--changed` fill and the 2px `--info` top line. Flagged: a dashed `--warning` inset outline. Invalid: a 1px `--destructive` underline. Unsaved: `--unsaved` fill, a 1px `--accent` outline and a 4px `--accent` dot. Find matches: `--accent-soft` fill. Quarantined and to-be-deleted rows: muted text and a struck-through row number. The header draws the name (600, with ↑/↓ when sorted), "type · n% missing" and a 14px mini histogram (numeric bins, or category counts) in `--chart-3`. Number and boolean cells are mono; numbers right-aligned. The header and the row-number column are filled with `--background` rather than `--muted`.
 
 ### 4.8 Chat bar and thread
 
@@ -318,7 +318,7 @@ As built (2026-10-25, D5): Glide draws on a canvas, so each style is drawn in co
   - **As drawn.** On dataset routes the bar sits at the bottom of the centre column (24px side and 20px bottom padding). On the empty library it sits in the centred column, 24px under the pitch.
   - The send button is radius 10 with an arrow icon.
   - Where chat can't answer, the input and send button are disabled and the placeholder names the state: "Load a CSV to start asking" on the empty library, "Ask about this CSV (profiling in progress)" while a file is profiling. A failed file's bar is disabled too.
-  - **As built (D4.8).** The bar is live on dataset routes once the file is profiled, and stays disabled on the empty library.
+  - **As built.** The bar is live on dataset routes once the file is profiled, and stays disabled on the empty library.
     - The context chip always shows: "All rows", or the filter (`col = value`), or the widget last clicked. Its × clears that context.
     - On the CSV tab the chip names the selected rows ("n rows selected"). On the Flow tab it names the selected cards ("n cards selected") or reads "Whole canvas". It is in `--accent` while something is selected.
     - The thread opens 84px above the bar's bottom edge, with a 36px title row ("Ask about <name>", a collapse chevron).
@@ -330,7 +330,7 @@ As built (2026-10-25, D5): Glide draws on a canvas, so each style is drawn in co
       - text with number chips (§4.6)
     - "How do you know?" is a `<details>` disclosure listing each source's label and its SQL.
     - Action buttons follow the blocks: small secondary Model card, Export notebook and Undo (for a widget chat changed), and a ghost "Add to Flow".
-    - An empty thread shows one muted line of what to ask, with placeholders rather than column names so it fits any file: "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), or ask for a widget (“add a chart of … by … to the dashboard”)." (Day 9 review, 2026-10-25: it used to suggest Titanic's "average fare by class" on every file.)
+    - An empty thread shows one muted line of what to ask, with placeholders rather than column names so it fits any file: "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), or ask for a widget (“add a chart of … by … to the dashboard”).
     - Suggested questions are cut (Implementation Plan §2.0, cut 9).
 - Thread: expands above the bar to at most 40% of the centre height, `--popover` surface, radius 16, with the drawer shadow. Messages: the user's in a `--secondary` bubble right-aligned (max 80%); Sherlock's as plain text left-aligned with number chips, tables, charts and action buttons inline.
 - Suggested questions: three ghost chips under the bar; they disappear once the thread has 3+ messages. Removed by cut 9 (Implementation Plan §2.0).
@@ -403,13 +403,13 @@ Header "Import titanic3.csv · 61 KB". A row of four controls (delimiter, encodi
 
 ### 5.3 Cleaning offer (centre)
 
-A single `--card` panel, max 640px, centred vertically in the top third. Display title "Here's what I found in titanic3.csv", then a muted line of rows · columns · issues. The summary as three lines with icons (missing, missing, flag). Two buttons in a row: Clean with AI (primary), which opens the cleaning plan (§5.3a), and Clean it myself (secondary), which opens the CSV tab. (Amended 2026-10-25, owner's decision: the offer had an "All 7 issues" table, now replaced by the cleaning plan, and three buttons, Clean it for me, Use as is and (P1) Go step by step; Go step by step is now the plan's Mode row, disabled with the tooltip "Step-by-step cleaning comes in a later release".) Checkbox "Remember my choice".
+A single `--card` panel, max 640px, centred vertically in the top third. Display title "Here's what I found in titanic3.csv", then a muted line of rows · columns · issues. The summary as three lines with icons (missing, missing, flag). Two buttons in a row: Clean with AI (primary), which opens the cleaning plan (§5.3a), and Clean it myself (secondary), which opens the CSV tab. The cleaning plan (§5.3a) lists every issue, so the offer has no issue table (owner's decision, App Flow §4). Go step by step (P1) is the plan's Mode row, disabled with the tooltip "Step-by-step cleaning comes in a later release". Checkbox "Remember my choice".
 
-As built (2026-10-25, owner's decision, App Flow §4): the "All n issues" disclosure is gone, since the cleaning plan (§5.3a) lists every issue. Two buttons: **Clean with AI** (primary) and **Clean it myself** (secondary); after a failed run they read Try cleaning again and Build dashboard without cleaning. Go step by step moved into the plan's Mode row. "Remember my choice" has the muted hint "· You can change this in Settings" beside it (label size).
+As built: after a failed run the two buttons read Try cleaning again and Build dashboard without cleaning. "Remember my choice" has the muted hint "· You can change this in Settings" beside it (label size).
 
 ### 5.3a Cleaning plan (centre, or the right panel on the CSV tab)
 
-Added 2026-10-25 (PRD CLEAN-8a, App Flow §4.1). `CleanPlanPanel.tsx`, in two layouts.
+See PRD CLEAN-8a and App Flow §4.1. Built in `CleanPlanPanel.tsx`, in two layouts.
 - **Centre** (from the offer): a `--card` panel, max 720px, 6vh from the top. Display title "Cleaning plan · v2", a muted line "Sherlock checked v2. Untick, edit or add steps, or ask in chat." When the After upload setting opened it: a body-sm (13px) muted line "Opened because After upload is “Open the cleaning plan” · Change" (Change is a link that opens Settings at that field). A plan opened for some rows: a body-sm muted line "Only the n rows you asked to clean."
 - **Side** (from the CSV tab's Clean with AI): it fills the right panel in place of Changes, 16px padding, a title "Cleaning plan · v2". Above the modules, a Scope fieldset (overline legend, radios: Whole dataset · Current selection (n rows) · Rows added since the last clean, after a first, picked radio for the rows a plan was opened for: "The n rows you just added" or "The n rows you asked to clean"), with "Counts are for the whole file; changes stay inside the rows in scope." under a narrowed scope. The footer sticks to the bottom of the panel on `--background` with a top border.
 - **While it's made**: a spinner and "Diagnosing v2 of titanic3.csv…" (the same box).
@@ -447,7 +447,7 @@ Left 2/3: the live log card (`--card`), entries as a 3-column grid (mono time ·
 
 As §3.3 and §4.3. The filter bar: chips left, Filter (ghost with icon), then Add widget (secondary), Edit layout (ghost toggle; active state `--secondary` fill). KPI tiles: label (label size, muted), value (kpi), sub-line (label, muted).
 
-As built (2026-10-25, Implementation Plan D4.4–D4.7):
+As built:
 - **Context row.** The filter chip (`col = value`, ×) follows the version pill. On the right: Add widget, Edit layout, the job tray, then the dataset menu. The "Filter" builder button isn't built yet.
 - **Layouts.** Only `lg` is stored by the builder. Until the user arranges a breakpoint, `md` and `sm` are packed from `lg` in reading order: KPIs at a quarter width (two to a row on `sm`), charts at full width on `sm`.
 - **Widget shell.**
@@ -474,23 +474,23 @@ As built (2026-10-25, Implementation Plan D4.4–D4.7):
 
 Toolbar (40px): Add row, Add column (P1), Find (opens an inline find bar under the toolbar), Filter (toggles header filter row), Clean with AI (secondary with sparkle icon), Download (ghost, opens a menu: CSV · Notebook (.ipynb)). Right: the legend (three swatches with labels, label size). Header line: dataset name, version pill, unsaved count in `--accent`, Discard (ghost), Review changes (link), Save changes (n) (primary; disabled at 0). Grid fills the rest. Status bar 28px: left "3 cells · sum 452 · avg 150.7 · min 2 · max 300", right "Row 9 · home.dest".
 
-As built (2026-10-25, cut 5): the toolbar holds Add row, Delete row, Restore (when it applies), Find, Clean with AI (secondary, sparkle icon), Download (ghost menu) and the legend on the right; the unsaved count, Discard and Save changes (n) (or "Rebase and save") are in the context row, and they hide when nothing is pending. The find bar is 40px under the toolbar: an input, Find, the match count, ×.
+As built (cut 5): the toolbar holds Add row, Delete row, Restore (when it applies), Find, Clean with AI (secondary, sparkle icon), Download (ghost menu) and the legend on the right; the unsaved count, Discard and Save changes (n) (or "Rebase and save") are in the context row, and they hide when nothing is pending. The find bar is 40px under the toolbar: an input, Find, the match count, ×.
 - **Status bar** (28px). The selected cell count, the row count (with the sort, marked "view only"), the unsaved count in `--accent`, and on the right "Row 9 · home.dest". The selection stats (sum · avg · min · max) are removed by cut 5.
 - **Opened on a selection** (`?rows=`, from a chat answer or "Who did it get wrong?"). A strip under the toolbar shows an "n rows selected" chip (`--accent-soft`, `--accent` border) and Show all rows.
-- **Read-only while a job owns the data** (2026-10-25, App Flow §5). While the status is `cleaning` or `building`, a strip under the toolbar on `--muted` (13px, `role="status"`) reads "Cleaning in progress · editing resumes when it finishes" or "Building your dashboard · editing opens when it finishes"; cells don't open an editor, and Add row, Delete row and Restore are disabled with the reason as their title.
-- **Clean with AI** (2026-10-25) opens the cleaning plan (§5.3a) in the right panel.
+- **Read-only while a job owns the data** (App Flow §5). While the status is `cleaning` or `building`, a strip under the toolbar on `--muted` (13px, `role="status"`) reads "Cleaning in progress · editing resumes when it finishes" or "Building your dashboard · editing opens when it finishes"; cells don't open an editor, and Add row, Delete row and Restore are disabled with the reason as their title.
+- **Clean with AI** opens the cleaning plan (§5.3a) in the right panel.
 
 ### 5.7 Changes panel (right, CSV tab)
 
 Title "Changes" with the version pill. "Unsaved (yours)" card with accent border when non-empty. "Steps" overline, then step cards: number (mono, muted) · summary (title-sm) · detail line (label, muted) · Undo (secondary, 28px). The latest step has a `--border-strong` outline. Expanding a step reveals a code block (mono, `--muted` fill, Shiki-highlighted) or the edit list, then the impact lines. Footer links: Full cleaning report · Export notebook · Export pipeline (P1).
 
-As built (2026-10-25): the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. While a cleaning plan is open, the right panel shows the plan (§5.3a, side layout) instead; Start or Discard gives it back to Changes. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step is at 60%, with its summary struck through and "· undone" on its detail line. Full cleaning report opens a drawer with the report summary; its View full report opens the full report (Your steps first) in a 720px dialog.
+As built: the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. While a cleaning plan is open, the right panel shows the plan (§5.3a, side layout) instead; Start or Discard gives it back to Changes. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step is at 60%, with its summary struck through and "· undone" on its detail line. Full cleaning report opens a drawer with the report summary; its View full report opens the full report (Your steps first) in a 720px dialog.
 
 ### 5.8 ML setup (inside a widget)
 
 Stacked sections with overlines: Target (select), Features (chip wrap; excluded chips struck through in muted with a tooltip), Rows (scope chip + "Use selection" link when a brush exists), Method (segmented: Auto · Linear · Logistic; disabled segments with tooltips), More (disclosure with the manifest's params as labeled inputs), Baselines (a 3-row mini table: everyone-majority, best one-column rule, model [pending]). Footer: estimate text ("about 10 s"), Cancel (ghost), Run (primary).
 
-As built (2026-10-25, `web/src/components/ml/MlSetup.tsx`, within cuts 4 and 7):
+As built (`web/src/components/ml/MlSetup.tsx`, within cuts 4 and 7):
 - **Layout.** The sections stack inside the widget body (scrolling when the widget is short), with 11px uppercase overlines.
 - **Target.** A native select of the recipe's `targets`, with a muted line ("Categories: scored by Accuracy.").
 - **Features.** 24px pill chips: used in `--border-strong` on `--card`; excluded struck through on `--muted` with "Left out: <reason>" as the tooltip; forced-in with a `--warning` border and a warning icon. Re-including one shows a `--warning` line with the reason.
@@ -506,7 +506,7 @@ The analysis dropdown is a 28px flask icon button left of the widget menu. Its m
 
 Sections: Verdict (headline-sm serif), Data (rows, version, scope), Excluded columns (list with reasons), Method (name, params), Baselines vs model (table with intervals; the model row bold), Metrics (per method: coefficients table with CI and p; or importance list), Warnings (warning chips with suggestions), Actions: Compare with Auto (secondary), Who did it get wrong? (link), Re-run (secondary when outdated).
 
-As built (2026-10-25, `web/src/components/ml/ModelCardDrawer.tsx`): the 420px drawer titled "Model card".
+As built (`web/src/components/ml/ModelCardDrawer.tsx`): the 420px drawer titled "Model card".
 - **Verdict.** In 20px serif semibold. When outdated, a `--warning` bordered row follows with Re-run.
 - **Data.** Target, task, version, scope, rows used of the total, and rows without the target. Plus the sample when there is one.
 - **Excluded columns.** Mono and struck through, each with its reason.
@@ -516,7 +516,7 @@ As built (2026-10-25, `web/src/components/ml/ModelCardDrawer.tsx`): the 420px dr
 - **Warnings.** Bordered `--warning` boxes with the suggestion under the text.
 - **Limits.** As specified.
 - **Show the code.** It reveals `repro.py` in a mono block.
-- **Not built.** Compare with Auto (cut 4) and the coefficients table (cut 4). Who did it get wrong? was added with D7.4 (below).
+- **Not built.** Compare with Auto (cut 4) and the coefficients table (cut 4). Who did it get wrong? is in the drawer's "Who it got wrong" section (below).
 
 The analysis widget's body follows App Flow §9 steps 3–5:
 - **While running.** The progress line, a 4px `--accent` bar, and the steps with check and spinner icons.
@@ -524,7 +524,7 @@ The analysis widget's body follows App Flow §9 steps 3–5:
 - **Partial dependence.** A 64px SVG mini chart in a bordered figure under its bar: a line for numbers, bars for categories, with an accessible label listing the points.
 - **Footer.** It adds "Model card", and "Outdated" in `--warning` with a small secondary Re-run.
 
-Added 2026-10-25 (D7.4):
+Also built:
 - **View switcher.** For a classification run, 24px text tabs over the body: Importance · Confusion · ROC.
 - **Confusion matrix.** A table of mono counts, actual by predicted. Each cell is tinted with `color-mix` of `--chart-accent` (the diagonal, right) or `--chart-1` (wrong), 12–62% by count, with a tooltip. A line under it gives the count predicted wrong.
 - **ROC curve.** A 170px SVG: the curve in `--chart-accent`, the chance diagonal dashed in `--chart-grid`, small axis labels, and the AUC in the caption.
@@ -537,7 +537,7 @@ Canvas background `--background` with a dot grid (`--border` dots, 22px spacing)
 
 Palette (right panel): search input, then rows (drag handle · name · "on canvas" / "not placed" in muted), then a "Try asking" card, then Export: Notebook (.ipynb) (P0) and Obsidian (.canvas) (P1).
 
-As built (2026-10-25, D8.2, `src/components/flow/`): React Flow (`@xyflow/react` 12.11.3) with its structural `base.css` only; every colour comes from the tokens (`index.css`, `.flow-canvas`). Dots are `--border-strong`, 1.2px at 22px. Card nodes are 240px wide in the §4.5 style (the headline 15px serif at weight 600, the body 13px clamped to six lines except on a synthesis), and notes 220px in a fill of 5% foreground over the background. Side handles (9px, `--accent` ring) show on hover and selection. The selected outline is 2px `--accent` offset 2px, dashed for the first node picked in connect mode. Edges are 1.5px bezier curves with a closed arrowhead, `--muted-foreground` for the user's and `--accent` for the AI's (2.25px when selected). Labels are pill chips at the midpoint, edited in place. The minimap's viewport mask has an `--info` stroke. "Make sense of this" is a primary button at the canvas's top left next to the node count, shown while two or more cards are selected.
+As built (`src/components/flow/`): React Flow (`@xyflow/react` 12.11.3) with its structural `base.css` only; every colour comes from the tokens (`index.css`, `.flow-canvas`). Dots are `--border-strong`, 1.2px at 22px. Card nodes are 240px wide in the §4.5 style (the headline 15px serif at weight 600, the body 13px clamped to six lines except on a synthesis), and notes 220px in a fill of 5% foreground over the background. Side handles (9px, `--accent` ring) show on hover and selection. The selected outline is 2px `--accent` offset 2px, dashed for the first node picked in connect mode. Edges are 1.5px bezier curves with a closed arrowhead, `--muted-foreground` for the user's and `--accent` for the AI's (2.25px when selected). Labels are pill chips at the midpoint, edited in place. The minimap's viewport mask has an `--info` stroke. "Make sense of this" is a primary button at the canvas's top left next to the node count, shown while two or more cards are selected.
 - The context row holds Add note, Connect (a toggle) and Fit view.
 - A synthesis node has the `--border-strong` border and "Cites n cards" in its footer. A card node shows "Open widget" when it has one, and small `--warning` chips for "changed", "outdated" and "sources changed".
 - Deleting nodes or edges gives a toast with Undo for 10 s.
@@ -545,13 +545,13 @@ As built (2026-10-25, D8.2, `src/components/flow/`): React Flow (`@xyflow/react`
 
 ### 5.11 Settings dialog
 
-As built (2026-10-24), with cut 1: four settings, each a segmented control with a help line.
+As built, with cut 1: four settings, each a segmented control with a help line.
 - Mode: Light · Dark · System.
 - Accent: each with a dot in its color for the active mode.
 - Chat bar: Pinned · Auto-hide · Hidden.
   - Auto-hide fades the bar out until it's pointed at or focused.
   - Hidden removes it.
-- After upload: Ask me · Open the cleaning plan · I'll clean it myself (owner's decision of 2026-10-25; the stored values stay `ask|always|never`), with the help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
+- After upload: Ask me · Open the cleaning plan · I'll clean it myself (owner's decision; the stored values are `ask|always|never`), with the help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
 
 It opens from the library panel's gear, or with `?settings=1` in the URL. `&field=after_upload` scrolls to that field and outlines it in `--accent` (radius 14): the "Change" links on the plan and building screens. The other five settings and the "two per row" layout return when cut 1 is lifted.
 
@@ -567,7 +567,7 @@ Centred dialog, max 520px. Title "Export notebook" (display). One body-sm senten
 
 Progress: a toast "Preparing notebook…" with a 2px `--accent` progress line; on completion the toast reads "Notebook ready" with "Download again" (link). Export is never a blocking modal.
 
-As built (2026-10-25): the title is the serif at 22px, weight 600, not the 32px display size; the sentence is 14px; the checkboxes are native, tinted with `--accent`; the Flow reading path segment is shown dimmed with its tooltip and can't be chosen. The progress is sonner's loading toast rather than a 2px line.
+As built: the title is the serif at 22px, weight 600, not the 32px display size; the sentence is 14px; the checkboxes are native, tinted with `--accent`; the Flow reading path segment is shown dimmed with its tooltip and can't be chosen. The progress is sonner's loading toast rather than a 2px line.
 
 ### 5.14 Dataset menu (⋯)
 
@@ -576,17 +576,17 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
 ### 5.15 Job tray, banners and small disclosures
 
 - Job tray: a ghost icon button in the centre header with a count badge; its popover lists jobs (label, progress bar, Cancel or Retry), and completed ones stay for 1 minute.
-  - **As built (D4.4).** The `activity` icon carries an `--accent` count of queued and running jobs.
+  - **As built.** The `activity` icon carries an `--accent` count of queued and running jobs.
   - The popover is 320px. Each row shows the job ("Cleaning · titanic3.csv"), its progress label and a 2px bar, then Cancel.
   - Done and cancelled jobs show for a minute. Failed ones stay, with the error in `--destructive`, Retry and a dismiss ×.
   - It polls `GET /jobs` every 3 s.
-- Library rail (D4.4): the « button beside the gear collapses the panel to a 56px rail with dataset initials (mono, 36px), Upload, Try with sample, the gear, and » to expand. Its dividers resize the panels (left 200–320, right 300–480; arrow keys move 16px), and sizes persist in this browser.
-- Library row menu (D4.5): a ⋯ on hover with Rename (inline), Download original CSV and Delete (confirm, then a toast with Undo for 10 s). The dataset menu (⋯) in the context row has Export notebook (added with D5.6, first in the menu, §5.14), Download CSV, Rename (a dialog) and Delete.
+- Library rail: the « button beside the gear collapses the panel to a 56px rail with dataset initials (mono, 36px), Upload, Try with sample, the gear, and » to expand. Its dividers resize the panels (left 200–320, right 300–480; arrow keys move 16px), and sizes persist in this browser.
+- Library row menu: a ⋯ on hover with Rename (inline), Download original CSV and Delete (confirm, then a toast with Undo for 10 s). The dataset menu (⋯) in the context row has Export notebook (first in the menu, §5.14), Download CSV, Rename (a dialog) and Delete.
 - Offline banner: a full-width `--muted` strip under the header with the warning icon and "You're offline. Edits are kept locally."
-  - **As built (D8.3, `OfflineBanner.tsx`).** A strip at the top of the centre with `--warning` tint and border and the `wifi-off` icon: "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It shows when the browser goes offline or any API request can't reach the server (`sherlock:offline`), and clears on `online` or when `/healthz` answers (checked every 5 s while it shows).
-- Error boundary (D8.3, `ErrorBoundary.tsx`): a view that crashes shows a `--card` panel in its place, "Something went wrong showing the dashboard" (or the page, CSV tab, canvas, library, side panel), "Your data is safe on the server…", the error's message (its first 300 characters) in mono, and **Try again** (primary) and **Reload** (ghost). The rest of the app keeps working, and moving to another dataset or tab resets it.
-- Story card delete (D8.3): a trash icon button (ghost) after Edit; the toast "Card deleted" offers Undo for 10 s.
-- "Why the offer was skipped" lines (2026-10-25, App Flow §4): a body-sm (13px) muted line with a Change link, under the plan's title ("Opened because After upload is “Open the cleaning plan” · Change") or under "Building your dashboard…" ("Building without cleaning because After upload is “I'll clean it myself” · Change"). They stay on screen rather than as a toast that vanishes.
+  - **As built (`OfflineBanner.tsx`).** A strip at the top of the centre with `--warning` tint and border and the `wifi-off` icon: "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It shows when the browser goes offline or any API request can't reach the server (`sherlock:offline`), and clears on `online` or when `/healthz` answers (checked every 5 s while it shows).
+- Error boundary (`ErrorBoundary.tsx`): a view that crashes shows a `--card` panel in its place, "Something went wrong showing the dashboard" (or the page, CSV tab, canvas, library, side panel), "Your data is safe on the server…", the error's message (its first 300 characters) in mono, and **Try again** (primary) and **Reload** (ghost). The rest of the app keeps working, and moving to another dataset or tab resets it.
+- Story card delete: a trash icon button (ghost) after Edit; the toast "Card deleted" offers Undo for 10 s.
+- "Why the offer was skipped" lines (App Flow §4): a body-sm (13px) muted line with a Change link, under the plan's title ("Opened because After upload is “Open the cleaning plan” · Change") or under "Building your dashboard…" ("Building without cleaning because After upload is “I'll clean it myself” · Change"). They stay on screen rather than as a toast that vanishes.
 - Cascade progress line: a 2px `--accent` line under the header with a label-size caption ("Updating 4 widgets and 3 stories").
 - Chat sources disclosure: a "How do you know?" link under each answer that expands the SQL, run or step references in a `--muted` mono block.
 - "Data changed" badge: a warning chip on user-edited cards with a "See suggestion" link.
@@ -645,7 +645,7 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
   - As built: Shiki isn't used. Code shows in plain `--muted` mono blocks (§5.7).
 - Fonts are loaded once; both modes use the same families and weights.
 - Screenshots and "Copy as image" render with the active theme.
-- Implementation (2026-10-24):
+- Implementation:
   - **Where the tokens live.** Every token in §2 is in `web/src/app/theme.css` and is exposed to Tailwind in `web/src/index.css`, for example `bg-card`, `text-info` and `bg-accent-soft`.
   - **Derived tokens.** `--accent-soft`, `--spotlight`, `--unsaved` and `--info-soft` are computed with `color-mix()` from the active `--accent` or `--info`, so they follow every accent and mode without extra hex values. Under Aether, `--info-soft` follows the brass `--info`.
   - **Two more `<html>` attributes**, set from the settings. Under cut 1 the dialog doesn't offer these two settings, so they keep their defaults (subtle, and the OS preference) unless a saved value says otherwise:

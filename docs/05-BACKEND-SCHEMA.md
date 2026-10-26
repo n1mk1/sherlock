@@ -1,6 +1,6 @@
 # Sherlock · Backend Schema
 
-Version 1.3 · 2026-10-25 (migrations 002 and 003, `clean_plans` and its scope, §2.21) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
+Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
 
 ---
 
@@ -12,12 +12,11 @@ Version 1.3 · 2026-10-25 (migrations 002 and 003, `clean_plans` and its scope, 
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` §2.21, and `003_plan_scope.sql` adds `clean_plans.scope_json` (this doc's column comments have grown since; the test compares tables and columns, not comments). `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
-  - `002_clean_plans.sql` (2026-10-25) adds `clean_plans` (§2.21) and its index.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, and `003_plan_scope.sql` adds `clean_plans.scope_json`. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
-- As built (2026-10-25): `ver_` is never generated, since a version is keyed by `(dataset_id, version)` (§2.3). Issues use `iss_` and exports `exp_`. Cleaning plans use `pln_` and their items `pit_` (inside `items_json`, §2.21). Canvas nodes and edges the AI adds get `nd_` and `ed_` IDs inside `canvas_json` (`canvas/service.py`).
+- As built: `ver_` is never generated, since a version is keyed by `(dataset_id, version)` (§2.3). Issues use `iss_` and exports `exp_`. Cleaning plans use `pln_` and their items `pit_` (inside `items_json`, §2.21). Canvas nodes and edges the AI adds get `nd_` and `ed_` IDs inside `canvas_json` (`canvas/service.py`).
 
 ---
 
@@ -53,7 +52,7 @@ CREATE TABLE datasets (
   row_count        INTEGER,
   column_count     INTEGER,
   import_options_json TEXT NOT NULL,           -- {delimiter, encoding, header_row, skip_rows}
-                                               -- plus, for ragged files only, width and header_fields (TRD §7.1, 2026-10-25)
+                                               -- plus, for ragged files only, width and header_fields (TRD §7.1)
   last_tab         TEXT,                       -- csv|dashboard|flow
   last_opened_at   TEXT,
   expires_at       TEXT NOT NULL,              -- created_at + DATASET_TTL_DAYS
@@ -133,7 +132,7 @@ CREATE TABLE steps (
 CREATE INDEX steps_dataset ON steps(dataset_id, no DESC);
 ```
 
-As built (2026-10-25): a cleaning step from a scoped clean (some rows, or hand-edited cells kept) ends its `notebook_code` with `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`, so the notebook and a replay apply the same scope (TRD §7.7–§7.8). An undo step's `replayed_step_ids_json` lists the steps it replayed (D5.5).
+A cleaning step from a scoped clean (some rows, or hand-edited cells kept) ends its `notebook_code` with `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`, so the notebook and a replay apply the same scope (TRD §7.7–§7.8). An undo step's `replayed_step_ids_json` lists the steps it replayed.
 
 ### 2.6 lineage
 
@@ -156,13 +155,13 @@ CREATE INDEX lineage_cell ON lineage(dataset_id, row_id, column);
 
 Row-level events (added, deleted, quarantined, restored) are stored with `column = '_row'` and `new_value` ∈ `added|deleted|quarantined|restored`.
 
-Flags as written (2026-10-24, TRD §7.9): `quarantined` on a cell that lost its value in a row the same step quarantined (the original text stays in `old_value`); `flagged` on every changed cell of a step with gate `flag`; `invalid` on an edited cell whose value didn't parse as the column's type (the cell is NULL in the version and `new_value` keeps the typed text).
+Flags as written (TRD §7.9): `quarantined` on a cell that lost its value in a row the same step quarantined (the original text stays in `old_value`); `flagged` on every changed cell of a step with gate `flag`; `invalid` on an edited cell whose value didn't parse as the column's type (the cell is NULL in the version and `new_value` keeps the typed text).
 
 ### 2.7 user_edited_cells
 
 Tracks cells the user edited by hand so "Clean with AI" can skip them. Written by `commit_step` for edit batches; rows whose step is undone are deleted.
 
-As built (2026-10-25, from the Day 2 review): when an undo deletes a cell's row, the cell stays protected if an edit batch still in the new version's effective chain also edited it. Its row then points at the latest such batch, found from that batch's lineage. Example: edit `age` → 5, edit `age` → 6, undo the second. The cell shows 5 and stays protected, now under the first batch.
+When an undo deletes a cell's row, the cell stays protected if an edit batch still in the new version's effective chain also edited it. Its row then points at the latest such batch, found from that batch's lineage. Example: edit `age` → 5, edit `age` → 6, undo the second. The cell shows 5 and stays protected, now under the first batch.
 
 ```sql
 CREATE TABLE user_edited_cells (
@@ -234,7 +233,7 @@ CREATE TABLE widget_cache (
 );
 ```
 
-As built (2026-10-25, `sherlock/widgets/spec.py`, `execute.py`): `spec_hash` is the sha1 of the spec's canonical JSON (sorted keys, no spaces), not of the `spec_json` text as stored. `widget_cache.cache_key` is the sha1 of `<spec_hash>:<version>:<filter_hash>`, where `filter_hash` is the sha1 of the compiled row filter. An in-memory LRU of 500 entries sits in front of the table (TRD §9), and the purge deletes rows older than 24 h (§6).
+As built (`sherlock/widgets/spec.py`, `execute.py`): `spec_hash` is the sha1 of the spec's canonical JSON (sorted keys, no spaces), not of the `spec_json` text as stored. `widget_cache.cache_key` is the sha1 of `<spec_hash>:<version>:<filter_hash>`, where `filter_hash` is the sha1 of the compiled row filter. An in-memory LRU of 500 entries sits in front of the table (TRD §9), and the purge deletes rows older than 24 h (§6).
 
 ### 2.10 fact_sheets and relations
 
@@ -264,7 +263,7 @@ CREATE TABLE relations (
 );
 ```
 
-As built (2026-10-25, D6.1): each fact in `facts_json` is `{value, format, label, formatted}` plus `sql`+`cell`, `sql`+`scalar`, or `from`+`formula` (TRD §6.4). `material_hash` is stored as an empty string (cut 6). The overview's sheet has `widget_id` NULL and keys prefixed `w<i>.`. Relations are rewritten for the current version on every stories run; `detail_json` is `{columns}` for shared columns or `{column}` for the target.
+As built: each fact in `facts_json` is `{value, format, label, formatted}` plus `sql`+`cell`, `sql`+`scalar`, or `from`+`formula` (TRD §6.4). `material_hash` is stored as an empty string (cut 6). The overview's sheet has `widget_id` NULL and keys prefixed `w<i>.`. Relations are rewritten for the current version on every stories run; `detail_json` is `{columns}` for shared columns or `{column}` for the target.
 
 ### 2.11 cards
 
@@ -294,7 +293,7 @@ CREATE INDEX cards_dataset ON cards(dataset_id, deleted_at, kind);
 CREATE INDEX cards_widget ON cards(widget_id);
 ```
 
-As built (2026-10-25, D6.1–D6.3): `narrated_by` is the model ID, or NULL when the card shows the fact-sheet bullets. Chip runs typed by hand have `key: null` and `unverified: true`. `suggestion_json` holds `{headline, body}` for an edited card after a cascade.
+As built: `narrated_by` is the model ID, or NULL when the card shows the fact-sheet bullets. Chip runs typed by hand have `key: null` and `unverified: true`. `suggestion_json` holds `{headline, body}` for an edited card after a cascade.
 
 ### 2.12 canvases
 
@@ -309,7 +308,7 @@ CREATE TABLE canvases (
 
 Card nodes reference `cards.id`. Nodes of soft-deleted cards stay (hidden) so Undo restores them in place; nodes of hard-deleted cards are pruned on the next canvas read, which bumps the etag.
 
-As built (2026-10-25, D8.1): `canvas_json` is stored with sorted keys and no spaces, and `etag` is the sha1 of that text. A dataset has no row until its first save; until then `GET /canvas` answers the empty document and its etag. Every save that changes the document bumps `datasets.state_rev`. Synthesis cards (`kind = 'synthesis'`) have `source_card_ids_json` and no `fact_sheet_id`; their chips' keys are `<card_id>.<fact key>`. Answer cards added to Flow (`kind = 'answer'`) have a fact sheet with no `widget_id`.
+As built: `canvas_json` is stored with sorted keys and no spaces, and `etag` is the sha1 of that text. A dataset has no row until its first save; until then `GET /canvas` answers the empty document and its etag. Every save that changes the document bumps `datasets.state_rev`. Synthesis cards (`kind = 'synthesis'`) have `source_card_ids_json` and no `fact_sheet_id`; their chips' keys are `<card_id>.<fact key>`. Answer cards added to Flow (`kind = 'answer'`) have a fact sheet with no `widget_id`.
 
 ### 2.13 runs
 
@@ -343,7 +342,7 @@ CREATE TABLE runs (
 CREATE INDEX runs_dataset ON runs(dataset_id, status);
 ```
 
-As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`):
+As built (`sherlock/ml/runner.py`):
 - **On request.** A run row is written with `status = queued`, `scope_json` (target filled in, any dashboard filter folded into the predicate, `inherit_global_filters: false`), `params_json` (manifest defaults filled in), `target` and `cache_key`. `job_id` is the `ml_run` job's.
 - **Identity.** The `UNIQUE (dataset_id, cache_key)` makes a repeat request return the same row. A failed or cancelled run's row is reset to `queued` and reused.
 - **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json` (the features used), `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json`, `libraries_json` and `finished_at`.
@@ -352,7 +351,7 @@ As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`):
 - **`created_by`.** `builder` for the dashboard's driver widget, `chat` for a run that the chat's `ask_why` starts (`agent/insight.py`), otherwise `user` (a run from `POST /datasets/{id}/runs`, an analysis widget the user adds or changes, and every Re-run, automatic ones included).
 - **`fact_sheets.run_id`** is set on the run's own sheet. An analysis widget's sheet is a copy with its `widget_id`.
 - **`widgets.spec_json`.** An analysis that replaced a chart keeps the chart's title in `view.options.chart_title`, for Undo.
-- **`selections` for "who did it get wrong?"** (`POST /runs/{rid}/wrong-rows`, D7.4): `row_ids_json` holds the misclassified `_row_id`s, `predicate` is NULL, `label` is "<target>: predicted wrong", and `version` is the current version. Row IDs are stable across versions.
+- **`selections` for "who did it get wrong?"** (`POST /runs/{rid}/wrong-rows`): `row_ids_json` holds the misclassified `_row_id`s, `predicate` is NULL, `label` is "<target>: predicted wrong", and `version` is the current version. Row IDs are stable across versions.
 
 ### 2.14 jobs and job_events
 
@@ -392,13 +391,13 @@ CREATE INDEX job_events_dataset ON job_events(dataset_id, id);
 
 Retention: `job_events` older than 24 h are deleted by the purge job.
 
-Implementation notes (2026-10-24, Implementation Plan D2.5):
+Implementation notes:
 - `job_events` holds every SSE event of a dataset (TRD §5), not only job events. An event that doesn't come from a job, such as `version.created` for a step committed through the API, has `job_id` NULL. So every event has an `id` and can be replayed.
 - `data_json` always carries `dataset_id`, which the user-level stream needs.
 - `jobs.owner_pid` is `<hostname>:<pid>:<ulid>`, unique per process start. At startup, every `running` job is re-queued (one process holds the runner). While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
 - `jobs.progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
-- As built (2026-10-25): no `undo` job is ever queued, since an undo, its replay included, runs inside its request (TRD §7.8); `jobs/runner.py` still lists the kind. A `purge` job has `user_id = 'system'` and `dataset_id` NULL (§6).
-- `params_json` of a `clean` job started from a cleaning plan (2026-10-25, PRD CLEAN-8a) carries `plan: {id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits to a plan can't change a running job. A `build_dashboard` job queued by the After upload setting ("I'll clean it myself") rather than a click has `automatic: true`; no `clean` job is queued without a click, since "Open the cleaning plan" only makes a draft (§2.21) (the `Job` response shows it, TRD §4.10).
+- As built: no `undo` job is ever queued, since an undo, its replay included, runs inside its request (TRD §7.8); `jobs/runner.py` still lists the kind. A `purge` job has `user_id = 'system'` and `dataset_id` NULL (§6).
+- `params_json` of a `clean` job started from a cleaning plan (PRD CLEAN-8a) carries `plan: {id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits to a plan can't change a running job. A `build_dashboard` job queued by the After upload setting ("I'll clean it myself") rather than a click has `automatic: true`; no `clean` job is queued without a click, since "Open the cleaning plan" only makes a draft (§2.21) (the `Job` response shows it, TRD §4.10).
 
 ### 2.15 chat
 
@@ -443,7 +442,7 @@ CREATE TABLE proposals (
 );
 ```
 
-As built (2026-10-25, D8.5): `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection` (approving it opens the cleaning plan with that scope, §2.21); `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
+As built: `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection` (approving it opens the cleaning plan with that scope, §2.21); `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
 - Only `edit_cells` and `clean_selection` proposals are written. `card_edit` is not built (cut 2, Implementation Plan §2.0), and `clean_step` and `computed_column` are P1; approving another kind answers `422` (`agent/actions.py`). An approved `edit_cells` commits its step with `created_by = 'user'`, through the same save as the grid (`rows/edits.py`).
 
 ### 2.16 selections
@@ -479,7 +478,7 @@ CREATE TABLE value_index (
 
 When `sqlite-vec` is installed, a `vec_values` virtual table mirrors `embedding` for ANN search; otherwise similarity is computed in numpy over the column's rows (≤ 5,000).
 
-As built (2026-10-25, `sherlock/profile/service.py`): the profile rewrites a dataset's whole index each time it profiles the current version, since the primary key has no version. It indexes the columns whose role is `dimension` or `target_like`, at most the 10,000 most common values each, as text with their counts. `embedding` is always NULL and there is no `vec_values` table: not built while `MODEL_EMBED` is empty (TRD §3.5), so the chat resolves values exactly, then with rapidfuzz (TRD §8.1).
+As built (`sherlock/profile/service.py`): the profile rewrites a dataset's whole index each time it profiles the current version, since the primary key has no version. It indexes the columns whose role is `dimension` or `target_like`, at most the 10,000 most common values each, as text with their counts. `embedding` is always NULL and there is no `vec_values` table: not built while `MODEL_EMBED` is empty (TRD §3.5), so the chat resolves values exactly, then with rapidfuzz (TRD §8.1).
 
 ### 2.18 llm_calls and sandbox_runs
 
@@ -511,7 +510,7 @@ CREATE TABLE sandbox_runs (
 );
 ```
 
-As built (2026-10-25): the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
+As built: the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
 
 ### 2.19 exports
 
@@ -538,7 +537,7 @@ CREATE INDEX exports_dataset ON exports(dataset_id, created_at DESC);
 
 A new version does not delete older exports (they are still valid for their version); the purge job removes export files older than 24 h and their rows.
 
-As built (2026-10-25, D5.6): `version` is the version the notebook rebuilds (the current one, or the earlier one for `up_to_step`), set when the job finishes. The user's last options are kept in `users.settings_json.notebook`.
+As built: `version` is the version the notebook rebuilds (the current one, or the earlier one for `up_to_step`), set when the job finishes. The user's last options are kept in `users.settings_json.notebook`.
 
 ### 2.20 schema_migrations
 
@@ -594,7 +593,7 @@ Column conventions inside a version Parquet:
 
 Queries from widgets and answerers run on that in-memory connection after external access is turned off, with a 10 s interrupt.
 
-As built (2026-10-25, `sherlock/storage.py` `VersionConnections`): at most four connections stay open, the least recently used closed first, and opening a version closes the same dataset's older ones. Each connection has `memory_limit` = `DUCKDB_MEMORY_MB` and two threads, and serves one request at a time. A connection that is evicted while a request holds it closes when that request ends.
+As built (`sherlock/storage.py` `VersionConnections`): at most four connections stay open, the least recently used closed first, and opening a version closes the same dataset's older ones. Each connection has `memory_limit` = `DUCKDB_MEMORY_MB` and two threads, and serves one request at a time. A connection that is evicted while a request holds it closes when that request ends.
 
 ---
 
@@ -612,9 +611,9 @@ As built (2026-10-25, `sherlock/storage.py` `VersionConnections`): at most four 
       runs/<run_id>/
         model.joblib
         repro.py                    reproduction code (TRD §6.7)
-        model_card.json             the ModelCard (as built, D7)
+        model_card.json             the ModelCard (as built)
         results/*.parquet           predictions, importance, pdp, coefficients
-                                    (as built, D7: results/importance.json and results/partial_dependence.json;
+                                    (as built: results/importance.json and results/partial_dependence.json;
                                     JSON because pyarrow isn't a dependency; no predictions or coefficients, cuts 4 and 7;
                                     results/oof.json for classification: _row_id, actual, predicted, probability,
                                     the out-of-fold predictions behind the confusion matrix, ROC and "who did it get wrong?")
@@ -626,7 +625,7 @@ As built (2026-10-25, `sherlock/storage.py` `VersionConnections`): at most four 
 
 `datasets.folder_bytes` is recomputed after every commit and run; `users.storage_bytes` is the sum. Uploads are refused when the user's total would exceed `USER_STORAGE_MB`.
 
-As built (2026-10-25):
+As built:
 - **More files.**
   - `/data/.boots` and `/data/.lockcheck.db` belong to the startup storage check (TRD §11).
   - `/data/.clean/<job_id>/` is a clean job's working folder (sample, candidate and commit Parquet files). It is removed when the run reaches its report (`cleaning/loop.py`); a run that is stopped or fails before that leaves it, and the purge doesn't clear it yet.
@@ -665,7 +664,7 @@ A `purge` job runs every 10 minutes:
 4. Delete sandbox temp directories (`/tmp/sherlock-sandbox/`, outside `/data`) older than 1 h.
 5. Recompute `users.storage_bytes`.
 
-As built (2026-10-25, D8.6, `sherlock/jobs/purge.py`):
+As built (`sherlock/jobs/purge.py`):
 - Hard-deleting a dataset removes its folder and its rows. The tables with a cascading foreign key go with it (`clean_plans` among them); `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals` and `value_index` are cleared explicitly. `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend figures read them.
 - A purged widget takes its card and fact sheets with it, and a run that pointed at it is unlinked. Canvas nodes of purged cards are pruned on the next canvas read (§2.12).
 - An export's file is deleted with its row.
