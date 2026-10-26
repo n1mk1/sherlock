@@ -95,6 +95,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - On a wide file the 60-candidate cap cuts in generation order, so trends and tables can be dropped before they're scored (D4 F5).
 - Pinning a table pins the first result's query and drops the answer's `selection_id` (D4 F6; API only, since the UI offers Pin on charts).
 - Compose needs a repair on about a third of answers (D4 F8), and one live answer came back with no prose: "Here is the result (3 rows)." (D9 F16).
+  - A cause, seen again live on 2026-10-26 (`live_check`, "average fare by class", 33 s): the model labelled the result's alias instead of the file's column, `value:class:1` for `pclass`, which `compose.label_text` refuses ("names no column or value of this file"); the repair failed too, so the answer fell back to the table. Accepting a value label on a result column that maps to a file column, or saying in the compose prompt that labels name the file's columns, not the query's aliases, would fix this case.
 - Inline rename may submit twice, and Esc may commit through `onBlur` (D4 F16, unverified).
 - The empty-widget message says "No rows match the current filter" with no filter set and has no Clear filter link; "Show as table" resets on reload (UI/UX §5.5); chat answers have no copy button (App Flow §10.2) (D4 F17).
 - A help question ("how do I re-run an outdated analysis?") can route to `ask_model` (D7 F12). A keyword pre-route for "how do I …" to `app_help` would fix it.
