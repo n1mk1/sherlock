@@ -506,6 +506,22 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A widget whose title alone the user changed mid-cascade keeps its old `version_built` until the next cascade; the footer's version stamp of a SQL widget comes from its data, so nothing shows it.
   - BACKLOG: no line closes (A1, A16–A18 were audit findings, not BACKLOG lines). D6 F11 (the progress line clears only on `cascade.done`) stays open: a cancelled cascade ends with `job.failed`.
 
+### Slice 8 (plan 2.1): receipts
+
+- **Done:**
+  - `GET /chat/messages/{mid}/calls` and `GET /jobs/{jid}/calls` read `llm_calls` back as a `Receipt`: every call of one answer or one job, oldest first, with its role, model, purpose, tokens, latency, `ok` (and a failed attempt's error), `repaired` and `cached`, and a total (calls, failed, repaired, cached, tokens, the summed latency). One module, `sherlock/llm/calls.py`, holds the query; `scripts/seed_sample.py`'s per-role spend line uses its `by_role`. At most 500 calls are listed, and the total counts them all. Another user's message or job is `404`.
+  - **"How I worked it out"** (`web/src/components/chat/Receipts.tsx`), collapsed and fetched only when opened: inside the chat's "How do you know?" (which every Sherlock message now has, so a clarification or a failed answer shows its calls) and at the end of the cleaning report's full report. Each step in plain words with its model ID, time and tokens, "(repair)" and "(failed)" marks, then "Total: 4 calls · 5.3 s waiting on them · 2,500 tokens · 1 repair".
+  - Migration `004_llm_calls_indexes.sql`: `llm_calls.cached` and indexes on `message_id`, `job_id` and `created_at`.
+  - Tests: `tests/test_receipts.py` (a mocked chat answer lists route, sql and compose in order, with the same IDs as the log and matching totals; the user's own message is empty; a stranger gets `404`; a mocked clean lists its diagnose, propose and critic calls; totals count a failed attempt, a repair and a cached web row; a long job lists the first calls and totals all; the indexes exist). `web/src/components/chat/receipts.test.tsx` (the panel in "How do you know?" fetches only when opened and renders the rows and the total; the empty case; the cleaning report's). `tests/test_db.py`'s version check and `tests/test_healthz.py`'s `schema_version` now compare with the newest migration file instead of a fixed 3, so parallel slices' files don't each have to edit them.
+  - Gate: `uv run pytest` 417 passed, 3 skipped (16 min; the one failure of the first run was `test_healthz`'s fixed 3, fixed above and rerun); `pnpm test` 92 passed; `pnpm e2e` passed (the flow opens How do you know? on the answer, now with the receipt inside).
+  - Docs: TRD §3.5 (logging, web rows), §4.9, §4.10; Schema §1, §2.18; App Flow §5, §10.2; UI/UX §4.8. `openapi.json` and `schema.d.ts` regenerated.
+- **Decisions:**
+  - **Web rows need no column of their own.** A web request is an `llm_calls` row with `role = 'web'`, `model` the tool (`tavily-search`, …), NULL tokens (so no budget counts it) and `cached = 1` when the web cache answered. Receipts own `cached` (in 004), so the `tavily` stream's `005_web_cache.sql` doesn't add it; told that stream, and wrote it in the shared notes.
+  - **The path is `/chat/messages/{mid}/calls`,** as the plan names it, although the pin route is `/messages/{mid}/pin`; the other streams' plans refer to this path.
+  - **Errors in plain words** (UI/UX §7): the panel says "(failed)" or "(cut off, asked again)" rather than the raw error, which the API still returns (at most 200 characters).
+  - The total's time is the calls' latencies summed ("waiting on them"), not the answer's wall time, which a parallel stories pool would make smaller.
+- **BACKLOG:** the `llm_calls` line keeps only what's open: the table is never purged (the daily budget's scan has its index now).
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

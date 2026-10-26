@@ -6,7 +6,7 @@ import pytest
 
 from sherlock.config import get_settings
 from sherlock.db.connection import connect, sqlite_path
-from sherlock.db.migrate import current_version, migrate
+from sherlock.db.migrate import applied, available, current_version, migrate
 from sherlock.db.util import new_id, now_iso, ulid
 
 SCHEMA_DOC = Path(__file__).resolve().parents[2] / "docs" / "05-BACKEND-SCHEMA.md"
@@ -55,7 +55,8 @@ def test_migration_matches_schema_doc(conn):
 
 def test_migrate_is_idempotent_and_tracked(conn):
     assert migrate(conn) == []
-    assert current_version(conn) == 3
+    # Every numbered file is applied once; the newest is the version (each slice adds its own file).
+    assert applied(conn) == {v for v, _ in available()} and current_version(conn) == available()[-1][0] >= 4
 
 
 def test_pragmas(conn):

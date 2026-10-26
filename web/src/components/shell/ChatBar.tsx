@@ -2,7 +2,8 @@
 // a context chip on the left when there is one (the global filter or the focused widget), the `/`
 // hint and the send button. Focus or typing opens the thread above it (at most 40% of the centre);
 // Esc closes it. `/` focuses the bar when no input, cell or editor has focus. An answer streams in:
-// a status line, then its blocks, then the final message with its "How do you know?" sources.
+// a status line, then its blocks, then the final message with its "How do you know?" sources and, inside
+// that, "How I worked it out": the model calls that made it.
 // The "Chat bar" setting pins it, hides it until pointed at, or hides it.
 import { ArrowRight, ChevronDown, Workflow, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import { request } from "@/api/client";
 import { filterParam, keys, sendChat, showPlan, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
 import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
+import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useFilters, useGlobalFilter } from "@/state/filters";
@@ -347,7 +349,7 @@ function MessageView({ message, dataset, onChoice }: {
           )}
         </div>
       )}
-      {message.sources.length > 0 && <Sources sources={message.sources} />}
+      {message.role === "assistant" && <Sources sources={message.sources} messageId={message.id} />}
       {modelCard && card && (
         <Suspense fallback={null}><ModelCardDrawer datasetId={dataset.id} runId={card} onClose={() => setCard(null)} /></Suspense>
       )}
@@ -448,7 +450,9 @@ function UndoWidget({ widgetId, datasetId }: { widgetId: string; datasetId: stri
   );
 }
 
-function Sources({ sources }: { sources: Source[] }) {
+/** "How do you know?": each source's label and SQL, then the answer's receipt (every assistant message
+ * has one, so a clarification or a failed answer shows its calls too). */
+export function Sources({ sources, messageId }: { sources: Source[]; messageId: string }) {
   return (
     <details className="text-[13px]">
       <summary className="cursor-pointer text-accent hover:underline">How do you know?</summary>
@@ -459,6 +463,7 @@ function Sources({ sources }: { sources: Source[] }) {
             {s.sql && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.sql}</pre>}
           </div>
         ))}
+        <Receipts path={`/api/v1/chat/messages/${messageId}/calls`} />
       </div>
     </details>
   );

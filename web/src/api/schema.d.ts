@@ -133,6 +133,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/messages/{mid}/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Message Calls
+         * @description "How I worked it out": every model call (and web request) made answering this message, oldest
+         *     first, with a total. A user's own message made none.
+         */
+        get: operations["message_calls_api_v1_chat_messages__mid__calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clean-plans/{pid}": {
         parameters: {
             query?: never;
@@ -888,6 +909,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/{jid}/calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job Calls
+         * @description Every model call the job made, oldest first, with a total (the cleaning report's "How I worked it out").
+         */
+        get: operations["job_calls_api_v1_jobs__jid__calls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/{jid}/cancel": {
         parameters: {
             query?: never;
@@ -1345,6 +1386,25 @@ export interface components {
             /** Options */
             options?: string | null;
         };
+        /** CallTotals */
+        CallTotals: {
+            /** Cached */
+            cached: number;
+            /** Calls */
+            calls: number;
+            /** Completion Tokens */
+            completion_tokens: number;
+            /** Failed */
+            failed: number;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Prompt Tokens */
+            prompt_tokens: number;
+            /** Repaired */
+            repaired: number;
+            /** Tokens */
+            tokens: number;
+        };
         /** CanvasPut */
         CanvasPut: {
             /** Canvas */
@@ -1548,6 +1608,35 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** ModelCall */
+        ModelCall: {
+            /** Cached */
+            cached: boolean;
+            /** Completion Tokens */
+            completion_tokens: number | null;
+            /** Created At */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Model */
+            model: string;
+            /** Ok */
+            ok: boolean;
+            /** Prompt Tokens */
+            prompt_tokens: number | null;
+            /** Purpose */
+            purpose: string;
+            /** Repaired */
+            repaired: boolean;
+            /** Role */
+            role: string;
+            /** Tokens */
+            tokens: number;
+        };
         /** NewRow */
         NewRow: {
             /** Cells */
@@ -1614,6 +1703,12 @@ export interface components {
         /** PlanRequest */
         PlanRequest: {
             scope?: components["schemas"]["CleanScope"] | null;
+        };
+        /** Receipt */
+        Receipt: {
+            /** Calls */
+            calls: components["schemas"]["ModelCall"][];
+            total: components["schemas"]["CallTotals"];
         };
         /**
          * Settings
@@ -2001,6 +2096,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    message_calls_api_v1_chat_messages__mid__calls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Receipt"];
                 };
             };
         };
@@ -3538,6 +3653,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    job_calls_api_v1_jobs__jid__calls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Receipt"];
                 };
             };
         };

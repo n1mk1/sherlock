@@ -1,9 +1,11 @@
 // The end-of-run report (App Flow §5, PRD CLEAN-6): counts and the first steps, with the full report
-// (every step, skipped issue and decision) one click away. The Changes panel links here (D5.4).
+// (every step, skipped issue and decision, and "How I worked it out": the run's model calls) one click
+// away. The Changes panel links here (D5.4).
 import { Check, Flag, Redo2 } from "lucide-react";
 import { useState } from "react";
 import { useReport } from "@/api/queries";
 import type { CleaningReport } from "@/api/types";
+import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
@@ -134,6 +136,9 @@ export function FullReport({ report }: { report: CleaningReport }) {
             </li>
           ))}
         </ul>
+      </section>
+      <section>
+        <Receipts path={`/api/v1/jobs/${report.job_id}/calls`} />
       </section>
     </div>
   );

@@ -191,6 +191,7 @@ Transitions:
   - "Checks on the latest step" lists the hard verifiers of the last committed step.
   - During `building`, the centre shows "Building your dashboard…" above the report summary: counts, the first three steps, and "View full report", a dialog with every step, skipped issue, hand-edited cell and decision.
   - The ready Dashboard tab shows the widgets. The same summary, titled "Last cleaning report", opens from the Changes panel's "Full cleaning report" (§8.5).
+  - The full report ends with **How I worked it out** (collapsed): the run's model calls in order ("Diagnosed an issue", "Proposed fixes", "Reviewed a fix"), each with its model, time, tokens and repairs, then the total. A long run lists its first 500 calls and says how many more there were; the total counts them all (TRD §4.10 receipts).
 
 ---
 
@@ -408,6 +409,7 @@ The answerers behind the bar:
    - **Proposal**: a card with Approve / Reject for data changes or step-by-step cleaning.
    - **Clarification**: the question and 2–3 buttons; the thread waits.
 4. Every answer has a **How do you know?** disclosure (SQL, recipe run, step references) and a copy button.
+   - Inside it, **How I worked it out** (collapsed) lists the model calls that made the answer, in order: what each step did ("Read the question", "Wrote the query", "Wrote the answer"), the model that ran it, its time and its tokens, a repair call marked "(repair)" and a failed attempt "(failed)", then the total ("Total: 3 calls · 4.1 s waiting on them · 5,120 tokens"). A web request, once the web client logs them, shows as "Searched the web" with "cached" when the web cache answered it. Every Sherlock message has the disclosure, so a clarification or a failed answer shows the calls it made too (TRD §4.9 receipts).
 5. Follow-ups reuse the saved focus (scope, columns, result ids).
 
 As built:

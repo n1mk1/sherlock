@@ -12,7 +12,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, and `003_plan_scope.sql` adds `clean_plans.scope_json`. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, `003_plan_scope.sql` adds `clean_plans.scope_json`, and `004_llm_calls_indexes.sql` adds `llm_calls.cached` and three `llm_calls` indexes (§2.18). From 004 on, each slice of work that changes the schema has its own numbered file, so files written in parallel land in any order: `migrate()` applies every file it hasn't applied, by number. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
@@ -488,17 +488,21 @@ As built (`sherlock/profile/service.py`): the profile rewrites a dataset's whole
 CREATE TABLE llm_calls (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     TEXT, dataset_id TEXT, job_id TEXT, message_id TEXT,
-  role        TEXT NOT NULL,                   -- large|medium|small|embed
-  model       TEXT NOT NULL,
+  role        TEXT NOT NULL,                   -- large|medium|small|embed, or web (a web request, TRD §3.5)
+  model       TEXT NOT NULL,                   -- the Nemotron ID, or the web tool (tavily-search, …)
   purpose     TEXT NOT NULL,                   -- diagnose|propose|critic|curate|narrate|route|sql|compose|…
   prompt_tokens INTEGER, completion_tokens INTEGER,
   latency_ms  INTEGER,
   ok          INTEGER NOT NULL,
   error       TEXT,
   repaired    INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL
+  created_at  TEXT NOT NULL,
+  cached      INTEGER NOT NULL DEFAULT 0       -- 1: answered from a cache, no request sent (004)
 );
 CREATE INDEX llm_calls_user_day ON llm_calls(user_id, created_at);
+CREATE INDEX llm_calls_message ON llm_calls(message_id);   -- 004: a chat answer's receipt
+CREATE INDEX llm_calls_job ON llm_calls(job_id);           -- 004: a job's receipt
+CREATE INDEX llm_calls_created ON llm_calls(created_at);   -- 004: the app-wide daily budget's scan
 
 CREATE TABLE sandbox_runs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -513,6 +517,12 @@ CREATE TABLE sandbox_runs (
 ```
 
 As built: the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
+
+Receipts (TRD §4.9, §4.10; migration `004_llm_calls_indexes.sql`):
+- `GET /chat/messages/{mid}/calls` reads the rows whose `message_id` is an assistant message's ID, and `GET /jobs/{jid}/calls` the rows whose `job_id` is the job's, oldest first (`ORDER BY id`), through `sherlock/llm/calls.py`. The indexes on `message_id` and `job_id` keep those reads off a full scan; the one on `created_at` serves the app-wide budget's sum since midnight UTC, which runs before every model call.
+- **Web rows.** A web request (TRD §3.5, the web client) is a row like a model call: `role = 'web'`, `model` the tool (`tavily-search`, `tavily-extract` or `tavily-map`), its own `purpose`, `latency_ms`, `ok` and `error`, no tokens (both NULL, so no token budget counts it), and `cached = 1` when the 24 h web cache answered it without a request. No other column is needed for them.
+- `cached` is 0 for every Nemotron call: the model client has no cache.
+- The rows still aren't purged (BACKLOG): the budgets and the spend figures read them.
 
 ### 2.19 exports
 

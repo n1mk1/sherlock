@@ -1,4 +1,4 @@
-"""Jobs (TRD §4.10): list, get, cancel, retry, log."""
+"""Jobs (TRD §4.10): list, get, cancel, retry, log, and the model calls a job made."""
 
 import json
 import sqlite3
@@ -10,6 +10,7 @@ from sherlock.db.users import User
 from sherlock.errors import ApiError
 from sherlock.identity import current_user
 from sherlock.jobs.runner import FINISHED, cancel_job, get_job, to_job
+from sherlock.llm import calls
 from sherlock.ownership import Owned, check_dataset, owned
 
 router = APIRouter(tags=["jobs"])
@@ -68,3 +69,9 @@ def job_log(job: Owned = Depends(owned("job")), db: sqlite3.Connection = Depends
         "SELECT data_json FROM job_events WHERE job_id = ? AND type = 'job.log' ORDER BY id", (job.id,)
     ).fetchall()
     return {"entries": [json.loads(r[0]) for r in rows]}
+
+
+@router.get("/jobs/{jid}/calls", response_model=calls.Receipt)
+def job_calls(job: Owned = Depends(owned("job")), db: sqlite3.Connection = Depends(get_db)) -> calls.Receipt:
+    """Every model call the job made, oldest first, with a total (the cleaning report's "How I worked it out")."""
+    return calls.for_job(db, job.id)

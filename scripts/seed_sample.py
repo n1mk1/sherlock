@@ -93,6 +93,7 @@ def main() -> int:
 
         from sherlock.config import get_settings
         from sherlock.db.connection import connect
+        from sherlock.llm.calls import by_role
         from sherlock.main import create_app
         from sherlock.sample_seed import snapshot
 
@@ -127,8 +128,7 @@ def main() -> int:
             db = connect(settings)
             try:
                 meta = snapshot(settings, db, ds, out)
-                calls = db.execute("SELECT role, count(*) AS n, sum(prompt_tokens) AS p, sum(completion_tokens) AS c "
-                                   "FROM llm_calls GROUP BY role").fetchall()
+                calls = by_role(db)
             finally:
                 db.close()
             dataset = client.get(f"{API}/datasets/{ds}").json()

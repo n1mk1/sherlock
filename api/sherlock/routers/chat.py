@@ -1,4 +1,5 @@
-"""Chat (TRD §4.9, §5.3): the thread, sending a message as an SSE stream, and pinning an answer.
+"""Chat (TRD §4.9, §5.3): the thread, sending a message as an SSE stream, pinning an answer, and an
+answer's receipt (the model calls that made it).
 
 `POST /chat` runs the agent in a worker thread and streams its events. The thread keeps going if
 the client disconnects, so the answer is saved and a reload reads it from `GET /chat`.
@@ -18,6 +19,7 @@ from sherlock.db.connection import connect, get_db
 from sherlock.db.users import User
 from sherlock.errors import ApiError, not_found
 from sherlock.identity import current_user
+from sherlock.llm import calls
 from sherlock.llm.client import LLMClient
 from sherlock.ownership import Owned, check_dataset, owned, owned_dataset
 from sherlock.ratelimit import llm_rate_limit
@@ -111,6 +113,13 @@ async def send(
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/chat/messages/{mid}/calls", response_model=calls.Receipt)
+def message_calls(owned_message: Owned = Depends(owned("message")), db: sqlite3.Connection = Depends(get_db)) -> calls.Receipt:
+    """"How I worked it out": every model call (and web request) made answering this message, oldest
+    first, with a total. A user's own message made none."""
+    return calls.for_message(db, owned_message.id)
 
 
 @router.post("/messages/{mid}/pin", status_code=status.HTTP_201_CREATED)

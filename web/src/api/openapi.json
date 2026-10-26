@@ -26,6 +26,54 @@
     "title": "Body_upload_dataset_api_v1_datasets_post",
     "type": "object"
    },
+   "CallTotals": {
+    "properties": {
+     "cached": {
+      "title": "Cached",
+      "type": "integer"
+     },
+     "calls": {
+      "title": "Calls",
+      "type": "integer"
+     },
+     "completion_tokens": {
+      "title": "Completion Tokens",
+      "type": "integer"
+     },
+     "failed": {
+      "title": "Failed",
+      "type": "integer"
+     },
+     "latency_ms": {
+      "title": "Latency Ms",
+      "type": "integer"
+     },
+     "prompt_tokens": {
+      "title": "Prompt Tokens",
+      "type": "integer"
+     },
+     "repaired": {
+      "title": "Repaired",
+      "type": "integer"
+     },
+     "tokens": {
+      "title": "Tokens",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "calls",
+     "failed",
+     "repaired",
+     "cached",
+     "prompt_tokens",
+     "completion_tokens",
+     "tokens",
+     "latency_ms"
+    ],
+    "title": "CallTotals",
+    "type": "object"
+   },
    "CanvasPut": {
     "additionalProperties": false,
     "properties": {
@@ -692,6 +740,107 @@
     "title": "Me",
     "type": "object"
    },
+   "ModelCall": {
+    "properties": {
+     "cached": {
+      "title": "Cached",
+      "type": "boolean"
+     },
+     "completion_tokens": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Completion Tokens"
+     },
+     "created_at": {
+      "title": "Created At",
+      "type": "string"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "latency_ms": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Latency Ms"
+     },
+     "model": {
+      "title": "Model",
+      "type": "string"
+     },
+     "ok": {
+      "title": "Ok",
+      "type": "boolean"
+     },
+     "prompt_tokens": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Prompt Tokens"
+     },
+     "purpose": {
+      "title": "Purpose",
+      "type": "string"
+     },
+     "repaired": {
+      "title": "Repaired",
+      "type": "boolean"
+     },
+     "role": {
+      "title": "Role",
+      "type": "string"
+     },
+     "tokens": {
+      "title": "Tokens",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "role",
+     "model",
+     "purpose",
+     "prompt_tokens",
+     "completion_tokens",
+     "tokens",
+     "latency_ms",
+     "ok",
+     "error",
+     "repaired",
+     "cached",
+     "created_at"
+    ],
+    "title": "ModelCall",
+    "type": "object"
+   },
    "NewRow": {
     "additionalProperties": false,
     "properties": {
@@ -884,6 +1033,26 @@
      }
     },
     "title": "PlanRequest",
+    "type": "object"
+   },
+   "Receipt": {
+    "properties": {
+     "calls": {
+      "items": {
+       "$ref": "#/components/schemas/ModelCall"
+      },
+      "title": "Calls",
+      "type": "array"
+     },
+     "total": {
+      "$ref": "#/components/schemas/CallTotals"
+     }
+    },
+    "required": [
+     "calls",
+     "total"
+    ],
+    "title": "Receipt",
     "type": "object"
    },
    "Settings": {
@@ -1453,6 +1622,28 @@
     "summary": "Restore Card",
     "tags": [
      "cards"
+    ]
+   }
+  },
+  "/api/v1/chat/messages/{mid}/calls": {
+   "get": {
+    "description": "\"How I worked it out\": every model call (and web request) made answering this message, oldest\nfirst, with a total. A user's own message made none.",
+    "operationId": "message_calls_api_v1_chat_messages__mid__calls_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Receipt"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Message Calls",
+    "tags": [
+     "chat"
     ]
    }
   },
@@ -3939,6 +4130,28 @@
      }
     },
     "summary": "Get",
+    "tags": [
+     "jobs"
+    ]
+   }
+  },
+  "/api/v1/jobs/{jid}/calls": {
+   "get": {
+    "description": "Every model call the job made, oldest first, with a total (the cleaning report's \"How I worked it out\").",
+    "operationId": "job_calls_api_v1_jobs__jid__calls_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Receipt"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Job Calls",
     "tags": [
      "jobs"
     ]
