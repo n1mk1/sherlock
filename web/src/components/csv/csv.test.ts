@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { fitsType, typeLabel } from "@/lib/cells";
-import { pendingCount, toBatch, useEdits } from "@/state/edits";
+import { onStorage, pendingCount, toBatch, useEdits } from "@/state/edits";
 
 describe("typed text in the grid", () => {
   it("knows what fits a column", () => {
@@ -59,5 +59,23 @@ describe("the pending edits buffer", () => {
     expect(b.base).toBe(3);
     expect(Object.keys(b.edits)).toEqual(["2:age"]);
     expect(localStorage.getItem("sherlock:edits:ds:2")).toBeNull();
+  });
+
+  it("takes another tab's edits, save or discard from the storage event (plan 2b.5)", () => {
+    useEdits.getState().setCell("ds", 2, { row_id: 1, column: "age", value: "5", old: 22 });
+    // Another tab adds an edit on the same base: localStorage changes, then this tab hears of it.
+    const other = JSON.parse(localStorage.getItem("sherlock:edits:ds:2")!);
+    other.edits["2:age"] = { row_id: 2, column: "age", value: "6", old: 23 };
+    localStorage.setItem("sherlock:edits:ds:2", JSON.stringify(other));
+    onStorage({ key: "sherlock:edits:ds:2" });
+    expect(Object.keys(useEdits.getState().buffers.ds.edits)).toEqual(["1:age", "2:age"]);
+    // The other tab saves: its buffer is gone, so this tab's is too (it would save the same edits again).
+    localStorage.removeItem("sherlock:edits:ds:2");
+    onStorage({ key: "sherlock:edits:ds:2" });
+    expect(useEdits.getState().buffers.ds).toBeUndefined();
+    // A dataset this tab hasn't opened is left for hydrate.
+    localStorage.setItem("sherlock:edits:other:1", JSON.stringify(other));
+    onStorage({ key: "sherlock:edits:other:1" });
+    expect(useEdits.getState().buffers.other).toBeUndefined();
   });
 });

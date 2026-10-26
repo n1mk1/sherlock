@@ -692,6 +692,21 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **The model's sentence has no digits; the page's words keep them.** A codebook's codes are numbers ("1 = shipped"), so the description says what the column records and the excerpt beside it, verbatim, carries the codes (Rule 2: no number the model typed).
   - **Hover only** for the header note: Glide draws the header on a canvas with no keyboard focus. Logged as a gap in App Flow §8.1; the same meaning is answered in chat.
   - **Gate for the two commits together.** Part 1 of slice 13 had its own targeted tests (33 passed); the full gate below ran on this commit, which contains it.
+### Tier 2 row 2b.5: web state follows the version
+
+- **Done** (A22–A27, A29):
+  - **The dashboard filter** is checked once per version the dashboard sees against that version's data card (`state/filters.ts::filterGone`, `Dashboard.tsx::useFilterCheck`): a filter whose column is gone, or whose value isn't among the column's values when the card lists them all, is cleared with a toast that says why. Before, every widget that applied it read "No rows match the current filter". The value check reads "1" as 1 and "True" as true, since the card lists text.
+  - **The CSV grid** clears its selected cells on a new view (version, sort, Find): they're row positions that now hold other rows, and they were the chat's "3 rows selected". An open Find runs again on a new version, so its rows and count are that version's.
+  - **A failed page** of rows is asked for twice more (0.5 s, 1 s); then the grid reads "Couldn't load these rows: …" with Retry, instead of a bare error that only a reload cleared.
+  - **The open cleaning plan** is read again on `version.created`, which merges it onto the new version (the server's merge on read, with its toast). Until it's back, the header reads "Sherlock checked v4; the data is v5. Checking the plan again…".
+  - **The library stream's** `dataset.status` also reads the dataset's steps, cleaning report and cards again: a status change ends a clean or a build.
+  - **Two tabs:** the edits buffer follows another tab's change through the `storage` event (an edit shows; a save or Discard clears this tab's buffer, so the same edits can't be saved twice). A new `chat.updated` event on the dataset stream (`routers/chat.py::thread_changed`, after `POST /chat` saves its answer and after a proposal is approved or rejected) makes another tab read its thread again.
+  - Tests: `follow-version.test.tsx` (the plan and the thread re-read on their events; `applyStatus`'s keys; `filterGone` cases; the filter cleared on a new card; the plan's version line), `grid.test.tsx` (two retries then Retry; a retry that succeeds; the selection cleared on a new version, with Glide's editor stubbed), `csvtab.test.tsx` (Find runs again on v3), `csv.test.ts` (the storage event), `test_chat_actions.py` (`chat.updated` after an answer, a reject and an approve).
+  - Docs: TRD §5.1 (`chat.updated`; the web app's reactions), §5.2 (emitted); App Flow §4.1 (a new version while the plan is open), §7.3 (the filter), §8.1 (a new view, a failed page, two tabs), §10.2 (two tabs).
+- **Decisions:**
+  - Find runs again on a new version rather than closing: the user still wants the search, and "No cells match." closes it when nothing matches.
+  - The filter check runs once per version, not when a filter is set: a value just clicked is in the data, and the card's text form of a value could differ from the clicked one (dates).
+  - BACKLOG: no line closes (A22–A29 were audit findings).
 
 ### Fix: `pnpm build` failed on the column-note hover's type
 

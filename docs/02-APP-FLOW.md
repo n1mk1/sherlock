@@ -161,6 +161,7 @@ Transitions:
 - Ticking or unticking saves at once (nothing touches the data until Start).
 - **Start cleaning** → §5 Headless cleaning with the plan: unticked fixes are skipped without a model call and logged "not in your plan"; the report lists them with "You left this out of the plan". Issues a fix exposes mid-run, which the plan didn't list, are still attempted. The user's steps run first; they and rewritten fixes follow the user's instruction, still under every hard check.
 - A plan made on an older version keeps the user's steps while their column exists; a step on a column that's gone is dropped, and the toast says so.
+- **A new version while the plan is open** (an edit saved, a step undone, in this tab or another): the plan is read again, which merges it onto that version with the toast above. Until the merged plan arrives the header reads "Sherlock checked v4; the data is v5. Checking the plan again…".
 - **Discard** → the offer again (from the CSV tab, the Changes panel).
 
 ---
@@ -259,6 +260,7 @@ As built:
 - **Layout saving.** Moves and resizes save when the drag or resize ends. Collapsing a widget saves `collapsed: true` and keeps its height for when it expands.
 - **Fewer than 3 widgets.** A dashed card above the grid gives the "I could only build n widgets" message. With none, the tab shows "No widgets yet" and Add widget.
 - **Add widget.** The drawer has "Describe it" (a text box and Add) and "Quick templates": Bar of X by Y, KPI of X and Table. Adding one closes the drawer with a toast "Added “<title>”". The histogram template isn't there. Not built yet (docs/BACKLOG.md).
+- **A new version.** The dashboard checks its filter against the new version's data card once: a filter whose column is gone, or whose value no row has (when the card lists every value of the column), is cleared with a toast "Cleared the filter region = North: no row of v5 has region = North.", so the widgets don't all read "No rows match the current filter".
 
 ### 7.4 Story panel interactions
 
@@ -300,6 +302,9 @@ As built (cut 5):
 - **Column notes (PRD LOAD-7).** A column with a note (from a data dictionary the user linked) has ⓘ before its type line. Hovering its header shows the note: Sherlock's sentence, the source's own words in quotes, and "From the data dictionary at <site>, retrieved <date>. Not computed from your data." Hover only: the canvas header has no keyboard focus, so the same meaning is also answered in chat ("what does <column> mean?").
 - **Grid.** A frozen first column shows `_row_id` ("new" for a pending row), struck through for quarantined rows and rows marked for deletion. New rows appear at the top until saved. A header click sorts by that column (ascending, descending, off); the status bar says the sort is a view only.
 - **Status bar.** The number of selected cells, the row count (and sort), the unsaved count, and the current cell ("Row 9 · home.dest"). Selection stats are cut (cut 5).
+- **A new view.** A new version, sort or Find clears the selected cells, since they're row positions that now hold other rows; the chat's "3 rows selected" goes with them. An open Find runs again on a new version, so its rows and "n matches in m rows" are that version's ("No cells match." closes it).
+- **A page that fails** to load is asked for twice more (after 0.5 s and 1 s). Then the grid reads "Couldn't load these rows: <reason>" with **Retry**.
+- **Two tabs.** Pending edits made in one tab show in the other (the browser's `storage` event), and a save or Discard in one clears the other's buffer, so the same edits can't be saved twice.
 
 ### 8.2 Editing flow
 
@@ -430,6 +435,7 @@ As built:
 - On the CSV tab, selected cells are the context: the chip reads "3 rows selected". "Set this age to 1" or "make these empty" answers "Nothing has changed yet. Approve to apply this, or reject it." with a dashed proposal card listing each cell (row, column, now struck through, after). **Approve** saves it as a new version ("Saved as v3. Undo it from the Changes panel."), and the card then reads Approved. **Reject** reads Rejected. A proposal whose data moved on reads "Expired: the data changed since". "Clean these rows" proposes Clean with AI on the selected rows; approving opens the cleaning plan for them (above).
 - On the Dashboard, with a widget clicked (the context chip names it), "make it a pie chart" changes that widget at once, shows it, and offers **Undo**. The widget on the dashboard redraws from its new query at once, not with the old query's rows, and Undo puts it back the way the widget's own undo does.
 - "Export a notebook without the data" opens the export dialog with Include data off, and the answer keeps an **Export notebook** button.
+- **Two tabs.** A message answered in one tab shows in the other's thread too (the dataset stream's `chat.updated`).
 
 Failure modes: "I couldn't turn that into a query. Try naming the columns, e.g. “the average <measure> by <group>”." (the example uses the file's own columns) · "There's no column for <what was asked>. The closest is <a column>; want that?" (button) · "That needs about 100 rows and this selection has 41."
 

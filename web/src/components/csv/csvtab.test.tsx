@@ -1,5 +1,5 @@
-import { screen } from "@testing-library/react";
-import { forwardRef } from "react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { forwardRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dataset } from "@/api/types";
 import { mockApi, renderAt } from "@/test/render";
@@ -38,5 +38,32 @@ describe("the CSV tab while a job owns the data", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByTestId("grid")).toHaveAttribute("data-readonly", "false");
     expect(screen.getByRole("button", { name: /Add row/ })).toBeEnabled();
+  });
+});
+
+describe("Find on a new version", () => {
+  it("runs again, so its rows and count are the new version's (plan 2b.5)", async () => {
+    let finds = 0;
+    mockApi({
+      "GET /api/v1/datasets/ds_1/find": () => {
+        finds += 1;
+        return finds === 1
+          ? { count: 3, first_matches: [{ row_id: 1, column: "name" }, { row_id: 1, column: "city" }, { row_id: 4, column: "name" }] }
+          : { count: 1, first_matches: [{ row_id: 4, column: "name" }] };
+      },
+      "POST /api/v1/datasets/ds_1/selections": { selection_id: "sel_1", row_count: 2 },
+    });
+    function Host() { // the dataset page passes the dataset; a new version comes with a new prop
+      const [version, setVersion] = useState(2);
+      return <><button type="button" onClick={() => setVersion(3)}>v3 arrives</button><CsvTab dataset={{ ...DS, current_version: version }} /></>;
+    }
+    renderAt(<Host />);
+    fireEvent.click(screen.getByRole("button", { name: /^Find$/ }));
+    fireEvent.change(screen.getByLabelText("Find"), { target: { value: "smith" } });
+    fireEvent.submit(screen.getByLabelText("Find").closest("form")!);
+    expect(await screen.findByText(/3 matches in 2 rows/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "v3 arrives" }));
+    expect(await screen.findByText(/1 match in 1 row/)).toBeInTheDocument();
+    await waitFor(() => expect(finds).toBe(2));
   });
 });

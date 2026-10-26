@@ -4,7 +4,9 @@
 // the rows API (changed, flagged, invalid) and the pending edits from the buffer (unsaved), each
 // drawn so it doesn't rely on color alone. Clicking a header sorts by it (asc → desc → none); sorting
 // is a view, never a change to the data. A column with a note (a data dictionary the user linked, or
-// the web) has ⓘ in its header, and hovering the header shows the note and its quoted source.
+// the web) has ⓘ in its header, and hovering the header shows the note and its quoted source. A new
+// view (version, sort, selection) clears the selected cells, since they're row positions that now hold
+// other rows. A page that fails is asked for twice more before the grid says so, with Retry.
 import "@glideapps/glide-data-grid/dist/index.css";
 import {
   DataEditor, GridCellKind, CompactSelection,
@@ -15,12 +17,16 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { notesByColumn, useColumnNotes, type ColumnNote } from "@/api/columnNotes";
 import { fetchRows, type RowsPage, type Sort } from "@/api/csv";
 import type { ColumnCard, Column } from "@/api/types";
+import { Button } from "@/components/ui/button";
 import { displayValue, fitsType, isNumericType, typeLabel } from "@/lib/cells";
 import { resolveTokens } from "@/lib/tokens";
 import { editKey, type Buffer } from "@/state/edits";
 
 export const PAGE = 200;
 const ROW_COL = "_row_id";
+export const PAGE_RETRIES = [500, 1000]; // ms before each of the two retries of a failed page
+const NO_CELLS: GridSelection = { columns: CompactSelection.empty(), rows: CompactSelection.empty() };
+const NO_INFO: GridSelectionInfo = { rowIds: [], columns: [], newRows: [], cells: 0, current: null, quarantined: [] };
 type Row = RowsPage["rows"][number];
 
 export interface GridSelectionInfo {
@@ -79,10 +85,12 @@ export const Grid = forwardRef<GridHandle, {
   const notes = useMemo(() => notesByColumn(notesQuery.data?.notes), [notesQuery.data]);
   const [hovered, setHovered] = useState<{ note: ColumnNote; bounds: Rectangle } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sel, setSel] = useState<GridSelection>({ columns: CompactSelection.empty(), rows: CompactSelection.empty() });
+  const [sel, setSel] = useState<GridSelection>(NO_CELLS);
   const viewKey = `${datasetId}:${version}:${sort?.column ?? ""}:${sort?.dir ?? ""}:${selectionId ?? ""}`;
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
+  const onSelectionRef = useRef(onSelection);
+  onSelectionRef.current = onSelection;
   const viewKeyRef = useRef(viewKey);
 
   const newRows = buffer?.newRows ?? [];
@@ -91,11 +99,12 @@ export const Grid = forwardRef<GridHandle, {
   const types = useMemo(() => Object.fromEntries(columns.map((c) => [c.name, c.type])), [columns]);
   const userCols = useMemo(() => columns.filter((c) => c.name !== ROW_COL && c.name !== "_quarantine_reason"), [columns]);
 
-  const load = useCallback((page: number, key: string) => {
-    if (pages.current.has(page) || loading.current.has(page)) return;
+  const load = useCallback(function load(page: number, key: string, attempt = 0) {
+    if (attempt === 0 && (pages.current.has(page) || loading.current.has(page))) return;
     loading.current.add(page);
     fetchRows(datasetId, version, page * PAGE, PAGE, sort, selectionId)
       .then((res) => {
+        loading.current.delete(page);
         if (key !== viewKeyRef.current) return; // the view changed while this page was on its way
         pages.current.set(page, res.rows);
         if (page === 0) {
@@ -105,18 +114,36 @@ export const Grid = forwardRef<GridHandle, {
         }
         setGeneration((g) => g + 1);
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => loading.current.delete(page));
+      .catch((e: Error) => {
+        if (key !== viewKeyRef.current) return void loading.current.delete(page);
+        // A dropped request or a restarting server: the page stays "loading" while it's asked for again.
+        if (attempt < PAGE_RETRIES.length) setTimeout(() => load(page, key, attempt + 1), PAGE_RETRIES[attempt]);
+        else {
+          loading.current.delete(page);
+          setError(e.message);
+        }
+      });
   }, [datasetId, version, sort, selectionId]);
 
-  // A new version, sort or selection is a new view: drop the cache and start from the top.
+  // A new version, sort or selection is a new view: drop the cache, start from the top, and clear the
+  // selected cells (row positions that now hold other rows; the chat's context goes with them).
   useEffect(() => {
     viewKeyRef.current = viewKey;
     pages.current = new Map();
     loading.current = new Set();
     setError(null);
+    setSel(NO_CELLS);
+    onSelectionRef.current(NO_INFO);
     load(0, viewKey);
   }, [viewKey, load]);
+
+  const retry = () => {
+    setError(null);
+    pages.current = new Map();
+    loading.current = new Set();
+    setGeneration((g) => g + 1);
+    load(0, viewKeyRef.current);
+  };
 
   useImperativeHandle(ref, () => ({
     scrollToRow: (rowId, column) => {
@@ -129,11 +156,7 @@ export const Grid = forwardRef<GridHandle, {
         }
       }
     },
-    reload: () => {
-      pages.current = new Map();
-      setGeneration((g) => g + 1);
-      load(0, viewKeyRef.current);
-    },
+    reload: retry,
   }));
 
   const gridCols = useMemo<GridColumn[]>(() => [
@@ -296,7 +319,14 @@ export const Grid = forwardRef<GridHandle, {
     onSelection(info);
   };
 
-  if (error) return <p className="p-6 text-destructive">{error}</p>;
+  if (error) {
+    return (
+      <div role="alert" className="flex flex-col items-start gap-3 p-6">
+        <p className="text-destructive">Couldn't load these rows: {error}</p>
+        <Button size="sm" onClick={retry}>Retry</Button>
+      </div>
+    );
+  }
   return (
     <div className="min-h-0 flex-1" data-testid="csv-grid">
       {columns.length > 0 && (

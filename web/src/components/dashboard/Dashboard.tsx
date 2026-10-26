@@ -8,8 +8,9 @@ import { Responsive, type Layout as GridLayout, type Layouts } from "react-grid-
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useDatacard, useWidgetActions, useWidgets } from "@/api/queries";
-import type { Dataset, Layout, LayoutItem, Widget, WidgetData } from "@/api/types";
+import type { DataCard, Dataset, Layout, LayoutItem, Widget, WidgetData } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { filterGone, useFilters } from "@/state/filters";
 import { useUi } from "@/state/ui";
 import { AddWidgetDrawer } from "./AddWidgetDrawer";
 import { ExplainDrawer } from "./ExplainDrawer";
@@ -32,9 +33,26 @@ export function useWidgetParam(widgets: Widget[] | undefined) {
   }, [target, widgets, setFlashWidget, setParams]);
 }
 
+/** A new version can leave the dashboard filter on a column or a value that's gone, and every widget that
+ * applies it would read "No rows match": it's cleared, with a toast that says why (plan 2b.5). Checked
+ * once per version the dashboard sees, not each time the filter is set (a value just clicked is there). */
+export function useFilterCheck(dataset: Dataset, card: DataCard | undefined) {
+  const checked = useRef<number | null>(null);
+  useEffect(() => {
+    if (!card || card.version !== dataset.current_version || checked.current === card.version) return;
+    checked.current = card.version;
+    const clause = useFilters.getState().byDataset[dataset.id];
+    const why = clause ? filterGone(clause, card) : null;
+    if (!clause || !why) return;
+    useFilters.getState().clear(dataset.id);
+    toast(`Cleared the filter ${clause.col} = ${String(clause.value)}: ${why}.`);
+  }, [card, dataset.id, dataset.current_version]);
+}
+
 export function Dashboard({ dataset }: { dataset: Dataset }) {
   const { data, isLoading, error } = useWidgets(dataset.id);
   const card = useDatacard(dataset.id);
+  useFilterCheck(dataset, card.data);
   const { saveLayout } = useWidgetActions(dataset.id);
   const editLayout = useUi((s) => s.editLayout);
   const setAddOpen = useUi((s) => s.setAddWidgetOpen);

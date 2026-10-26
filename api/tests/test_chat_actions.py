@@ -179,3 +179,21 @@ def test_without_an_open_plan_chat_doesnt_edit_one(client, ready):
     client.delete(f"{API}/clean-plans/{plan['id']}")
     _, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
     assert "isn't open any more" in msg["text"]  # a discarded plan
+
+
+def test_an_answer_and_a_decided_proposal_tell_the_other_tabs(client, ready):
+    """`chat.updated` on the dataset stream (plan 2b.5): a tab that didn't send the message reads its
+    thread again when an answer is saved, and when a proposal in it is approved or rejected."""
+    ds = ready["id"]
+
+    def sent():
+        return sum(1 for kind, _ in events_of(ds) if kind == "chat.updated")
+
+    before = sent()
+    _, msg = send(client, ds, "set the fare of row 1 to 100", **csv())
+    assert sent() == before + 1
+    assert client.post(f"{API}/proposals/{msg['proposal']['id']}/reject").status_code == 204
+    assert sent() == before + 2
+    _, msg = send(client, ds, "set the fare of row 1 to 100", **csv())
+    assert client.post(f"{API}/proposals/{msg['proposal']['id']}/approve", json={}).status_code == 200
+    assert sent() == before + 4

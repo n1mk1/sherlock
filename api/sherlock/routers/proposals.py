@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Depends, Request, Response, status
 
 from sherlock.agent import actions
 from sherlock.db.connection import get_db
+from sherlock.routers.chat import thread_changed
 from sherlock.ownership import Owned, owned
 
 router = APIRouter(tags=["chat"])
@@ -28,10 +29,15 @@ def approve(request: Request, body: dict | None = Body(default=None), owned_prop
     """`{ step, version }` for cell edits, the clean `Job` for a selection; `409` when the data moved on
     (the proposal expires) or it was already decided. `edited_code` is for P1 code proposals."""
     row, dataset = _rows(db, owned_proposal)
-    return actions.approve(request.app, db, dataset, row)
+    out = actions.approve(request.app, db, dataset, row)
+    thread_changed(db, request.app.state.bus, dataset)  # the proposal reads Approved in every tab
+    return out
 
 
 @router.post("/proposals/{id}/reject", status_code=status.HTTP_204_NO_CONTENT)
-def reject(owned_proposal: Owned = Depends(owned("proposal")), db: sqlite3.Connection = Depends(get_db)) -> Response:
-    actions.reject(db, _rows(db, owned_proposal)[0])
+def reject(request: Request, owned_proposal: Owned = Depends(owned("proposal")),
+           db: sqlite3.Connection = Depends(get_db)) -> Response:
+    row, dataset = _rows(db, owned_proposal)
+    actions.reject(db, row)
+    thread_changed(db, request.app.state.bus, dataset)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

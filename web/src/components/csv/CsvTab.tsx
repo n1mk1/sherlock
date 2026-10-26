@@ -72,6 +72,17 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
     setFound(null);
     setFindOpen(false);
   };
+  // Find's rows were picked on the version it ran on: a new version runs it again, so the rows and
+  // the count shown are this version's (or "No cells match." clears it).
+  const findVersion = useRef(version);
+  const rerunFind = useRef(runFind);
+  rerunFind.current = runFind;
+  useEffect(() => {
+    if (findVersion.current === version) return;
+    findVersion.current = version;
+    if (found) void rerunFind.current(found.q);
+    // Only a new version re-runs it; `found` changing is the re-run's own result.
+  }, [version]);
 
   const selectionId = found?.selection ?? urlSelection;
   const matches = useMemo(() => found?.matches ?? new Set<string>(), [found]);

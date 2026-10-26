@@ -174,7 +174,10 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
           Cleaning plan · v{plan.version}
         </h2>
         <p className={cn("text-muted-foreground", side ? "mt-1 text-[13px]" : "mt-2")}>
-          Sherlock checked v{plan.version}. Untick, edit or add steps, or ask in chat.
+          {plan.version < dataset.current_version
+            // A new version arrived while the plan was open; reading it again merges it onto that version.
+            ? `Sherlock checked v${plan.version}; the data is v${dataset.current_version}. Checking the plan again…`
+            : `Sherlock checked v${plan.version}. Untick, edit or add steps, or ask in chat.`}
         </p>
         {plan.source === "after_upload" && !side && (
           <p className="mt-2 text-[13px] text-muted-foreground">

@@ -19,6 +19,7 @@ from sherlock.db.connection import connect, get_db
 from sherlock.db.users import User
 from sherlock.errors import ApiError, not_found
 from sherlock.identity import current_user
+from sherlock.jobs.events import emit as emit_event
 from sherlock.llm import calls
 from sherlock.llm.client import LLMClient
 from sherlock.ownership import Owned, check_dataset, owned, owned_dataset
@@ -47,6 +48,12 @@ class ChatRequest(BaseModel):
     context: ChatContext = Field(default_factory=ChatContext)
     clarification_of: str | None = None
     choice: str | None = Field(default=None, max_length=200)
+
+
+def thread_changed(db: sqlite3.Connection, bus, dataset: sqlite3.Row) -> None:
+    """`chat.updated` on the dataset stream: another tab open on the dataset reads its thread again
+    (TRD §5.1). Sent when an answer is saved and when a proposal in the thread is decided."""
+    emit_event(db, bus, dataset["id"], dataset["user_id"], "chat.updated", {})
 
 
 @router.get("/datasets/{dataset_id}/chat")
@@ -98,8 +105,11 @@ async def send(
 
             logging.getLogger("sherlock.chat").exception("chat failed: %s", exc)
         finally:
-            db.close()
-            emit("", {})
+            try:
+                thread_changed(db, app.state.bus, dataset)  # the saved messages, for the dataset's other tabs
+            finally:
+                db.close()
+                emit("", {})
 
     task = loop.run_in_executor(None, work)
 

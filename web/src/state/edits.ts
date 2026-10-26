@@ -2,6 +2,8 @@
 // to local storage under `sherlock:edits:<dataset>:<version>`, where the version is the one the
 // edits were made on (their base). Save sends it as one EditBatch; Discard clears it. It survives a
 // reload (PRD §7.11). Cut 5 removes the buffer's undo/redo, so lines are removed one by one instead.
+// Another tab's change to a buffer (an edit, a save, a discard) reaches this one through the
+// `storage` event, so two tabs never show, or save, different pending edits.
 import { create } from "zustand";
 
 export interface CellEdit {
@@ -160,6 +162,25 @@ export const useEdits = create<EditsState>((set, get) => {
     },
   };
 });
+
+const KEY = /^sherlock:edits:(.+):\d+$/;
+
+/** Another tab changed a dataset's stored buffer: this tab takes the stored one (or none). A dataset this
+ * tab hasn't opened is left for `hydrate`. */
+export function onStorage(e: Pick<StorageEvent, "key">) {
+  if (e.key === null) return; // storage cleared: buffers already shown stay until their tab saves
+  const datasetId = e.key.match(KEY)?.[1];
+  if (!datasetId || !(datasetId in useEdits.getState().buffers)) return;
+  const b = load(datasetId);
+  useEdits.setState((s) => {
+    const buffers = { ...s.buffers };
+    if (b) buffers[datasetId] = b;
+    else delete buffers[datasetId];
+    return { buffers };
+  });
+}
+
+if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
 
 /** The EditBatch (TRD §4.3) for a buffer. */
 export function toBatch(b: Buffer, base = b.base) {

@@ -920,6 +920,7 @@ Implementation (`sherlock/routers/jobs.py`):
 | `layout.updated` | `Layout` | another tab saved the layout. As built, the data is `{ layout }` (the saved `Layout`), and it goes to every open stream of the dataset, the saving tab's included |
 | `canvas.updated` | `{ etag }` | another tab saved the canvas. As built, also when the AI changes the canvas (`canvas.mutate`: a synthesis, an answer added to the Flow) |
 | `plan.updated` | `{ plan_id }` | a cleaning plan was made, changed (panel or chat), merged on make or on a stale start, started or discarded (except by `use-as-is`) (§4.4). The web app refetches the plan and the dataset (its `clean_plan_id`) |
+| `chat.updated` | `{}` | a chat message was answered and saved (`POST /chat`, when the agent finishes, also after an error), or a proposal in the thread was approved or rejected, so another tab's thread reads it. Sent on the dataset stream only |
 
 As built for stories and the cascade:
 - **`card.updated`** carries the whole `Card` as `GET /cards/{cid}` returns it (§4.6 as built: with `facts` and `related`). It is written to `job_events` under the job when a `stories` job or a cascade sends it, and with `job_id` NULL when a card route, a synthesis or an answer added to the Flow sends it (§5.2: every event is a row, so all of them replay).
@@ -928,6 +929,10 @@ As built for stories and the cascade:
   - A deleted card is sent with its `deleted_at` set. The web app refetches the dataset's cards on every `card.updated`.
 
 In the web app (`useDatasetEvents`, `src/api/queries.ts`):
+- **`version.created`** also reads an open cleaning plan again (`GET /clean-plans/{pid}` merges a draft onto the current version, §4.4), and the dashboard then checks its global filter against the new data card (`filterGone`): a filter whose column is gone, or whose value isn't among the column's values when the card lists them all, is cleared with a toast.
+- **`chat.updated`** reads the thread again.
+- **`dataset.status`** on the library stream (`applyStatus`) also reads the dataset's steps, cleaning report and cards again, since a status change ends a clean or a build.
+- **The CSV grid** clears its selected cells on a new view (version, sort, Find), re-runs an open Find on a new version, and asks for a failed page twice more (0.5 s, 1 s) before it shows the error with Retry. **The edits buffer** follows another tab's changes through the `storage` event.
 - **`widget.updated`** reads the widget list again (`invalidateWidget`). That widget's data and explain queries that are already on the event's `updated_at` are read again too, since nothing in their key moved (a status write). Queries on an older `updated_at` aren't: the list's new `updated_at` gives the widget a new key, which is read once, while the old chart stays on screen until it arrives.
 - **`cascade.started`** adds `columns`: the changed columns, sorted. It also adds `all`: true when the change affects every widget, such as rows added, deleted, quarantined or restored, a column added or removed, or the typing step. `widget_ids` lists only the affected widgets, `card_ids` their cards, and `run_ids` lists the runs the cascade marked outdated, sorted (§7.6 "Runs").
 - **`cascade.done`** `counts` is `{ widgets, errors, cards, outdated, runs }`.
@@ -949,7 +954,7 @@ Implementation (`sherlock/jobs/events.py`, `sherlock/routers/streams.py`):
   - `dataset.status`, `job.progress`, `job.log`, `job.done` and `job.failed`, from the runner and the profile job.
   - `version.created`, from `commit_step` and undo. Its `rows_removed` is the step's `impact.rows_deleted`.
   - `cascade.started` and `cascade.done`, from the `cascade` job, and its `widget.updated` per widget.
-  - `widget.updated` from the widgets service and the ML runner, `card.updated` from the stories service, `run.updated` from the ML runner, `layout.updated` from `PUT /datasets/{id}/layout`, `canvas.updated` from the canvas service, and `plan.updated` from the cleaning routes, the profile job (After upload: `always`) and chat's `edit_plan`. Every type in §5.1 is emitted. The first `dataset.status` of a sample copied from the seed comes from `POST /datasets/sample`.
+  - `widget.updated` from the widgets service and the ML runner, `card.updated` from the stories service, `run.updated` from the ML runner, `layout.updated` from `PUT /datasets/{id}/layout`, `canvas.updated` from the canvas service, `plan.updated` from the cleaning routes, the profile job (After upload: `always`) and chat's `edit_plan`, and `chat.updated` from `POST /chat` once the answer is saved and from `POST /proposals/{id}/approve` and `/reject` (`routers/chat.py::thread_changed`). Every type in §5.1 is emitted. The first `dataset.status` of a sample copied from the seed comes from `POST /datasets/sample`.
 - **Wire format.**
   - A stream opens with `retry: 3000`.
   - Then, after any replay and before the first live event, an `id:` line alone with the newest event ID (`max(job_events.id)`, read after the stream subscribed). It dispatches nothing, but it sets the browser's last event ID, so a stream that drops before its first event still reconnects with `Last-Event-ID` and gets what it missed.

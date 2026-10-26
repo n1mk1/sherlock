@@ -287,6 +287,10 @@ export function applyStatus(qc: QueryClient, e: DatasetStatusEvent) {
   qc.invalidateQueries({ queryKey: keys.jobs(e.dataset_id) });
   // Becoming ready means the builder has just made the widgets.
   qc.invalidateQueries({ queryKey: ["widgets", e.dataset_id] });
+  // A status change also ends a clean or a build: its steps, its report and the cards it wrote.
+  qc.invalidateQueries({ queryKey: keys.steps(e.dataset_id) });
+  qc.invalidateQueries({ queryKey: ["report", e.dataset_id] });
+  qc.invalidateQueries({ queryKey: ["cards", e.dataset_id] });
   // A status change can mean a new dataset row count (after typing or cleaning).
   qc.invalidateQueries({ queryKey: keys.datasets });
 }
@@ -447,8 +451,12 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
       qc.invalidateQueries({ queryKey: ["datacard", datasetId] });
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
+      // An open cleaning plan was made on the version before: read again, it's merged onto this one.
+      qc.invalidateQueries({ queryKey: ["clean-plan"] });
     },
     "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
+    // A message was answered in another tab (or this one): the thread is read again.
+    "chat.updated": () => qc.invalidateQueries({ queryKey: keys.chat(datasetId) }),
     // A cleaning plan was made, changed (in another tab, or by chat), started or discarded.
     "plan.updated": (data) => {
       qc.invalidateQueries({ queryKey: keys.plan(String((data as { plan_id?: string }).plan_id)) });
