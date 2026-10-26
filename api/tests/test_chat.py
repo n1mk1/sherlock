@@ -237,3 +237,52 @@ def test_a_message_past_its_time_budget_makes_no_model_call(client, ready, monke
     assert msg["text"] == "This answer ran out of time."
     assert ("error", {"code": "llm_unavailable", "message": "This answer ran out of time."}) in events
     assert len(db_rows("SELECT id FROM llm_calls WHERE dataset_id = ?", ready["id"])) == before
+
+
+def test_an_answer_card_reruns_its_queries_when_its_columns_change(client, ready):
+    """Plan 2b.2 (TRD §7.6 `rerun_fact_sql`): an answer card added to Flow is checked by the cascade. A
+    change it doesn't read leaves it alone; one it reads re-runs its stored query, and numbers that moved
+    make it outdated, since its words were written about the old ones. Refresh takes the new numbers."""
+    from tests.test_jobs import wait_for
+
+    ds = ready["id"]
+
+    def settled():
+        return wait_for(lambda: (js := client.get(f"{API}/jobs?dataset_id={ds}").json())
+                        and all(j["status"] in ("done", "failed", "cancelled") for j in js) and js, timeout=120)
+
+    def edit(column, value, row=1):
+        v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+        r = client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": row, "column": column,
+                                                                                           "value": value}]})
+        assert r.status_code == 201, r.text
+        return r.json()["version"]
+
+    settled()
+    _, msg = send(client, ds, "average fare by class")
+    action = next(a for a in msg["actions"] if a["kind"] == "add_to_flow")
+    added = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": action["block_index"]})
+    assert added.status_code == 201, added.text
+    answer = added.json()
+    sheet = client.get(f"{API}/fact-sheets/{answer['fact_sheet_id']}").json()
+    assert "fare" in sheet["depends_columns"]
+
+    edit("embarked", "Q", row=2)  # a column its query doesn't read
+    jobs = settled()
+    cascade = next(j for j in jobs if j["kind"] == "cascade")
+    assert cascade["result"]["answers"]["checked"] == 0
+    assert client.get(f"{API}/cards/{answer['id']}").json()["status"] == "ready"
+
+    edit("fare", "999")  # one it reads: an average moves
+    jobs = settled()
+    cascade = next(j for j in jobs if j["kind"] == "cascade")
+    assert cascade["result"]["answers"] == {"checked": 1, "kept": 0, "outdated": 1}, cascade["result"]
+    stale = client.get(f"{API}/cards/{answer['id']}").json()
+    assert stale["status"] == "outdated" and stale["facts"] == answer["facts"]  # the old numbers beside the old words
+
+    job = client.post(f"{API}/cards/{answer['id']}/refresh")
+    assert job.status_code == 201, job.text
+    settled()
+    fresh = client.get(f"{API}/cards/{answer['id']}").json()
+    assert fresh["status"] == "ready" and fresh["changed_badge"] and fresh["facts"] != answer["facts"]
+    assert fresh["version"] == client.get(f"{API}/datasets/{ds}").json()["current_version"]

@@ -446,6 +446,117 @@ def _datacard(env: ws.Env, dataset: sqlite3.Row) -> dict:
     return profile_service.get_or_build(env.settings, env.db, env.cache, dataset)
 
 
+# --- answer cards (TRD §7.6 `rerun_fact_sql`, plan 2b.2) -----------------------------------------
+
+def answer_depends(sheet: dict) -> set[str]:
+    """The data columns an answer card's numbers read: those its sheet records and every column its
+    facts' queries name."""
+    cols = set(sheet["depends_columns"])
+    for f in sheet["facts"].values():
+        if f.get("sql"):
+            cols.update(fx.depends_on({}, f["sql"]))
+    return cols
+
+
+def _same(a, b) -> bool:
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool):
+        return abs(a - b) <= 1e-9 * max(1.0, abs(a), abs(b))
+    return a == b
+
+
+def rerun_answer(env: ws.Env, dataset: sqlite3.Row, sheet: dict) -> tuple[dict, bool] | None:
+    """An answer card's facts recomputed on the current version: each query cell is run again from its
+    stored SQL, and each story card's fact (`<card_id>.<key>`) is read again from its card. (new facts,
+    whether any value changed), or None when one can't be recomputed (its query fails, the cell or the
+    card is gone)."""
+    from sherlock.agent.compose import fmt, fmt_kind
+    from sherlock.widgets.execute import run_query
+
+    new, changed, results = {}, False, {}
+    with ws.connection(env, dataset, dataset["current_version"]) as conn:
+        for key, f in sheet["facts"].items():
+            if key.startswith("crd_") and "." in key:
+                g = fact_for(env.db, dataset["id"], key)
+                if g is None:
+                    return None
+                new[key], changed = g, changed or g.get("formatted") != f.get("formatted")
+                continue
+            if not f.get("sql") or not f.get("cell"):
+                return None
+            if f["sql"] not in results:
+                try:
+                    results[f["sql"]] = run_query(conn, f["sql"])
+                except ApiError:
+                    return None
+            out, (r, c) = results[f["sql"]], f["cell"]
+            if r >= len(out["rows"]) or c >= len(out["columns"]):
+                return None
+            value = out["rows"][r][c]
+            if _same(value, f.get("value")):
+                new[key] = f
+                continue
+            kind = "pct" if str(f.get("formatted", "")).endswith("%") else fmt_kind(value, out["columns"][c]["name"])
+            new[key], changed = {**f, "value": value, "formatted": fmt(value, kind)}, True
+    return new, changed
+
+
+def _store_answer_sheet(db, dataset: sqlite3.Row, facts: dict, depends: set[str]) -> str:
+    sheet = _store_sheet(db, dataset["id"], None, dataset["current_version"], facts, sorted(depends))
+    return sheet["id"]
+
+
+def recheck_answers(env: ws.Env, dataset: sqlite3.Row, changes_since, *, ask_first: bool, job_id: str | None = None) -> dict:
+    """The cascade's answer cards (plan 2b.2). An answer card whose numbers read a column that changed
+    since its sheet's version is outdated under "Ask first". Otherwise its stored queries run again: the
+    same numbers keep it `ready` on a sheet of the new version; different ones, or a query that fails,
+    make it `outdated` (its words were written about the old numbers; Refresh takes the new ones).
+    `changes_since(v)` is the cascade's (changed columns, everything) since version `v`."""
+    db, version = env.db, dataset["current_version"]
+    out = {"checked": 0, "kept": 0, "outdated": 0}
+    rows = db.execute("SELECT * FROM cards WHERE dataset_id = ? AND kind = 'answer' AND fact_sheet_id IS NOT NULL "
+                      "AND deleted_at IS NULL AND status = 'ready'", (dataset["id"],)).fetchall()
+    for r in rows:
+        sheet = get_sheet(db, r["fact_sheet_id"])
+        if sheet is None or sheet["version"] >= version:
+            continue
+        columns, everything = changes_since(sheet["version"])
+        depends = answer_depends(sheet)
+        if not everything and not columns & depends:
+            continue
+        out["checked"] += 1
+        redone = None if ask_first else rerun_answer(env, dataset, sheet)
+        if redone is not None and not redone[1]:
+            sid = _store_answer_sheet(db, dataset, redone[0], depends)
+            cur = db.execute(f"UPDATE cards SET fact_sheet_id = ?, version = ?, updated_at = ? WHERE id = ? AND status = 'ready' "
+                             f"AND {CURRENT}", (sid, version, now_iso(), r["id"], version, dataset["id"]))
+            out["kept"] += cur.rowcount
+        else:
+            db.execute("UPDATE cards SET status = 'outdated', updated_at = ? WHERE id = ?", (now_iso(), r["id"]))
+            out["outdated"] += 1
+        emit_card(db, env.bus, dataset, r["id"], job_id)
+    if out["checked"]:
+        _bump(db, dataset["id"])
+    return out
+
+
+def refresh_answer(env: ws.Env, dataset: sqlite3.Row, card_id: str, job_id: str | None = None) -> dict:
+    """An answer card's Refresh: its stored queries run again on the current version and the card shows
+    the new numbers, with the changed badge when one moved. `409` when one can't be run any more."""
+    db = env.db
+    r = card_row(db, card_id)
+    sheet = get_sheet(db, r["fact_sheet_id"])
+    redone = rerun_answer(env, dataset, sheet) if sheet else None
+    if redone is None:
+        raise ApiError(409, "conflict", "This answer's query no longer runs on this version; ask the question again.")
+    facts, changed = redone
+    sid = _store_answer_sheet(db, dataset, facts, answer_depends(sheet))
+    db.execute("UPDATE cards SET fact_sheet_id = ?, version = ?, status = 'ready', changed_badge = ?, verified_at = ?, "
+               "updated_at = ? WHERE id = ?", (sid, dataset["current_version"], int(changed or r["changed_badge"]), now_iso(),
+                                               now_iso(), card_id))
+    _bump(db, dataset["id"])
+    return emit_card(db, env.bus, dataset, card_id, job_id)
+
+
 # --- edits by the user (TRD §4.6, PRD STORY-7) ------------------------------------------------------
 
 def mark_unverified(body: dict) -> dict:

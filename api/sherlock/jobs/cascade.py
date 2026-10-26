@@ -33,11 +33,14 @@ DEBOUNCE_S = 2.0
 
 
 def queue_cascade(db: sqlite3.Connection, dataset: sqlite3.Row, reason: str = "version") -> None:
-    """Queue a cascade for the dataset unless one is already waiting. Only datasets with a
-    dashboard need one."""
-    has_widgets = db.execute("SELECT 1 FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL LIMIT 1",
-                             (dataset["id"],)).fetchone()
-    if not has_widgets:
+    """Queue a cascade for the dataset unless one is already waiting. Only datasets with something
+    that can go stale need one: a widget, a card or a run (plan 2b.2: an answer card or a run can
+    exist without a dashboard)."""
+    has_any = db.execute(
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL) "
+        "OR EXISTS (SELECT 1 FROM cards WHERE dataset_id = ? AND deleted_at IS NULL) "
+        "OR EXISTS (SELECT 1 FROM runs WHERE dataset_id = ?)", (dataset["id"], dataset["id"], dataset["id"])).fetchone()
+    if not has_any:
         return
     for job in db.execute("SELECT status, created_at FROM jobs WHERE dataset_id = ? AND kind = 'cascade' "
                           "AND status IN ('queued', 'running')", (dataset["id"],)):
@@ -184,6 +187,8 @@ def _cascade(ctx: JobContext) -> dict:
         if wid not in overtaken:  # only forward: an older cascade never moves a widget back
             ctx.db.execute("UPDATE widgets SET version_built = MAX(version_built, ?) WHERE id = ? AND updated_at = ?",
                            (version, wid, stamp))
+    # Answer cards re-run their stored queries (plan 2b.2), or go outdated under Ask first.
+    answers = stories.recheck_answers(env, dataset, since_version, ask_first=ask, job_id=ctx.id)
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
               "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
     # The invariant (plan 1.3): no `ready` card shows numbers that may not hold on this version. 0 when the
@@ -194,7 +199,7 @@ def _cascade(ctx: JobContext) -> dict:
     audited = trust.audit(ctx.db, ctx.bus, fresh, ctx.id) if fresh["current_version"] == version else 0
     ctx.db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset["id"],))
     ctx.emit("cascade.done", {"version": version, "counts": counts})
-    return {"version": version, **counts, "audited": audited}
+    return {"version": version, **counts, "answers": answers, "audited": audited}
 
 
 async def run(ctx: JobContext) -> dict:

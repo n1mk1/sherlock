@@ -16,7 +16,8 @@ def queue_stories(db: sqlite3.Connection, dataset: sqlite3.Row, widget_ids: list
     import json
 
     waiting = db.execute("SELECT id, params_json FROM jobs WHERE dataset_id = ? AND kind = 'stories' AND status = 'queued' "
-                         "AND params_json NOT LIKE '%synthesis_ids%'", (dataset["id"],)).fetchone()
+                         "AND params_json NOT LIKE '%synthesis_ids%' AND params_json NOT LIKE '%answer_ids%'",
+                         (dataset["id"],)).fetchone()
     if waiting:
         params = json.loads(waiting["params_json"])
         if params.get("widget_ids") is not None:
@@ -34,6 +35,11 @@ def _run(ctx: JobContext) -> dict:
     env = ws.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
     scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
                       on_wait=lambda text: ctx.log(text, icon="wait"))
+    if ctx.params.get("answer_ids"):  # an answer card's Refresh (plan 2b.2): its stored queries run again
+        for i, cid in enumerate(ctx.params["answer_ids"], 1):
+            ctx.progress(i, len(ctx.params["answer_ids"]), "Running the answer's queries again")
+            stories.refresh_answer(env, dataset, cid, ctx.id)
+        return {"cards": len(ctx.params["answer_ids"]), "widgets": 0}
     if ctx.params.get("synthesis_ids"):  # a synthesis card's Refresh (TRD §7.4.1)
         from sherlock.stories import synthesis
 

@@ -825,6 +825,21 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
   - Receipts name the result check's call "Checked the result" (`Receipts.tsx`, with a test).
 - **Gate:** `uv run pytest` 452 passed, 3 skipped; `pnpm test` 97 passed; `pnpm e2e` 1 passed.
 
+### Tier 2 row 2b.2: answer cards re-run their stored queries
+
+- **Done:**
+  - **The cascade checks answer cards** (`stories.service.recheck_answers`, TRD §7.6's `rerun_fact_sql`): a `ready` answer card whose numbers read a column that changed since its sheet's version is `outdated` under "Ask first"; under "Automatic" its stored queries run again, and the same numbers keep it `ready` on a sheet of the new version, while moved numbers (or a query that no longer runs) make it `outdated`. The result carries `answers: { checked, kept, outdated }`.
+  - **Refresh works on an answer card** (no longer `409`): a `stories` job with `answer_ids` runs its queries again, stores the new numbers and sets the changed badge when one moved; `409` only when a query no longer runs.
+  - **What an answer reads** (`answer_depends`): its sheet's columns plus every column its facts' queries name. Add to Flow stores that union, since the result's column names alone are often aliases.
+  - **A cascade is queued** when the dataset has a live widget, a live card or a run, so an answer card or a run without a dashboard is checked too (A6).
+  - `queue_stories` never merges a widget request into an answer Refresh job.
+  - Tests (`test_chat.py::test_an_answer_card_reruns_its_queries_when_its_columns_change`): an edit to a column the answer doesn't read checks nothing; an edit to `fare` re-runs "average fare by class" and leaves the card `outdated` with its old numbers; Refresh brings the new numbers, the changed badge and the current version.
+  - Docs: TRD §3.3 (the cascade trigger, `answer_ids`), §4.6, §4.9 (Refresh), §7.6 (as built since 2b.2, replacing "isn't there").
+  - BACKLOG: removed "Answer cards never go stale".
+- **Decisions:**
+  - Tier 2 rows run in parallel across sessions now, not strictly 2b.1 → 2b.10 (the owner asked for parallel work; `.claude/plans/parallel.md`).
+  - Moved numbers make an answer card `outdated` rather than updating it silently: its words were written by the model about the old numbers and aren't re-composed. Refresh is the user taking the new numbers, and the changed badge says so.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

@@ -82,9 +82,8 @@ def refresh_card(cid: str, request: Request, _: Owned = Depends(owned("card")), 
     r = _card(db, cid)
     dataset = _dataset(db, r["dataset_id"])
     if r["kind"] in ("synthesis", "answer") and not r["widget_id"]:
-        if r["kind"] == "answer":
-            raise ApiError(409, "conflict", "An answer card keeps the numbers it was given; ask again for new ones.")
-        job = insert_job(db, dataset["user_id"], dataset["id"], "stories", {"synthesis_ids": [cid], "reason": "refresh"})
+        ids = "answer_ids" if r["kind"] == "answer" else "synthesis_ids"  # an answer re-runs its queries (plan 2b.2)
+        job = insert_job(db, dataset["user_id"], dataset["id"], "stories", {ids: [cid], "reason": "refresh"})
         request.app.state.jobs.wake()
         return to_job(job)
     queue_stories(db, dataset, [r["widget_id"]] if r["widget_id"] else [], "refresh")

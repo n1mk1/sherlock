@@ -120,7 +120,9 @@ def add_to_flow(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqli
         facts[key] = {"value": chip.get("raw"), "formatted": chip["value"], "label": "result of the answer's query",
                       "sql": sql_of.get(rid), "cell": [int(r), int(c)] if r.isdigit() and c.isdigit() else None}
     focus = json.loads(message["focus_json"] or "{}")
-    depends = focus.get("columns") or []
+    # The columns its numbers read: the result's, and every column its queries name (so a change to one
+    # reaches it, plan 2b.2).
+    depends = sorted(stories.answer_depends({"depends_columns": focus.get("columns") or [], "facts": facts}))
     question = db.execute("SELECT text FROM messages WHERE dataset_id = ? AND role = 'user' AND created_at <= ? "
                           "ORDER BY created_at DESC, id DESC LIMIT 1", (dataset["id"], message["created_at"])).fetchone()
     sheet_id = new_id("fs")

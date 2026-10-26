@@ -262,9 +262,10 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
     - A dataset that already has widgets keeps them. The job reports "Keeping the dashboard", and its result is `{ version, widgets, kept: true }`.
     - A failed or cancelled build still sets the dataset to `ready`, with whatever widgets were made.
 
-- **`cascade`** (`sherlock/jobs/cascade.py`). Every `version.created` queues one for a dataset that has live widgets (§7.6). **`export_notebook`** (`sherlock/jobs/export.py`) builds and writes an export (§7.7).
+- **`cascade`** (`sherlock/jobs/cascade.py`). Every `version.created` queues one for a dataset that has live widgets (§7.6), or, since plan 2b.2, any live card or any run, so an answer card or a run without a dashboard is checked too. **`export_notebook`** (`sherlock/jobs/export.py`) builds and writes an export (§7.7).
 - **`stories`** (`sherlock/jobs/stories.py`). It runs the Storyteller (`stories.service.tell`, §7.4) for some or all widgets, then the overview.
   - **Params:** `{ widget_ids: string[] | null, reason: "build"|"widget"|"refresh" }`. `null` means every widget; `[]` means only the overview.
+  - An answer card's Refresh queues `{ answer_ids: [card_id], reason: "refresh" }` instead: its stored queries run again on the current version (`stories.service.refresh_answer`, "Running the answer's queries again"), and its result is `{ cards, widgets: 0 }`. Like a synthesis Refresh, it never absorbs another request or is absorbed (plan 2b.2).
   - **Queued by:**
     - the dashboard builder when it made widgets (§7.3 step 7, `reason: "build"`, all widgets)
     - a widget created, or its spec changed, through the widgets service (`reason: "widget"`, that widget), once the dataset has any card or any `stories` job (so an analysis whose run finishes before the first card is stored still gets its card; `widgets/service.py::_stories`)
@@ -716,7 +717,7 @@ Story cards API as implemented (`sherlock/routers/cards.py`):
   - **Numbers in words.** A typed number is digits or a number the narrator's list spells out (`stories/narrate.py::NUMBER_WORDS`: "zero", "twice", "one in", "a third of"), `stories/service.py::TYPED`. Roman numerals aren't, since in a user's sentence "XL" is more often a size than forty.
   - **The version written on.** An edit sets the card's `version` to its fact sheet's version (the sheet its chips read, as Accept does), so `Card.version` of an edited card is the version its words were written on. The cascade moves an edited card's sheet but not its `version`, so the web app shows "Written on v5, data is now v7" until the user edits it again or accepts the suggestion (PRD STORY-7).
 - **`POST /cards/{cid}/refresh`** queues a `stories` job for the card's widget (the overview: for no widget, so only the overview is written) and answers `201` with the `Job`.
-  - A synthesis card's Refresh queues a `stories` job with `synthesis_ids: [cid]` that writes that card again (§3.3). An answer card's is `409` (§4.9).
+  - A synthesis card's Refresh queues a `stories` job with `synthesis_ids: [cid]` that writes that card again (§3.3). An answer card's queues one with `answer_ids: [cid]` that runs its stored queries again and shows the new numbers, with the changed badge when one moved (plan 2b.2; it was `409` before).
 - **`POST accept-suggestion`** puts the suggestion in the card and clears `edited_by_user` and the badge (`409` without a suggestion); **`dismiss-suggestion`** drops it and the badge; **`dismiss-badge`** clears `changed_badge`.
 - **Accept also sets the card's `version`** to its fact sheet's version. An edited card keeps the version its user-written text reflects; the suggestion was written from the current sheet.
 - **`GET /cards/{cid}/evidence/{chip_id}`** answers `{ key, value, formatted, label, sql?, cell?, from?, formula?, method?, run_id?, computed_at, version, card_id }`, where `card_id` is the cited card a synthesis or answer card's chip was resolved through (else `null`); for an unverified chip, `{ value, unverified: true, label, version }`.
@@ -870,7 +871,7 @@ Chat API as implemented (`sherlock/routers/chat.py`, `sherlock/agent/`):
   - The card's fact sheet (no widget) holds one fact per chip, keyed as the chip is. A result cell's fact keeps its value, formatted value and cell, with the answer's query as `sql`. A card fact (`<card_id>.<fact key>`) is copied from that card's sheet, and `source_card_ids` lists those cards.
   - The headline is the question, as a label run (`ref: "question"`), and the body is the block's runs.
   - Any other block, or general knowledge, is `422`. A cited card fact that is gone is `409`.
-  - An answer card's Refresh is `409`: it keeps the numbers it was given.
+  - An answer card's Refresh runs its stored queries again on the current version (§7.6, plan 2b.2); it's `409` only when one of them no longer runs ("ask the question again").
 
 ### 4.10 Jobs
 
@@ -1769,10 +1770,17 @@ emit cascade.done
 
 Debounce: cascade jobs for the same dataset within 2 s coalesce. Cards for synthesis get `sources_changed` when any source card's material hash changed (as built, with cut 6, when a cited value differs: §7.4.1 `sources_changed`).
 
-As built, the pseudocode's `rerun_fact_sql` for answer cards isn't there: the cascade picks cards by their widget only, and the `sources_changed` check skips cards with a fact sheet of their own, so an answer card keeps the numbers it was pinned with, marked neither outdated nor changed, after its columns change (its Refresh is `409`, §4.9). Not built yet (docs/BACKLOG.md).
+As built since plan 2b.2, the pseudocode's `rerun_fact_sql` for answer cards is `stories.service.recheck_answers`, run by each cascade after the widget cards:
+- **Which answers.** A `ready` answer card with its own sheet, on a version older than the cascade's, whose numbers read a column that changed since that version (or when everything changed). What it reads (`answer_depends`) is its sheet's `depends_columns` plus every column its facts' queries name; Add to Flow now stores that union, not only the result's columns.
+- **Ask first:** it becomes `outdated` (Refresh).
+- **Automatic:** each fact's stored SQL runs again on the version (a story card's fact cited by an `ask_story` answer is read again from its card). Unchanged numbers keep the card `ready`, on a new sheet of the version. Numbers that moved, or a query that no longer runs, make it `outdated` with its old sheet, since its words were written about the old numbers; it isn't re-composed.
+- **Refresh** takes the new numbers: a `stories` job with `answer_ids` runs the queries, stores a sheet of the current version and sets the changed badge when a value moved (§4.6, §4.9).
+- The cascade's result carries `answers: { checked, kept, outdated }`.
+
+Before plan 2b.2 an answer card kept the numbers it was pinned with, marked neither outdated nor changed, after its columns changed, and its Refresh was `409`.
 
 The cascade as implemented (`sherlock/jobs/cascade.py`):
-- **Trigger.** `emit_version_created` (every commit and undo) queues a `cascade` job when the dataset has a live widget. A cascade that is queued, or running but still in its 2 s wait, absorbs the next one, so saves within 2 s cascade once. The job waits until 2 s after it was queued, then reads the dataset's current version.
+- **Trigger.** `emit_version_created` (every commit and undo) queues a `cascade` job when the dataset has a live widget (since plan 2b.2: or a live card, or a run). A cascade that is queued, or running but still in its 2 s wait, absorbs the next one, so saves within 2 s cascade once. The job waits until 2 s after it was queued, then reads the dataset's current version.
 - **Work.** Each affected widget (below) re-runs its query on that version through the data cache, its status is set (`ready`, or `error` with the reason), and `widget.updated` is emitted. Its `version_built` moves to that version only after the cards are told (below). `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
 - **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16). Both also count stories: "Updating 9 widgets and 3 stories", and "v8: 9 widgets re-queried, 3 stories updated." (`web/src/components/dataset/DatasetPage.tsx`).
 
