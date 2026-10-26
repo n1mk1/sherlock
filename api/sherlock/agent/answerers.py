@@ -315,11 +315,10 @@ class Toolkit:
                           "x": cols.get("x"), "y": cols.get("y")})
         messages = self._messages(prompts.UPDATE_WIDGET.format(widget=fence(now), context=self.context,
                                                                 message=fence(request)))
-        selection = ((spec.get("scope") or {}).get("rows") or {}).get("selection_id")
         draft = self.llm.structured("medium", messages, WidgetDraft, purpose="update_widget", scope=self.scope).value
         for attempt in range(2):
             try:
-                new = self._spec(draft, selection)
+                new = merged_spec(spec, draft)
                 row = ws.update(self.env, self.dataset, widget, new, widget_title(draft.title, new))
                 self.reading = reading_text(draft.reading)
                 return row
@@ -346,6 +345,21 @@ def _closest(closest: str | None) -> str:
     if closest:
         text += f" The closest I can answer: “{closest.strip()}”"
     return text
+
+
+def merged_spec(spec: dict, draft: WidgetDraft) -> dict:
+    """`update_widget`'s draft applied to the widget's spec (plan 2b.4): the query, the view and its x and y
+    (or a KPI's value) change; everything else the widget had stays, such as its row predicate and selection,
+    `inherit_global_filters`, its other columns and its other view options."""
+    new = json.loads(json.dumps(spec))
+    new["op"] = {**(new.get("op") or {}), "type": "sql", "sql": draft.sql}
+    scope = new.setdefault("scope", {})
+    scope["columns"] = {**(scope.get("columns") or {}), "x": draft.x, "y": draft.y}
+    view = new.get("view") or {}
+    options = {k: v for k, v in (view.get("options") or {}).items() if k not in ("x", "y", "value")}
+    options |= {"value": draft.y} if draft.view == "kpi" and draft.y else {k: v for k, v in (("x", draft.x), ("y", draft.y)) if v}
+    new["view"] = {**view, "type": draft.view, "options": options}
+    return new
 
 
 def widget_title(title: str, spec: dict) -> str:

@@ -878,6 +878,24 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
 - `test_only_usable_cards_feed_another_output` (slice 5) failed once in the gate: it took "the fare card" from a set, whose order changes with the hash seed, and expected no usable synthesis even when the synthesis didn't cite that card. It now takes the first fare widget in sorted order and expects the synthesis among the usable cards when it cites none; it passes under three hash seeds.
 - **Gate:** after rebasing onto the other sessions' slices 7, 8, 9, 10, T-0 and T-3 (tip `742fba7`, with 2b.2, 2b.3 and 2b.6): `uv run pytest` 453 passed, 3 skipped; `corepack pnpm test` 97 passed; e2e (through `e2e-locked.sh`) 1 passed. Before the rebase, at the first `6253c5a`: pytest 416 passed, 3 skipped; vitest 88 passed; e2e 1 passed.
 
+### Tier 2 row 2b.4: a version on every chat message
+
+Built in the `chat-checks` worktree (Tier 2 rows run in parallel, as the owner asked for parallel sessions).
+
+- **Done:**
+  - Migration `006_message_version.sql` (the number `parallel.md` reserved): `messages.version`, the dataset's `current_version` when the message was written, filled for older messages with the newest version created at or before them (versions only go up; an undo is a new version). `Message` carries `version` (TRD §4.9, web `types.ts`).
+  - **History lines say their version.** The context's recent messages and the running summary's lines read "[v5] assistant: …", so an answer from before an edit reads as older to the router and the SQL step.
+  - **Add to Flow refuses an older answer.** `POST /messages/{mid}/pin` with `target: "flow"` answers `409` "This answer was worked out on version 3; the data is now version 5. Ask again to add the current numbers to Flow.", and `GET /chat` drops `add_to_flow` from an older answer's actions. An `answer` card's fact sheet is on the current version, so it can't hold an older version's numbers. Pinning a chart to the dashboard still works (the widget runs on the current version).
+  - **`update_widget` merges the draft into the widget's spec** (`answerers.merged_spec`): the query, the view and its x and y (or a KPI's value) change; the row predicate and selection, `inherit_global_filters`, the other columns and the other view options stay. Before, the draft rebuilt the spec and dropped them.
+  - **Selections are counted on the current version when read** (`widgets.service.selection_rows`): the chat context's words, `clean_selection`'s proposal and a cleaning plan's scope count the selection's usable rows now, not the stored `row_count` from the version it was made on (Schema §2.16 already said so).
+  - Tests: `tests/test_chat_versions.py` (an answer's version, Add to Flow refused after an edit and offered again on a new answer, the "[v1]" history lines in the route prompt, a widget's predicate, `inherit_global_filters` and a view option kept through "make it a pie chart", `merged_spec` for a KPI, a selection of four counted as three after an edit in the proposal and the plan's scope, and the migration's backfill on a database migrated up to 005).
+  - Docs: Schema §2.15 (`messages.version`) and §2.16 (as built); TRD §4.9 (`Message.version`, the pin refusal), §8.1 (history lines, `update_widget`, selections); App Flow §12 (Add to Flow); web `Message` type.
+  - BACKLOG: no line closes (A8, A14, A35 and A36 were audit findings). Added under "Chat answers … don't say which version": the thread shows no mark on an older answer yet.
+- **Decisions:**
+  - Add to Flow **refuses** rather than labels an older answer: a card labelled "from v3" would still sit on the canvas beside current cards, and the trust rule (slice 5) keeps non-`ready` cards out of other outputs anyway. Asking again costs one message.
+  - A message from before the migration whose time is before the file's first version keeps `version` NULL, and is treated as current (no refusal), since nothing says otherwise.
+- **Not pushed yet.** Ask eval with this row: **48/50**, 0 unsourced, median 10.2 s. Misses: "Which passengers paid more than 500?" (routed to `ask_data`, as in slice 12's runs) and "Units sold by product" (the query grouped by `product` without selecting it, so the table had no product names). Neither touches what this row changed, but a run below 49 isn't pushed: rerun the eval, then the full gate (pytest, vitest, e2e), before pushing. Targeted tests passed (`test_chat_versions.py`, `test_chat_actions.py`, `test_chat.py`, `test_db.py`, `test_canvas.py`: 37 passed).
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

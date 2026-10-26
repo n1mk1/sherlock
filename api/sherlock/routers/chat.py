@@ -74,7 +74,7 @@ def get_thread(
         params += [anchor["created_at"], anchor["created_at"], before]
     rows = db.execute(f"SELECT * FROM messages WHERE {where} ORDER BY created_at DESC, id DESC LIMIT ?",  # noqa: S608
                       (*params, limit)).fetchall()
-    return [to_message(r, db) for r in reversed(rows)]
+    return [to_message(r, db, dataset["current_version"]) for r in reversed(rows)]
 
 
 @router.post("/datasets/{dataset_id}/chat", dependencies=[Depends(llm_rate_limit)])

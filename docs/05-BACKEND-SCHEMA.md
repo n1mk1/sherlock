@@ -419,7 +419,8 @@ CREATE TABLE messages (
   proposal_id   TEXT,
   route_json    TEXT,                          -- the router output (debug/eval)
   tokens_used   INTEGER NOT NULL DEFAULT 0,
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  version       INTEGER                        -- the dataset version the message read (migration 006)
 );
 CREATE INDEX messages_dataset ON messages(dataset_id, created_at);
 
@@ -445,6 +446,7 @@ CREATE TABLE proposals (
 ```
 
 As built: `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection` (approving it opens the cleaning plan with that scope, §2.21); `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
+- `messages.version` (migration `006_message_version.sql`, plan 2b.4) is `datasets.current_version` when the message was written: the version an answer's queries ran on. The migration fills it for older messages with the newest version created at or before the message (versions only go up; an undo is a new version). The thread's history lines, Add to Flow and the `Message` response read it (TRD §8.1, §4.9).
 - Only `edit_cells` and `clean_selection` proposals are written. `card_edit` is not built (cut 2, Implementation Plan §2.0), and `clean_step` and `computed_column` are P1; approving another kind answers `422` (`agent/actions.py`). An approved `edit_cells` commits its step with `created_by = 'user'`, through the same save as the grid (`rows/edits.py`).
 
 ### 2.16 selections
@@ -463,6 +465,7 @@ CREATE TABLE selections (
 ```
 
 Selections referencing a version older than current are re-evaluated (predicates) or re-validated (ids still present) on use.
+- As built (plan 2b.4): `widgets.service.selection_rows` counts a selection's usable rows (its predicate or its IDs, quarantined rows left out) on the current version whenever chat's context, a `clean_selection` proposal or a cleaning plan's scope reads it; `row_count` stays the count when it was made.
 
 ### 2.17 value_index
 

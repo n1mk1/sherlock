@@ -525,6 +525,7 @@ As built (cuts 2 and 3 applied: no "take the story toward X", no direction cards
 - **Remember where I was.** The pan and zoom are kept per dataset in this browser. A canvas opened for the first time with nodes fits them in view; an empty one opens at 100%.
 - **Empty canvas.** "The canvas is empty", then how to add cards and notes, and that two selected cards can be made sense of.
 - **Chat.** "Make sense of this" with two or more cards selected writes a synthesis card and places it right of them with "summarized in" edges. A selected card that's outdated, or whose numbers no longer hold on this version, isn't cited, and the answer names it ("I left out … Refresh them to use them."); a question about the cards does the same. Deleting a card a synthesis cites shows "sources changed" on the synthesis. Any other question about the cards is answered from them, with **Add to Flow**. Add to Flow on any answer's text (any tab) makes an "Answer" card on the canvas with its numbers and their evidence.
+  - Only for an answer worked out on the current version: once an edit, an undo or a clean makes a new version, older answers lose Add to Flow, and an old button answers "This answer was worked out on version 3; the data is now version 5. Ask again to add the current numbers to Flow." (TRD §4.9).
 
 ---
 

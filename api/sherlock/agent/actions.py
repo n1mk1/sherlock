@@ -127,9 +127,11 @@ def _same(before, value: str | None) -> bool:
     return str(before) == value
 
 
-def propose_clean(db: sqlite3.Connection, dataset: sqlite3.Row, context: dict, message_id: str) -> dict:
+def propose_clean(env: ws.Env, dataset: sqlite3.Row, context: dict, message_id: str) -> dict:
     """`clean_selection`: Clean with AI on the selection (the context's, or the selected cells' rows),
-    else on the whole file. No model call until it's approved."""
+    else on the whole file. No model call until it's approved. The selection's rows are counted on the
+    current version (plan 2b.4)."""
+    db = env.db
     rows, _ = _selected(context)
     selection_id = context.get("selection_id")
     if not selection_id and rows:
@@ -138,10 +140,9 @@ def propose_clean(db: sqlite3.Connection, dataset: sqlite3.Row, context: dict, m
                    "VALUES (?, ?, ?, NULL, ?, ?, 'Selected in CSV', ?)",
                    (selection_id, dataset["id"], dataset["current_version"], json.dumps(rows), len(rows), now_iso()))
     if selection_id:
-        sel = db.execute("SELECT row_count FROM selections WHERE id = ? AND dataset_id = ?", (selection_id, dataset["id"])).fetchone()
-        if sel is None:
+        n = ws.selection_rows(env, dataset, selection_id)
+        if n is None:
             raise CantAnswer("That selection is gone; select the rows again.")
-        n = sel["row_count"]
         payload = {"summary": f"Clean with AI on the {n:,} selected {'row' if n == 1 else 'rows'}",
                    "scope": {"kind": "selection", "selection_id": selection_id}}
     else:

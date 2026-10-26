@@ -324,6 +324,8 @@ export interface Message {
   proposal?: Proposal;
   plan?: { steps: PlanStep[] };
   created_at: string;
+  /** The dataset version the message read (plan 2b.4); null for a message written before it was kept. */
+  version?: number | null;
 }
 
 // Server-sent events (TRD §5.1). Every event's data carries dataset_id.

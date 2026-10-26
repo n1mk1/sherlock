@@ -98,6 +98,10 @@ def add_to_flow(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqli
     blocks = json.loads(message["blocks_json"])
     if not 0 <= block_index < len(blocks):
         raise ApiError(422, "invalid", "block_index: no such block in this message")
+    if message["version"] is not None and message["version"] != dataset["current_version"]:
+        # Plan 2b.4: a card's numbers are on the current version, and this answer's are from an older one.
+        raise ApiError(409, "conflict", f"This answer was worked out on version {message['version']}; the data is now "
+                                        f"version {dataset['current_version']}. Ask again to add the current numbers to Flow.")
     block = blocks[block_index]
     if block["type"] != "text" or not _chips(block) or block.get("labeled") == "general":
         raise ApiError(422, "invalid", "Only an answer's text with its numbers can be added to Flow.")

@@ -119,16 +119,16 @@ def _plan_event(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row, 
     emit(db, request.app.state.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": plan_id})
 
 
-def plan_scope(db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
-    """A plan's stored scope with its row count, or None for the whole dataset."""
+def plan_scope(env: ws.Env, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
+    """A plan's stored scope with its row count (a selection's counted on the current version, plan 2b.4),
+    or None for the whole dataset."""
     if scope is None or scope.kind == "all":
         return None
     if scope.kind == "selection":
-        sel = db.execute("SELECT row_count FROM selections WHERE id = ? AND dataset_id = ?",
-                         (scope.selection_id or "", dataset["id"])).fetchone()
-        if sel is None:
+        rows = ws.selection_rows(env, dataset, scope.selection_id or "")
+        if rows is None:
             raise ApiError(422, "invalid", "scope: that selection isn't one of this CSV's")
-        return {"kind": "selection", "selection_id": scope.selection_id, "row_ids": None, "rows": sel["row_count"]}
+        return {"kind": "selection", "selection_id": scope.selection_id, "row_ids": None, "rows": rows}
     row_ids = sorted({int(i) for i in scope.row_ids}) if scope.row_ids else None
     return {"kind": "new_rows", "selection_id": None, "row_ids": row_ids, "rows": len(row_ids) if row_ids else None}
 
@@ -138,7 +138,7 @@ def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanSco
     given. Returns the `CleanPlan` and whether it was made now. Nothing is cleaned until Start."""
     if dataset["status"] not in PLANNABLE:
         raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; a cleaning plan can be made once that finishes.")
-    stored = plan_scope(db, dataset, scope)
+    stored = plan_scope(ws.Env(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, scope)
     card = lambda d: profile_service.get_or_build(app.state.settings, db, app.state.duckdb, d)  # noqa: E731
     existing = plans.draft_id(db, dataset["id"])
     if existing:

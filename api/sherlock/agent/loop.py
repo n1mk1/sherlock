@@ -70,12 +70,13 @@ STATS_WORDS = re.compile(r"\b(significan\w*|p[- ]?values?|statistic\w*|tests?|ch
                          r"associat\w*|differen\w*|compare|versus|vs|between)\b", re.I)
 
 
-def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> dict:
-    """A message in the TRD §4.9 `Message` shape (with its proposal when `db` is given)."""
+def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None, current_version: int | None = None) -> dict:
+    """A message in the TRD §4.9 `Message` shape (with its proposal when `db` is given). With the dataset's
+    `current_version`, an answer from an older version doesn't offer Add to Flow (plan 2b.4)."""
     out = {
         "id": row["id"], "role": row["role"], "text": row["text"], "blocks": json.loads(row["blocks_json"]),
         "sources": json.loads(row["sources_json"]), "created_at": row["created_at"],
-        "clarification_of": row["clarification_of"],
+        "clarification_of": row["clarification_of"], "version": row["version"],
     }
     if row["clarification_json"]:
         out["clarification"] = json.loads(row["clarification_json"])
@@ -83,12 +84,18 @@ def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> dict:
         out["plan"] = json.loads(row["plan_json"])
     focus = json.loads(row["focus_json"]) if row["focus_json"] else {}
     if focus.get("actions"):
-        out["actions"] = focus["actions"]
+        old = current_version is not None and row["version"] is not None and row["version"] < current_version
+        out["actions"] = [a for a in focus["actions"] if not (old and a.get("kind") == "add_to_flow")]
     if row["proposal_id"] and db is not None:
         p = db.execute("SELECT * FROM proposals WHERE id = ?", (row["proposal_id"],)).fetchone()
         if p:
             out["proposal"] = acts.to_proposal(p)
     return out
+
+
+def history_line(row: sqlite3.Row) -> str:
+    """A history line's prefix: the version the message was written on, then its role ("[v5] assistant")."""
+    return f"[v{row['version']}] {row['role']}" if row["version"] is not None else row["role"]
 
 
 def example_question(card: dict) -> str:
@@ -130,12 +137,13 @@ class Agent:
               clarification=None, clarification_of=None, route=None, tokens=0, plan=None, proposal_id=None) -> dict:
         self.db.execute(
             "INSERT INTO messages (id, dataset_id, role, text, blocks_json, sources_json, context_json, focus_json, "
-            "clarification_json, clarification_of, route_json, tokens_used, plan_json, proposal_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "clarification_json, clarification_of, route_json, tokens_used, plan_json, proposal_id, created_at, version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (mid, self.dataset["id"], role, text, json.dumps(list(blocks), default=str), json.dumps(list(sources)),
              json.dumps(context) if context is not None else None, json.dumps(focus, default=str) if focus else None,
              json.dumps(clarification) if clarification else None, clarification_of,
-             json.dumps(route) if route else None, tokens, json.dumps(plan) if plan else None, proposal_id, now_iso()),
+             json.dumps(route) if route else None, tokens, json.dumps(plan) if plan else None, proposal_id, now_iso(),
+             self.dataset["current_version"]),
         )
         return to_message(self.db.execute("SELECT * FROM messages WHERE id = ?", (mid,)).fetchone(), self.db)
 
@@ -157,8 +165,9 @@ class Agent:
         if context.get("selection_id"):
             scope.selection_id = context["selection_id"]
             scope.selection = ws.selection_sql(self.db, self.dataset["id"], context["selection_id"])
-            n = self.db.execute("SELECT row_count, label FROM selections WHERE id = ?", (context["selection_id"],)).fetchone()
-            words.append(f"the selection {n['label'] or ''} ({n['row_count']} rows)".replace("  ", " "))
+            n = self.db.execute("SELECT label FROM selections WHERE id = ?", (context["selection_id"],)).fetchone()
+            count = ws.selection_rows(self.env, self.dataset, context["selection_id"])  # on this version (plan 2b.4)
+            words.append(f"the selection {n['label'] or ''} ({count} rows)".replace("  ", " "))
         if context.get("global_filter"):
             scope.global_filter = wc.filter_sql(wc.parse_filter(context["global_filter"]), types)
             if scope.global_filter:
@@ -188,7 +197,8 @@ class Agent:
         summary = self.db.execute("SELECT summary FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
         if summary:
             parts.append("Earlier in this conversation (a summary):\n" + fence(summary["summary"]))
-        recent = [f"{r['role']}: {r['text'][:300]}" for r in history if r["text"]]
+        # Each line says the version it was written on, so an answer from before an edit reads as older (plan 2b.4).
+        recent = [f"{history_line(r)}: {r['text'][:300]}" for r in history if r["text"]]
         if recent:
             parts.append("Recent messages:\n" + fence("\n".join(recent)))
         return "\n\n".join(parts)
@@ -401,7 +411,7 @@ class Agent:
                         raise CantAnswer("One change at a time: approve or reject the proposal above first.")
                     self.emit("status", {"text": "Working out the change"})
                     proposal = (acts.propose_edits(kit, q, context, types) if intent == "edit_cells"
-                                else acts.propose_clean(self.db, dataset, context, mid))
+                                else acts.propose_clean(self.env, dataset, context, mid))
                     self.emit("proposal", proposal)
                     blocks.append(text_block([{"type": "text", "text": "Nothing has changed yet. Approve to apply this, "
                                                "or reject it." if intent == "edit_cells" else
@@ -555,11 +565,11 @@ class Agent:
         row = self.db.execute("SELECT * FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
         after = row["up_to_message_id"] if row else ""
         older = self.db.execute(
-            "SELECT id, role, text FROM messages WHERE dataset_id = ? AND id > ? ORDER BY created_at, id",
+            "SELECT id, role, text, version FROM messages WHERE dataset_id = ? AND id > ? ORDER BY created_at, id",
             (self.dataset["id"], after)).fetchall()[:-HISTORY]  # the latest six stay in the context as they are
         if len(older) < SUMMARY_EVERY:
             return
-        lines = "\n".join(f"{m['role']}: {m['text'][:300]}" for m in older)
+        lines = "\n".join(f"{history_line(m)}: {m['text'][:300]}" for m in older)
         prompt = prompts.SUMMARY.format(previous=fence(row["summary"] if row else "none"), messages=fence(lines))
         try:
             c = self.llm.complete("small", [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": prompt}],

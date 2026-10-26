@@ -72,6 +72,17 @@ def selection_sql(db: sqlite3.Connection, dataset_id: str, selection_id: str) ->
     return sel["predicate"] or "1=1"
 
 
+def selection_rows(env: Env, dataset: sqlite3.Row, selection_id: str) -> int | None:
+    """How many usable rows a selection holds on the current version, counted when it's read (Schema §2.16,
+    plan 2b.4): its stored `row_count` is from the version it was made on, and an edit, an undo or a clean
+    since then can change it. None when the selection isn't this CSV's."""
+    if env.db.execute("SELECT 1 FROM selections WHERE id = ? AND dataset_id = ?", (selection_id, dataset["id"])).fetchone() is None:
+        return None
+    where = wc.rows_clause(None, selection_sql(env.db, dataset["id"], selection_id), None)
+    with connection(env, dataset, dataset["current_version"]) as conn:
+        return conn.execute(f"SELECT count(*) FROM t WHERE {where}").fetchone()[0]  # noqa: S608 - validated SQL
+
+
 def compiled(env: Env, dataset: sqlite3.Row, spec: dict, version: int, filters: list[dict]) -> str:
     """The exact SQL a SQL widget runs on `version` under the global filter."""
     if spec["op"]["type"] != "sql":
