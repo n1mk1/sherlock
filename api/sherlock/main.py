@@ -42,20 +42,20 @@ def _db_status(settings: Settings) -> dict:
         return {"ok": False, "schema_version": None}
 
 
-def _app_logging() -> None:
-    """The app's own INFO lines (`sherlock.*`: new users, job re-queues, repairs) next to uvicorn's.
+def _app_logging(level: str) -> None:
+    """The app's own lines (`sherlock.*`: new users, job re-queues, repairs) next to uvicorn's, at `LOG_LEVEL`.
     Without a handler they'd fall through to the root logger's WARNING level and be dropped."""
     root = logging.getLogger("sherlock")
     if not root.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
         root.addHandler(handler)
-        root.setLevel(logging.INFO)
+    root.setLevel(level.upper())
 
 
 def create_app() -> FastAPI:
-    _app_logging()
     settings = get_settings()
+    _app_logging(settings.log_level)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
         return {
             "ok": db["ok"] and storage.get("writable", False) and storage.get("sqlite_lock", False),
             "version": __version__,
+            "commit": settings.git_commit[:12] or None,
             "db": db,
             "storage": storage,
             "llm": {"reachable": app.state.llm_reachability.check()},

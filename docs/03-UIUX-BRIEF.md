@@ -395,7 +395,7 @@ As built (`LibraryPanel.tsx`, `StoriesPanel.tsx`): a `building` row shows the sa
 
 Drop zone: 2px dashed `--border-strong`, radius 16, 320px tall, icon `upload`, "Drop a CSV anywhere", "or" divider, Upload (secondary) and "Try with sample (Titanic)" (secondary). Below, the one-sentence pitch in `--muted-foreground`. On drag-over: dashed border becomes `--accent`, fill `--accent-soft`.
 
-As built (`EmptyLibrary.tsx`, `DropOverlay.tsx`): the zone is at most 640px wide, with the title in the 32px serif and a 12px line ".csv, .tsv or .txt · up to 50 MB" under the buttons. A file dragged over any screen raises a full-window overlay, which gives the drag-over look: a dashed `--accent` border, `--accent-soft` fill and "Drop to import".
+As built (`EmptyLibrary.tsx`, `DropOverlay.tsx`): the zone is at most 640px wide, with the title in the 32px serif and a 12px line ".csv, .tsv or .txt · up to 50 MB" under the buttons, then a 12px muted line: "No sign-up: your CSVs stay with this browser. Clearing its cookies, or another browser, starts an empty library." A file dragged over any screen raises a full-window overlay, which gives the drag-over look: a dashed `--accent` border, `--accent-soft` fill and "Drop to import".
 
 ### 5.2 Import preview dialog
 

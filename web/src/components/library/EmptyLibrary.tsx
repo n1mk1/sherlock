@@ -18,6 +18,9 @@ export function EmptyLibrary() {
           <SampleButton label="Try with sample (Titanic)" />
         </div>
         <p className="text-[12px] text-muted-foreground">.csv, .tsv or .txt · up to 50 MB</p>
+        <p className="max-w-[440px] px-4 text-center text-[12px] text-muted-foreground">
+          No sign-up: your CSVs stay with this browser. Clearing its cookies, or another browser, starts an empty library.
+        </p>
       </div>
       <p className="max-w-[520px] text-center font-serif text-[18px] leading-snug text-foreground-2">
         Sherlock cleans it, charts it, models it, and tells you what it means. Every number shows its source.

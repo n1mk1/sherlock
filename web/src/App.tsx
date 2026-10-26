@@ -5,6 +5,7 @@ import { ThemeSync } from "@/app/ThemeSync";
 import { DatasetPage, DatasetRedirect } from "@/components/dataset/DatasetPage";
 import { Home } from "@/components/library/Home";
 import { AppShell } from "@/components/shell/AppShell";
+import { StartupError } from "@/components/shell/StartupError";
 
 export function App() {
   // A first visit has no identity cookie yet: `GET /me` creates the user and sets it. Nothing else asks
@@ -12,6 +13,7 @@ export function App() {
   // library's event stream would listen to a different user than the cookie the browser keeps.
   const me = useMe();
   if (!me.data && !me.isError) return <ThemeSync />;
+  if (!me.data) return <StartupError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />;
   return (
     <>
       <ThemeSync />

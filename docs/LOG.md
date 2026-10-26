@@ -482,3 +482,19 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - **The deadline:** `CallScope.deadline` bounds attempts, the HTTP timeout and retry waits (`DeadlineExceeded`, "This answer ran out of time."). A chat message's scope gets `started + 90 s`; a step that hits it ends the plan with the usual "I stopped early" note and compose still runs on what was found.
   - Tests: 20 threads per role through per-call clients never pass 2 (large) or 6 (medium) in flight; `Retry-After: 3` waits 3 s; a 400 makes one call and raises `LLMRequestError`; `OpenAITransport` maps a 429 (with its header), a 400 and a 503; the deadline stops at 40 s of a 40 s budget and a passed deadline makes no call; a chat message with no time left makes no model call. The two exact-backoff tests inject the jitter.
   - Docs: TRD §3.5, §4 (error codes), §8.1 (budgets as built), §10 (the three settings) and `.env.example`. BACKLOG §6's Day 2 list no longer names the 4xx and `OpenAITransport` cases.
+
+## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
+
+The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.
+
+- **Cause:** every request without a cookie got `429` "Too many new visitors from your network". Render's logs showed a `new user: ip <hash>, 2 forwarded hop(s)` line every 5.3 s, all `GET /api/v1/me` and all one hash, which was the hash of the owner's own public IP. Two background shells left by earlier Claude Code sessions were still running on the owner's machine: one (since 2026-10-24 22:21 local) looped `until curl …/api/v1/me … && [ now -gt now ]; do sleep 5; done`, whose second test can never pass, so it made a new user every 5 s for about 27 hours and kept that IP's window at the 300 cap; the other waited forever for `"boots":2x` in `/healthz` (boots is past 40). Both were stopped, and a fresh browser profile loaded the library at once. The Day 9 refusals (D9 H1) fit the same loop, which was running then; the logs show the cap keys on each visitor's own IP, so that backlog line is gone.
+- **Done:**
+  - Purge (Schema §6): users with no dataset at all, unseen for 24 h, are deleted, which also clears the loop's users; Cleaner work folders under `/data/.clean/` older than an hour are deleted unless their job is queued or running. `tests/test_purge.py` covers both.
+  - The web app shows a refused first visit as a whole page ("Sherlock can't open a new workspace yet", the server's message, Try again), and any other failure of `GET /me` as "Sherlock couldn't start", instead of an app shell where every request fails. `useMe` doesn't retry a `429` (`StartupError.tsx`; `App.test.tsx`).
+  - The empty library says that CSVs stay with the browser (App Flow §18's small print, which wasn't built).
+  - `/healthz` reports `commit`, from `GIT_COMMIT` or Render's `RENDER_GIT_COMMIT`, so a deploy by hand can check that the new build is serving (D9 F13). `LOG_LEVEL` now sets the `sherlock.*` loggers' level.
+  - The notebook's requirements cell says how to get pip into a uv venv (D9 F14).
+  - Dropped `@radix-ui/react-tooltip` and `@visx/gradient`, which nothing imported; `THIRD_PARTY.md` lists what the web dependencies install, by license (D9 F11).
+  - README and TRD §11: the deploy check compares `commit` with `main`, and says to poll `/healthz`, not `/api/…`, from scripts.
+- **Decision:** 24 h for an empty workspace matches the other purge ages. A visitor who comes back later with no CSV loses only their settings.
+- **How it was done:** in a separate worktree (`sherlock-cleanup`, branch `cleanup`), because another session was committing to `main` in the main checkout at the same time; the branch was rebased onto `main` and fast-forwarded in.

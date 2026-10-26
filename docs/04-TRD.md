@@ -2009,7 +2009,8 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; kept equal to the API's own pins (check on day 1) |
 | `CORS_ORIGINS` | empty | local dev only; production serves the web app from the API origin |
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
-| `LOG_LEVEL` | `info` | Not applied yet: `config.py` declares it but nothing uses it; the `sherlock.*` loggers always log at INFO (`main._app_logging`), and uvicorn keeps its own level |
+| `LOG_LEVEL` | `info` | the level of the `sherlock.*` loggers (`main._app_logging`); a name Python's `logging` doesn't know fails startup. uvicorn keeps its own level |
+| `GIT_COMMIT` | empty | the deployed commit, reported by `/healthz` as `commit` (first 12 characters). Falls back to `RENDER_GIT_COMMIT`, which Render sets on every deploy, so it needs no setting there |
 
 Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` `sync: false`, so it's entered in the dashboard and never stored in the repo.
 
@@ -2029,7 +2030,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
       1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
       2. Push to `main`.
       3. Trigger a deploy of service `srv-dbeiuafb9u1s739sfht0`, from the Render dashboard's "Manual Deploy" or the Render API.
-      4. Check `/healthz` and that the site serves the new build.
+      4. Check `/healthz`: `ok` is true and `commit` is the head of `main` (`git rev-parse --short=12 main`), so the new build is the one serving.
     - `render.yaml` keeps `checksPass`, so automatic deploys come back on their own once CI runs again.
   - **Exit check.** The `/data` check below runs the same way on Render: a redeploy restarts the container on the same disk.
     - **Passed** for service `sherlock` (`srv-dbeiuafb9u1s739sfht0`, https://sherlock-anw3.onrender.com):
@@ -2038,7 +2039,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
       - A cookie user and its saved `accent` survived, and no new cookie was issued.
       - The cookie carries `Secure` behind Render's HTTPS.
     - A deploy comes up about 80 s after its build starts. A request during the cutover can get a Render `502` page, as expected with no zero-downtime deploys when a disk is attached.
-- **Nebius Serverless Endpoint (alternative)**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
+- **Nebius Serverless Endpoint (alternative)**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, commit, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below, and `commit` is the deployed commit's first 12 characters, or `null` when the host doesn't say (`GIT_COMMIT`, §10). After a deploy by hand, `commit` equal to `main`'s head is the check that the new build is live).
 - **Availability through judging**: the deployment, its paid Render plan, its Token Factory key and enough Token Factory credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.
   - Not built yet: there is no `sherlock.jobs.run` module, and `JOB_BACKEND` isn't read (§10). Every job runs in the API process's job runner (§3.1).
@@ -2078,7 +2079,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 
 - Structured JSON logs (request id, user id, dataset id, job id, duration). LLM calls to `llm_calls`; sandbox runs to `sandbox_runs`.
 - `GET /healthz` and `GET /metrics` (counts of jobs by status, LLM error rate, p95 latencies) for the demo day.
-- As built: the logs are plain text, not JSON. The `sherlock.*` loggers write `LEVEL: logger: message` lines to stderr at INFO (`main._app_logging`), and uvicorn writes its access log. Each response carries its request ID in `X-Request-ID`, and an error body in `request_id`; log lines don't carry it (`errors.RequestIdMiddleware`). `GET /metrics` is not built yet; the same figures can be read from `jobs` and `llm_calls`. `/healthz` is built (§11).
+- As built: the logs are plain text, not JSON. The `sherlock.*` loggers write `LEVEL: logger: message` lines to stderr at `LOG_LEVEL` (default INFO; `main._app_logging`), and uvicorn writes its access log. Each response carries its request ID in `X-Request-ID`, and an error body in `request_id`; log lines don't carry it (`errors.RequestIdMiddleware`). `GET /metrics` is not built yet; the same figures can be read from `jobs` and `llm_calls`. `/healthz` is built (§11).
 - Error policy: every exception is caught at the router boundary → `error` response with a request id; pipelines record failures on the job and continue to a clean end state (partial report, dashboard from what exists).
 - Client: an error boundary per panel; network errors show a toast with Retry; SSE reconnects with backoff.
 
@@ -2167,7 +2168,10 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **New users per client IP** (owner's decision). `IdentityMiddleware` admits at most `NEW_USERS_PER_IP_HOUR` (default 300) new users per client IP in a sliding hour, in memory (one process).
   - A request that would create one past the cap gets `429 rate_limited` with `Retry-After`. Existing cookies are never capped.
   - The client IP is the `X-Forwarded-For` entry just before the `TRUSTED_PROXY_HOPS` entries the host's own proxies append (default 1, for Render). Render appends to whatever the client sends, so the first entry can be forged, and a plain request reaches the app with two entries, the client and then a Render proxy whose address varies, so the last entry would group unrelated visitors by proxy node. A forged entry sent before the client's is ignored. With no more entries than that, it's the first one; with no header, the socket's peer (`identity.client_ip`).
-  - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's. The `sherlock.*` loggers get a stderr handler at INFO in `create_app`.
+  - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's. The `sherlock.*` loggers get a stderr handler at `LOG_LEVEL` (INFO by default) in `create_app`.
+  - Checked live: every new user arrives with two hops, and the logged hash is the visitor's own public IP, so visitors don't share a proxy's bucket.
+  - The web app shows a refused first visit as a whole-page screen ("Sherlock can't open a new workspace yet", the server's message, Try again) instead of an app shell whose every request fails, and doesn't retry a `429` on `/me` (`StartupError.tsx`, `useMe`).
+  - Every cookie-less request that gets through makes a user, so the purge deletes users with no datasets after 24 h unseen (Schema §6).
   - 300 an hour leaves room for judges behind one office network and for repeated private-window tests. The app-wide token ceiling (§3.5) bounds the cost either way.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).
   - Every name, title, label, error and value from the file, the user or a web page is fenced with `fence()`, which defuses every spelling of a data tag (§3.5); `tests/test_prompt_hygiene.py` runs a malicious file through every prompt builder.

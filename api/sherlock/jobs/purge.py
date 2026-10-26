@@ -4,8 +4,11 @@
 1. Hard-delete datasets, widgets and cards soft-deleted more than 10 minutes ago (a dataset's files too).
 2. Soft-delete datasets past `expires_at`; the next pass hard-deletes them.
 3. Delete `job_events` and `widget_cache` rows older than 24 h, and exports (rows and files) older than 24 h.
-4. Delete sandbox temp directories older than 1 h.
-5. Recompute each dataset's `folder_bytes` and each user's `storage_bytes` (every dataset still on disk,
+4. Delete sandbox temp directories older than 1 h, and Cleaner work folders (`.clean/<job_id>`) older than
+   1 h whose job isn't queued or running.
+5. Delete empty workspaces: users with no dataset at all who haven't been seen for 24 h. A browser that
+   drops its cookie, or a script that calls the API without one, makes a new user on every request.
+6. Recompute each dataset's `folder_bytes` and each user's `storage_bytes` (every dataset still on disk,
    soft-deleted ones included).
 
 `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend report read them.
@@ -16,6 +19,7 @@ import shutil
 import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sherlock.config import Settings
 from sherlock.db.util import now_iso
@@ -28,6 +32,7 @@ GRACE_S = 600
 EVENTS_TTL_S = 24 * 3600
 EXPORTS_TTL_S = 24 * 3600
 SANDBOX_TTL_S = 3600
+IDLE_USER_TTL_S = 24 * 3600
 # Tables keyed by dataset without a cascading foreign key (Schema §2): cleared with the dataset.
 LOOSE_TABLES = ("lineage", "user_edited_cells", "issues", "widget_cache", "fact_sheets", "relations", "job_events",
                 "thread_summaries", "proposals", "value_index")
@@ -46,11 +51,27 @@ def hard_delete_dataset(settings: Settings, db: sqlite3.Connection, cache: Versi
     db.execute("DELETE FROM datasets WHERE id = ?", (row["id"],))  # versions, steps, widgets, cards… cascade
 
 
+def _remove_old_dirs(root: Path, cutoff: float, keep: set[str] | frozenset[str] = frozenset()) -> int:
+    """Delete the folders under `root` last modified before `cutoff`, except those named in `keep`."""
+    removed = 0
+    if not root.is_dir():
+        return removed
+    for d in root.iterdir():
+        try:
+            if d.is_dir() and d.name not in keep and d.stat().st_mtime < cutoff:
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections | None, progress=lambda *_: None) -> dict:
-    counts = {"datasets": 0, "expired": 0, "widgets": 0, "cards": 0, "events": 0, "cache": 0, "exports": 0, "sandbox_dirs": 0}
+    counts = {"datasets": 0, "expired": 0, "widgets": 0, "cards": 0, "events": 0, "cache": 0, "exports": 0, "sandbox_dirs": 0,
+              "clean_dirs": 0, "users": 0}
     grace = _ago(GRACE_S)
 
-    progress(1, 5, "Removing deleted CSVs")
+    progress(1, 6, "Removing deleted CSVs")
     for row in db.execute("SELECT id, user_id FROM datasets WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,)).fetchall():
         hard_delete_dataset(settings, db, cache, row)
         counts["datasets"] += 1
@@ -63,11 +84,11 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
     counts["widgets"] = len(gone)
     counts["cards"] = db.execute("DELETE FROM cards WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,)).rowcount
 
-    progress(2, 5, "Expiring old CSVs")
+    progress(2, 6, "Expiring old CSVs")
     counts["expired"] = db.execute("UPDATE datasets SET deleted_at = ? WHERE deleted_at IS NULL AND expires_at < ?",
                                    (now_iso(), now_iso())).rowcount
 
-    progress(3, 5, "Clearing old events, caches and exports")
+    progress(3, 6, "Clearing old events, caches and exports")
     counts["events"] = db.execute("DELETE FROM job_events WHERE created_at < ?", (_ago(EVENTS_TTL_S),)).rowcount
     counts["cache"] = db.execute("DELETE FROM widget_cache WHERE created_at < ?", (_ago(EVENTS_TTL_S),)).rowcount
     for e in db.execute("SELECT e.id, e.path, d.user_id, d.id AS dataset_id FROM exports e JOIN datasets d ON d.id = e.dataset_id "
@@ -77,19 +98,18 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
         db.execute("DELETE FROM exports WHERE id = ?", (e["id"],))
         counts["exports"] += 1
 
-    progress(4, 5, "Clearing sandbox temp folders")
-    root = sandbox_root(settings)
-    if root.is_dir():
-        cutoff = time.time() - SANDBOX_TTL_S
-        for d in root.iterdir():
-            try:
-                if d.is_dir() and d.stat().st_mtime < cutoff:
-                    shutil.rmtree(d, ignore_errors=True)
-                    counts["sandbox_dirs"] += 1
-            except OSError:
-                continue
+    progress(4, 6, "Clearing temp folders")
+    cutoff = time.time() - SANDBOX_TTL_S
+    counts["sandbox_dirs"] = _remove_old_dirs(sandbox_root(settings), cutoff)
+    # A stopped or crashed clean leaves its work folder behind (cleaning/loop.py); a live one keeps it.
+    live = {r["id"] for r in db.execute("SELECT id FROM jobs WHERE kind = 'clean' AND status IN ('queued', 'running')")}
+    counts["clean_dirs"] = _remove_old_dirs(settings.data_dir / ".clean", cutoff, keep=live)
 
-    progress(5, 5, "Recounting storage")
+    progress(5, 6, "Removing empty workspaces")
+    counts["users"] = db.execute("DELETE FROM users WHERE last_seen_at < ? AND NOT EXISTS "
+                                 "(SELECT 1 FROM datasets d WHERE d.user_id = users.id)", (_ago(IDLE_USER_TTL_S),)).rowcount
+
+    progress(6, 6, "Recounting storage")
     for row in db.execute("SELECT id, user_id FROM datasets").fetchall():
         db.execute("UPDATE datasets SET folder_bytes = ? WHERE id = ?",
                    (folder_bytes(dataset_dir(settings, row["user_id"], row["id"])), row["id"]))

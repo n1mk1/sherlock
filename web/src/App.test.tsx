@@ -24,6 +24,19 @@ describe("App shell", () => {
     expect(paths()).toContain("/api/v1/datasets");
   });
 
+  it("shows the new-visitor cap as its own screen, and Try again opens the app once it lifts", async () => {
+    let calls = 0;
+    const limited = () => new Response(JSON.stringify({ error: {
+      code: "rate_limited", message: "Too many new visitors from your network. Try again in 2 minutes." } }), { status: 429 });
+    mockApi({ "GET /api/v1/me": () => (++calls === 1 ? limited() : ME), "GET /api/v1/datasets": [] });
+    renderAt(<App />);
+    expect(await screen.findByRole("heading", { name: "Sherlock can't open a new workspace yet" })).toBeInTheDocument();
+    expect(screen.getByText("Too many new visitors from your network. Try again in 2 minutes.")).toBeInTheDocument();
+    expect(calls).toBe(1); // a 429 isn't retried behind the user's back
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("heading", { name: "Drop a CSV anywhere" })).toBeInTheDocument();
+  });
+
   it("shows the empty library with Upload and Try with sample", async () => {
     mockApi({ "GET /api/v1/me": ME, "GET /api/v1/datasets": [] });
     renderAt(<App />);

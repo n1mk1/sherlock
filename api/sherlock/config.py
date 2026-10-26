@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The repo-root .env, so `uv run` from api/ and `docker compose` read the same file.
@@ -80,6 +81,8 @@ class Settings(BaseSettings):
     )
     cors_origins: str = ""
     log_level: str = "info"
+    # The deployed commit, reported by /healthz. Render sets RENDER_GIT_COMMIT on every deploy.
+    git_commit: str = Field("", validation_alias=AliasChoices("GIT_COMMIT", "RENDER_GIT_COMMIT"))
     # The built web app, served under / from the API origin (TRD §11). Empty in local dev (Vite serves it).
     web_dist_dir: Path | None = None
 

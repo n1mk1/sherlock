@@ -87,7 +87,10 @@ def parameters(data_file: str, include_data: bool) -> list:
 
 def requirements(pins: str) -> list:
     packages = " ".join(p.strip() for p in pins.split(",") if p.strip())
-    return [new_code_cell(f"# The library versions Sherlock used.\n%pip install -q {packages}\n",
+    return [new_code_cell("# The library versions Sherlock used.\n"
+                          "# %pip needs pip in this kernel's environment. In a uv venv, make it with `uv venv --seed`,\n"
+                          "# or install these with `uv pip install` in a terminal and skip this cell.\n"
+                          f"%pip install -q {packages}\n",
                           metadata={"tags": ["requirements"]})]
 
 

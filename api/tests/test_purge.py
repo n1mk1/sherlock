@@ -81,6 +81,26 @@ def test_purge_drops_old_deleted_widgets_and_cards_and_old_exports(client):
     assert not db_rows("SELECT 1 FROM exports WHERE id = 'exp_old'")
 
 
+def test_purge_drops_idle_empty_workspaces_and_left_over_cleaning_folders(client):
+    settings = get_settings()
+    ds = upload(client, b"a,b\n1,2\n")["id"]
+    owner = db_rows("SELECT user_id FROM datasets WHERE id = ?", ds)[0]["user_id"]
+    for uid, seen in (("usr_idle", ago(90000)), ("usr_recent", ago(60))):  # a cookie-less visitor a day ago, one just now
+        db_rows("INSERT INTO users (id, cookie_token, created_at, last_seen_at) VALUES (?, ?, ?, ?)", uid, uid, seen, seen)
+    db_rows("UPDATE users SET last_seen_at = ? WHERE id = ?", ago(90000), owner)  # idle too, but has a CSV
+    work = settings.data_dir / ".clean"
+    for name in ("job_crashed", "job_live"):
+        (work / name).mkdir(parents=True)
+        os.utime(work / name, (time.time() - 7200, time.time() - 7200))
+    db_rows("INSERT INTO jobs (id, dataset_id, user_id, kind, status, created_at) VALUES ('job_live', ?, ?, 'clean', 'running', ?)",
+            ds, owner, now_iso())
+
+    counts = run_purge()
+    assert counts["users"] == 1 and counts["clean_dirs"] == 1
+    assert {r["id"] for r in db_rows("SELECT id FROM users")} == {owner, "usr_recent"}
+    assert not (work / "job_crashed").exists() and (work / "job_live").is_dir()
+
+
 def test_the_runner_queues_one_purge_at_a_time(client):
     runner = client.app.state.jobs
     assert runner._queue_purge() is True
