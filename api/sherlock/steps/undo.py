@@ -22,6 +22,16 @@ from sherlock.steps.replay import ReplayError, replay
 from sherlock.storage import dataset_dir, dataset_lock, folder_bytes
 
 
+def undo_impact(rows_in: int, rows_out: int, diff) -> dict:
+    """An undo's impact, all of it from the diff of the two versions (plan 2b.3): rows it quarantines
+    again (undoing a restore) and rows it restores (undoing a quarantine) count, so the cascade sees
+    that every widget's rows changed."""
+    restored = sum(1 for r in diff.lineage if r[1] == "_row" and r[3] == "restored")
+    return {"rows_in": rows_in, "rows_out": rows_out, "cells_changed": diff.cells_changed, "quarantined": diff.quarantined,
+            "rows_restored": restored, "parse_failures": 0, "rows_added": len(diff.added_row_ids),
+            "rows_deleted": len(diff.deleted_row_ids), "before_after": diff.before_after}
+
+
 def is_typing_step(step) -> bool:
     return step["kind"] == "clean" and step["created_by"] == "system"
 
@@ -85,11 +95,7 @@ def undo_step(ctx: Context, dataset_id: str, step_id: str, base_version: int, co
         undo_id = new_id("stp")
         number = db.execute("SELECT coalesce(max(no), 0) + 1 FROM steps WHERE dataset_id = ?", (dataset_id,)).fetchone()[0]
         diff = diff_versions(folder / current["parquet_path"], folder / parquet)
-        impact = {
-            "rows_in": current["row_count"], "rows_out": row_count, "cells_changed": diff.cells_changed,
-            "quarantined": 0, "parse_failures": 0, "rows_added": len(diff.added_row_ids),
-            "rows_deleted": len(diff.deleted_row_ids), "before_after": diff.before_after,
-        }
+        impact = undo_impact(current["row_count"], row_count, diff)
         summary = f"Undid step {target['no']}: {target['summary']}"
         if replay_nos:
             summary += f" (replayed {_nos(replay_nos)})"

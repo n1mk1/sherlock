@@ -30,6 +30,8 @@ from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobContext, insert_job, register
 
 DEBOUNCE_S = 2.0
+# Impact fields that mean a step changed which rows there are, so every widget is affected.
+ROWS_CHANGED = ("rows_added", "rows_deleted", "quarantined", "rows_restored")
 
 
 def queue_cascade(db: sqlite3.Connection, dataset: sqlite3.Row, reason: str = "version") -> None:
@@ -70,7 +72,7 @@ def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -
             if r["kind"] == "clean" and r["created_by"] == "system":
                 everything = True  # typing (or undoing it) changes column types
             impact = json.loads(r["impact_json"])
-            if impact.get("rows_added") or impact.get("rows_deleted") or impact.get("quarantined"):
+            if any(impact.get(k) for k in ROWS_CHANGED):
                 everything = True
             if r["edits_json"] and json.loads(r["edits_json"]).get("restore_row_ids"):
                 everything = True
@@ -78,7 +80,9 @@ def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -
             u = db.execute("SELECT * FROM steps WHERE id = ?", (s["undone_step_id"],)).fetchone()
             cols.update(json.loads(u["column_targets_json"]))
             impact = json.loads(u["impact_json"])
-            if impact.get("rows_added") or impact.get("rows_deleted") or impact.get("quarantined") \
+            # Undoing a restore quarantines those rows again (plan 2b.3), like undoing any change of rows.
+            restored = bool(u["edits_json"] and json.loads(u["edits_json"]).get("restore_row_ids"))
+            if any(impact.get(k) for k in ROWS_CHANGED) or restored \
                     or json.loads(u["columns_added_json"]) or json.loads(u["columns_removed_json"]) \
                     or (u["kind"] == "clean" and u["created_by"] == "system"):
                 everything = True
@@ -115,17 +119,23 @@ def _cascade(ctx: JobContext) -> dict:
         return memo[v]
 
     outdated_runs = set(ml.outdate(ctx.db, ctx.bus, dataset, since_version, ctx.id))
+    # A run already outdated (under Ask first) is still out of date: its widgets stay affected, so they
+    # re-run once the user switches to Automatic (plan 2b.3).
+    stale_runs = outdated_runs | {r["id"] for r in ctx.db.execute(
+        "SELECT id FROM runs WHERE dataset_id = ? AND status = 'outdated'", (dataset["id"],))}
+    columns = list(widgets.user_types(env, dataset, version))
     user = users.get(ctx.db, dataset["user_id"])
     ask = effective_settings(user.settings if user else {}).story_updates == "ask"
     affected = []
     for r in stale:
         spec = json.loads(r["spec_json"])
         if spec["op"]["type"] == "ml":
-            if r["run_id"] in outdated_runs:
+            if r["run_id"] in stale_runs:
                 affected.append(r)
             continue
         try:
-            deps = set(fx.depends_on(spec, widgets.compiled(env, dataset, spec, version, []))) if spec["op"]["type"] == "sql" else set()
+            deps = set(fx.depends_on(spec, widgets.compiled(env, dataset, spec, version, []), columns=columns)) \
+                if spec["op"]["type"] == "sql" else set()
         except ApiError:
             deps, everything_for_it = set(), True
         else:
@@ -176,6 +186,9 @@ def _cascade(ctx: JobContext) -> dict:
     told = {"cards": 0}
     with_cards = [r["id"] for r in affected
                   if ctx.db.execute("SELECT 1 FROM cards WHERE widget_id = ? AND deleted_at IS NULL", (r["id"],)).fetchone()]
+    if ctx.params.get("reason") == "settings" and not ask:  # switched to Automatic: tell the cards left outdated
+        with_cards += [r["id"] for r in rows if r["id"] not in with_cards and ctx.db.execute(
+            "SELECT 1 FROM cards WHERE widget_id = ? AND deleted_at IS NULL AND status = 'outdated'", (r["id"],)).fetchone()]
     if with_cards:
         ctx.progress(len(stale) + 1, len(stale) + 1, f"Updating {len(with_cards)} {'story' if len(with_cards) == 1 else 'stories'}")
         scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,

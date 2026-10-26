@@ -840,6 +840,21 @@ Built in the `chat-checks` worktree, in parallel with the other streams (the own
   - Tier 2 rows run in parallel across sessions now, not strictly 2b.1 → 2b.10 (the owner asked for parallel work; `.claude/plans/parallel.md`).
   - Moved numbers make an answer card `outdated` rather than updating it silently: its words were written by the model about the old numbers and aren't re-composed. Refresh is the user taking the new numbers, and the changed badge says so.
 
+### Tier 2 row 2b.3: change-detection gaps
+
+- **Done:**
+  - **Undo impact from the diff** (A3): `undo.undo_impact` takes every count from `diff_versions`, including rows quarantined again (undoing a restore) and the new `rows_restored` (undoing a quarantine); it said `quarantined: 0` before.
+  - **`changes()`** treats `rows_restored` as a change of rows, and reads `restore_row_ids` on the step an undo undid, so undoing a restore affects every widget.
+  - **`depends_on`** (A4): with the version's columns, `SELECT *` (also with `EXCLUDE`) and `a.*` of `t` read every column; a column qualified by an alias of `t` counts; `COUNT(*)` and a CTE's `b.*` don't. The cascade and the fact sheets pass the columns, so a pinned chat table updates.
+  - **`ml.depends`** (A5) adds the columns of the run's selection's predicate.
+  - **Outdated runs and the switch to Automatic** (A19): a run already `outdated` keeps its widgets affected, so a later cascade under Automatic re-runs it; `PUT /me/settings` switching Ask first → Automatic queues a cascade (`reason: "settings"`) for each dataset with an outdated card or run, which also tells the outdated cards again.
+  - Tests: new `tests/test_change_detection.py` (one per gap: the undo's impact, an undone restore and `rows_restored` in `changes()`, `*`/`EXCLUDE`/alias/`COUNT(*)`/CTE in `depends_on`, a selection's columns in `ml.depends`); `test_stories.py::test_switching_to_automatic_brings_outdated_cards_and_runs_up_to_date`.
+  - Docs: TRD §4.1 (the settings switch), §6.2 (undo impact), §6.4 (`depends_on`), §7.6 (change detection), §7.8 (undo impact).
+- **Decisions:**
+  - An aliased `t` resolves to the columns it names rather than to every column (the plan's wording): that's exact, and a `*` still reads everything.
+  - A switch to Automatic re-tells every card left `outdated`, not only those an edit since touched: the user asked for the cards to update on their own, and outdated cards were waiting for exactly that.
+  - BACKLOG: no line closes (A3–A5, A19 were audit findings) and none is added.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

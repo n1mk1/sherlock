@@ -425,7 +425,7 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 | PUT | `/me/settings` | `Settings` | `Settings` |
 | GET | `/events` | `?last_event_id=` (or the `Last-Event-ID` header) | user-level SSE stream: `dataset.status` and `job.progress` for all of the user's datasets (§5) |
 
-`GET /me` returns `settings` with every field filled: stored values over the PRD §7.10 defaults, and a stored value that is no longer allowed falls back to its default. `PUT /me/settings` accepts a full or partial `Settings` (unknown keys → `422 invalid`), merges it over the stored values, and returns the full result.
+`GET /me` returns `settings` with every field filled: stored values over the PRD §7.10 defaults, and a stored value that is no longer allowed falls back to its default. `PUT /me/settings` accepts a full or partial `Settings` (unknown keys → `422 invalid`), merges it over the stored values, and returns the full result. Switching "Story updates" from Ask first to Automatic queues a cascade (`reason: "settings"`) for each of the user's datasets with an outdated card or run, which tells the outdated cards again and re-runs the outdated analyses without a new edit (§7.6, plan 2b.3).
 
 `Settings`: `{ theme: "dark"|"light"|"system", accent: "verdigris"|"arcane"|"ember"|"aether"|"brass", chatbar: "pinned"|"autohide"|"hidden", after_upload: "ask"|"always"|"never", cleaning_mode: "auto"|"stepwise", story_updates: "auto"|"ask", spotlight: "off"|"subtle"|"full", reduce_motion: "system"|"on"|"off", default_tab: "csv"|"dashboard"|"flow" }`
 
@@ -1051,6 +1051,7 @@ As implemented, a step also carries:
 - `replayed_step_ids`, for undo with replay
 
 `impact` also has `rows_added` and `rows_deleted`, and `before_after` holds up to 20 changed cells (values as text). The API adds `active` (§4.4).
+An undo step's `impact` also has `rows_restored` (rows its undo brought back from quarantine), and its `quarantined` counts the rows it quarantines again (plan 2b.3, §7.8).
 
 As built, per kind (`steps/commit.py`, `steps/undo.py`, `profile/typing.py`, `rows/edits.py`, `cleaning/loop.py`):
 - **What makes steps.** Only `clean` (the typing step and the Cleaner), `edit` (edit batches, and approved `edit_cells` proposals) and `undo` steps are made. `ml_column` (cut 7) and `computed_column` (P1) are accepted kinds that nothing creates yet.
@@ -1132,6 +1133,7 @@ As implemented (`sherlock/stories/facts.py`):
 - **Counting and dependencies:**
   - **`n` counts the rows with the widget's columns filled** (its scope's `x`, `series` and `y`, where they are columns of the data), within its rows.
   - **`depends_on` reads only the data's columns:** a column qualified by another table, such as a histogram's `b.lo` and `b.w` from its own CTE, is left out, so two histograms of different measures aren't related through their CTE's `lo` and `w`.
+  - **A `*` reads every column, and an alias of `t` counts** (plan 2b.3): given the version's columns, `SELECT *` (with or without `EXCLUDE`) and `a.*` of `t` depend on all of them, and `a.fare` from `FROM t AS a` depends on `fare`; `COUNT(*)` and a CTE's `b.*` read none of the data's columns by themselves. The cascade and the fact sheets pass the columns, so a pinned chat table (`SELECT *`, no scope columns) updates when any column changes.
 
 ### 6.5 RecipeManifest
 
@@ -1786,6 +1788,7 @@ The cascade as implemented (`sherlock/jobs/cascade.py`):
 
 Cascade with cards (cut 6 applied; `sherlock/jobs/cascade.py`):
 - **What changed.** The steps since the oldest stale widget's `version_built`: their `column_targets`, plus those of the steps an undo replayed and of the step it undid. Added or removed columns, the typing step, and any rows added, deleted, quarantined or restored affect every widget.
+- **Change detection (plan 2b.3).** Rows restored count as a change of rows, like rows added, deleted or quarantined: a step whose impact has `rows_restored`, an edit with `restore_row_ids`, and an undo of either (which quarantines the rows again) affect every widget. A run reads its selection's predicate columns too (`ml.depends`). A run already `outdated` keeps its widgets affected in later cascades, so under Automatic they re-run; a cascade queued by switching to Automatic (`reason: "settings"`) also tells every card left `outdated`.
 - **Affected widgets** are stale widgets whose dependencies (§6.4 `depends_on`) meet the changed columns, or every stale widget when everything changed; a widget whose query no longer compiles counts as affected. Only they re-run their query and emit `widget.updated`; the others keep their status and error (an erroring widget isn't reset to `ready`) and just record the new `version_built`, after the cards are told. `cascade.started` lists the affected widgets and their cards, the changed `columns` and `all`.
 - **Cards.** The affected widgets' cards go through `tell` with reason `cascade`: a new sheet and a new narration, the `changed` badge set, an edited card given a `suggestion` instead, and the overview rewritten. With the user's "Story updates: Ask first", those cards become `outdated` (no narration) until Refresh.
 - **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
@@ -1911,7 +1914,7 @@ Implementation (`sherlock/steps/`):
   - **Re-applying a step.** An edit batch re-applies its stored edit list by `_row_id`, typed to the columns as they are then; an edit to a row or column that no longer exists fails, and deleting a row that's already gone is skipped. Restoring a row that no longer exists, adding a row whose `_row_id` already exists, or adding one with a column that no longer exists fails too. The typing step re-runs its DuckDB statement. A cleaning step re-runs its notebook code (its code and, for a scoped clean, its scope) in the sandbox. Any other kind (`ml_column`, `computed_column`) fails as "can't be replayed".
   - **Checks.** Each replayed step must run, keep `_row_id` unique and non-null, and (cleaning steps) keep every row; else the replay stops with the step and the reason, and the undo is `409` with nothing written.
     - The Cleaner's verifiers (§7.2) aren't run again on the replayed data, though the paragraph above says a replay aborts when "its verifiers fail". Not built yet (docs/BACKLOG.md).
-  - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). A deleted cell that an edit batch still in the chain also edited is protected again, under the latest such batch (Schema §2.7). This applies to every undo, not just a replay. The impact is the diff between the old current version and the new one.
+  - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). A deleted cell that an edit batch still in the chain also edited is protected again, under the latest such batch (Schema §2.7). This applies to every undo, not just a replay. The impact is the diff between the old current version and the new one (`undo.undo_impact`): cells changed, rows added and deleted, rows quarantined again (undoing a restore) and `rows_restored` (undoing a quarantine), so the cascade sees the change of rows (plan 2b.3; it said `quarantined: 0` before).
 - **Edit batches.** `render_edit_batch` (`sherlock/steps/notebook.py`) renders an edit batch's `notebook_code` as the pandas in §6.7: `.loc` assignments grouped by column, quarantine restores, `pd.concat` for new rows, and `~isin` for deletions. Values are typed to the column's DuckDB type, and a test runs the rendered code on a DataFrame.
 
 ### 7.9 Lineage reads

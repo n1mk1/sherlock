@@ -323,8 +323,10 @@ def verify(conn: duckdb.DuckDBPyConnection, facts: dict[str, dict], keys: list[s
     return failed
 
 
-def depends_on(spec: dict, sql: str) -> list[str]:
-    """The data columns a widget reads: its scope's columns and every column its query names."""
+def depends_on(spec: dict, sql: str, columns: list[str] | None = None) -> list[str]:
+    """The data columns a widget reads: its scope's columns and every column its query names. A column
+    qualified by an alias of `t` (`FROM t AS a`, `a.fare`) counts, and with `columns` (the version's) a
+    `*` or `a.*` reads every one of them (plan 2b.3); `COUNT(*)` reads none."""
     import sqlglot
     from sqlglot import exp
 
@@ -335,12 +337,33 @@ def depends_on(spec: dict, sql: str) -> list[str]:
             cols.add(sc[k])
     cols.update(sc.get("features") or [])
     try:
-        for c in sqlglot.parse_one(sql, read="duckdb").find_all(exp.Column):
-            if c.table in ("", "t"):  # `b.lo` in a histogram is its own CTE's, not a column of the data
-                cols.add(c.name)
+        tree = sqlglot.parse_one(sql, read="duckdb")
     except sqlglot.errors.ParseError:
-        pass
+        tree = None
+    if tree is not None:
+        names = {"", "t"} | {tb.alias for tb in tree.find_all(exp.Table) if tb.name == "t" and tb.alias}
+        for c in tree.find_all(exp.Column):
+            if c.table in names and not isinstance(c.this, exp.Star):  # `b.lo` in a histogram is its own CTE's
+                cols.add(c.name)
+        if columns is not None and _reads_every_column(tree, names):
+            cols.update(columns)
     return sorted(c for c in cols if c not in ("_row_id", "_quarantine_reason"))
+
+
+def _reads_every_column(tree, names: set[str]) -> bool:
+    """A bare `*` (with or without EXCLUDE) or `a.*` of `t`, outside an aggregate like `COUNT(*)`."""
+    from sqlglot import exp
+
+    for star in tree.find_all(exp.Star):
+        parent = star.parent
+        if isinstance(parent, exp.Column):
+            if parent.table not in names:
+                continue
+            parent = parent.parent
+        if isinstance(parent, exp.AggFunc):
+            continue
+        return True
+    return False
 
 
 def small_sample(facts: dict) -> bool:

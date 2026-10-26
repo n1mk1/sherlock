@@ -364,19 +364,26 @@ def _cached(db: sqlite3.Connection, dataset_id: str, key: str) -> str | None:
     return row["id"] if row else None
 
 
-def depends(row: sqlite3.Row) -> set[str]:
-    """The columns a run read: its target, its features and the columns its row predicate names."""
+def depends(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> set[str]:
+    """The columns a run read: its target, its features and the columns its row predicate names, and
+    (given `db`) those its selection's predicate names (plan 2b.3)."""
     import sqlglot
     from sqlglot import exp
 
     cols = {row["target"]} | set(json.loads(row["features_json"] or "[]"))
-    predicate = json.loads(row["scope_json"])["rows"].get("predicate")
-    if predicate:
+    rows = json.loads(row["scope_json"])["rows"]
+    conditions = [rows.get("predicate")]
+    if db is not None and rows.get("selection_id"):
         try:
-            cols |= {c.name for c in sqlglot.parse_one(f"SELECT 1 FROM t WHERE {predicate}", read="duckdb").find_all(exp.Column)}
+            conditions.append(ws.selection_sql(db, row["dataset_id"], rows["selection_id"]))
+        except ApiError:  # the selection is gone; its rows were fixed when the run started
+            pass
+    for condition in filter(None, conditions):
+        try:
+            cols |= {c.name for c in sqlglot.parse_one(f"SELECT 1 FROM t WHERE {condition}", read="duckdb").find_all(exp.Column)}
         except sqlglot.errors.ParseError:
             pass
-    return {c for c in cols if c}
+    return {c for c in cols if c and c not in ("_row_id", "_quarantine_reason")}
 
 
 # --- the job ---------------------------------------------------------------------------------------
@@ -558,7 +565,7 @@ def outdate(db: sqlite3.Connection, bus: EventBus | None, dataset: sqlite3.Row, 
     for r in db.execute("SELECT * FROM runs WHERE dataset_id = ? AND status = 'done' AND version < ?",
                         (dataset["id"], dataset["current_version"])).fetchall():
         changed, everything = changes_since(r["version"])
-        if everything or depends(r) & changed:
+        if everything or depends(r, db) & changed:
             db.execute("UPDATE runs SET status = 'outdated' WHERE id = ?", (r["id"],))
             out.append(r["id"])
     for run_id in out:

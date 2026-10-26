@@ -805,3 +805,27 @@ def test_only_usable_cards_feed_another_output(mocked, client):
 
 def dataset_columns(client, ds) -> list[str]:
     return [c["name"] for c in client.get(f"{API}/datasets/{ds}/datacard").json()["columns"]]
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_switching_to_automatic_brings_outdated_cards_and_runs_up_to_date(mocked, client):
+    """Plan 2b.3 (A19): under "Ask first" an edit leaves cards and the analysis's run outdated. Switching to
+    "Automatic" queues a cascade that tells those cards again and re-runs the analysis, without a new
+    edit; before, an already-outdated run was never picked up again."""
+    ds = _ready_with_stories(client)
+    ml = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["spec"]["op"]["type"] == "ml")
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
+    _edit(client, ds, "fare", "500")
+    _settled(client, ds)
+    assert any(c["status"] == "outdated" for c in client.get(f"{API}/datasets/{ds}/cards").json())
+    assert client.get(f"{API}/runs/{ml['run_id']}").json()["status"] == "outdated"
+
+    client.put(f"{API}/me/settings", json={"story_updates": "auto"})
+    jobs = _settled(client, ds, timeout=180)
+    settings = [j for j in jobs if j["kind"] == "cascade" and j["status"] == "done"]
+    assert len(settings) == 2, [j["kind"] for j in jobs]  # the edit's, then the switch's
+    cards = client.get(f"{API}/datasets/{ds}/cards").json()
+    assert [c for c in cards if c["status"] != "ready"] == []
+    rerun = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["id"] == ml["id"])
+    assert rerun["run_id"] != ml["run_id"]
+    assert client.get(f"{API}/runs/{rerun['run_id']}").json()["status"] == "done"

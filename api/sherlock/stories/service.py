@@ -66,7 +66,8 @@ def build_sheet(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, version:
         stale = fx.verify(conn, facts, list(facts))
         if stale:  # never narrate from values that don't hold (TRD §7.4 step 4)
             facts = {k: f for k, f in facts.items() if k not in stale}
-    return _store_sheet(env.db, dataset["id"], widget["id"], version, facts, fx.depends_on(spec, sql))
+    return _store_sheet(env.db, dataset["id"], widget["id"], version, facts,
+                        fx.depends_on(spec, sql, columns=list(ws.user_types(env, dataset, version))))
 
 
 def _store_sheet(db, dataset_id, widget_id, version, facts, depends) -> dict:
