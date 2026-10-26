@@ -23,7 +23,8 @@ export interface paths {
          * Edit Card
          * @description The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's
          *     value from the sheet (one whose fact isn't there is unverified), and the card is never narrated
-         *     over again, only offered suggestions (PRD STORY-7).
+         *     over again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were
+         *     written on, the version of the sheet its chips read (the web's "Written on vN" badge, plan 2b.7).
          */
         patch: operations["edit_card_api_v1_cards__cid__patch"];
         trace?: never;

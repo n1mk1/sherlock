@@ -28,6 +28,9 @@ from sherlock.widgets import service as ws
 
 WORKERS = 4
 NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?%?")
+# A number a user types: digits, or one spelled out ("zero", "twice": the narrator's list). Not Roman
+# numerals: in a user's sentence "XL" is more often a size than forty.
+TYPED = re.compile(f"{NUMBER.pattern}|{nr.NUMBER_WORDS.pattern}", re.I)
 
 
 # --- fact sheets ----------------------------------------------------------------------------------
@@ -408,17 +411,18 @@ def _datacard(env: ws.Env, dataset: sqlite3.Row) -> dict:
 # --- edits by the user (TRD §4.6, PRD STORY-7) ------------------------------------------------------
 
 def mark_unverified(body: dict) -> dict:
-    """Numbers typed by hand become chips marked unverified ("Typed by you, not computed")."""
+    """Numbers typed by hand, in digits or in words, become chips marked unverified ("Typed by you,
+    not computed")."""
     out = {"blocks": []}
     n = 0
     for block in body.get("blocks", []):
         runs = []
         for run in block.get("runs", []):
-            if run.get("type") != "text" or not NUMBER.search(run.get("text", "")):
+            if run.get("type") != "text" or not TYPED.search(run.get("text", "")):
                 runs.append(run)
                 continue
             text, pos = run["text"], 0
-            for m in NUMBER.finditer(text):
+            for m in TYPED.finditer(text):
                 if m.start() > pos:
                     runs.append({"type": "text", "text": text[pos:m.start()]})
                 n += 1

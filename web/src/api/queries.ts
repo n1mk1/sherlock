@@ -69,6 +69,16 @@ export function useDataset(id: string | undefined) {
   });
 }
 
+/** A dataset's current version from the cache, without reading the dataset again (its page keeps it
+ * fresh, and a read records `last_opened_at`). */
+export function useCurrentVersion(id: string): number | undefined {
+  return useQuery({
+    queryKey: keys.dataset(id),
+    enabled: false,
+    queryFn: () => unwrap(api.GET("/api/v1/datasets/{dataset_id}", { params: { path: { dataset_id: id } } })) as Promise<Dataset>,
+  }).data?.current_version;
+}
+
 export function useDatacard(id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: keys.datacard(id ?? ""),

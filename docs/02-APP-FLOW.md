@@ -472,6 +472,8 @@ As built, Edit turns the card into two TipTap editors, Headline (one line) and B
 
 The editors hold only what a card can store: paragraphs and bullets in the body, one paragraph in the headline, and text, chips and labels. Numbered lists, line breaks, bold, italic, strike, code, underline and links aren't offered.
 
+When the data moves on (PRD STORY-7): a number typed in words ("zero", "twice") is an unverified chip too. An edited card on an older version than the data shows "Written on v5, data is now v7", also after Dismiss, and one with hand-typed numbers shows "Has numbers you typed; check them". Both go once the user edits the card on the new version (an edit records the version it was written on) or accepts the suggestion. They show on the canvas node too.
+
 ---
 
 ## 12. Flow tab

@@ -134,6 +134,11 @@ def test_hand_typed_numbers_become_unverified_chips():
     runs = body["blocks"][0]["runs"]
     assert [r["type"] for r in runs] == ["text", "chip", "text", "chip", "text"]
     assert runs[1] == {"type": "chip", "id": "u1", "key": None, "value": "75%", "unverified": True}
+    # Plan 2b.7 (D6 F18): a number typed in words is a number too, but a Roman-looking size isn't.
+    body = mark_unverified({"blocks": [{"type": "paragraph", "runs": [
+        {"type": "text", "text": "Zero women in XL cabins paid twice the fare; one in three came back."}]}]})
+    chips = [r["value"] for r in body["blocks"][0]["runs"] if r["type"] == "chip"]
+    assert chips == ["Zero", "twice", "one in", "three"]
 
 
 @pytest.fixture
@@ -168,6 +173,7 @@ def test_stories_job_cards_evidence_and_edits(mocked, client):
     assert chips and all(sex["facts"][r["key"]]["formatted"] == r["value"] for r in chips)
     ev = client.get(f"{API}/cards/{sex['id']}/evidence/{chips[0]['id']}").json()
     assert ev["sql"] and "{{rows}}" not in ev["sql"] and ev["version"] >= 2
+    sheet_version = ev["version"]
     assert sex["related"], "the class widget shares fare with the fare widgets"
     edges = client.get(f"{API}/datasets/{ds}/relations").json()["edges"]
     assert edges and all(e["weight"] >= 0.4 for e in edges)
@@ -196,6 +202,13 @@ def test_stories_job_cards_evidence_and_edits(mocked, client):
     assert any(r["type"] == "chip" and r["unverified"] and r["value"] == "7.25" for r in runs)  # the pasted label became typed text
     assert {"type": "label", "ref": "column:fare", "text": "fare"} in runs
     assert client.get(f"{API}/cards/{sex['id']}/evidence/p2").json()["unverified"]
+
+    # Plan 2b.7: an edit records the version its words were written on, the sheet its chips read, not the
+    # one Sherlock last wrote the card on (the web's "Written on vN, data is now vM" badge).
+    db_rows("UPDATE cards SET version = 1 WHERE id = ?", sex["id"])
+    again = client.patch(f"{API}/cards/{sex['id']}", json={"headline": {"blocks": [{"type": "paragraph", "runs": [
+        {"type": "text", "text": "Fares by class, my words"}]}]}}).json()
+    assert again["version"] == sheet_version
 
 
 @pytest.mark.usefixtures("run_jobs")

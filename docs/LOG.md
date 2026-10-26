@@ -711,6 +711,18 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
 ### Fix: `pnpm build` failed on the column-note hover's type
 
 - `Grid.tsx`'s `onItemHovered` (slice 15, T-3) read `args.bounds` on any `GridMouseEventArgs`, but only a header event has `bounds`, so `tsc -b` failed and with it `pnpm build`, the Docker image's web step (`api/Dockerfile`). vite alone doesn't type-check, so vitest and the e2e passed. The handler now returns early for anything but a header; behaviour is the same (a non-header event already cleared the note). Checked: `tsc -b`, `pnpm build`, the CSV and column-note vitest files. Found by the `web-state` session while rebasing 2b.5.
+### Tier 2 row 2b.7: user-written text
+
+- **Done** (A37, A38, D6 F18):
+  - **Number words.** `mark_unverified` matches a number spelled out as well as digits (`TYPED`: `NUMBER` or the narrator's `NUMBER_WORDS`), so "zero" or "twice" in a card edit becomes an unverified chip. Roman numerals are left out: "XL" in a user's sentence is more often a size.
+  - **"Written on v5, data is now v7"** on an edited card once the data is past the version its words describe (`StoryCard.tsx::UserTextBadges`, on the panel's card and its Flow node). It stays after Dismiss, which was the gap: the suggestion went and nothing said the words were old. `PATCH /cards/{cid}` now sets the card's `version` to its sheet's (as Accept does), so the badge names the version the user wrote on, not the one Sherlock last wrote it on; the cascade moves an edited card's sheet but not its `version`.
+  - **"Has numbers you typed; check them"** on a card with unverified chips once the data moved on: the dashed chips said "typed by you", but nothing said they may be out of date.
+  - The web reads the dataset's version from the cache (`useCurrentVersion`, a disabled query), so a card doesn't read the dataset again.
+  - Tests: `test_stories.py` ("Zero", "twice", "one in" and "three" become chips, "XL" doesn't; an edit's `version` is its sheet's), `StoriesPanel.test.tsx` (both badges on v7 for words written on v5; none on v5; only the typed-numbers badge on a card the user didn't edit).
+  - Docs: PRD STORY-7 (acceptance, add-only), UI/UX §4.5, TRD §4.6 (`PATCH /cards`), App Flow §11. `openapi.json` and `schema.d.ts` regenerated (the route's description is its docstring).
+  - BACKLOG: removed D6 F18 (a number word typed in a card edit isn't marked unverified).
+- **Gate for 2b.1, 2b.5 and 2b.7** (pushed together, after rebasing three times onto other streams' pushes): the full pytest and the e2e on the tip, vitest and `tsc -b` on the tip and on each of the three commits, and after each rebase the protocol's `test_db`, `test_openapi` and `test_prompt_hygiene` plus the slices' own test files. Running the full pytest (16 min) and e2e for each commit after every rebase would have kept them off `main` while other streams kept landing. The rebase onto T-3 changed `Grid.tsx` (its header notes read a query), so 2b.5's grid test renders through a stateful host to keep its query client.
+- **Decision:** the badges compare `Card.version` with the dataset's current version rather than with the sheet's, so a card whose chips are current but whose words were written earlier still says so. "one" alone isn't a typed number (the narrator's list leaves it out too; "one of the groups" is ordinary English), so BACKLOG's D8 F1 line about "one", "single" and "pair" stays.
 
 ### Tier 2 row 2b.9: the user picks the date order
 

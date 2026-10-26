@@ -2,10 +2,11 @@
 // serif face, the body with number chips (click → evidence drawer), related-widget chips, and Edit /
 // Ask why. Hovering the card spotlights its widget; hovering its widget highlights the card. A card
 // the user edited keeps its text; when the data changes it shows the new narration as a suggestion
-// side by side (Accept · Edit · Dismiss).
+// side by side (Accept · Edit · Dismiss), and says which version the user's words were written on.
 import { Database, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useCurrentVersion } from "@/api/queries";
 import { plainText, useCardActions } from "@/api/stories";
 import type { Card, CardBody, Run } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,37 @@ export function Chip({ run, facts, onOpen }: { run: Extract<Run, { type: "chip" 
     >
       {value}
     </button>
+  );
+}
+
+/** Whether the user typed numbers into the card (its unverified chips). */
+export function hasTypedNumbers(card: Card): boolean {
+  return [...card.headline.blocks, ...card.body.blocks].some((b) => b.runs.some((r) => r.type === "chip" && r.unverified));
+}
+
+/** User-written text once the data moves on (PRD STORY-7, plan 2b.7): an edited card says which version its
+ * words were written on, and one with numbers typed by hand asks for them to be checked, since no code
+ * keeps those numbers current. On the card in the panel and on its canvas node. */
+export function UserTextBadges({ card, small = false }: { card: Card; small?: boolean }) {
+  const current = useCurrentVersion(card.dataset_id);
+  if (current === undefined || card.version >= current) return null;
+  const typed = hasTypedNumbers(card);
+  const chip = cn("inline-flex shrink-0 items-center rounded-full border px-2", small ? "h-4 text-[10px]" : "h-5 text-[11px]");
+  return (
+    <>
+      {card.edited_by_user && (
+        <span className={cn(chip, "border-border-strong text-muted-foreground")}
+          title="Your words describe the data as it was then; the numbers in chips are current">
+          Written on v{card.version}, data is now v{current}
+        </span>
+      )}
+      {typed && (
+        <span className={cn(chip, "border-dashed border-warning text-warning")}
+          title="Numbers you typed aren't computed, so they didn't change with the data">
+          Has numbers you typed; check them
+        </span>
+      )}
+    </>
   );
 }
 
@@ -108,6 +140,7 @@ export function StoryCard({ card, title, onEvidence }: {
             className="inline-flex h-5 items-center rounded-full border border-warning px-2 text-[11px] text-warning">changed</button>
         )}
         {card.edited_by_user && <span title="Edited by you" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Pencil className="size-3" /> edited</span>}
+        <UserTextBadges card={card} />
         {card.status === "outdated" && (
           <button type="button" onClick={() => actions.refresh.mutate(card.id, { onError: err })}
             className="inline-flex h-5 items-center rounded-full border border-warning px-2 text-[11px] text-warning">outdated, click to refresh</button>

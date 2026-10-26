@@ -282,6 +282,7 @@ As built: the custom charts are plain visx SVG. Histogram bars are radius 2, the
 
 As built: the overline is the widget's title (11px, uppercase, muted); the headline is the serif at 18px, weight 600; the body 14px in `--foreground-2`; related chips 24px tall. The footer has Evidence (link with a database icon), Edit and Ask why (ghost, small). A card being rewritten is at 70% with a spinning refresh icon. The suggestion sits in a dashed `--warning` box under the body. The "changed" chip clears when clicked, and the outdated chip reads "outdated, click to refresh".
 - Not built yet (docs/BACKLOG.md): in the Stories panel a synthesis card has the muted overline and no "Cites n cards". Only its canvas node has both (§5.10).
+- **User-written text on a newer version** (PRD STORY-7): after "edited", "Written on v5, data is now v7" (a muted chip with a `--border-strong` outline) on a card the user edited once the data is past the version its words were written on, and "Has numbers you typed; check them" (a dashed `--warning` chip) on a card with hand-typed numbers. Both stay until the user edits the card on the new version or accepts a suggestion. On the canvas node they're the 10px size of its other chips.
 
 ### 4.6 Number chip
 

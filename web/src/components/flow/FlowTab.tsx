@@ -22,7 +22,7 @@ import { useCardActions, useCards } from "@/api/stories";
 import type { Card, Dataset } from "@/api/types";
 import { FlowStatus } from "@/components/flow/FlowPalette";
 import { EvidenceDrawer } from "@/components/stories/StoriesPanel";
-import { Runs } from "@/components/stories/StoryCard";
+import { Runs, UserTextBadges } from "@/components/stories/StoryCard";
 import { cn } from "@/lib/utils";
 import { CARD_DRAG, useFlow } from "@/state/flow";
 
@@ -138,6 +138,7 @@ function CardNode({ id, data, selected }: NodeProps<CardNodeT>) {
           </button>
         )}
         {card.changed_badge && <span className="rounded-full border border-warning px-1.5 text-[10px] text-warning">changed</span>}
+        <UserTextBadges card={card} small />
       </div>
       {editingCard === card.id ? (
         <div className="nodrag nowheel cursor-text">

@@ -57,8 +57,11 @@ def edit_card(cid: str, body: CardEdit, request: Request, _: Owned = Depends(own
               db: sqlite3.Connection = Depends(get_db)) -> dict:
     """The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's
     value from the sheet (one whose fact isn't there is unverified), and the card is never narrated
-    over again, only offered suggestions (PRD STORY-7)."""
-    sets, params = ["edited_by_user = 1", "updated_at = ?"], [now_iso()]
+    over again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were
+    written on, the version of the sheet its chips read (the web's "Written on vN" badge, plan 2b.7)."""
+    sets = ["edited_by_user = 1", "updated_at = ?",
+            "version = COALESCE((SELECT version FROM fact_sheets WHERE id = cards.fact_sheet_id), version)"]
+    params = [now_iso()]
     card = _card(db, cid)
     for key in ("headline", "body"):
         value = getattr(body, key)
