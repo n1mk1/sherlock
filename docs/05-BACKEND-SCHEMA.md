@@ -16,6 +16,7 @@ Version 1.1 · 2026-10-24 (migration 001 and the doc-sync test, §1) · Every ta
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
+- As built (2026-10-25): `ver_` is never generated, since a version is keyed by `(dataset_id, version)` (§2.3). Issues use `iss_` and exports `exp_`. Canvas nodes and edges the AI adds get `nd_` and `ed_` IDs inside `canvas_json` (`canvas/service.py`).
 
 ---
 
@@ -232,6 +233,8 @@ CREATE TABLE widget_cache (
 );
 ```
 
+As built (2026-10-25, `sherlock/widgets/spec.py`, `execute.py`): `spec_hash` is the sha1 of the spec's canonical JSON (sorted keys, no spaces), not of the `spec_json` text as stored. `widget_cache.cache_key` is the sha1 of `<spec_hash>:<version>:<filter_hash>`, where `filter_hash` is the sha1 of the compiled row filter. An in-memory LRU of 500 entries sits in front of the table (TRD §9), and the purge deletes rows older than 24 h (§6).
+
 ### 2.10 fact_sheets and relations
 
 ```sql
@@ -345,7 +348,7 @@ As built (2026-10-25, Implementation Plan D7, `sherlock/ml/runner.py`; no migrat
 - **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json` (the features used), `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json`, `libraries_json` and `finished_at`.
 - **Outdated.** The cascade, or the run itself when it finishes on an earlier version, sets `status = outdated`.
 - **`widget_id`.** The last widget that asked for the run. `widgets.run_id` is the link a widget shows, and a cached run can back more than one widget.
-- **`created_by`.** `builder` for the dashboard's driver widget, otherwise `user`.
+- **`created_by`.** `builder` for the dashboard's driver widget, `chat` for a run that the chat's `ask_why` starts (`agent/insight.py`), otherwise `user` (a run from `POST /datasets/{id}/runs`, an analysis widget the user adds or changes, and every Re-run, automatic ones included).
 - **`fact_sheets.run_id`** is set on the run's own sheet. An analysis widget's sheet is a copy with its `widget_id`.
 - **`widgets.spec_json`.** An analysis that replaced a chart keeps the chart's title in `view.options.chart_title`, for Undo.
 - **`selections` for "who did it get wrong?"** (`POST /runs/{rid}/wrong-rows`, D7.4): `row_ids_json` holds the misclassified `_row_id`s, `predicate` is NULL, `label` is "<target>: predicted wrong", and `version` is the current version. Row IDs are stable across versions.
@@ -393,6 +396,7 @@ Implementation notes (2026-10-24, Implementation Plan D2.5):
 - `data_json` always carries `dataset_id`, which the user-level stream needs.
 - `jobs.owner_pid` is `<hostname>:<pid>:<ulid>`, unique per process start. At startup, every `running` job is re-queued (one process holds the runner). While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
 - `jobs.progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
+- As built (2026-10-25): no `undo` job is ever queued, since an undo, its replay included, runs inside its request (TRD §7.8); `jobs/runner.py` still lists the kind. A `purge` job has `user_id = 'system'` and `dataset_id` NULL (§6).
 
 ### 2.15 chat
 
@@ -438,6 +442,7 @@ CREATE TABLE proposals (
 ```
 
 As built (2026-10-25, D8.5): `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection`; `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
+- Only `edit_cells` and `clean_selection` proposals are written. `card_edit` is not built (cut 2, Implementation Plan §2.0), and `clean_step` and `computed_column` are P1; approving another kind answers `422` (`agent/actions.py`). An approved `edit_cells` commits its step with `created_by = 'user'`, through the same save as the grid (`rows/edits.py`).
 
 ### 2.16 selections
 
@@ -472,6 +477,8 @@ CREATE TABLE value_index (
 
 When `sqlite-vec` is installed, a `vec_values` virtual table mirrors `embedding` for ANN search; otherwise similarity is computed in numpy over the column's rows (≤ 5,000).
 
+As built (2026-10-25, `sherlock/profile/service.py`): the profile rewrites a dataset's whole index each time it profiles the current version, since the primary key has no version. It indexes the columns whose role is `dimension` or `target_like`, at most the 10,000 most common values each, as text with their counts. `embedding` is always NULL and there is no `vec_values` table: not built while `MODEL_EMBED` is empty (TRD §3.5), so the chat resolves values exactly, then with rapidfuzz (TRD §8.1).
+
 ### 2.18 llm_calls and sandbox_runs
 
 ```sql
@@ -501,6 +508,8 @@ CREATE TABLE sandbox_runs (
   created_at  TEXT NOT NULL
 );
 ```
+
+As built (2026-10-25): the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); and `narrate`, `overview` and `synthesis` (stories). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
 
 ### 2.19 exports
 
@@ -556,6 +565,8 @@ Column conventions inside a version Parquet:
 
 Queries from widgets and answerers run on that in-memory connection after external access is turned off, with a 10 s interrupt.
 
+As built (2026-10-25, `sherlock/storage.py` `VersionConnections`): at most four connections stay open, the least recently used closed first, and opening a version closes the same dataset's older ones. Each connection has `memory_limit` = `DUCKDB_MEMORY_MB` and two threads, and serves one request at a time. A connection that is evicted while a request holds it closes when that request ends.
+
 ---
 
 ## 4. Filesystem layout
@@ -585,6 +596,16 @@ Queries from widgets and answerers run on that in-memory connection after extern
 ```
 
 `datasets.folder_bytes` is recomputed after every commit and run; `users.storage_bytes` is the sum. Uploads are refused when the user's total would exceed `USER_STORAGE_MB`.
+
+As built (2026-10-25):
+- **More files.**
+  - `/data/.boots` and `/data/.lockcheck.db` belong to the startup storage check (TRD §11).
+  - `/data/.clean/<job_id>/` is a clean job's working folder (sample, candidate and commit Parquet files). It is removed when the run reaches its report (`cleaning/loop.py`); a run that is stopped or fails before that leaves it, and the purge doesn't clear it yet.
+  - Each dataset folder has `.lock`, the commit lock (§7).
+  - A replay works in `versions/.replay_<hex>/` and removes it when it ends (`steps/replay.py`).
+- **The sample.** Nothing is written under `/data/sample/`. The seed ships in the image as `api/samples/seed/titanic3/` (`rows.json`, the dataset's rows in every table, and `files/`, its folder without `.lock` or `exports/`), or comes from `SAMPLE_SEED_DIR`. `POST /datasets/sample` clones it into a new dataset folder (TRD §9).
+- **Exports.** Only notebooks are written to `exports/`. The CSV export (`GET /datasets/{id}/export.csv`) streams from the version and writes no file, and `repro.py` is downloaded from `runs/<run_id>/`.
+- **Sizes.** `folder_bytes` and `storage_bytes` are updated at import, at a sample clone, and at every commit and undo. A finished run's artifacts and exported notebooks are counted at the next purge pass, which measures every folder again (§6). The storage limit is checked only at upload.
 
 ---
 
@@ -619,6 +640,8 @@ As built (2026-10-25, D8.6, `sherlock/jobs/purge.py`):
 - A purged widget takes its card and fact sheets with it, and a run that pointed at it is unlinked. Canvas nodes of purged cards are pruned on the next canvas read (§2.12).
 - An export's file is deleted with its row.
 - `storage_bytes` counts every dataset still on disk, soft-deleted ones included, since their files remain until they are purged. Each dataset's `folder_bytes` is measured again first.
+- **Schedule.** The job runner's sweep (every 30 s) queues a purge at its first pass after a start, then once every `PURGE_INTERVAL_S` (default 600; `0` turns it off), and never while one is queued or running. No purge is queued when `JOB_WORKERS` is 0. Its `jobs` row has `user_id = 'system'` and no dataset (`jobs/runner.py`).
+- **Ages.** Soft deletes and expiry compare against `deleted_at` and `expires_at`; `job_events`, `widget_cache` and `exports` against `created_at`; sandbox folders against their modification time, under `SANDBOX_TMP` (or `<system temp>/sherlock-sandbox` when it's empty).
 
 ---
 

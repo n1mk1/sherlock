@@ -386,3 +386,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Kept: the six specs, this log, `USER-TESTS.md`, the rules and rubric, `help/` (shipped in the image), `examples/`, `architecture.png`, `screenshot.jpg`, and `Sherlock UI examples-png/`, which UI/UX §1 makes part of the spec.
 - **Not done:** the worktree folders are still on disk, held open by the idle review sessions; archiving those sessions frees them.
 - **Decision:** open work lives in `docs/BACKLOG.md` from now on. A fix removes its line in the same commit.
+
+### 2026-10-25 (night): every doc checked against the code
+
+- **Done** (owner's instruction: the docs must match what's built; cut with care):
+  - Each doc was read against the code at `e68327f`: PRD, App Flow and the help pages, UI/UX brief, TRD (§1–4, §5–7, §8–15), schema, plan, README, `THIRD_PARTY.md` and `USER-TESTS.md`.
+  - Wrong statements were corrected in place: stale "not yet" notes, routes and fields, defaults, model roles, copy, commands. Specs the code doesn't meet stay as written, with a marker: "Removed by cut N" or "Not built yet (docs/BACKLOG.md)". No requirement, acceptance criterion or priority was dropped (the PRD's 98 IDs and labels are unchanged).
+  - Every gap the pass found where the code falls short of a doc is in `docs/BACKLOG.md`, tagged with the doc section.
+  - The help pages now describe the real UI; the retrieval tests pass. `tests/test_db.py` passes against the schema doc.
+- **Not done:** the gaps themselves (code), and the owner decisions in BACKLOG §2.

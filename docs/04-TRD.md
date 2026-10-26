@@ -32,7 +32,9 @@ Version 1.1 · 2026-10-24 (all model roles NVIDIA, availability through judging)
 
 One container image serves both the API and jobs. For the hackathon, jobs run in-process by default (`JOB_BACKEND=local`); `JOB_BACKEND=nebius` dispatches cleaning and ML jobs to Serverless Jobs with the same code path. The README and the submission name Serverless Jobs only if production runs with `JOB_BACKEND=nebius` (PRD §12.5).
 
-Model roles (PRD §9): `large` = Nemotron 3 Ultra, `medium` = Nemotron 3 Super, `small` = Nemotron 3 Nano, `embed` = an NVIDIA embedding model, all on Token Factory. The exact IDs come from the catalog.
+As built (2026-10-25): `JOB_BACKEND=nebius` is not built yet (§3.3). The setting accepts the value, but no code reads it, so every job runs in-process, and production runs `local`.
+
+Model roles (PRD §9): `large` = Nemotron 3 Ultra, `medium` = Nemotron 3 Super, `small` = Nemotron 3 Nano, `embed` = an NVIDIA embedding model, all on Token Factory. The exact IDs come from the catalog. As built (Day 1, §3.5): `embed` is empty, because the catalog has no NVIDIA embedding model.
 
 ---
 
@@ -131,7 +133,7 @@ As built (2026-10-25, after Day 9; the Day 7 review's F15). The tree above is th
 - **`agent/`.** Modules, not folders: `answerers.py`, `actions.py` (chat proposals, D8.5), `prompts.py`, `insight.py` (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, D7.3) and `flow.py` ("make sense of this" and `ask_story`, D8.1). Routing is `loop.py::_route`, with no `router.py`, and number tracing is in `compose.py`, with no `verify.py` (§8.1).
 - **`notebook/`.** `cells.py` is one module, not a `cells/` folder; `scan.py` is the allowlist scan; there's no `repro_render.py` (§7.7).
 - **No `chat/` package.** Threads and messages are in `routers/chat.py` and `agent/loop.py`, proposals in `agent/actions.py` and `routers/proposals.py`.
-- **Also:** `llm/models.py` (the NVIDIA-only role rules, §3.5), `llm/text.py` (stripping reasoning, pulling out JSON) and `llm/fixtures.py` (recorded responses for tests and `LLM_MOCK`); `canvas/service.py`; `api/samples/seed/` (the cached sample). In `web/src/components/`, `dataset/` holds the dataset page with the offer, cleaning and report screens (there's no `cleaning/` folder), and `ui/` the shadcn-style primitives.
+- **Also:** `llm/models.py` (the NVIDIA-only role rules, §3.5), `llm/text.py` (stripping reasoning, pulling out JSON) and `llm/fixtures.py` (recorded responses for tests and `LLM_MOCK`); `canvas/service.py`; `api/samples/seed/` (the cached sample). In `web/src/components/`, `dataset/` holds the dataset page with the offer, cleaning and report screens (there's no `cleaning/` folder), and `ui/` the shadcn-style primitives. `web/e2e/flow.spec.ts` and `web/playwright.config.ts` hold the end-to-end flow (§14).
 - **CI.** `.github/workflows/ci.yml` is correct but doesn't run, because Actions won't start jobs on this account (billing). Tests run locally and deploys are by hand (§11).
 
 Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm-lock.yaml`):
@@ -185,6 +187,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - Identity middleware: reads `sherlock_uid`; creates it (a random 256-bit token, stored hashed per Schema §2.1) and a `users` row on first request. Every router depends on `current_user`.
 - Ownership checked on every route: bare ids (`/widgets/{wid}`, `/cards/{cid}`, `/runs/{rid}`, `/exports/{export_id}`, `/jobs/{jid}`, `/proposals/{id}`, `/messages/{mid}`, `/fact-sheets/{fsid}`) are first resolved to their dataset (404 if not owned).
 - Request IDs in every log line and error response.
+  - As built: the request ID is in every error envelope and in the `X-Request-ID` header of every response (`errors.py`). Log lines don't carry it yet: the app's logger prints level, logger name and message only (`main.py::_app_logging`, §12).
 - OpenAPI schema is the contract; the web client is generated from it (`openapi-typescript`).
   - As built (2026-10-24, Implementation Plan D2.9): `scripts/dump_openapi.py` writes the app's schema to `web/src/api/openapi.json` without starting a server. `pnpm openapi` turns it into `web/src/api/schema.d.ts`, and `web/src/api/client.ts` wraps it with `openapi-fetch`. Both generated files are committed.
   - **Kept in step** (2026-10-25, from the Day 2 review). The committed files had fallen 24 routes behind (exports, cards, relations, fact sheets, runs, recipes, rerun) and were regenerated. `api/tests/test_openapi.py` now fails whenever `app.openapi()` differs from the committed `openapi.json`, and its message says how to regenerate.
@@ -216,7 +219,7 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 - SQLite in WAL mode, one connection per request, `busy_timeout=5000`.
 - DuckDB implementation (`sherlock/storage.py`): `VersionConnections` keeps at most 4 connections, opens a version's connection on first use, and closes the dataset's older versions when a newer one opens. Each connection has `memory_limit = DUCKDB_MEMORY_MB` and 2 threads, and is used by one request at a time (a lock per connection). The cap is per connection, not 1 GB in total, so a small host can set it low (Render Starter: 256 MB; Render Standard, from 2026-10-25: 512 MB).
   - **Eviction waits for users** (2026-10-25, from the Day 2 review). An evicted connection is retired, not closed. Each entry counts the requests holding or waiting for it, and the last one to let go closes it. Before, opening version 2 could close version 1's connection under a running query ("Connection already closed!").
-- DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections or 1 GB and evicted when a newer version exists. Commits write Parquet and SQLite only.
+- DuckDB: no persistent database file. Each query uses a cached in-memory DuckDB connection for its (dataset, version). The connection is opened on first use, loads that version's Parquet (absolute path) as table `t`, and runs `SET enable_external_access=false` before any query. The cache lives inside the single API process, in an LRU capped at 4 connections (the memory cap is per connection, `DUCKDB_MEMORY_MB`, as above) and evicted when a newer version exists. Commits write Parquet and SQLite only.
 
 ### 3.3 Job runner
 
@@ -259,9 +262,10 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - **Params:** `{ widget_ids: string[] | null, reason: "build"|"widget"|"refresh" }`. `null` means every widget; `[]` means only the overview.
   - **Queued by:**
     - the dashboard builder when it made widgets (§7.3 step 7, `reason: "build"`, all widgets)
-    - a widget created, or its spec changed, through the widgets service (`reason: "widget"`, that widget), once the dataset has any card
-    - a widget deleted (`[]`, so the overview stops counting it)
+    - a widget created, or its spec changed, through the widgets service (`reason: "widget"`, that widget), once the dataset has any card or any `stories` job (so an analysis whose run finishes before the first card is stored still gets its card; `widgets/service.py::_stories`)
+    - a widget deleted or restored (`[]`, so the overview stops or starts counting it)
     - a card's Refresh (`POST /cards/{cid}/refresh`, `reason: "refresh"`)
+    - a synthesis card's Refresh, with params `{ synthesis_ids: [card_id], reason: "refresh" }` instead. It writes that card again ("Writing the synthesis again"), its result is `{ cards, widgets: 0 }`, and it never absorbs another request or is absorbed (`jobs/stories.py`, §7.4)
   - **Coalescing.** A `stories` job still `queued` for the dataset absorbs the next request. Its `widget_ids` become the union of both lists, and a job for every widget stays one.
   - **Progress:** "Reading the facts · i of n" per widget, then "Writing the overview". The result is `{ cards, widgets }`.
   - The cascade doesn't queue a `stories` job. It runs the same pipeline itself (§7.6).
@@ -312,12 +316,12 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
 
 ### 3.5 LLM client
 
-- One `LLMClient` with `complete(role, messages, schema=None, tools=None, temperature, max_tokens)`; `role` ∈ `{large, medium, small, embed}` maps to model IDs from config (`MODEL_LARGE`, `MODEL_MEDIUM`, `MODEL_SMALL`, `MODEL_EMBED`), filled on day 1 from Token Factory's catalog. Every role is an NVIDIA model (the hackathon rule needs at least one; Sherlock uses only NVIDIA models): startup fails unless `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` all contain `nemotron`, and `MODEL_EMBED` is either empty (embeddings off; resolution uses exact and fuzzy matching only) or an NVIDIA model ID from the catalog (listed in `NVIDIA_EMBED_MODELS`). `/healthz` reports the four configured IDs.
+- One `LLMClient` with `complete(role, messages, schema=None, tools=None, temperature, max_tokens)`; `role` ∈ `{large, medium, small, embed}` maps to model IDs from config (`MODEL_LARGE`, `MODEL_MEDIUM`, `MODEL_SMALL`, `MODEL_EMBED`), filled on day 1 from Token Factory's catalog. Every role is an NVIDIA model (the hackathon rule needs at least one; Sherlock uses only NVIDIA models): startup fails unless `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` all contain `nemotron` (and, since the Day 1 review, start with `nvidia/`; below), and `MODEL_EMBED` is either empty (embeddings off; resolution uses exact and fuzzy matching only) or an NVIDIA model ID from the catalog (listed in `NVIDIA_EMBED_MODELS`). `/healthz` reports the four configured IDs.
 - Transport: OpenAI-compatible chat completions (`LLM_BASE_URL`, `LLM_API_KEY`) through the `openai` Python SDK. If Token Factory's API differs, only this adapter changes.
 - Startup check and health (implemented in `sherlock/llm/models.py`):
   - The role check runs in the app's lifespan, so a misconfigured deployment refuses to start.
   - `NVIDIA_EMBED_MODELS` is configuration too, so it can't vouch for a model on its own: `MODEL_EMBED` must be in that list and also look like an NVIDIA embedding ID (it contains `embed` and one of `nvidia`, `nv-` or `nemotron`, the same rule the smoke test uses to find embedding models in the catalog). A non-NVIDIA ID such as `BAAI/bge-m3` fails startup even when it's listed (added 2026-10-25, Day 1 review).
-  - **Chat roles need the `nvidia/` publisher** (2026-10-25, Day 1 review). `is_nemotron_chat` requires an ID that starts with `nvidia/` (any case) and contains `nemotron`. The check used to be a substring test, so a third party's `someorg/nemotron-distill` would have passed (Rule 2). Every Nemotron ID in the Token Factory catalog starts with `nvidia/`.
+  - **Chat roles need the `nvidia/` publisher** (2026-10-25, Day 1 review). `is_nemotron_chat` requires an ID that starts with `nvidia/` (any case), contains `nemotron` and doesn't contain `embed`. The check used to be a substring test, so a third party's `someorg/nemotron-distill` would have passed (Rule 2). Every Nemotron ID in the Token Factory catalog starts with `nvidia/`.
   - `/healthz` reports `llm.reachable` from a `GET /models` probe with a 5 s timeout, cached for 60 s so an uptime monitor doesn't hit Token Factory on every check.
   - Reasoning traces (`<think>…</think>`, or a lone closing tag) are stripped before JSON is parsed (`sherlock/llm/text.py`).
 - Day 1 results (`scripts/smoke_llm.py`, 2026-10-24; details in `FEEDBACK.md`):
@@ -327,7 +331,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - **Story schema:** each `headline`/`body` run is a union of `{text}`, `{chip}` and `{label}` objects (pydantic emits `anyOf`), each with one required key and `additionalProperties: false`, so strict decoding enforces one kind per run. With the union, Super passes Story even with reasoning off; an earlier version with three optional keys let it mix kinds in one run. The no-digits check stays a validator.
 - Structured output: pass `response_format` with a JSON schema when supported; otherwise instruct JSON in the prompt. Every structured response is validated with pydantic; on failure, one **repair call** sends the error and asks for corrected JSON; on second failure the caller gets `StructuredOutputError` and applies its fallback.
 - Tool calling: used by the chat loop when the model supports it; otherwise emulated with a JSON schema `{ "tool": ..., "arguments": ... }`. Decided per model on day 1 (`LLM_TOOLS_MODE=native|json`).
-- Fallbacks after `StructuredOutputError`: Cleaner diagnose, propose and critic calls skip the issue as "model output invalid"; dashboard curation uses the top 8 by score with templated titles; narration uses the fact-sheet bullets; the chat router treats the message as a single `ask_data` question; the planner runs one step; compose returns the raw results table with sources (App Flow §18).
+  - As built (2026-10-25): no call passes `tools`. The chat loop routes with the strict `Route` schema (`small`, purpose `route`) and plans with the `Plan` schema (`medium`, purpose `plan`), and its answerers use their own schemas (§8.1), so the loop, not the model, picks what runs. `LLM_TOOLS_MODE` (`native` in `render.yaml` and `.env.example`; the config default is `json`, §10) only affects the client's `tools` path, which `tests/test_llm_client.py` covers.
+- Fallbacks after `StructuredOutputError`: Cleaner diagnose and propose calls skip the issue as "model output invalid"; a critic call that fails doesn't skip on its own, it counts as a review that didn't pass, so the confidence's review term is 0 (`cleaning/loop.py`, §7.2); dashboard curation uses the top 8 by score with templated titles; narration uses the fact-sheet bullets; the chat router treats the message as a single `ask_data` question; the planner runs one step; compose returns the raw results table with sources (App Flow §18).
 - Retries: per-call timeout 60 s (large) / 30 s (others); 3 retries with exponential backoff (2, 4, 8 s) on 429/5xx/timeouts, capped at 2 minutes per call in total; jobs show "Waiting for the model…" while retrying, and once retries run out the call fails with `llm_unavailable` and the user sees "The model service is unavailable" (App Flow §18). Time spent waiting counts against the cleaning budget, and the report names it.
 - Budgets: tokens per user per day (`USER_TOKEN_BUDGET`, default 2M), per job (`JOB_TOKEN_BUDGET`, default 300k), per chat message (`MESSAGE_TOKEN_BUDGET`, default 40k). Exceeding fails the call with a user-facing message.
   - **App-wide ceiling** (2026-10-25, owner's decision on the Day 1 review). `APP_TOKEN_BUDGET` (default 10M) caps every user's calls together per UTC day. It's summed from `llm_calls` since midnight UTC before each call, and past it the call fails with `budget_exceeded` ("Sherlock has used today's model budget for everyone…"). A per-user budget resets whenever a client drops its cookie; this one doesn't. 0 turns it off.
@@ -375,7 +380,7 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 |---|---|---|---|
 | GET | `/me` | — | `{ user_id, created_at, settings }` |
 | PUT | `/me/settings` | `Settings` | `Settings` |
-| GET | `/events` | — | user-level SSE stream: `dataset.status` and `job.progress` for all of the user's datasets (§5) |
+| GET | `/events` | `?last_event_id=` (or the `Last-Event-ID` header) | user-level SSE stream: `dataset.status` and `job.progress` for all of the user's datasets (§5) |
 
 `GET /me` returns `settings` with every field filled: stored values over the PRD §7.10 defaults, and a stored value that is no longer allowed falls back to its default. `PUT /me/settings` accepts a full or partial `Settings` (unknown keys → `422 invalid`), merges it over the stored values, and returns the full result.
 
@@ -399,8 +404,8 @@ Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "me
 | GET | `/exports/{export_id}` | — | `{ status, download_url?, error?, counts: { steps, widgets, runs, cards } }` |
 | GET | `/exports/{export_id}/download` | — | `application/x-ipynb+json` stream, `Content-Disposition: attachment; filename="<name>-v<version>.ipynb"` |
 | GET | `/datasets/{id}/exports/notebook/preview` | `NotebookOptions` as query | `{ counts, version, notes: string[] }` for the dialog's sentence and warnings |
-| GET | `/datasets/{id}/events` | — | SSE stream (§5) |
-| GET | `/datasets/{id}/suggestions` | — | `{ questions: string[3] }` |
+| GET | `/datasets/{id}/events` | `?last_event_id=` (or the `Last-Event-ID` header) | SSE stream (§5) |
+| GET | `/datasets/{id}/suggestions` | — | `{ questions: string[3] }`. Not built (cut 9, Implementation Plan §2.0) |
 
 `NotebookOptions`: `{ include_data: bool, include_cards: bool, include_notes: bool, include_runs: bool, order: "steps_dashboard"|"flow_path", up_to_step?: number }`. Defaults `{ true, true, false, true, "steps_dashboard" }`; remembered in `users.settings_json.notebook`.
 
@@ -428,16 +433,17 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 - **`GET /datasets`** lists the user's datasets that aren't deleted, most recently opened first, then newest.
 - **`GET /datasets/{id}`** sets `last_opened_at`.
 - **Status.** Since D2.5, `POST /datasets` and a new `POST /datasets/sample` import queue a `profile` job (§7.1 steps 3–6) in the same request, and the dataset leaves `profiling` when it ends: `offer`, or `failed` with the reason in `error`. Returning an existing sample queues nothing.
+  - As built: the profile job's end follows the user's After upload setting (`jobs/profile.py::_after_upload`, App Flow §4): `ask` → `offer`; `always` → `cleaning`, with a whole-dataset clean queued; `never` → `building`, with the dashboard build queued. A sample cloned from the seed (below) is `ready` at once and queues no profile job.
 - **`GET /datasets/{id}/datacard`** (2026-10-24, D2.2):
   - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
   - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
   - **Built by the job.** Since D2.5 the profile job builds the card right after import, so a later request reads the cached one. Builds of one dataset are serialized: a request that arrives while the job is building waits and gets the same card, with the same issue IDs.
 
 Rename, delete and restore as implemented (2026-10-25, Implementation Plan D4.5):
-- **`PATCH /datasets/{id}`** takes `{ name?, last_tab? }`; unknown keys are `422`. A name is trimmed and may not be empty. The web app sends `last_tab` when a tab opens, which `/d/:id` uses to choose a tab.
+- **`PATCH /datasets/{id}`** takes `{ name?, last_tab? }`; unknown keys are `422`. A name is trimmed and may not be empty or longer than 200 characters. The web app sends `last_tab` when a tab opens, which `/d/:id` uses to choose a tab.
 - **`DELETE`.** It sets `deleted_at`, cancels the dataset's queued and running jobs, and drops its cached DuckDB connections. Everything under the dataset is hidden at once.
 - **`POST /restore`** works for 10 minutes after the delete; later it's `404`, as if purged. If the delete cancelled the dataset's work, that work is queued again: the profile job for a `profiling` dataset, the dashboard build for a `cleaning` or `building` one. The files themselves are removed by the purge job (D8.6).
-- **`GET /raw.csv`** returns the stored upload with `Content-Disposition: attachment; filename="<name>-raw.csv"`.
+- **`GET /raw.csv`** returns the stored upload with `Content-Disposition: attachment; filename="<name>-raw.csv"`. In this file name, and in `export.csv`'s and the notebook's, `<name>` drops a final `.csv`, `.tsv` or `.txt` and " (sample)", and every run of characters other than letters, digits, `.`, `_` and `-` becomes `_`.
 
 `Dataset`: `{ id, name, status: "profiling"|"offer"|"cleaning"|"building"|"ready"|"failed", current_version, row_count, column_count, created_at, last_opened_at, last_tab, cleaning_progress?: { step, of, pct }, error? }`
 
@@ -445,13 +451,16 @@ As built (2026-10-24), `Dataset` adds two counts for the library row and the ver
 - `issue_count`: the issues on the current version's DataCard, or `null` until that card is built
 - `step_count`: the steps in the current version's effective chain
 
+`row_count` and `column_count` can be `null`. `cleaning_progress` is in the schema but is not filled yet: it is always `null` (`routers/datasets.py::to_dataset`). The library row takes the progress from the user stream's `job.progress` instead, so after a reload it shows 0 until the next progress event.
+
 Notebook export as implemented (2026-10-25, Implementation Plan D5.6, `sherlock/routers/exports.py`):
 - **`POST /datasets/{id}/exports/notebook`** answers `201` with `{ export_id, job_id, cached, status, version, counts, error, download_url? }`.
   - It's `409` while the dataset is `profiling` or `failed`.
   - The options (all but `up_to_step`) are stored as the user's `settings_json.notebook`.
   - The cache key is `sha1("notebook", current_version, state_rev, options)`. A `done` export whose file still exists is returned with `cached: true` and its `download_url`; a `queued` or `running` one is returned as it is; a failed one, or one whose file is gone, is replaced by a new job.
+  - `counts` is `{ steps, widgets, runs, cards, notes }` (`notes`: the canvas notes emitted), and `null` until the export is done (`jobs/export.py`, `notebook/exporter.py::build`).
 - **`GET /exports/{export_id}`** returns the same shape. **`GET /exports/{export_id}/download`** streams the file as `<name>-v<version>.ipynb` (the name's `.csv` and " (sample)" dropped, like `export.csv`); it's `409` until the export is done and `404` once its file is gone.
-- **`GET /datasets/{id}/exports/notebook/preview`** takes any of the options as query parameters and fills the rest from the remembered ones. It answers `{ version, notes, counts: { steps, widgets, runs, cards }, options }`.
+- **`GET /datasets/{id}/exports/notebook/preview`** takes any of the options as query parameters and fills the rest from the remembered ones. It answers `{ version, notes, counts: { steps, widgets, runs, cards, notes }, options }`. Like the export, it's `409` while the dataset is `profiling` or `failed`, and an `up_to_step` that no version matches is `422` ("No version holds the steps before step k.").
 - **`PUT /me/settings`** keeps keys that aren't settings, such as `notebook`, when it saves.
 
 ### 4.3 Rows (CSV tab)
@@ -470,27 +479,29 @@ Notebook export as implemented (2026-10-25, Implementation Plan D5.6, `sherlock/
 Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers/rows.py`, `sherlock/rows/`):
 - **`GET /rows`.**
   - It reads the version through the cached in-memory DuckDB connection. Every column name in `sort` and `filter` is checked against the version's columns and quoted, and every value is a bound parameter. An unknown column, operator or view is `422 invalid`, and an unknown version is `404`.
+  - `offset` defaults to 0 and `limit` to 200 (1–500).
   - `sort` items are `col` or `col:asc|desc`, with `NULLS LAST`; `_row_id` breaks ties, and it's the default order.
   - Filters compare on the column's type (`gt` on a `BIGINT` column casts the value with `TRY_CAST`). `contains` and `in` compare the cell's text, `contains` case-insensitively. `contains` looks for its value as a plain substring: `%`, `_` and `\` in it are literal characters, as in find (review of Day 2, 2026-10-25). `empty` also matches blank text.
   - `view=changed` is rows with any cell mark. `flagged` is quarantined rows plus rows with a `flagged` or `invalid` cell. `missing` is rows with any empty user cell.
   - `selection` reads a `selections` row: its `row_ids_json`, else its stored, already validated predicate.
   - The response adds `columns: [{name, type}]` (DuckDB types) and, per row, `quarantine_reason`.
   - Cell values are JSON: dates and timestamps as ISO strings, NaN and infinities as `null`.
-  - The `predicted` mark comes from run results (D7) and isn't produced yet.
+  - The `predicted` mark comes from run results (D7) and isn't produced yet. Not built (cut 7, Implementation Plan §2.0: no `predict` recipe, so no predicted cells).
 - **`GET /cells/{row_id}/{column}/history`.** `?version=` defaults to the current one. Each entry adds `flag`.
 - **`POST /edits`.** It answers `201` with `{ step, version, new_row_ids: { temp_id: _row_id } }`.
   - Values are typed to the column's DuckDB type. A blank value is NULL.
   - A value that doesn't parse as that type, such as `abc` in a `DOUBLE` column or `3.5` in a `BIGINT` one, is saved as NULL. Its lineage row keeps the text as `new_value` with flag `invalid` (App Flow §8.2: "invalid values are saved but flagged"), and its `notebook_code` assigns `None`.
   - Integers are parsed exactly, never through a float, so a value past 2^53 keeps every digit. One that doesn't fit the column's integer type (past `BIGINT`'s range, for example) is invalid in the same way (review of Day 2, 2026-10-25).
   - The step has kind `edit`, `created_by` `user` and gate `user`. Its summary reads like "Edited 3 cells, added 1 row, deleted 1 row by hand". `edits_json` stores the batch with each new row's assigned `_row_id`.
-  - It's refused with `422 invalid`, and writes nothing, when the batch is empty, names an unknown column or a row not in the version, or edits a row it also deletes.
+  - It's refused with `422 invalid`, and writes nothing, when the batch is empty, names an unknown column or a row not in the version, or edits a row it also deletes. A batch holds at most 100,000 edits and 100,000 new rows, and unknown keys are `422` (`rows/edits.py`).
   - **Conflicts.** A stale `base_version` is always `409 conflict`, with `current_version` and `conflicts: [{ row_id, column, mine, theirs }]`: the edited cells whose value differs between the base version and the current one, which may be none. The client reapplies the edits on the new version ("Rebase and save", App Flow §8.2) and sends them again with the new `base_version`.
   - `run_cleaning_on_new_rows` is accepted; it queues a Clean with AI job scoped to the new rows once the Cleaner exists (D3.2).
 - **`GET /find`.**
   - It matches each cell's text case-insensitively: a substring, or with `regex=true` a regular expression (an invalid one is `422`). DuckDB runs the expression with RE2, so a pattern Python accepts but RE2 doesn't, such as a lookahead `(?=…)` or a backreference `\1`, is invalid too (review of Day 2, 2026-10-25).
   - `column` limits it to one column, and `selection` to a selection's rows.
   - Matches come in row order, then column order. `first_matches` holds the first 100. With `all=true`, it holds up to 10,000, each with its `value`.
-- **`GET /columns/{column}/values`.** It answers from `value_index`, most frequent first; `prefix` is a case-sensitive prefix and `limit` is 1–500 (default 50).
+  - `q` is required, 1–500 characters. Find always reads the current version; it takes no `version`.
+- **`GET /columns/{column}/values`.** It answers from `value_index`, most frequent first (ties by value); `prefix` is a prefix and `limit` is 1–500 (default 50). The prefix is matched with SQLite's `LIKE`, so it ignores case for ASCII letters (`ma` finds `Male`), with `%`, `_` and `\` taken literally.
 - **`GET /export.csv`.**
   - It returns the version (`?version=`, default current) as UTF-8 CSV, named `<name>-v<version>.csv`.
   - It has the user columns only, every row the grid shows (quarantined rows too), in `_row_id` order.
@@ -506,7 +517,8 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 | GET | `/datasets/{id}/steps` | — | `Step[]` newest first |
 | GET | `/datasets/{id}/steps/{step_id}` | — | `Step` with code / edit list, impact, decisions |
 | POST | `/datasets/{id}/steps/{step_id}/undo` | `{ confirm: bool, base_version: number }` | `{ step, version }`; when `confirm` is false and the undo needs confirmation (later steps to replay, or the step is the automatic typing step), `200 { confirm_required: true, replay_needed: [step_no], warning?: "typing" }`; `409 { failed_step_id, reason }` when a replay fails |
-| POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits; `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
+| GET | `/proposals/{proposal_id}` | — | `Proposal` (§6.8; as built below) |
+| POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits (not built, cut 2, Implementation Plan §2.0); `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
 Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/actions.py`, `sherlock/routers/proposals.py`):
@@ -521,6 +533,7 @@ Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/
   - A `base_version` that is no longer current marks it `expired` and answers `409` with `current_version`.
   - `edit_cells` commits one edit batch through the same `rows.edits.save` as the CSV tab's Save, and answers `{ step, version }` with `result_step_id` stored.
   - `clean_selection` queues the clean job under the same rules as `POST /clean` and answers the `Job`.
+  - Both answer `200`. The body is optional and ignored: `edited_code` is for code proposals, which are P1. A proposal of any other kind is `422` ("Proposals of kind … aren't built").
 - **Reject** marks a pending proposal `rejected`; it is always `204`.
 - **`GET /proposals/{id}`** answers the `Proposal`. Every proposal route resolves through its dataset (`owned("proposal")`).
 - **`Proposal` as built:** the §6.8 shape plus `result_step_id`; `edits` items carry `before`, and `scope` is set for `clean_selection`. The message that made it carries it as `proposal`, read fresh from the table, so the thread shows its current status.
@@ -532,7 +545,8 @@ Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `she
   - It's refused with `422` for `mode: "stepwise"` (P1) or a selection scope without `selection_id`.
   - It's refused with `409` while the dataset is `profiling`, `cleaning`, `building` or `failed`, or while a profile, clean or build job is queued or running.
   - A whole-dataset clean sets the status to `cleaning`. A scoped one leaves the status alone.
-- **`POST /use-as-is`.** Only from `offer`: the status becomes `building`, a `build_dashboard` job is queued, and the answer is `201` with that `Job`.
+- **`POST /use-as-is`.** Only from `offer`: the status becomes `building`, a `build_dashboard` job is queued, and the answer is `201` with that `Job`. Any other status, or a profile, clean or build job queued or running, is `409`.
+- **`GET /report`** builds the `CleaningReport` from the latest clean job, or from `job_id`, which must be a clean job of this dataset. With none it's `404` ("No cleaning run yet").
 - **`POST /edits` with `run_cleaning_on_new_rows`.** It queues a clean job scoped to the new rows' IDs and returns it as `clean_job`.
   - As of 2026-10-25 (Day 5 review): a save with `run_cleaning_on_new_rows` and at least one new row also counts against the LLM bucket (10 per minute), like `POST /clean`, and is `429` past it before anything is saved. A save without it isn't limited by that bucket.
 
@@ -578,21 +592,22 @@ Widgets API as implemented (2026-10-24, Implementation Plan D4.1, `sherlock/rout
   - The query runs on the current version before anything is saved. A schema error, a SQL that fails validation or a query that fails is `422 invalid` with the reason, and nothing is saved.
   - It answers `201 { widget, warning? }` and places the widget under the saved layout.
   - The `{ prompt }` form is answered by the chat agent's `create_widget` (D4.3).
-  - An `ml` op is refused with `422` until the analysis menu exists (D7).
+  - An `ml` op is refused with `422` until the analysis menu exists (D7). Since D7 it's accepted: the request is checked as for `POST /runs` (a refusal is `422` and saves nothing), and the widget is linked to its run, a new one or the cached one (`widgets/service.py::create`, §4.8).
 - **`PATCH /widgets/{wid}`.** A partial `WidgetSpec` is merged over the current one (objects merge, other values replace), and `title` renames. The new spec runs first, as on create. The old spec goes to `prev_spec_json`, and a view change clears the accent.
+  - The `{ prompt }` form is not built yet: it's `422` ("Changing a widget in words needs chat, which isn't built yet."). Chat does change a widget in words (`update_widget`, D8.5, §8.1), but this route doesn't call it.
 - **`POST /widgets/{wid}/undo`** swaps the spec with `prev_spec_json`, so a second undo puts the change back. With nothing to go back to it's `409 conflict`.
 - **`DELETE`** soft-deletes the widget and its story cards together, and `restore` brings back the cards deleted with it. A deleted widget's data, explain, patch and duplicate are `404`; restore still finds it.
 - **`POST /duplicate`** answers `201` with a copy titled "<title> (copy)".
 - **`GET /data`.**
   - `filters` is the global filter in the rows API's filter JSON (§4.3), and `version` defaults to the current version.
   - The answer is `WidgetData` plus each column's DuckDB type. A query that fails on that version, such as an average over a column that is text there, is `422` with the reason.
-- **`GET /explain`** takes the same `filters` and returns `{ op, sql, scope, params, version }` for SQL widgets. `sql` is exactly what `GET /data` runs with those filters, `LIMIT` included. ML widgets return `recipe`, `params` and `run_id` instead.
+- **`GET /explain`** takes the same `filters` and returns `{ op, sql, scope, params, version }` for SQL widgets. `sql` is exactly what `GET /data` runs with those filters, `LIMIT` included. ML widgets return `recipe`, `params` and `run_id` instead. There's no `model_card` in the answer; the model card is read from `GET /runs/{rid}/model-card` (§4.8).
 - **`PUT /layout`.**
-  - The body is checked: positions inside 12 columns, and every `i` must be one of the dataset's widgets (else `422`).
+  - The body is checked: positions inside 12 columns, and every `i` must be one of the dataset's widgets (else `422`). As built (`widgets/layout.py::Item`): `x` 0–11, `w` 1–12, `y` 0–10,000, `h` 1–100, at most 500 `lg` items; `x + w` isn't checked against 12, and a soft-deleted widget's `i` is accepted.
   - It's stored as sent and emits `layout.updated` with `{ layout }`.
   - It never starts the cascade.
 - **Events and the export key.** Every widget or layout write bumps `datasets.state_rev` and emits `widget.updated` with the `Widget`; a deleted widget's event adds `deleted: true`.
-- **`POST /selections`** (§4.3) takes `{ predicate }` or `{ row_ids }`, plus an optional `label`.
+- **`POST /selections`** (§4.3) takes `{ predicate }` or `{ row_ids }`, plus an optional `label`. Exactly one of the two: both or neither is `422`.
   - The predicate is validated against the current version's columns: no subqueries, only known columns.
   - `row_count` counts rows that aren't quarantined, and IDs not in the version don't count.
   - It answers `201`.
@@ -620,12 +635,13 @@ Widgets API as implemented (2026-10-24, Implementation Plan D4.1, `sherlock/rout
 
 Story cards API as implemented (2026-10-25, Implementation Plan D6.1–D6.3, `sherlock/routers/cards.py`):
 - **`Card`** also carries `narrated_by` (the model ID, or null when the card shows the fact-sheet bullets), `updated_at`, `facts` (key → `{formatted, label}` from the card's current fact sheet, so chips render from it) and `related` (`[{widget_id, title}]`, from the relation graph).
-- **`GET /datasets/{id}/cards`** lists the overview first, then the widget cards in builder order.
+- **`GET /datasets/{id}/cards`** lists the overview first, then the widget cards in builder order, then the synthesis and answer cards, oldest first.
 - **`PATCH /cards/{cid}`** takes `{ headline?, body? }` as `CardBody`, sets `edited_by_user`, and turns every number typed in a text run into a chip with `key: null` and `unverified: true` ("Typed by you, not computed"). An edited card is never narrated over again; the cascade gives it a `suggestion`.
 - **`POST /cards/{cid}/refresh`** queues a `stories` job for the card's widget (the overview: for no widget, so only the overview is written) and answers `201` with the `Job`.
+  - A synthesis card's Refresh queues a `stories` job with `synthesis_ids: [cid]` that writes that card again (§3.3). An answer card's is `409` (§4.9).
 - **`POST accept-suggestion`** puts the suggestion in the card and clears `edited_by_user` and the badge (`409` without a suggestion); **`dismiss-suggestion`** drops it and the badge; **`dismiss-badge`** clears `changed_badge`.
 - **Accept also sets the card's `version`** to its fact sheet's version (Day 6 review, 2026-10-25). An edited card keeps the version its user-written text reflects; the suggestion was written from the current sheet.
-- **`GET /cards/{cid}/evidence/{chip_id}`** answers `{ key, value, formatted, label, sql?, cell?, from?, formula?, method?, run_id?, computed_at, version }`; for an unverified chip, `{ value, unverified: true, label, version }`.
+- **`GET /cards/{cid}/evidence/{chip_id}`** answers `{ key, value, formatted, label, sql?, cell?, from?, formula?, method?, run_id?, computed_at, version, card_id }`, where `card_id` is the cited card a synthesis or answer card's chip was resolved through (else `null`); for an unverified chip, `{ value, unverified: true, label, version }`.
 - **`GET /fact-sheets/{fsid}`** answers `{ id, widget_id, version, facts, depends_columns, computed_at }`.
 - **`GET /datasets/{id}/relations`** answers the latest version's edges with their `detail` (the shared columns, or the target).
 - **More detail** (`sherlock/stories/service.py`):
@@ -720,13 +736,15 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7, `sherlock/rout
   - `baselines`: the baselines plus a `model:` row with its interval.
   - `partial_dependence&feature=`: `value`, `prediction`, plus `of` and `kind`. Without `feature`, every point of the top five factors.
   - Results are `409` until the run is done or outdated.
-- **`GET /runs/{rid}/model-card`** is `409` until there is one. `GET /runs/{rid}/code` serves `repro.py` once it's written.
-- **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6).
+  - `view` defaults to `importance`; any other value is `422`. A `feature` outside the top five is `404`.
+- **`GET /runs/{rid}/model-card`** is `409` until there is one, and the card comes with the run's `status` added. `GET /runs/{rid}/code` serves `repro.py` once it's written, and is `409` before.
+- **`POST /runs/{rid}/cancel`** cancels the run's job while the run is queued or running, else does nothing; it is always `204`.
+- **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6). It answers the full `Run`; a deleted widget or one that isn't an analysis is `422`.
 - **`GET /widgets/{wid}/data` for an analysis widget** returns its run's importance plus `run` (the `Run` summary), so the widget can show progress, the verdict or "Outdated". An analysis ignores the dashboard's filter.
 - **Confusion, ROC and wrong rows (2026-10-25, D7.4).**
   - For a classification run, `results?view=confusion` gives `actual`, `predicted` and `n` for every pair of classes. `view=roc` gives `fpr`, `tpr` and `threshold` (at most 50 points) for two classes. Both come from the out-of-fold predictions; a run without them answers `422`.
   - `Run.summary` lists the run's `views`, `task` and `misclassified` count.
-  - `POST /runs/{rid}/wrong-rows` (added) saves a selection of the misclassified rows: their `_row_id`s, labelled "<target>: predicted wrong". It returns `{ selection_id, row_count, label }` for the CSV tab's `?rows=` ("Who did it get wrong?", App Flow §9).
+  - `POST /runs/{rid}/wrong-rows` (added) saves a selection of the misclassified rows: their `_row_id`s, labelled "<target>: predicted wrong". It returns `{ selection_id, row_count, label }` for the CSV tab's `?rows=` ("Who did it get wrong?", App Flow §9). It's `409` until the run is done or outdated, and `422` for a run on a number, which has no out-of-fold classes.
 - **Not built:** `explain-row` and `predictions` (cut 7), and `compare-auto` (cut 4).
 
 ### 4.9 Chat
@@ -751,6 +769,7 @@ Chat API as implemented (2026-10-25, Implementation Plan D4.3, `sherlock/routers
   - It counts against the LLM rate limit.
   - It's refused with `409` while the dataset is `profiling` or `failed` (there's no data card to answer from). In every other status it answers from the current version.
   - `context` takes the `ChatContext` fields. `global_filter` is the rows API's filter JSON, and unknown keys are ignored.
+  - `text` is 1–4,000 characters and `choice` at most 200. Unknown top-level keys are `422`.
   - With `clarification_of`, the question becomes the original question plus "(Clarified: <choice>)", and the router isn't asked to clarify again.
 - **`Message`.** Each message also carries `clarification_of`. `actions` are stored in the message's saved focus.
 - **`AnswerBlock` as built:**
@@ -758,7 +777,7 @@ Chat API as implemented (2026-10-25, Implementation Plan D4.3, `sherlock/routers
   - `table` adds `result`.
   - `chart` adds `result`, or `widget_id` when the chart is a widget chat just made.
   - In a `text` block's `CardBody`, chip runs carry the cell reference as `key` (`r1:0:2`, or `r1:total`), the formatted `value` and the `raw` value. Label runs carry the `text` code rendered for their `ref`; refs can also be `widget:<id>` and `step:<id>`.
-- **`POST /messages/{mid}/pin`.** With `target: "dashboard"`, a chart block becomes a widget from its spec, and a table block from the answer's query as a table. Either is made by `chat`, titled with the question, and placed under the layout. It answers `201` with the `Widget`. `target: "flow"` is `422` until Flow (D8).
+- **`POST /messages/{mid}/pin`.** With `target: "dashboard"`, a chart block becomes a widget from its spec, and a table block from the answer's query as a table. Either is made by `chat`, titled with the question, and placed under the layout. It answers `201` with the `Widget`. `target: "flow"` was `422` until Flow (D8); it's built now (below). `target` defaults to `dashboard`, and a `block_index` that names no block is `422`.
 - **`POST /widgets` with `{ prompt }`** (the Add widget drawer's "Describe it") runs the agent's `create_widget` action without a thread message, made by `user`, and counts against the LLM rate limit. Failing twice is `422` with the reason.
 - **`POST /messages/{mid}/pin` with `target: "flow"`** (2026-10-25, D8.1) takes a text block with chips and answers `201` with a `Card` of kind `answer`, placed on the canvas right of everything.
   - The card's fact sheet (no widget) holds one fact per chip, keyed as the chip is. A result cell's fact keeps its value, formatted value and cell, with the answer's query as `sql`. A card fact (`<card_id>.<fact key>`) is copied from that card's sheet, and `source_card_ids` lists those cards.
@@ -788,6 +807,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 - **`POST /jobs/{jid}/retry`.** It answers `201` with a new queued job of the same kind, dataset and params. Only a `failed` or `cancelled` job can be retried; any other is `409 conflict`.
 - **`GET /jobs/{jid}/log`.** It returns the job's `job.log` event data, oldest first.
 - **`progress`.** Before a job reports, it is `{ step: 0, of: 0, label: "", pct: 0 }`.
+- **Kinds.** `undo` is in the kind list (`jobs/runner.py::KINDS`) but no job of it is ever made: an undo and its replay run inside `POST …/undo` (§4.4, §7.8). Every other kind has a handler.
 - **The profile job.** It reports two steps, "Typing <n> columns" (the typing step, §7.1 step 3b) and "Profiling <n> columns". Its `result` is `{ version, issues, typing_step_id }`: the version profiled, the number of issues on its card, and the typing step's ID, or null when no column was typed.
 
 ---
@@ -802,28 +822,28 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 |---|---|---|
 | `dataset.status` | `{ status, current_version }` | status changes |
 | `job.progress` | `Job.progress` + `job_id`, `kind` | each step of any job |
-| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines. As built, the Cleaner also sends `detail` (the line under the entry: "committed · step 3", "committed with a flag · step 2 · confidence 0.72", "skipped", "checking candidates"), `issue_id`, and for commits `step_id`, `step_no`, `confidence` and `checks` (the hard verifier results). `icon` is `running`, `check`, `flag`, `skip`, `wait` ("Waiting for the model…") or `error`. A `running` line's `text` names the issue ("263 missing values"); its outcome line follows with the same `issue_id` |
-| `job.done` / `job.failed` | `Job` | job ends |
+| `job.log` | `{ job_id, ts, level, icon, column?, text, candidates?: [{label, chosen}], gate?: "commit"|"flag"|"skip" }` | cleaning log lines. As built, the Cleaner also sends `detail` (the line under the entry: "committed · step 3", "committed with a flag · step 2 · confidence 0.72", "skipped", "checking candidates"), `issue_id`, and for commits `step_id`, `step_no`, `confidence` and `checks` (the hard verifier results). `icon` is `running`, `check`, `flag`, `skip`, `wait` ("Waiting for the model…"), `error` or `info` (the default, as in "There are no rows in scope, so there's nothing to clean."). A `running` line's `text` names the issue ("263 missing values"); its outcome line follows with the same `issue_id`. A skip line can carry `checks` too, and a commit line carries `review` (the critic's concerns). Other jobs send `job.log` lines as well: the `wait` lines of the build, stories and cascade jobs, and the profile job's typing-step line (`step_id`) |
+| `job.done` / `job.failed` | `Job` | job ends. As built, a cancelled job ends with `job.failed` (its `Job.status` says `cancelled`), and a job with no dataset (the purge) sends neither |
 | `version.created` | `{ version, step_id, summary, cells_changed, rows_added, rows_removed }` | a step commits |
 | `cascade.started` | `{ version, widget_ids, card_ids, run_ids }` | cascade begins |
-| `widget.updated` | `Widget` | a widget's data or status changed |
+| `widget.updated` | `Widget` | a widget's data or status changed. As built, a deleted widget is sent with `deleted: true` |
 | `card.updated` | `Card` | a card changed |
 | `run.updated` | `Run` summary | a run's status changed. As built: the `Run` without `model_card`, with `summary` and `progress` (§6.8); the widgets showing the run follow with `widget.updated`. ML progress comes as `job.progress` with `kind: "ml_run"` |
 | `cascade.done` | `{ version, counts }` | cascade ends |
-| `layout.updated` | `Layout` | another tab saved the layout |
-| `canvas.updated` | `{ etag }` | another tab saved the canvas |
+| `layout.updated` | `Layout` | another tab saved the layout. As built, the data is `{ layout }` (the saved `Layout`), and it goes to every open stream of the dataset, the saving tab's included |
+| `canvas.updated` | `{ etag }` | another tab saved the canvas. As built, also when the AI changes the canvas (`canvas.mutate`: a synthesis, an answer added to the Flow) |
 
 As built for stories and the cascade (2026-10-25, Implementation Plan D6.1–D6.2):
-- **`card.updated`** carries the whole `Card` as `GET /cards/{cid}` returns it (§4.6 as built: with `facts` and `related`). It is written to `job_events` under the job when a `stories` job or a cascade sends it, and published on the bus alone when a card route sends it.
+- **`card.updated`** carries the whole `Card` as `GET /cards/{cid}` returns it (§4.6 as built: with `facts` and `related`). It is written to `job_events` under the job when a `stories` job or a cascade sends it, and with `job_id` NULL when a card route, a synthesis or an answer added to the Flow sends it (§5.2: every event is a row, so all of them replay).
   - **During a stories run or a cascade**, a card is sent when it goes to `updating`, again when its new text (or suggestion) is stored, and the overview last.
   - **With "Story updates: Ask first"**, a cascade sends each affected card once, as `outdated`.
   - A deleted card is sent with its `deleted_at` set. The web app refetches the dataset's cards on every `card.updated`.
-- **`cascade.started`** adds `columns`: the changed columns, sorted. It also adds `all`: true when the change affects every widget, such as rows added, deleted, quarantined or restored, a column added or removed, or the typing step. `widget_ids` lists only the affected widgets, `card_ids` their cards, and `run_ids` is `[]` until runs (D7).
+- **`cascade.started`** adds `columns`: the changed columns, sorted. It also adds `all`: true when the change affects every widget, such as rows added, deleted, quarantined or restored, a column added or removed, or the typing step. `widget_ids` lists only the affected widgets, `card_ids` their cards, and `run_ids` is `[]` until runs (D7). Since D7 it lists the runs the cascade marked outdated, sorted (§7.6 "Runs").
 - **`cascade.done`** `counts` is `{ widgets, errors, cards, outdated, runs }`.
   - `widgets` is the number of affected widgets re-queried, and `errors` how many of them failed.
   - `cards` is the number of cards narrated again, the overview not counted.
   - `outdated` is the number of cards marked outdated in Ask-first mode.
-  - `runs` is `0` until D7.
+  - `runs` is `0` until D7. Since D7 it is the number of runs marked outdated (§7.6 "Runs").
 
 ### 5.2 Delivery
 
@@ -832,11 +852,12 @@ Events are written to `job_events` (for jobs) and published on an in-process bus
 Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`, `sherlock/routers/streams.py`):
 - **Every event is a row.** Each event is written to `job_events` first, then published on the bus, and the row's id is the SSE `id`. That includes events that don't come from a job (`job_id` NULL), so every event can be replayed.
 - **`dataset_id` in every event.** Each event's `data` also carries `dataset_id`, so the user-level stream can say which dataset an event is about.
-- **`dataset.status` errors.** When the status is `failed`, `dataset.status` also carries `error`.
+- **`dataset.status` errors.** When the status is `failed`, `dataset.status` also carries `error`. As built, it carries `error` whenever the change sets one: also `offer` with "Cleaning stopped: <reason>" (§7.2 "Endings").
 - **Emitted so far:**
   - `dataset.status`, `job.progress`, `job.log`, `job.done` and `job.failed`, from the runner and the profile job.
   - `version.created`, from `commit_step` and undo. Its `rows_removed` is the step's `impact.rows_deleted`.
-  - `cascade.started` and `cascade.done`, from the `cascade` job (2026-10-25, D5.5), and its `widget.updated` per widget. `cascade.done`'s `counts` is `{ widgets, errors, cards, runs }`.
+  - `cascade.started` and `cascade.done`, from the `cascade` job (2026-10-25, D5.5), and its `widget.updated` per widget. At D5.5, `cascade.done`'s `counts` was `{ widgets, errors, cards, runs }`; since D6.2 it adds `outdated` (§5.1).
+  - Since then (D4–D8): `widget.updated` from the widgets service and the ML runner, `card.updated` from the stories service, `run.updated` from the ML runner, `layout.updated` from `PUT /datasets/{id}/layout`, and `canvas.updated` from the canvas service. Every type in §5.1 is emitted. The first `dataset.status` of a sample copied from the seed comes from `POST /datasets/sample`.
 - **Wire format.**
   - A stream opens with `retry: 3000`.
   - Each event is `id`, `event` and one `data` line of compact JSON.
@@ -844,7 +865,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`,
   - Responses send `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 - **Replay.**
   - The stream subscribes to the bus first.
-  - If the request has `Last-Event-ID`, it then replays the rows after that id: at most 5,000, in id order. A first connection, which can't set the header from `EventSource`, can pass `?last_event_id=` instead, and the header wins when both are sent.
+  - If the request has `Last-Event-ID`, it then replays the rows after that id: at most 5,000, in id order. A first connection, which can't set the header from `EventSource`, can pass `?last_event_id=` instead, and the header wins when both are sent. A header that isn't a number means no replay, even with the query parameter.
   - Then it streams live events, skipping any whose id is at or below the last one replayed.
   - Without either, the stream starts with live events only.
 - **Scope.** `GET /datasets/{id}/events` needs an owned dataset (`404` otherwise) and carries all of that dataset's events. `GET /events` carries only `dataset.status` and `job.progress`, for all of the user's datasets; its replay leaves out deleted ones.
@@ -857,6 +878,8 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/jobs/events.py`,
 As built (D4.3):
 - **How it runs.** The loop runs in a worker thread with its own SQLite connection, and the stream reads its events from a queue.
 - **Events sent.** `status`, `block`, `clarification`, `sources`, `message` and `error`. `plan`, `plan.step` and `proposal` come with multi-step plans and proposals (D8.5), and prose isn't streamed as `text.delta`.
+  - `sources` is `{ sources }` (the `Source[]`), and `clarification` is the `{ question, options }` the message stores.
+  - The chat stream's events have no `id` and aren't written to `job_events`, so they can't be replayed; the saved message is the record.
 - **Since D8.5:** `plan` (`{ steps }`), `plan.step` (`{ index, status }`) and `proposal` (the `Proposal`) are sent as described in §8.1 and §4.4. A `Message` adds `plan` (`{ steps }` with final statuses) and `proposal`, and its `actions` may hold `undo_widget` (`widget_id`) and `open_export` (`options`).
 - **Order.** Each query's results go out as a `table` block as soon as the query has run, before the prose is written. Then come the final blocks that weren't already sent, then `sources`. The final `message` holds the answer's blocks in their order, which the client renders in place of what streamed.
 - **Ending.** The stream always ends with `message`. When the model is unavailable or over budget it is preceded by `error` (`{ code, message }`), and the message says so. An unexpected failure ends with `error` alone.
@@ -887,7 +910,7 @@ As built (D4.3):
 Types: `int | float | bool | date | datetime | category | text | id | empty`. Roles: `measure | dimension | time | id | target_like | free_text | empty`. A column with no non-null values gets type and role `empty`: it is flagged, kept unchanged, and excluded from widgets, targets and features. Role inference, first match wins, in this order: empty → empty; unique ratio > 0.95 and name matches id patterns or is text → id; date-typed → time; binary or low-cardinality with name in a target-ish list (`target, label, outcome, survived, churn, converted, default, y`) or last column → target_like; integer columns with ≤ 12 distinct values → dimension; numeric non-id → measure; ≤ 50 distinct or ≤ 5% unique → dimension/category; mean text length > 40 → free_text.
 
 DataCard as implemented (2026-10-24, `sherlock/profile/datacard.py`):
-- **Top level.** The card adds `quarantined`: rows with a `_quarantine_reason`, which are left out of the card, so `row_count` counts the usable rows. `column_count` counts user columns, not `_row_id` or `_quarantine_reason`.
+- **Top level.** The card adds `quarantined`: rows with a `_quarantine_reason`, which are left out of the card, so `row_count` counts the usable rows. `column_count` counts user columns, not `_row_id` or `_quarantine_reason`. `target_candidates`, `time_columns` and `id_columns` list the columns whose role is `target_like`, `time` and `id`, in file order.
 - **Per column:**
   - `missing_pct` is a percentage (0–100, two decimals).
   - `stats`:
@@ -895,10 +918,10 @@ DataCard as implemented (2026-10-24, `sherlock/profile/datacard.py`):
     - dates: `{min, max, format}`
     - text, ID and category: `{min_length, max_length, mean_length}`
     - bool and empty: `null`
-  - `top_values` is `[{value, count}]` (up to 10) for categories, bools and low-cardinality numbers that aren't measures.
+  - `top_values` is `[{value, count}]` (up to 10) for categories, bools and low-cardinality numbers that aren't measures. As built (`profile/stats.py::top_values`), it is set for every column except text, ID, empty and numeric measures, so dates and numbers of any role but `measure` get it too, and its values are text.
   - `histogram` is 20 equal-width bins (`bins` holds the 21 edges) for numeric columns.
   - `sample_values` holds up to 3 distinct values, numbers as numbers.
-  - `unit` is set when at least 99% of a text column's values carry the same unit.
+  - `unit` is set when at least 99% of a text or category column's values carry a unit, and it's the same unit for all of them.
   - `semantic` is `null` until a model names columns.
   - `flags` holds `empty` for an empty column.
 - **Issues.** Each issue is `{id, detector, column, count, severity, proposal, examples, details}`. `examples` holds up to 5 offending values, or `_row_id`s for row-level detectors. `details` is detector-specific: missing columns go missing together; pairs, units, determinant and agreement; leakage holds target, score, rule and reason.
@@ -928,6 +951,14 @@ As implemented, a step also carries:
 
 `impact` also has `rows_added` and `rows_deleted`, and `before_after` holds up to 20 changed cells (values as text). The API adds `active` (§4.4).
 
+As built, per kind (2026-10-25, `steps/commit.py`, `steps/undo.py`, `profile/typing.py`, `rows/edits.py`, `cleaning/loop.py`):
+- **What makes steps.** Only `clean` (the typing step and the Cleaner), `edit` (edit batches, and approved `edit_cells` proposals) and `undo` steps are made. `ml_column` (cut 7) and `computed_column` (P1) are accepted kinds that nothing creates yet.
+- **`created_by`.** `system` (the typing step), `cleaner`, or `user` (edit batches, undos, and the edit batch an approved `edit_cells` proposal saves). `chat` is accepted but no step uses it yet.
+- **`gate`.** `commit` or `flag` for clean steps, `user` for edit batches, and null for undo steps. `confidence` is 1 for the typing step and null for edits and undos.
+- **`verifiers`.** For a Cleaner step, the full-data report: each hard check's `pass` or `fail: <reason>` (`row_ledger`, `pandera`, `dtype`, `parse_quarantine`, `placeholder_fill`, `quarantine_scope`), then `parse_rate`, `nan_introduced` (a count, which replaces that check's `pass`), `parse_failures`, `cells_changed`, `unrelated_changed`, `quarantined`, `issue_before`, `issue_after` and `score` (§7.2). For the typing step, `{ row_ledger, lossless }`. Edit batches and undos store `{}`.
+- **`decisions`.** A Cleaner step's one decision also has `review` (the critic's concerns, §7.2).
+- **`helpers_used`** is stored with the step (Schema) but not returned by the steps API.
+
 ### 6.3 WidgetSpec
 
 ```json
@@ -948,6 +979,8 @@ SQL rules: the table is always `t`; `{{rows}}` is replaced by `_quarantine_reaso
 
 As implemented (2026-10-24, `sherlock/widgets/compile.py`, `execute.py`):
 - **`{{rows}}` is required.** A widget's SQL without it is refused, so the quarantine exclusion is always in what runs.
+  - As built (`compile.check_rows_placement`), it must also be ANDed into the `WHERE` of every `SELECT` that reads `t` ("{{rows}} must be ANDed into the WHERE clause…", "Every SELECT that reads t must filter its rows with WHERE {{rows}}."), so `WHERE {{rows}} OR x`, a `NOT`, or a second read of `t` without it can't bring back quarantined or filtered-out rows.
+  - `op.sql` is at most 20,000 characters (`widgets/spec.py`). The spec models refuse unknown fields.
 - **The selection.** A `scope.rows.selection_id` is ANDed in after the predicate, as the selection's stored predicate or `_row_id IN (…)`. The global filter comes last.
 - **Literal SQL.** The global filter is rendered as literal SQL, never as bound parameters, so the SQL shown is the SQL that ran.
   - A `contains` clause is a plain substring here too: `%`, `_` and `\` are escaped, with `ESCAPE '\'`, as in the rows API. Before 2026-10-25 (Day 4 review), `contains "%"` matched every row.
@@ -957,12 +990,13 @@ As implemented (2026-10-24, `sherlock/widgets/compile.py`, `execute.py`):
   - An `eq` with a null value is `IS NULL`.
 - **Validation (`sqlglot`, DuckDB dialect).** It accepts exactly one statement, and it must be a query (`SELECT`, `WITH`, `UNION`). It refuses:
   - any table other than `t` or a CTE, and any schema-qualified table
-  - any file-reading function (`read_*`, `glob`, `parquet_*`, `sniff_*`, `query`)
+  - any file-reading function (`read_*`, `glob`, `parquet_*`, `sniff_*`, `query`, `query_table`)
   - any write or settings statement anywhere in the tree
 
   External access is also off on the connection (§3.2).
 - **Results.** A query with a `LIMIT` keeps it. Results are capped at 2,000 rows either way, and `truncated` says when more existed. Values are JSON as in the rows API.
-- **Row predicates** (widget scopes, selections) are parsed as a `WHERE` over `t`. They may name only the version's columns and `_row_id`/`_quarantine_reason`, and may not contain a query.
+- **Row predicates** (widget scopes, selections) are parsed as a `WHERE` over `t`. They may name only the version's columns and `_row_id`/`_quarantine_reason`, and may not contain a query. As built, a predicate that closes the parentheses it's wrapped in (`a = 1) OR (1 = 1`) is refused too ("The row predicate has unbalanced parentheses."), since it would OR past the quarantine exclusion and the global filter.
+- **Timeout.** A query still running after 10 s is interrupted (`execute.TIMEOUT_S`, a `threading.Timer` calling `conn.interrupt`) and fails as "The query took longer than 10 s and was stopped."
 
 ### 6.4 Fact sheet
 
@@ -988,8 +1022,12 @@ Every fact has `sql`, `run_id`, or, for a derived fact, `from` (the fact keys or
 As implemented (2026-10-25, D6.1, `sherlock/stories/facts.py`):
 - **Every fact** is `{ value, format, label, formatted }` plus its provenance: `sql` with `cell: [row, col]` (a cell of the widget's own query, no global filter), `sql` with `scalar: true` (a one-value query over the widget's rows), or `from` with `formula` (derived from other facts or from the result). Tests add `method` (`chi2`, `kruskal`, `kendall`). Formats are `pct`, `int`, `num`, `text`, `x` (a ratio, "3.8×") and `p` ("p<0.001").
 - **Per view:** every sheet has `n` (rows behind the widget). KPIs: `value`. Categories (bar, pie, ring): `groups`, `top_group`, `top_value`, `bottom_group`, `bottom_value`, `ratio_top_bottom`; for a rate with `n`: `overall`, `significance` (chi² on the groups' counts) and `effect` (Cramér's V); for an average, median or sum by category: `significance` (Kruskal-Wallis on the rows). Time series: `first_period`/`first_value`, `last_period`/`last_value`, `peak_period`/`peak_value`, `periods`, `change`, and from four periods `trend` (rising, falling or flat by Kendall's τ at 0.05) with `trend_significance`. Histogram: `median`, `mean`, `min`, `max`, `outlier_share` (1.5 IQR). Scatter: `correlation`, `direction`. Box: `top_group`, `top_median`, `bottom_group`, `bottom_median`. Heatmap: `max_x`, `max_y`, `max_value`.
+  - A result with no rows gets only `rows` (0), without `n`. One with no numeric column to read gets `n` and `rows` (rows the query returned). A one-row result reads as a KPI (`value`).
+  - The time-series facts apply when the result's first column is a date or timestamp and the view is a line, area, bar or table. `change` is left out when the first value is 0, and `ratio_top_bottom` unless both ends are above 0.
+- **Not in the sheet, as built.** `trend` is a fact like the others, not a top-level field, and there's no `outliers` list (the histogram's `outlier_share` stands in). Relations aren't stored in the sheet: they are rows of the `relations` table per version (§7.4), which the card returns as `related` (§4.6).
+- **Answer cards** (D8.3, `agent/flow.py`) store a sheet too, with `widget_id` NULL. Its facts are the answer's chips: `{ value, formatted, label: "result of the answer's query", sql, cell }`, keyed as the chips are (`r1:0:1`), with no `format`; a chip that cites a card is kept as that card's fact under `<card_id>.<fact key>`. Its `depends_columns_json` is the answer's query columns.
 - **Stored** in `fact_sheets` with `depends_columns_json` (the scope's columns and every column the query names, by sqlglot). `material_hash` is stored empty: cut 6 removed the material-change check.
-- **Labels** contain no digits, so the code-written fallback can show them as text.
+- **Labels** contain no digits of their own, so the code-written fallback can show them as text. A label that names a column ("median fare") carries that column's name as it is, digits included (`x2`); the fallback shows labels as label runs, which the no-digits rule doesn't cover.
 - **Day 6 review (2026-10-25):**
   - **`n` counts the rows with the widget's columns filled** (its scope's `x`, `series` and `y`, where they are columns of the data), within its rows. Before, it counted every row, so a card read "Average fare across 1,309 passengers" for an average over the 1,308 that have a fare, while the KPI tile said "of 1,308 rows".
   - **`depends_on` reads only the data's columns:** a column qualified by another table, such as a histogram's `b.lo` and `b.w` from its own CTE, is left out. Before, every histogram "read" `lo` and `w`, so two histograms of different measures were related through them.
@@ -1014,10 +1052,11 @@ As implemented (2026-10-25, D6.1, `sherlock/stories/facts.py`):
 The dropdown, the setup form and the agent's `run_recipe` tool schema are all generated from manifests. P1 recipes are registered as stubs that always return `compatible: false` with a reason (for example "needs a date column"), so the dropdown shows them disabled.
 
 As built (2026-10-25, `sherlock/ml/registry.py`, cuts 4 and 7):
-- **`driver_analysis`.** It lists only the `auto` method, its `params` carry a `title` for the setup form's More section, and its `outputs` are `importance`, `partial_dependence` and `model_card`.
-- **Targets.** `targets` is added per dataset: columns typed bool, category, int or float that aren't IDs, free text, empty or time. Categories need 2–20 values.
+- **`driver_analysis`.** It lists only the `auto` method, its `params` carry a `title` for the setup form's More section, and its `outputs` are `importance`, `partial_dependence` and `model_card`. `time_budget_s` has `minimum: 10` and `maximum: 300`.
+- **Targets.** `targets` is added per dataset: columns typed bool, category, int or float that aren't IDs, free text, empty or time. Categories need 2–20 values. The DataCard's `target_candidates` come first.
+- **`compatible` and `reason`.** `driver_analysis` is compatible when it has a target and at least `min_rows` rows; otherwise the reason is "needs a column to explain (a yes/no, a category or a number)" or "needs 100 rows; this has <n>".
 - **Disabled recipes.** `predict` ("Not in this release", cut 7), `kmeans`, `anomalies` and `forecast` ("Coming later"; Forecast says "needs a date column" when there is none) come back with `compatible: false` and no methods.
-- **Not built.** The agent's `run_recipe` tool is not built (D7.3).
+- **Not built.** The agent's `run_recipe` tool is not built (D7.3). Chat's `ask_why` starts or reuses a `driver_analysis` run itself (`agent/insight.py::ask_why`, §8.2), with no tool schema from the manifest.
 
 ### 6.6 ModelCard
 
@@ -1047,9 +1086,9 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
 - **`rows`.** `{ total, with_target, blank_target, used, train }`.
 - **`split`.** `{ kind: "stratified_kfold"|"kfold", folds, seed: 42 }`.
   - (Day 7 review F1, fixed 2026-10-25) Also `"stratified_group_kfold"|"group_kfold"`, and `group`: the column whose rows stay in one fold, or null (§7.5 step 4). The model card drawer and the notebook's run cell say "keeping rows that share a <group> in one fold".
-- **`baselines`.** "everyone gets the most common outcome" (or "predict the average"), and "best one-column rule: <column>" with its `column`.
-- **`model`.** `{ metric: "accuracy"|"macro_f1"|"r2", value, ci, folds, lift_over_best_baseline, auc? (two classes), mae? (regression) }`. `ci` is mean ± 1.96·sd/√folds.
-- **`alternatives`.** The other models Auto tried, with their CV score.
+- **`baselines`.** "everyone gets the most common outcome" (or "predict the average"), and "best one-column rule: <column>" with its `column`. Each is `{ name, metric, value }`, plus `column` and `target_encoded` where they apply.
+- **`model`.** `{ metric: "accuracy"|"macro_f1"|"r2", value, ci, folds, lift_over_best_baseline, auc? (two classes), mae? (regression) }`. `ci` is mean ± 1.96·sd/√folds. `folds` is the list of per-fold scores (`core.run`).
+- **`alternatives`.** The other models Auto tried, with their CV score: `[{ model, label, metric, value }]`, the winner not included.
 - **`verdict` and `verdict_text`:**
   - `beats_baseline`: a lift of at least 2 points, or 0.05 in R².
   - `weak`: any smaller lift.
@@ -1059,15 +1098,15 @@ As built (2026-10-25, Auto only, `sherlock/ml/analysis.py::model_card`, `sherloc
 - **`importance`.** Permutation importance, scaled so the strongest is 1.
 - **`warnings`:**
   - `class_imbalance`: more than 70% share one outcome.
-  - `small_sample`: fewer than 300 rows.
+  - `small_sample`: fewer than 300 rows with the target filled in (`rows.with_target`).
   - `high_cardinality`: target-encoded columns.
   - `forced_in`: a column put back in although a check excluded it.
-- **`limits`, `sample`.** As above.
+- **`limits`, `sample`.** As above. `limits` is "<n> rows" (the rows trained on), with "; intervals are wide" under 1,000 rows, then "correlational, not causal". `sample` is `{ seed, stratify_column, n }` when the scope was sampled, else null (§7.5 step 1).
 - **Run context.** `version`, `scope`, `params`, `artifact_path`, `fact_sheet_id`, and `repro: { libraries: { pandas, numpy, duckdb, scikit-learn }, code_path }`.
 - **Classification extras (2026-10-25, D7.4).** These come from the out-of-fold predictions:
   - `confusion: { labels, matrix }`: actual rows by predicted columns, labels in sorted order;
   - `misclassified`: the count of rows predicted wrong;
-  - for two classes, `roc: { positive, auc, points: [{ fpr, tpr, threshold }] }`. Its pooled out-of-fold AUC is within a few thousandths of `model.auc`, which is the mean over folds.
+  - for two classes, `roc: { positive, auc, points: [{ fpr, tpr, threshold }] }`, at most 50 points (`runner.ROC_POINTS`), on the second class in sorted order. Its pooled out-of-fold AUC is within a few thousandths of `model.auc`, which is the mean over folds.
 - **Not built.** `coefficients` and the method checks (cut 4), and `calibration` (no predictions are served, cut 7).
 
 ### 6.7 Reproduction code (runs and edit batches)
@@ -1079,15 +1118,17 @@ As built for runs (2026-10-25, `sherlock/ml/repro.py`):
   - it selects `SELECT * FROM t WHERE <the run's WHERE clause> ORDER BY _row_id` with `t = df`, and drops rows without the target;
   - it reapplies the sample when there was one;
   - it lists the features and every exclusion with its reason as comments;
-  - it returns `run(...)` for the winning model: `{ metrics, baselines, importance (DataFrame), rows }`.
+  - it returns `run(...)` for the winning model: `{ metrics, baselines, importance (DataFrame), rows }`, plus `grouped_by` (the group column, or null when the folds weren't grouped) and, for classification, `oof` (§7.5 step 9). With a group column, a comment says that rows sharing it stay in one fold.
 - **One code path.** The runner gets the model card's numbers by executing this same text on the version's data (`repro.execute`), so the notebook, which runs it on the rebuilt DataFrame, reports the same metrics.
 - **Imports.** pandas, numpy, duckdb and scikit-learn; statsmodels isn't needed with Auto only.
 
 Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[df._row_id == <id>, "<col>"] = <value>`, grouped by column; new rows as a `pd.concat` with explicit `_row_id`s; deleted rows as `df = df[~df._row_id.isin([...])]` (user deletions are real deletions, unlike quarantine). Values are rendered with `repr` and typed to the column's dtype.
 
+As built (`sherlock/steps/notebook.py::render_edit_batch`): each column's edits come under a comment ("# age: 2 cell(s) edited by hand"); quarantined rows restored by the batch are `df.loc[df._row_id.isin([...]), '_quarantine_reason'] = None`, before new rows and deletions; dates and timestamps are written as `pd.Timestamp('…')`. In the notebook the batch's cell ends with `keep_types` (§7.7). An undo step's `notebook_code` is only a comment, since the notebook applies the version's effective chain.
+
 ### 6.8 Report, run and proposal shapes
 
-`CleaningReport` as built (2026-10-24) adds `status` (the job's), `attempted`, `budget: { max_steps, max_seconds }`, `started_at`, `finished_at`, `counts.rows_deleted` (always 0), each step's `confidence` and `flag_reason`, and `error`. The run's state is checkpointed before the first issue, so the report can be read while the run is going; the cleaning screen polls it for its counts. `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one.
+`CleaningReport` as built (2026-10-24) adds `status` (the job's), `attempted`, `budget: { max_steps, max_seconds }`, `started_at`, `finished_at`, `counts.rows_deleted` (always 0), each step's `confidence` and `flag_reason`, and `error`. The run's state is checkpointed before the first issue, so the report can be read while the run is going; the cleaning screen polls it for its counts. `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one. As built (`cleaning/report.py`): `counts.found` is the number of issues on `from_version`, `fixed` and `flagged` count the job's steps with gate `commit` and `flag`, and a cancelled job reads `ended_by: "stopped"`, a failed one `"error"`. Each decision also carries `alternatives` and `review` (§6.2).
 
 `CleaningReport` (built from `steps` and the `issues` table for one clean job): `{ job_id, from_version, to_version, ended_by: "done"|"steps"|"time"|"tokens"|"stopped"|"error", waited_for_model_s, counts: { found, fixed, flagged, skipped }, steps: [{ step_id, no, summary, gate, impact }], skipped: [{ issue_id, column, detector, reason }], hand_edited_skipped: [{ row_id, column }], decisions: [{ step_id, question, chosen, reason }] }`. The cleaner writes `issues.outcome`, `handled_by_step_id` and `skip_reason` as it goes.
 
@@ -1095,12 +1136,17 @@ Every `edit` step stores `notebook_code` at commit time: for each edit `df.loc[d
 
 As built (2026-10-25), a `Run` adds:
 - `target`;
-- `summary`: `{ verdict, verdict_text, metric, value, best_baseline, chosen_model, chosen_label, rows, excluded }` once there is a model card, for the widget's verdict line;
+- `summary`: `{ verdict, verdict_text, metric, value, best_baseline, chosen_model, chosen_label, rows, excluded }` once there is a model card, for the widget's verdict line. `rows` is the rows trained on, `excluded` the number of excluded columns, and `best_baseline` the whole baseline row. As built (`ml/runner.py::to_run`) it also has `task`, `misclassified` (classification) and `views` (`importance`, then `confusion` and `roc` when the card has them);
 - `progress`: the job's `{ step, of, label, pct }` while queued or running.
 
-`model_card` comes only from `GET /runs/{rid}` and `POST …/runs` (not in `run.updated` or widget data).
+`model_card` comes only from `GET /runs/{rid}` and `POST …/runs` (not in `run.updated` or widget data). `GET /runs/{rid}/model-card` answers the model card itself, with the run's `status` added.
 
 `Proposal`: `{ id, kind: "clean_step"|"clean_selection"|"edit_cells"|"card_edit"|"computed_column", base_version, summary, code?, edits?, card_id?, card_text?: CardBody, impact: { cells_changed, rows_affected }, status: "pending"|"approved"|"rejected"|"expired" }`. A proposal expires when its `base_version` is no longer current.
+
+As built (D8.5, `sherlock/agent/actions.py`; §4.4 "Proposals as implemented"):
+- **Kinds.** Only `edit_cells` and `clean_selection` are made. `card_edit` is not built (cut 2, Implementation Plan §2.0), and `clean_step` and `computed_column` are P1 (§8.2 actions); approving any other kind is `422`.
+- **Fields.** `edits` items are `{ row_id, column, value, before }`; a `clean_selection` has `scope: { kind: "selection"|"all", selection_id }` and `impact.cells_changed` 0 with `rows_affected` the rows in scope. Every proposal adds `result_step_id` (the step an approved `edit_cells` saved). `code`, `card_id` and `card_text` aren't set by either kind.
+- **Expiry.** A proposal is marked `expired` when Approve finds that the current version isn't its `base_version` (`409`); until someone approves it, it stays `pending`.
 
 ---
 
@@ -1131,7 +1177,7 @@ Implementation of steps 1–2 (2026-10-24, `sherlock/ingest/`):
      - a multi-byte pick whose decode puts most CJK characters between two ASCII letters ("K荂e") is overruled to Windows-1252, because short Western files fool the detector into CJK
 
   If an auto-detected encoding fails later in the file, detection reruns on the whole file. If an encoding the user chose fails, that's `invalid`.
-- **Read.** A temporary UTF-8 copy (`.ingest.utf8.csv`) is read by DuckDB's `read_csv(..., all_varchar=true, null_padding=true)`, with the delimiter, header and skip resolved from `sniff_csv` (delimiter, `SkipRows`, `HasHeader`). It's checked against `csv.Sniffer`, and DuckDB wins on disagreement. Empty cells read as NULL.
+- **Read.** A temporary UTF-8 copy (`.ingest.utf8.csv`) is read by DuckDB's `read_csv(..., all_varchar=true, null_padding=true)`, with the delimiter, header and skip resolved from `sniff_csv` (delimiter, `SkipRows`, `HasHeader`). It's checked against `csv.Sniffer`, and DuckDB wins on disagreement. Empty cells read as NULL. An empty upload, or a file with no rows or only empty ones, is `invalid` ("This file has no data rows.").
 - **Column names** come from the raw header record (App Flow §3.2): trimmed; blank becomes `col_N`; duplicates and the system names `_row_id` and `_quarantine_reason` get `_2`, `_3`…; columns beyond the header (or with no header) become `col_N`. Names are compared without case, as DuckDB compares them, so `Name,name,NAME` become `Name`, `name_2`, `NAME_3`, and `_ROW_ID` becomes `_ROW_ID_2`. Before, DuckDB renamed such columns itself (`name_1`) and `versions.columns_json` no longer matched the Parquet (review of Day 2, 2026-10-25).
 - **Version 1.** `v1.parquet` (ZSTD) holds `_row_id BIGINT` (1…n in file order), `_quarantine_reason VARCHAR` (all NULL) and the user columns as VARCHAR. `versions.columns_json` lists all of them in that order. Temporary files (`.ingest.utf8.csv`, `.tmp/` for DuckDB spill) are deleted.
 - **One transaction.** The dataset row, version 1 and `users.storage_bytes` are written together, and any failure removes the folder.
@@ -1164,7 +1210,7 @@ Implementation of step 3b, the typing step (2026-10-24, Implementation Plan D2.8
   - `_quarantine_reason` becomes `type: <column>` for the first cast column whose value failed, unless the row was already quarantined.
 - **The step.** Kind `clean`, `created_by` `system`, gate `commit`, confidence 1.
   - `code` is `result = duckdb.sql(<the statement, triple-quoted>).df()`, and `notebook_code` is that plus `df = result`.
-  - The summary reads "Typed 7 columns from text: pclass, survived, age, …".
+  - The summary names up to six columns: "Typed 7 columns from text: pclass, survived, age, sibsp, parch, fare and 1 more".
   - It has one decision ("Which columns hold numbers, true/false values or dates?").
   - In the app, `commit_step` runs the same statement with the parent's Parquet exposed as the view `df`.
 - **Verifiers** (2026-10-25, from the Day 2 review; they used to be stored as fixed `pass` strings). While committing, `typing.produce` writes the typed Parquet. `typing.verify` then reads that output against version 1, so the statement doesn't run twice: on the 60-column sample, running it a second time made profiling time out. It computes:
@@ -1177,7 +1223,7 @@ Implementation of step 3b, the typing step (2026-10-24, Implementation Plan D2.8
 - **Notebook dtypes.** pandas has no NULL for `int64`, so in the notebook a `BIGINT` column with NULLs comes back from `.df()` as `float64` (Titanic's `body`). The notebook's assertion cell (D5.6) has to compare such columns as numbers.
 
 Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleaning/detectors/`). The typing step (3b) is described above.
-- **Inference input.** It runs in pandas on the version's usable rows. Values are stripped, and the sentinel strings are left out before inference.
+- **Inference input.** It runs in pandas on the version's usable rows. Values are stripped, and the sentinel strings are left out before inference. The stats, histograms (20 bins), top values (10) and sample values are computed in pandas too (`profile/stats.py`), not with `SUMMARIZE`.
 - **Type rules.** First match wins, and a type needs ≥ 99% of the remaining values:
   1. `bool`: true/false/yes/no/t/f/y/n
   2. `int`: `[+-]?\d+`
@@ -1198,9 +1244,9 @@ Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleani
 - **Detectors.** 16 modules, one per detector, each with unit tests on synthetic columns. All are generic: name-based rules use word lists, never dataset names. Severity = min(count / rows, 1) × the weight above.
   - `missing`: per column. Columns whose missing masks overlap ≥ 90% (Jaccard) are listed as `missing_with`.
   - `mixed_types`: 50–99% of values numeric (formatted numbers count as numeric), counting the rest. It skips columns whose odd values mostly contain digits, since those are alphanumeric codes. The same test applies for dates.
-  - `sentinels`: the sentinel strings (blank included), plus -99999, -9999, -999, -99, 999, 9999 and 99999 when the value repeats and lies beyond 3 × IQR of the other values.
+  - `sentinels`: the sentinel strings (blank included), plus -99999, -9999, -999, -99, 999, 9999 and 99999 when the value repeats and lies beyond 3 × IQR of the other values (at least 10 of them).
   - `whitespace_case`: stray or doubled spaces, and spellings that differ only by case or spacing (the minority spellings).
-  - `near_duplicate_categories`: dimension columns with 3–200 distinct values. Pairs of values (≥ 4 characters) with rapidfuzz ratio ≥ 85; the rarer one counts.
+  - `near_duplicate_categories`: category or text columns with role dimension or target-like and 3–200 distinct values. Pairs of values (≥ 4 characters) with rapidfuzz ratio ≥ 85; the rarer one counts.
   - `duplicates`: exact rows, and rows equal after trimming and case-folding.
   - `impossible_values`:
     - negatives where the name says quantity (age, price, fare, amount, count, weight, salary, duration, …)
@@ -1212,9 +1258,9 @@ Implementation of steps 3–5 (2026-10-24, `sherlock/profile/`, `sherlock/cleani
   - `mojibake`: ftfy's `is_bad` where `fix_text` changes the value.
   - `unit_mixes`: ≥ 50% of values are number + unit, with two or more units.
   - `cross_column`: name pairs start/end, begin/end, from/to, min/max, open/close, created/updated, birth/death, departure/arrival, check_in/check_out, where the later value is smaller.
-  - `functional_dependency`: between up to 12 categorical columns. A → B holds for 95–99.9% of rows in repeated A groups, at least 20 points above B's majority share, with A at least as distinct as B.
-  - `id_candidates`: role id, or ≥ 98% unique and ≥ 95% present.
-  - `outliers`: measures only. Robust z (MAD) > 5, or 3 × IQR when MAD is 0. Skewed non-negative columns (skew > 2) are scored on `log1p`.
+  - `functional_dependency`: between the first 12 dimension or target-like columns (category, text, bool or int, 2–1,000 values). A → B holds for at least 95% but not all of the rows in repeated A groups, at least 20 points above B's majority share, with A at least as distinct as B and at least 3 values, and with the repeated groups at least half the rows.
+  - `id_candidates`: role id, or ≥ 98% unique and ≥ 95% present (in a file of at least 20 rows).
+  - `outliers`: measures with at least 20 values. Robust z (MAD) > 5, or 3 × IQR when MAD is 0. Skewed non-negative columns (skew > 2) are scored on `log1p`.
   - `leakage`: for each target-like column, a column leaks when either rule holds:
     - Value rule: its values (missing as a value, ≤ 50% unique) predict the target at ≥ 95% accuracy and ≥ 20 points above the majority class.
     - Presence rule: its filled rows (5–95% of rows) are ≥ 98% one class, and that class is ≥ 20 points rarer among the empty rows.
@@ -1266,7 +1312,7 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
   6. The gate, using the real blast from the full run.
   7. `commit_step`.
 
-  The full run comes before the gate (the pseudocode above has it after) so the gate's blast is the measured share of changed and quarantined cells, not an estimate from a stratified sample. A fix that changes nothing is skipped.
+  The full run comes before the gate (the pseudocode above has it after) so the gate's blast is the measured share of changed and quarantined cells, not an estimate from a stratified sample. A fix that changes nothing is skipped. A diagnosis or candidate list that is still invalid after the client's one repair skips the issue ("model output invalid").
 
   Two lines of the pseudocode work differently as built (Day 3 review, 2026-10-25):
   - A `409` from `commit_step` (another commit landed while the issue ran) skips the issue as "The data changed while this step ran". It isn't reloaded and re-run once.
@@ -1277,7 +1323,7 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
 - **The sample.** Datasets of up to 2,000 rows are used whole. A larger one gets up to 1,000 rows that have the issue (missing cells for `missing`, the issue's example values otherwise, its example `_row_id`s for row-level detectors) and fills the rest at random (seed 42). It's copied from the version's Parquet, so column types are the real ones.
 - **The vote.** `ambiguous_dates` diagnoses three times at temperature 0.7 and takes the majority `preferred_option`. With no majority it takes option 0, the most conservative by the prompt's ordering.
 - **Scope and hand-edited cells.**
-  - Scope `selection` limits changes to the selection's rows. `new_rows` limits them to `scope.row_ids`, or else the rows added by steps after the last cleaner step in the current chain.
+  - Scope `selection` limits changes to the selection's rows. `new_rows` limits them to `scope.row_ids`, or else the rows added by steps after the last cleaner step in the current chain. A scope with no rows ends the run at once (`done`, "There are no rows in scope, so there's nothing to clean.").
   - Hand-edited cells (`user_edited_cells`) keep their values unless `include_user_edited`, and are listed in the report's `hand_edited_skipped`.
   - A candidate that changes a column's type can't be limited to some rows, so in a scoped clean it scores 0 ("it changes the type of …"). In a whole-dataset clean, a hand-edited cell in a column the step retypes is parsed with the rest of the column.
 - **The step.** Kind `clean`, `created_by` `cleaner`.
@@ -1298,8 +1344,8 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
   - `done` when the queue is empty
 
   A whole-dataset clean that ends any of these ways, Stop included, sets the dataset to `building` and queues `build_dashboard`, since committed steps stay. If the model is unavailable before any step committed, the job fails and the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>" (App Flow §5).
-- **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys, `skipped` and `hand_edited_skipped`, written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
-- **Prompts** live in `sherlock/cleaning/prompts/*.txt`: one system message (the rules) and the diagnose, propose and critic templates. Values sit inside `<data>` blocks, and samples are capped at 20 values of 200 characters. The prompts name nothing from the sample dataset (CLAUDE.md Rule 4), and a test checks them against `titanic3.csv`'s columns: the propose prompt's example label was "Median by title in name" until the Day 3 review (2026-10-25), and live runs proposed exactly that label. It's now "Median by <group column>".
+- **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys (`handled`), `skipped` and `hand_edited_skipped` (at most 500), plus `max_steps` and `max_seconds` (the report's `budget`) and `step_ids`, written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
+- **Prompts** live in `sherlock/cleaning/prompts/*.txt`: one system message (the rules) and the diagnose, propose and critic templates, plus `helpers.txt`, the helper list the propose template includes. Values sit inside `<data>` blocks, and samples are capped at 20 values of 200 characters (the issue's examples at 10). The diagnose context's earlier decisions are those of the latest ten cleaner steps, at most ten. The prompts name nothing from the sample dataset (CLAUDE.md Rule 4), and a test checks them against `titanic3.csv`'s columns: the propose prompt's example label was "Median by title in name" until the Day 3 review (2026-10-25), and live runs proposed exactly that label. It's now "Median by <group column>".
   - **One data block per template** (2026-10-25, from the Day 2 review). Everything that comes from the file or from an earlier model reply sits inside the template's one `<data>` block. That covers column names, the column list and dtypes, earlier decisions, the diagnosis, approaches, the fix's label and code, and the effect. Every such value has `</data>` defused (`_safe` in `cleaning/loop.py`, as `data_block` does), so a value can't close the block. A test checks each template's placeholders.
 - **Tests** use recorded replies (`api/tests/fixtures/llm/cleaner_messy.json`) through `LLM_MOCK`.
 
@@ -1308,7 +1354,7 @@ Helpers available in the sandbox (`sherlock.cleaning.helpers`): `parse_dates_sma
 Verifier scoring: hard checks (row ledger, no NaN introduction, dtype sanity, pandera, lossless round-trip for type parses, parse failures sent to quarantine) → 0 if any fails; soft score = mean of (parse success rate, share of the issue's examples resolved, 1 − share of unrelated cells touched, distribution conservation where applicable).
 
 Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
-- **Helpers (`helpers/__init__.py`).** The ten helpers above, plus `parse_failures(original, parsed)`: the rows that had a real value (not a placeholder) and didn't parse, so code can quarantine them.
+- **Helpers (`helpers/__init__.py`).** The ten helpers above, plus `parse_failures(original, parsed)`: the rows that had a real value (not a placeholder) and didn't parse, so code can quarantine them. Also `keep_outside_scope(before, after, rows, cells)`, which a scoped clean's code ends with (§7.7); it isn't in the propose prompt's helper list.
   - None changes its input in place or removes rows.
   - `strip_sentinels` turns the profiler's placeholder strings, plus `extra` values (text or numbers such as `-999`), into missing.
   - `parse_numbers` handles currency signs and codes, thousands separators, `%` (kept as the number), `(300)` and `300-`. Comma decimals come from `locale_hint` (`"comma"` or a locale like `"de"`), or else a guess per column. Failures become NaN.
@@ -1316,7 +1362,7 @@ Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
   - `normalize_whitespace_case(mode="keep")` trims, collapses inner spaces, and gives spellings that differ only by case the column's most frequent spelling.
   - `canonicalize_categories(s, mapping=None, threshold=90)` applies a mapping, or clusters values whose rapidfuzz ratio, ignoring case and spacing, is at least `threshold`, and maps each cluster to its most frequent spelling.
   - `fill_by_group(df, col, by, stat)` fills from the group's `median`, `mean` or `mode`, computed over rows that aren't quarantined, and falls back to the whole column's.
-  - `flag_rows(df, mask, reason)` changes no data. It records the rows in `df.attrs["sherlock_flags"]`, which the sandbox reports back as `flags`.
+  - `flag_rows(df, mask, reason)` changes no data. It records the rows in `df.attrs["sherlock_flags"]`, which the sandbox reports back as `flags`. The Cleaner doesn't read `flags` yet, so a candidate that only flags rows changes nothing and is skipped ("The fix changed nothing").
   - `quarantine_rows` sets `_quarantine_reason` on rows that don't have one yet.
 - **The sandbox and the helpers.**
   - Every helper is in scope by name in sandbox code, next to `pd`, `np` and `df`.
@@ -1343,7 +1389,7 @@ Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
   - **Before and after**, on Titanic:
     - Before: cabin, home.dest and embarked were filled with "Unknown", and the critic's concerns flagged sensible fills such as age by group.
     - After: those columns stay missing, and age is imputed by class and sex and committed.
-- **Gate (`gate.py`).** It's the formula above, with the review's term as just described. With no candidate passing it's `skip` ("no candidate passed the checks"). A `flag` names its reason ("changes more than a fifth of the data", or "medium confidence (0.62)").
+- **Gate (`gate.py`).** It's the formula above, with the review's term as just described. With no candidate passing it's `skip` ("no candidate passed the checks"). A `flag` names its reason ("changes more than a fifth of the data", or "medium confidence (0.62)"). Below 0.55 it's `skip` ("low confidence (0.42)").
 
 ### 7.3 Dashboard builder
 
@@ -1355,6 +1401,7 @@ Implementation (2026-10-24, Implementation Plan D3.1, `sherlock/cleaning/`):
 6. Layout: KPIs first row (3 × 3 each), then widgets in score order with default sizes (§UI brief 3.3), packed left-to-right.
 7. Persist widgets and layout; emit `widget.updated` per widget; enqueue the stories job.
 8. Soft cap: `create_widget` and `POST /widgets` return the widget plus a `warning` when the dataset already has 20 or more widgets (DASH-10).
+   - As built: only `POST /widgets` returns it (`widgets.service.SOFT_CAP`, `CAP_WARNING`). Chat's `create_widget`, Duplicate and Pin don't yet (docs/BACKLOG.md).
 
 As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
 - **Candidates (`candidates.py`), until D6.5 widens the views:**
@@ -1384,16 +1431,17 @@ As implemented (2026-10-24, Implementation Plan D4.2, `sherlock/dashboard/`):
     - every chart: coverage
 
     Correlation and outlier share for charts belong to the scatter, histogram and box candidates (D6.5).
-  - Fact candidates are each chart's top and bottom element and its first 20 element keys. The accent ("the point") is the top element: `bar` for bars and rings, `point` for lines and areas, `cell` for tables.
+  - Fact candidates are each chart's top and bottom element and its first 20 element keys. The accent ("the point") is the top element: `bar` for bars and rings, `point` for lines and areas, `cell` for tables. Since D6.5, histograms and scatters list no elements and get no point from the builder (`scoring._facts`); box plots and heatmaps get a `bar` point on the top category.
   - **Wide files** (more than 30 usable columns) keep the target, time columns and the first ID column. The rest are ranked on a 20,000-row sample, by how much each explains the target, or without a target by spread (measures) and evenness (categories).
 - **Curation (`builder.py`).**
   - The shortlist is the 14 best by score, with up to three KPI tiles always among them: the row count first, then the rate.
   - The model gets the columns and the shortlist inside a data block. Its picks are checked: indices in range, each used once, and 6–10 of them, or all if fewer are listed. A failure triggers one repair.
-  - A pick's `point` must be one of the candidate's listed elements, otherwise the computed accent stays.
+  - A pick's `point` must be one of the candidate's listed elements, otherwise the computed accent stays. The check accepts any of its 20 element keys; the prompt lists the first 12. The stories job doesn't refine the point.
+  - A title that is empty, has a digit or runs over 80 characters falls back to the templated one.
   - KPIs are moved first in the order.
-  - The fallback, after the repair or when the model is unavailable or over budget, is the reserved KPIs plus the best charts, eight in all, with templated titles.
+  - The fallback, after the repair or when the model is unavailable or over budget, is up to three KPI tiles, the shortlist's best by score (not necessarily the reserved ones), plus the best charts, eight in all, with templated titles.
 - **Persisting.** Each pick is created through the widgets service, which runs it once more. The layout is packed (§4.5) and saved, and the dataset becomes `ready`.
-- **Not yet.** The `driver_analysis` widget (step 5) is added with the ML recipes (Implementation Plan D7.2). Enqueuing the stories job (step 7) comes with D6.1.
+- **Not yet at D4.2, built since.** The `driver_analysis` widget (step 5) came with the ML recipes (Implementation Plan D7.2; "The driver widget" below). Enqueuing the stories job (step 7) came with D6.1 ("Stories" below).
 - **The driver widget (step 5, 2026-10-25, `builder.py::driver_widget`).**
   - When the DataCard has a target candidate and at least 100 rows, the build adds "What drives <target>?": an `importance` view of `driver_analysis` with Auto on the first candidate, after the curated widgets.
   - Its run is queued (`ml_run`) and the widget shows the progress until the importance arrives. Its story is told when the run finishes.
@@ -1431,31 +1479,33 @@ As built (2026-10-25, Implementation Plan D8.1, `sherlock/stories/synthesis.py`,
   - Added by the Day 6 review (2026-10-25): a `value:` label must be one of the allowed labels (those the cited cards already use), for synthesis and for `ask_story` answers alike, and Roman numerals count as numbers in words. Before, any value label was shown as written, so the model could put a number on the card through one (Rule 2; §7.4 "Day 6 review, second pass").
   - **Claims the cards don't make (Day 8 review F1, fixed 2026-10-25).** Live, a synthesis joined three true chips into a false number ("Total revenue amounts to 1,025,982 while total units sold equal 47,715. This shows an average unit price of 21.41": revenue ÷ units is 21.50, and 21.41 is the mean of the rows' prices) and another drew a conclusion no card backs ("all point to Gizmo outperforming Sprocket"). The grounding eval passed both, since each chip matched its fact.
     - The prompt no longer asks the model to "connect or compare" the cards. It says what they have in common or where they point the same way or apart, says only what the cards say, and compares numbers from two cards only when they are two numbers of the same kind.
-    - **Derivations and conclusions are refused** (`synthesis.DERIVE`, synthesis and `ask_story`): "this/that/which/it shows, means, implies, gives, yields, suggests, indicates, explains, confirms, proves", "shows that", "therefore", "thus", "hence", "consequently", "as a result", "in turn", "suggests", "indicates", "implies", "points to", "outperforms"/"underperforms", "works out to", "adds up to".
+    - **Derivations and conclusions are refused** (`synthesis.DERIVE`, synthesis and `ask_story`): "this/that/which/these/it/they shows, means, implies, gives, yields, suggests, indicates, explains, confirms, proves", "shows that", "therefore", "thus", "hence", "consequently", "as a result", "in turn", "suggests", "indicates", "implies", "points to", "outperforms"/"underperforms", "works out to", "adds up to".
     - **Comparisons across cards are checked in code** (`narrate.check_comparison`, which also runs on the overview's bullets across widgets). A sentence with chips from two or more cards and a comparing word (higher, lower, more, less, above, below, exceeds, trails, than, versus, compared with…) is kept only when it holds exactly two chips, both numbers of the same format (two percentages, two counts), and "higher"-type words go with the first being larger, "lower"-type words with it being smaller. Comparisons within one card's numbers are unchanged. The narrator's new wording checks (§7.4, Day 7 review F4) apply here too.
 - **Stored keys.** Code turns `c<i>.<fact key>` into `<card_id>.<fact key>`. Headline chip IDs start with `h` and body chip IDs with `b`, so they are unique on the card.
 - **Fallback.** The headline "What these cards say together", and a bullet per source card: its title (a `card:<id>` label) and its headline's runs, chips re-keyed through the card.
 - **The card.** `kind: "synthesis"`, `source_card_ids` the selection, no fact sheet, `status: "ready"`, the current version, `narrated_by` the model or null. `Card.facts` for it is built from its chips, each read from the cited card's current sheet.
 - **Evidence.** A chip keyed `<card_id>.<fact key>` resolves through that card's sheet. The answer adds `card_id`, the card the fact came from.
-- **`sources_changed`.** With cut 6 there is no material hash. After every stories run, cascade or refresh, each `ready` synthesis card compares its chips' values with the cited facts' current `formatted` values. If one differs, or its fact is gone, the card becomes `sources_changed`.
+- **`sources_changed`.** With cut 6 there is no material hash. After every stories run, cascade or refresh, each `ready` synthesis card (and each `answer` card without a fact sheet; `synthesis.check_sources`) compares its chips' values with the cited facts' current `formatted` values. If one differs, or its fact is gone, the card becomes `sources_changed`.
 - **Refresh** (`POST /cards/{cid}/refresh` on a synthesis card) queues a `stories` job with `{ synthesis_ids: [cid], reason: "refresh" }`, which writes the synthesis again from its sources' current facts. A card the user edited gets it as a suggestion. The card keeps its ID and its place on the canvas, and gets the changed badge. Such a job is never merged with a waiting widget stories job.
 
 Material-change detection (removed by cut 6, Implementation Plan §2.0; every affected card is narrated again): `material_hash` over rankings (ordered group labels), trend sign, significance flag, and key values bucketed to 2 significant figures. On cascade, if the hash is unchanged, only chip values refresh (no LLM call); otherwise re-narrate.
 
 As implemented (2026-10-25, Implementation Plan D6.1, `sherlock/stories/`), with cut 6 applied:
-- **Pipeline (`service.tell`).** For each widget: its card goes to `updating` (`card.updated`), its fact sheet is computed on the current version and verified (a fact that no longer matches is dropped before narration), then the relations are recomputed over every widget's latest sheet. Narration runs four at a time; each card is stored and emitted as soon as it's ready. Then the overview. Every write bumps `state_rev`.
-- **Relations.** Shared columns (any column both widgets read, the target included) 0.5, same target 0.3, kept at 0.4 or more and at most four per widget. Correlation between measures and ML dependencies aren't computed yet.
-- **Narrator: `medium`, not `small`.** Live on 2026-10-25, Nano typed chip markup into text runs (`"{\"chip\":\"n\"}"`), ran sentences together and timed out twice; Super wrote valid cards, sometimes after one repair (`FEEDBACK.md`). As with chat compose (§8.1), narration uses `medium`. Prompts are in `stories/narrate.py`.
-- **Checks on every story (and every overview bullet):** chips name facts of the sheet; labels name the widget's columns or the category values its facts name (`column:<name>`, `value:<column>:<value>`); no text run contains chip or label markup or digits; at least one text run of two words in the headline and in the body; no causal wording (causes, because, leads to, results in, drives, driven by, due to; since D9 also influence, affect and impact and their forms, but not "unaffected" or "effect size", §14); with `n` under 30, a small-sample note ("small", "few", "limited"). One repair, then the fallback.
+- **Pipeline (`service.tell`).** For each widget: its card goes to `updating` (`card.updated`), its fact sheet is computed on the current version and verified (a fact that no longer matches is dropped before narration), then the relations are recomputed over every widget's latest sheet. Narration runs four at a time (`WORKERS`); the cards are stored and emitted in widget order, each as soon as its narration and the ones before it have finished. Then the overview, then the `sources_changed` check (§7.4.1). The run bumps `state_rev` once, at the end.
+  - An analysis widget whose run hasn't finished is skipped (the run's completion queues its story). A finished one's sheet is a copy of its run's fact sheet (§7.5 step 10).
+- **Relations.** Shared columns (any column both widgets read, the target included) 0.5, same target 0.3, kept at 0.4 or more and at most four per widget. Correlation between measures and ML dependencies aren't computed yet (docs/BACKLOG.md). An analysis widget's sheet depends on its run's target and features, so it relates to the charts that read them through the shared-column rule (0.5), not as a separate data dependency (0.6).
+- **Tests on the sheets** (§6.4 as implemented): chi² with Cramér's V for a rate by category, Kruskal-Wallis for an average, median or sum by category (two groups included), and Kendall's τ for a trend's direction. Step 1's Welch's t, Mann-Whitney and Cohen's d, and a trend slope, aren't on fact sheets: not built yet (docs/BACKLOG.md). Chat's `ask_stats` runs them (§8.2).
+- **Narrator: `medium`, not `small`.** Live on 2026-10-25, Nano typed chip markup into text runs (`"{\"chip\":\"n\"}"`), ran sentences together and timed out twice; Super wrote valid cards, sometimes after one repair (`FEEDBACK.md`). As with chat compose (§8.1), narration uses `medium`. Prompts are in `stories/narrate.py`. The story prompt gets the widget's title, its facts (key · label · value), its allowed labels and the related widgets' titles (not their headlines), each in a data block.
+- **Checks on every story (and every overview bullet):** chips name facts of the sheet; labels name the widget's columns or the category values its facts name (`column:<name>`, `value:<column>:<value>`); no text run contains chip or label markup or digits; at least one text run of two words in the headline and in the body; no causal wording (causes, because, leads to, results in, drives, driven by, due to; since D9 also influence, affect and impact and their forms, but not "unaffected" or "effect size", §14); with `n` under 30, a small-sample note ("small", "few", "limited", "only a handful"; stories only, not overview bullets). One repair, then the fallback.
 - **Words around the chips (Day 7 review F4, fixed 2026-10-25, `narrate.check_wording`, in every story, overview bullet and synthesis).** Live run cards read "Revenue is most strongly influenced by 1.00" (no driver named), "importance is 0.373 lower than that of unit_price" (0.373 is units' own importance; the gap is 0.627) and "Sex sex is the strongest driver". Each chip was right, so Rule 2's letter held, but the claim around it was false. Three checks, each a repair, then the fallback:
   - **A name said twice.** A label, or a chip whose fact is a name (`driver_1`, `top_group`), may not repeat the word of the text right before or after it ("Sex " then `column:sex`). Across a sentence's end it's a new sentence and is allowed.
   - **An importance next to its column.** In its sentence, the name nearest before a `driver_<n>_importance` chip (else the nearest after it) must be that driver's column, as a label or as the `driver_<n>` chip.
   - **A level read as a gap.** A chip followed by "higher than", "lower than", "more than", "better than" and the like (with "points" or "times" before them) says the number is a difference. That's allowed only for a fact that is one: a ratio (`×`), or a fact whose label says "than", "over", "above", "below", "change", "gap", "difference" or "ratio" (`lift`, `ratio_top_bottom`, `change`).
   - The story prompt says the same: a label already shows its name; put each number right after the name it belongs to; to compare two numbers, give both.
-- **Rendering in code.** Chips take the fact's `formatted` value; a label of a numeric category reads as "pclass 1"; spaces are added between runs and before a sentence, and removed inside brackets around a chip.
+- **Rendering in code.** Chips take the fact's `formatted` value; a label of a numeric category reads as "pclass 1"; spaces are added between runs and before a sentence, and removed inside brackets around a chip. Two chips side by side get ", " between them, and a paragraph whose last run doesn't end with ".", "!" or "?" gets a full stop (`narrate.to_runs`).
   - Added by the Day 6 review (2026-10-25): a chip or label after a full stop or other punctuation gets its space ("sex. female", not "sex.female"), and a unit the chip already shows isn't repeated: a `%`, "percent" or "per cent" after a percentage, a "×" or "times" after a ratio, and a full stop after a chip that ends a sentence. Live, cards read "38.2% %" and "501.0× times larger".
-- **Fallback.** The headline is the widget's title (a label run `widget:<id>`), and the body is the fact sheet as bullets (a label run `fact:<key>` and a chip per fact, at most six).
-- **Overview (`medium`, schema `Overview`: two to five bullets of runs).** Chips are `w<i>.<fact key>` over every widget card's sheet; the merged facts are stored as the overview's own sheet. The fallback is up to four bullets, one per widget by score, of its headline fact.
+- **Fallback.** The headline is the widget's title (a label run `widget:<id>`), and the body is the fact sheet as bullets (a label run `fact:<key>` and a chip per fact, at most six: the first five facts other than `n`, then `n`).
+- **Overview (`medium`, schema `Overview`: two to five bullets of runs).** Chips are `w<i>.<fact key>` over every widget card's sheet; the merged facts are stored as the overview's own sheet. Its headline is the fixed text "What stands out". The fallback is up to four bullets, one per widget by score, of its headline fact (the first of `top_value`, `value`, `max_value`, `top_median`, `last_value`, `correlation`, `median` it has).
   - Since D8.4, a derived fact's `from` keys are prefixed in the merged sheet too (`w5.top_value`), so the overview's derived chips can be re-checked and their evidence names the right facts.
 - **Model failures.** Any exception while narrating a card falls back for that card, so the job always finishes.
 - **Day 6 review (2026-10-25)** added three rules.
@@ -1499,7 +1549,7 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
   - `registry.py`: the manifests.
   - `runner.py`: requests, the cache, the `ml_run` job, artifacts, the fact sheet, reads and outdating.
 - **Step 1.** `SELECT * FROM t WHERE <quarantine excluded, predicate, selection> ORDER BY _row_id`. Rows without the target are dropped. More than 50,000 rows are sampled with seed 42.
-  - (Day 7 review, 2026-10-25) The sample is `core.sample`, which `repro.py` carries too: for a category target it is stratified by the target (`train_test_split` with `stratify`), so each value keeps its share and the model card's `sample.stratify_column` is true; for a number it is a plain random sample. Before, both were plain random samples although the card named the target as the stratify column. The model card drawer says "stratified by <target>".
+  - (Day 7 review, 2026-10-25) The sample is `core.sample`, which `repro.py` carries too: for a category target it is stratified by the target (`train_test_split` with `stratify`), so each value keeps its share and the model card's `sample.stratify_column` names the target; for a number it is a plain random sample, and `stratify_column` is null. Before, both were plain random samples although the card named the target as the stratify column. The model card drawer says "stratified by <target>".
 - **Step 2.** As specified: AUC for two classes, MAE for regression.
 - **Step 3, leakage.** These are excluded with their reason:
   - empty columns, IDs, free text and dates (dates aren't features yet);
@@ -1508,12 +1558,13 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
     - (Day 7 review, 2026-10-25) anywhere when the target's name has four or more letters and digits ("survived" in `survivedcount`), as whole words when it is shorter, split at punctuation and camelCase. So a target `y` leaves out `y_hat` but keeps `day` and `salary`, and `age` leaves out `age_group` but keeps `page_views`;
   - numbers with |correlation| above 0.98;
   - a category that settles a categorical outcome by itself: at least 98% of the rows of each of its values share one outcome while the outcome alone is under 95% predictable. This purity check stands in for "mutual information near max".
+    - As built (`plan._pure`): the 98% is pooled over the column's values (the rows that share their value's most common outcome), it needs at least 20 rows with both filled and at most one value per ten such rows (two at least), and it applies to non-number columns (bool, category, text) when the task is classification.
 - **Step 4.** `StratifiedKFold` (classification) or `KFold` (regression), 5 folds by default, seed 42. The `TimeSeriesSplit` choice is not built. `GroupKFold` was not built until the Day 7 review fix below.
   - **Grouped folds (Day 7 review F1, fixed 2026-10-25).** On Titanic, `ticket` (shared by families) was target-encoded across random folds, so a held-out row's encoding carried its relatives' outcomes: on 3rd class that added about 4 accuracy points and 0.08 AUC, made `ticket` the second "driver", and made it the "best one-column rule" the verdict compared against.
     - **The group column** (`plan.group_column`): of the target-encoded columns (more than 50 values) whose values repeat, the one with the most values, when they number at least a quarter of its filled rows (`GROUP_SHARE`), so most groups are a few rows (a ticket, an account, a household). A column with large groups, such as a region with 60 values over 5,000 rows, is a category, not a group, and a column unique per row is an ID. The plan stores it as `group`.
     - **The folds** (`core.folds`, copied into `repro.py`): `StratifiedGroupKFold` (shuffled, seed 42) for categories and `GroupKFold` for numbers, on one label per row (the value; a blank is a group of its own). The baselines, the Auto search, importance and the setup preview all use these folds. When a grouped fold would miss one of the outcomes, or there are fewer groups than folds, the folds are the plain ones and the model card says so (`group: null`).
     - **On Titanic** (the cached sample's v4), grouping by ticket: on all rows, sex alone does nearly as well (78.1% against 78.2%) and ticket is no longer a driver; on 3rd class, the best one-column rule is a target-encoded column barely above the majority, so the verdict reads weak without naming it.
-- **Step 5.** Numbers: median impute and standard scale. Categories with up to 50 values: missing becomes "(missing)", then one-hot with `min_frequency=10` and `handle_unknown="infrequent_if_exist"`. More than 50 values: `TargetEncoder` inside the folds.
+- **Step 5.** Numbers: median impute and standard scale. Numbers here are the `int` and `float` columns with the role `measure` (`plan.make_plan`); a number column with another role, such as an integer `dimension` with 12 or fewer values, is treated as a category, and so is a bool. Categories with up to 50 values: missing becomes "(missing)", then one-hot with `min_frequency=10` and `handle_unknown="infrequent_if_exist"`. More than 50 values: `TargetEncoder` inside the folds.
 - **Step 6.** As specified: depth-1 trees per column on the same folds.
 - **Step 7, Auto.** `LogisticRegression(C=1)` or `Ridge`, `HistGradientBoosting`, then `RandomForest` (200 trees), on the same folds. The best mean CV score wins. When `time_budget_s` has passed, the remaining models are skipped (at least one always runs).
   - **Decision:** classifiers are not calibrated. Calibration matters for predicted probabilities, and no predictions are served (cut 7). The `calibration` field is left out of the model card.
@@ -1528,9 +1579,10 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
   - `repro.py`, `model.joblib` (the refitted winner) and `model_card.json`;
   - `results/importance.json` and `results/partial_dependence.json`, plus `results/oof.json` for classification. These are JSON because pyarrow isn't a dependency.
   - Run columns: `features_json` (the features used), `target`, `artifact_dir`, `repro_path`, `sample_json`, `libraries_json`.
-  - **Fact sheet** (§6.4): `model_score`, `best_baseline`, `lift` (points or R²), `rows`, `verdict`, `auc` and `driver_1…3` with their importance. Each carries `run_id` and a `formula` naming the held-out metric. Stored in `fact_sheets` with `run_id`, and copied for the widget's card.
+  - **Fact sheet** (§6.4): `model_score`, `best_baseline`, `lift` (points or R²), `rows`, `verdict`, `auc` and `driver_1…3` with their importance (only factors whose importance is above 0). Each carries `run_id` and a `formula` naming the held-out metric. Stored in `fact_sheets` with `run_id`, and copied for the widget's card.
 - **The cache.** The key is sha1(version, scope, recipe, method, params). A done, queued or running run with the same key is returned as it is. A failed or cancelled one starts again under the same id.
 - **Events.** `run.updated` (the `Run` without its model card) follows every status change, then `widget.updated` for each live widget showing the run. A widget's status follows its run's: queued or running is `building`, done is `ready`, outdated is `outdated`, failed or cancelled is `error`. Cancel is `POST /runs/{rid}/cancel`, checked between models.
+- **Progress.** `job.progress` goes 1 to 6 of 6 with the labels above, in that order (`analysis.analyze`). "setting baselines" and "testing models" are sent together before the models run, and "testing models" isn't reported per fold (docs/BACKLOG.md, D7 F8).
 - **Settling.** A run that finishes after newer versions exist checks what changed since its version, as the cascade does (cascades skip runs that are still going). It is then outdated, and re-run for its widgets unless the user chose "Story updates: Ask first".
 - **Speed.** Titanic (1,309 rows, 10 features) takes about 16 s locally. A cached repeat answers at once (PRD ML-8).
 - **Tests.**
@@ -1541,7 +1593,8 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7: `driver_analys
     - repro equality;
     - the runs API end to end with the cache;
     - a widget becoming an analysis, going outdated, Re-run and Undo;
-    - the builder's driver widget.
+    - the builder's driver widget;
+    - the Day 7 review cases: one strong column named, short target names, an outcome rarer than the folds, a stratified sample of a large scope, and grouped folds.
   - `uv run sherlock eval ml` prints the planted cases as a table.
 
 ### 7.6 Cascade
@@ -1564,13 +1617,15 @@ overview: recompute if any card changed
 emit cascade.done
 ```
 
-Debounce: cascade jobs for the same dataset within 2 s coalesce. Cards for synthesis get `sources_changed` when any source card's material hash changed.
+Debounce: cascade jobs for the same dataset within 2 s coalesce. Cards for synthesis get `sources_changed` when any source card's material hash changed (as built, with cut 6, when a cited value differs: §7.4.1 `sources_changed`).
+
+As built, the pseudocode's `rerun_fact_sql` for answer cards isn't there: the cascade picks cards by their widget only, and the `sources_changed` check skips cards with a fact sheet of their own, so an answer card keeps the numbers it was pinned with, marked neither outdated nor changed, after its columns change (its Refresh is `409`, §4.9). Not built yet (docs/BACKLOG.md).
 
 Cascade v0 as implemented (2026-10-25, Implementation Plan D5.5, `sherlock/jobs/cascade.py`):
 - **Trigger.** `emit_version_created` (every commit and undo) queues a `cascade` job when the dataset has a live widget. A cascade that is queued, or running but still in its 2 s wait, absorbs the next one, so saves within 2 s cascade once. The job waits until 2 s after it was queued, then reads the dataset's current version.
 - **Work.** Every live widget re-runs its query on that version through the data cache, its `version_built` is set (status `ready`, or `error` with the reason), and `widget.updated` is emitted. `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
-- **Not yet.** Column-level dependencies, cards and runs come with D6 (cards, cut 6 applied: no material hash) and D7 (runs).
-- **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16).
+- **Not yet** (at D5.5). Column-level dependencies, cards and runs come with D6 (cards, cut 6 applied: no material hash) and D7 (runs). Both are built: see "Cascade with cards" below.
+- **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16). Since D6.2 both also count stories: "Updating 9 widgets and 3 stories", and "v8: 9 widgets re-queried, 3 stories updated." (`web/src/components/dataset/DatasetPage.tsx`).
 
 Cascade with cards (2026-10-25, Implementation Plan D6.2, cut 6 applied; `sherlock/jobs/cascade.py`):
 - **What changed.** The steps since the oldest stale widget's `version_built`: their `column_targets`, plus those of the steps an undo replayed and of the step it undid. Added or removed columns, the typing step, and any rows added, deleted, quarantined or restored affect every widget.
@@ -1627,6 +1682,8 @@ Rules:
 - Flow-path order (P1): the canvas's numbered path (from "Order this into a story") decides widget/card order; unplaced widgets follow in dashboard order.
 - Size: embedded table outputs are capped at 50 rows per cell; the notebook stays under 5 MB without images.
 - `up_to_step` (the "Export up to step k" fallback): the effective chain stops before step k, the assertion checks that earlier version, and the first cell says so.
+  - As built (`exporter._chain`, `build`): the version checked is the latest one whose effective chain is exactly the steps numbered below k; when there's none, the preview is `422` and the export fails with "No version holds the steps before step k." Widgets, story cards, Flow cards and runs are left out, since they belong to the current version, and the first cell says so ("Widgets are left out: they belong to the current version.").
+  - The first cell also notes when a `cleaning` or `building` job was still running at export time: the notebook uses the latest committed version.
 
 As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
 - **Modules.** `exporter.py` (options, cache key, `build`, preview), `cells.py` (one renderer per cell kind, in one module rather than a `cells/` folder), `outputs.py` (embedded tables), `vendored_helpers.py` (the helpers cell), `scan.py` (the allowlist scan). Run reproduction (`repro_render.py`) comes with D7.5. As built, it came as `ml/repro.py`, and `cells.run` embeds its code; there's no `notebook/repro_render.py` (§2).
@@ -1637,11 +1694,11 @@ As implemented (2026-10-25, Implementation Plan D5.6, `sherlock/notebook/`):
   - The notebook carries `types` from cell to cell; the assertion cell checks the row count, the column order and `types` against the version.
 - **Load cell.** It decodes `DATA_PATH` with the recorded encoding into `<stem>.utf8.csv`, reads it with the import's `read_csv` options (`all_varchar`, `null_padding`, delimiter, header, skip), names the columns as the import named them (from version 1's columns), and adds `_row_id` (1…n) and an empty `_quarantine_reason`.
 - **Scoped cleaning.** A step from a clean scoped to some rows, or that left hand-edited cells alone, now stores its scope in its `notebook_code`: `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`. `keep_outside_scope` is a cleaning helper, so the sandbox (for replay, §7.8) and the notebook apply the same restriction the Cleaner applied.
-- **Helpers cell.** The used helpers (from each step's `helpers_used`) with the module's private functions and constants they rely on, then `output_select`, `keep_types` and `store_step`.
-- **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5.
-- **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `os`, `sys`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
+- **Helpers cell.** The used helpers (from each step's `helpers_used`) with all of the helpers module's private functions and constants (whether or not the used helpers rely on them), then the sandbox worker's `INT_TYPES`, `_q` and `output_select`, then `keep_types` and `store_step`.
+- **Widgets.** Dashboard order is the saved layout's reading order (by `y`, then `x`), else builder order. For each SQL widget: a Markdown title with its scope, a code cell `t = df` plus its compiled SQL (no global filter) with the app's result embedded as an HTML and text table (≤ 50 rows), and a `plot(...)` cell from a `plot_helpers` cell emitted once (greys with the point in the accent). ML widgets wait for D7.5 (built: "Runs" below).
+- **Scan.** Imports from the allowlist plus `json`, `warnings` and `IPython`; no `open`, `exec`, `eval`, `compile`, `__import__`, `os`, `sys`, `shutil`, `subprocess`, `socket`, `pathlib`, network modules or file-writing calls (`to_csv`, `write_text`, `savefig`, …); no shell or magic lines outside the requirements cell; nothing that looks like a secret or a cookie (an `sk-…` key, a `Bearer` token, the names `LLM_API_KEY` and `sherlock_uid`) in any cell's source. The requirements cell (`%pip install -q` the pins) and the load cell are exempt by their cell tags.
   - As of 2026-10-25 (Day 5 review): the scan also refuses the file if the configured `LLM_API_KEY` or `TAVILY_API_KEY` value appears anywhere in it (cell sources, embedded outputs or metadata). Token Factory keys start `v1.`, which the generic secret pattern doesn't match.
-- **Not yet.** Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1.
+- **Not yet** (at D5.6). Story cards (D6.6) and runs (D7.5) are counted as 0; canvas notes and the Flow order are D8 and P1. Since built: runs, story cards, and Flow cards with canvas notes (below). The Flow order is still P1: `order: "flow_path"` is accepted and stored but doesn't change the order.
 
 - **Runs** (2026-10-25, D7.5):
   - **An analysis widget** is emitted in dashboard order via its run (done or outdated): a Markdown header, then the run's `repro.py` inlined and called on `df`, then the chart.
@@ -1662,24 +1719,26 @@ Undo applies only to steps in the current version's effective chain E; `undo` st
 Every commit (edit batch, cleaner step, approved proposal, undo) passes `base_version`, and `commit_step` returns 409 when it differs from `current_version`. `commit_step` also re-profiles the new version (PROF-3), writes `user_edited_cells` for edit batches, and bumps `datasets.state_rev`.
 
 Implementation (2026-10-24, Implementation Plan D2.3, `sherlock/steps/`):
-- **Interface.** `commit_step(ctx, dataset_id, base_version, StepSpec, produce)` takes a function that writes the new version's Parquet from the current one. The typing step and edit batches will write it with DuckDB, and the Cleaner from the sandbox's output.
-- **Lock.** It runs under `dataset_lock`: a per-dataset thread lock plus an OS lock on `<dataset>/.lock` (`fcntl`, or `msvcrt` on Windows).
+- **Interface.** `commit_step(ctx, dataset_id, base_version, StepSpec, produce)` takes a function that writes the new version's Parquet from the current one. The typing step and edit batches write it with DuckDB, and the Cleaner from the sandbox's output.
+- **Lock.** It runs under `dataset_lock`: a per-dataset thread lock plus an OS lock on `<dataset>/.lock` (`fcntl`, or `msvcrt` on Windows). Each waits up to 30 s, then gives up with a `TimeoutError` ("dataset is busy", or "dataset is locked by another process") (`storage.dataset_lock`). Undo takes the same lock.
 - **Refusals.** It refuses, and writes nothing, when:
   - `base_version` is stale (`409` with `current_version`)
   - `notebook_code` is empty, or a clean or computed-column step's doesn't end with `df = result`
   - the new file lacks `_row_id` or `_quarantine_reason`, or `_row_id` isn't unique and non-null
   - a clean, ML-column or computed-column step adds or removes rows
   - a new row takes an id below `next_row_id`, so ids are never reused after a deletion
+  - the step's kind is `undo` (undo has its own path, `steps/undo.py`) or isn't one of §6.2's, or its `created_by` isn't
 - **Lineage** is the diff of the two versions by `_row_id` (`sherlock/steps/diff.py`):
   - A cell is changed only if its value changed. When a column's type changed, the old value is cast to the new type first, so `'22'` → `22` is not a change but a failed cast is.
   - Row events go under `column = '_row'`: quarantined (flag `quarantined`), restored, added, deleted.
-- **One transaction.** It writes the step (`no` = max + 1), the version (effective chain = the parent's plus the step), the lineage, and `user_edited_cells` for edit steps. It updates `current_version`, `row_count`, `column_count`, `next_row_id` (never lowered), `state_rev + 1`, `folder_bytes` and `users.storage_bytes`.
+- **One transaction.** It writes the step (`no` = max + 1), the version (effective chain = the parent's plus the step), the lineage, and `user_edited_cells` for edit steps. The step's `column_targets` are the ones the caller gave, or else the columns the diff found changed. It updates `current_version`, `row_count`, `column_count`, `next_row_id` (never lowered), `state_rev + 1`, `folder_bytes` and `users.storage_bytes`.
 - **Re-profile.** The new version's DataCard is then built and stored.
 - **Undo of the latest step** writes a version row that points at the Parquet of the latest version whose effective chain equals the chain without that step, so no data is rewritten. It also writes a `kind = 'undo'` step (`created_by = 'user'`, the comment `notebook_code`, `undone_step_id`), deletes the step's `user_edited_cells`, bumps `state_rev`, and re-profiles.
 - **Replay** (2026-10-25, Implementation Plan D5.5, `sherlock/steps/replay.py`, `undo.py`).
   - The new chain is the current one without the step. If a version has exactly that chain, the undo points at its Parquet as before. Otherwise it starts from the latest version whose chain is the longest prefix of the new chain (version 1 at worst) and replays the rest into `versions/v<new>.parquet`.
-  - **Re-applying a step.** An edit batch re-applies its stored edit list by `_row_id`, typed to the columns as they are then; an edit to a row or column that no longer exists fails, and deleting a row that's already gone is skipped. The typing step re-runs its DuckDB statement. A cleaning step re-runs its notebook code (its code and, for a scoped clean, its scope) in the sandbox.
+  - **Re-applying a step.** An edit batch re-applies its stored edit list by `_row_id`, typed to the columns as they are then; an edit to a row or column that no longer exists fails, and deleting a row that's already gone is skipped. Restoring a row that no longer exists, adding a row whose `_row_id` already exists, or adding one with a column that no longer exists fails too. The typing step re-runs its DuckDB statement. A cleaning step re-runs its notebook code (its code and, for a scoped clean, its scope) in the sandbox. Any other kind (`ml_column`, `computed_column`) fails as "can't be replayed".
   - **Checks.** Each replayed step must run, keep `_row_id` unique and non-null, and (cleaning steps) keep every row; else the replay stops with the step and the reason, and the undo is `409` with nothing written.
+    - The Cleaner's verifiers (§7.2) aren't run again on the replayed data, though the paragraph above says a replay aborts when "its verifiers fail". Not built yet (docs/BACKLOG.md).
   - **Writes.** One `undo` step with `replayed_step_ids`, the version, fresh lineage rows for each replayed step under its own id at the new version, and `user_edited_cells` for replayed edit batches (after the undone step's are deleted). A deleted cell that an edit batch still in the chain also edited is protected again, under the latest such batch (Schema §2.7). This applies to every undo, not just a replay. The impact is the diff between the old current version and the new one.
 - **Edit batches.** `render_edit_batch` (`sherlock/steps/notebook.py`) renders an edit batch's `notebook_code` as the pandas in §6.7: `.loc` assignments grouped by column, quarantine restores, `pd.concat` for new rows, and `~isin` for deletions. Values are typed to the column's DuckDB type, and a test runs the rendered code on a DataFrame.
 
@@ -1726,7 +1785,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 - **Route.** `small` with reasoning off, the one purpose that may turn it off (§3.5). The prompt makes `ask_data` the default. `create_widget` is only for requests to add something to the dashboard ("as a chart" stays `ask_data`). A route that fails twice is treated as a single `ask_data`, and duplicate intents run once. When `create_widget` comes with another intent, it runs only if the message says "dashboard", "widget" or "pin". Live, Nano added a widget for "survival rate by sex as a chart" despite the prompt. A message routed to `create_widget` alone still runs it.
 - **Clarification.** An ambiguous route with a clarification is saved as a message with `clarification` and no blocks, and the thread waits for the choice.
 - **Resolution (`resolve.py`).**
-  - Columns: exact, then ignoring case, spaces, dots and underscores, then whole-string fuzzy (`rapidfuzz` ratio ≥ 85). It's whole-string because partial matching read "average fare" as `age`.
+  - Columns: exact, then ignoring case, spaces, dots, hyphens and underscores, then whole-string fuzzy (`rapidfuzz` ratio ≥ 85). It's whole-string because partial matching read "average fare" as `age`.
   - Values: the value index, exact (ignoring case) then `token_sort_ratio` ≥ 90.
   - Widgets: by title, `token_set_ratio` ≥ 75.
 
@@ -1745,7 +1804,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
   - **`create_widget`.** `medium`, schema `WidgetDraft` (`reading`, `title`, `sql`, `view`, `x`, `y`). It's validated by creating the widget (created by `chat`), with one repair on failure. It's placed under the layout, and the answer shows it with `open_widget`.
   - **`explain_widget`** names the focused or resolved widget and returns its SQL as the source.
   - **`ask_history`** finds steps by shared words in their summary, columns and decisions, or else the latest five, and lists them with their reasons. The sources are the steps.
-  - **Not built yet:** `ask_story` and `update_widget` get one honest sentence each. (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help` came with D7.3; see §8.2.) Both are built now: `ask_story` with D8.1 (§8.2, the Flow tab) and `update_widget` with D8.5 (below). The one honest sentence remains only for an intent asked on a tab that doesn't expose it. When nothing else was answered, a suggestion built from the file's own columns follows ("the rate of survived by pclass"), as ASK-8 asks.
+  - **Not built yet:** `ask_story` and `update_widget` get one honest sentence each. (`ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help` came with D7.3; see §8.2.) Both are built now: `ask_story` with D8.1 (§8.2, the Flow tab) and `update_widget` with D8.5 (below). The one honest sentence remains only for an intent asked on a tab that doesn't expose it. When nothing else was answered, a suggestion built from the file's own columns follows ("the rate of survived by pclass"), as ASK-8 asks. That suggestion followed only a not-built intent's sentence (`loop.NOT_YET`), which is empty now that every intent is built, so it no longer shows; ASK-8's closest question comes from `ask_data`'s `closest` ("The closest I can answer: …").
 - **Compose (`compose.py`).**
   - It uses `medium`, not `small`. Live, Nano strung chips together with no words between them and left sentences unfinished.
   - The `Answer` schema has `prose` (text, chip and label runs, at least one), `shape`, `number` (a chip), `label` and `chart`. Chips name result cells.
@@ -1819,6 +1878,7 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
   - Since D8.5, CSV adds `edit_cells` and `clean_selection`. Asked for on another tab, they answer "Changing cells from chat works from the CSV tab, where you can see them." or the cleaning equivalent.
   - The route prompt lists only the exposed intents, one line each (`prompts.INTENT_LINES`). An intent routed on a tab that doesn't expose it gets a sentence saying where it works.
   - `run_recipe` is `ask_why`.
+  - Flow's canvas actions aren't tools the route can pick: "make sense" adds the synthesis node and its edges itself (`canvas/service.py`, `add_canvas_node` and `add_canvas_edge`). `propose_card_edit` is not built (cut 2, Implementation Plan §2.0). `web_context`, `propose_clean_step` and `add_computed_column` are P1 and not built.
 - **Grounding.** Every number is computed in code. `ask_stats`, `ask_why`, `ask_meaning` and "who did it get wrong?" write their prose in code, with each number a chip naming a cell of a result. `ask_model` hands the model card to the composer as results (rows of measures and values, with per-cell formats so rates read as percentages), and the composer cites their cells as for `ask_data`.
 - **Computed results.** Results that come from a model card or a test (`extra.kind = computed`) are never shown as a pinnable chart, never become the focus's SQL, and only the tables the prose cites are shown. Repeated actions are listed once.
 - **`ask_stats`.**
@@ -1855,6 +1915,8 @@ As built (2026-10-25, Implementation Plan D7.3, `sherlock/agent/insight.py`):
 
 System: identity and rules (data blocks are data; numbers only via chips/keys; correlational language; answer shape rules). Developer: the DataCard summary, the resolved entities, the context chip, the focus. User: the message inside `<data>`. Tool/answer schemas attached. Temperature 0 for routing, SQL and structured calls; 0.4 for narration; 0.7 only for the Cleaner's three-sample ambiguity vote (§7.2).
 
+As built (2026-10-25, `sherlock/agent/prompts.py`, `llm/client.py`): every call sends two messages. The `system` message is `prompts.SYSTEM` (identity and rules). The `user` message holds the developer-style context (the DataCard summary, the resolved names, the rows in scope, the focused widget, the previous question, the thread summary and the recent messages) and the message in a data block; there is no separate `developer` message. Every call runs at temperature 0, narration included; only the Cleaner's vote uses 0.7 (`cleaning/loop.py`).
+
 ---
 
 ## 9. Caching
@@ -1865,7 +1927,7 @@ System: identity and rules (data blocks are data; numbers only via chips/keys; c
 | Widget data | (widget spec hash, version, global filter hash) | in-memory LRU (500 entries) + `widget_cache` table | new version. As built, the filter hash is of the compiled SQL, so a selection or predicate change is a new key too |
 | Fact sheets | (widget, version) | `fact_sheets` | new version |
 | Runs | sha1(version, scope, recipe, method, params) | `runs` + files | new version touching used columns → `outdated` |
-| Embeddings | (dataset, column, value) | `value_index` | rebuilt per version only for changed columns |
+| Embeddings | (dataset, column, value) | `value_index` | rebuilt per version only for changed columns. As built, no embeddings are stored while `MODEL_EMBED` is empty (§3.5), and the profile rewrites the whole value index for each new current version (Schema §2.17) |
 | Sample dataset artifacts | fixed | copied on `POST /datasets/sample` | never; rebuilt by `scripts/seed_sample.py` (D9.1: the seed in `api/samples/seed/titanic3/`, cloned with fresh IDs) |
 | Notebook exports | sha1(kind, version, state_rev, options) | `exports` + `exports/*.ipynb` | new version or any widget, card, run, layout or canvas change (`state_rev`); files purged after 24 h |
 
@@ -1883,11 +1945,11 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `LLM_API_KEY` | — | |
 | `MODEL_LARGE` / `MODEL_MEDIUM` / `MODEL_SMALL` / `MODEL_EMBED` | — | filled on day 1; LARGE, MEDIUM and SMALL must be Nemotron IDs (Ultra, Super, Nano); EMBED is empty or one of `NVIDIA_EMBED_MODELS`. The values found on 2026-10-24 are in §3.5 and `.env.example` |
 | `NVIDIA_EMBED_MODELS` | — | the NVIDIA embedding model IDs found in the Token Factory catalog (comma-separated), used by the startup check |
-| `LLM_TOOLS_MODE` | `json` | `native` once verified |
+| `LLM_TOOLS_MODE` | `json` | `native` once verified. `.env.example` and `render.yaml` set `native` |
 | `LLM_MOCK` | empty | a fixture file or a directory of them (§3.5): every model call is answered from recorded responses, with no network. For local work on the UI and pipelines without credits |
 | `LLM_RECORD` | empty | a fixture file that every live model reply is appended to |
-| `JOB_BACKEND` | `local` | `nebius` to dispatch |
-| `JOB_WORKERS` | `4` | |
+| `JOB_BACKEND` | `local` | `nebius` to dispatch. Not built yet: only `local` exists (jobs run in the API process), and nothing reads the setting (§11, Nebius Serverless Jobs) |
+| `JOB_WORKERS` | `4` | worker tasks of the in-process job runner; `0` runs no jobs and queues no purge (the tests' default) |
 | `PURGE_INTERVAL_S` | `600` | the purge job's period (Schema §6); `0` turns it off (D8.6) |
 | `SAMPLE_SEED_DIR` | (empty) | the cached sample "Try with sample" clones (D9.1): empty is the seed in the image, a folder is another seed, `off` imports the sample live |
 | `SANDBOX_CPU_S` / `SANDBOX_MEM_MB` | `30` / `2048` | CPU seconds for the worker process; memory the generated code may add on top of the worker's own (§3.4). `render.yaml` set 256 while the service was on the 512 MB Starter plan, and sets 1024 on the 2 GB Standard plan (from 2026-10-25), which leaves room for the API and its DuckDB connections |
@@ -1895,18 +1957,18 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `SANDBOX_TMP` | empty (image: `/tmp/sherlock-sandbox`) | where worker temp directories go, outside `DATA_DIR`; empty uses `<system temp>/sherlock-sandbox` |
 | `DUCKDB_MEMORY_MB` | `1024` | memory cap of each DuckDB connection (ingest and the per-version cache, §3.2); `render.yaml` set 256 for the Starter plan, and sets 512 for the Standard plan (from 2026-10-25) |
 | `MAX_UPLOAD_MB` / `MAX_COLUMNS` / `MAX_ROWS` | `50` / `1000` / `2000000` | bytes enforced while streaming; rows and columns after parse |
-| `USER_STORAGE_MB` | `500` | |
-| `DATASET_TTL_DAYS` | `7` | |
-| `USER_TOKEN_BUDGET` / `JOB_TOKEN_BUDGET` / `MESSAGE_TOKEN_BUDGET` | `2000000` / `300000` / `40000` | |
+| `USER_STORAGE_MB` | `500` | a user's datasets on disk; an upload that would pass it is refused (Schema §4) |
+| `DATASET_TTL_DAYS` | `7` | a dataset's `expires_at` is this many days after its import or sample clone; the purge then removes it (Schema §6) |
+| `USER_TOKEN_BUDGET` / `JOB_TOKEN_BUDGET` / `MESSAGE_TOKEN_BUDGET` | `2000000` / `300000` / `40000` | model tokens per user per UTC day / per job / per chat message (§3.5) |
 | `APP_TOKEN_BUDGET` | `10000000` | all users' tokens per UTC day; 0 = no ceiling (§3.5) |
 | `NEW_USERS_PER_IP_HOUR` | `300` | new cookie users per client IP per hour; 0 = no cap (§15) |
 | `TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries the host's proxies append after the client's (Render: 1, checked live) (§15) |
 | `CLEAN_MAX_STEPS` / `CLEAN_MAX_SECONDS` | `20` / `300` | issues attempted, committed or not / wall-clock seconds |
-| `TAVILY_API_KEY` | — | P1 |
+| `TAVILY_API_KEY` | — | P1. `web_context` isn't built, so only the notebook's secret scan reads it (`notebook/scan.py`) |
 | `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; kept equal to the API's own pins (check on day 1) |
 | `CORS_ORIGINS` | empty | local dev only; production serves the web app from the API origin |
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
-| `LOG_LEVEL` | `info` | |
+| `LOG_LEVEL` | `info` | Not applied yet: the setting is read, but the `sherlock.*` loggers always log at INFO (`main._app_logging`), and uvicorn keeps its own level |
 
 Secrets come from the Serverless Endpoint's environment variables; never committed. `.env.example` lists all. On Render (the host since 2026-10-24, §11) they're the service's environment variables: `render.yaml` marks `LLM_API_KEY` `sync: false`, so it's entered in the dashboard and never stored in the repo.
 
@@ -1920,7 +1982,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
   - **Plan change (2026-10-25).** The owner moved the service to the `standard` plan (1 CPU, 2 GB, about $25 a month) before the Cleaner. `render.yaml` says `plan: standard`, so a Blueprint sync keeps it. On 2 GB, `SANDBOX_MEM_MB` is 1024 and `DUCKDB_MEMORY_MB` is 512, so that the API, its DuckDB connections and one sandbox worker fit together. A step that needs more memory fails with the sandbox's limit message, and the container keeps running.
   - **Disk.** A 5 GB persistent disk is mounted at `/data`. A service with a disk is single-instance and has no zero-downtime deploys, which the one-process design requires anyway. The disk can grow but never shrink.
   - **Port and health.** `PORT=8080` makes Render route to the image's port. The health check is `/healthz`. TLS ends at Render's edge, and `X-Forwarded-Proto: https` gives the identity cookie its `Secure` flag (§3.1).
-  - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint.
+  - **Env vars.** `LLM_API_KEY` is `sync: false`, so it's entered in the dashboard and never stored in the repo. The `MODEL_*` roles, `LLM_BASE_URL` and `LLM_TOOLS_MODE` are set in the Blueprint. So are `NVIDIA_EMBED_MODELS` (empty, like `MODEL_EMBED`), `PORT`, `DUCKDB_MEMORY_MB` and `SANDBOX_MEM_MB`; every other setting keeps its default (§10).
   - **Deploys.** `autoDeployTrigger: checksPass` with a `buildFilter` on `api/**`, `web/**` and `render.yaml`, so a push to `main` redeploys only after CI passes, and only when the app changed.
     - **By hand, from 2026-10-25 (owner's decision).** GitHub won't start the Actions jobs because of the account's billing, so CI never passes and nothing auto-deploys. Until that changes, a deploy goes like this:
       1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
@@ -1938,6 +2000,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 - **Nebius Serverless Endpoint (alternative)**: container from the image (pushed to a registry Nebius can pull from), port 8080, CPU-only instance (GPU not needed), pinned to one replica, persistent filesystem mounted at `/data`, env vars set in the console, public URL. Health check `GET /healthz` (returns DB and LLM reachability and the configured model IDs: `{ ok, version, db: { ok, schema_version }, storage: { … }, llm: { reachable }, models: { large, medium, small, embed } }`, where `ok` requires the DB and the storage check below).
 - **Availability through judging**: the deployment, its paid Render plan, its Token Factory key and enough Token Factory credit stay live through the hackathon's judging period and winner announcement (PRD §9). The expected cost of the pinned replica and of judge traffic (bounded by the per-user budgets, §3.5 and §15) is checked against the remaining credit; `/healthz` is checked by an external uptime monitor that alerts the owner.
 - **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume.
+  - Not built yet: there is no `sherlock.jobs.run` module, and `JOB_BACKEND` isn't read (§10). Every job runs in the API process's job runner (§3.1).
 - **Frontend**: `web/` built with Vite to static files and served by the API container under `/`. This is the only supported hosting: one origin keeps the `SameSite=Lax` identity cookie working, on Render or on the Nebius alternative.
 - **Image as built (2026-10-24):**
   - **Build.** `docker build -f api/Dockerfile -t sherlock .` from the repo root:
@@ -1956,6 +2019,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 
   `/healthz` reports this as `storage: { data_dir, writable, boots, first_boot_at, sqlite_lock[, error] }`, and `ok` requires the DB, `writable` and `sqlite_lock`. The check passes when `boots` grows after a restart, `first_boot_at` is unchanged, `sqlite_lock` is `true`, and a cookie user created before the restart is still returned by `GET /me`. All of this was verified locally with a named Docker volume on 2026-10-24.
 - **Local dev**: `docker compose up` (api + web with hot reload), `DATA_DIR=./data`.
+  - As built (`docker-compose.yml`): the API runs `uvicorn --reload` on :8000 in the uv image, with `./data` on the host mounted at `/data` (so `DATA_DIR=/data` inside it) and the repo-root `.env` read if present. The web app runs `pnpm dev` on :5173, with `VITE_API_TARGET=http://api:8000`. Without Docker, `.env.example`'s `DATA_DIR=./data` resolves from `api/`.
 - **Deploy script (Nebius alternative)**: `scripts/deploy.sh` builds, pushes, and updates the endpoint via the Nebius CLI; exact commands recorded in the README after the Oct 20 hello-world deploy.
   - **Subcommands** (written 2026-10-24 from docs.nebius.com):
     - `setup` creates the Container Registry, a `network_ssd` shared filesystem (default 50 GiB), and a SecretStash secret `sherlock-llm` holding `LLM_API_KEY` from `.env`. It then builds and pushes `cr.<region>.nebius.cloud/<registry>/sherlock:prod` and creates the endpoint, with `--platform cpu-d3 --preset 4vcpu-16gb --disk-size 40Gi --container-port 8080 --volume <fs>:/data:rw --env-secret LLM_API_KEY=sherlock-llm` plus `--env` for `LLM_BASE_URL`, the `MODEL_*` roles, `NVIDIA_EMBED_MODELS` and `LLM_TOOLS_MODE`.
@@ -1973,6 +2037,7 @@ Secrets come from the Serverless Endpoint's environment variables; never committ
 
 - Structured JSON logs (request id, user id, dataset id, job id, duration). LLM calls to `llm_calls`; sandbox runs to `sandbox_runs`.
 - `GET /healthz` and `GET /metrics` (counts of jobs by status, LLM error rate, p95 latencies) for the demo day.
+- As built (2026-10-25): the logs are plain text, not JSON. The `sherlock.*` loggers write `LEVEL: logger: message` lines to stderr at INFO (`main._app_logging`), and uvicorn writes its access log. Each response carries its request ID in `X-Request-ID`, and an error body in `request_id`; log lines don't carry it (`errors.RequestIdMiddleware`). `GET /metrics` is not built yet; the same figures can be read from `jobs` and `llm_calls`. `/healthz` is built (§11).
 - Error policy: every exception is caught at the router boundary → `error` response with a request id; pipelines record failures on the job and continue to a clean end state (partial report, dashboard from what exists).
 - Client: an error boundary per panel; network errors show a toast with Retry; SSE reconnects with backoff.
 
@@ -2000,6 +2065,7 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
 - **Unit**: detectors, verifiers, gate, helpers, SQL compile/validate, fact-sheet computations, material hash, chip no-digits validation, scope → predicate, JSON Canvas round trip, notebook cell renderers (each cell kind), edit-batch → pandas code, run `repro.py` generation per method, secret/allowlist scan of generated code.
 - **Notebook execution**: for the sample (and each file in the end-to-end set, on demand), export the notebook, run it with `jupyter nbconvert --execute` in a fresh virtualenv built from the requirements cell, and assert (a) no cell errors, (b) the rebuilt DataFrame equals the current version by `_row_id`, (c) each widget cell's table equals the app's widget data, (d) each run's metrics are within 0.5 pp of the model card. Runs in CI on the sample (mocked-LLM artifacts, real execution).
 - **Integration**: ingest → profile → clean → build → stories on the five-file set, with the LLM mocked by recorded responses (`tests/fixtures/llm/*.json`) and a "live" marker for real calls.
+  - As built (2026-10-25): the material hash isn't built (cut 6), and `repro.py` is generated for Auto only (cut 4), so their unit tests are absent or cover Auto. With recorded responses, the whole pipeline runs in `pytest` on Titanic and small made-up files (`test_cleaner.py`, `test_dashboard.py`, `test_stories.py`, `test_canvas.py`). The other four files of the set are only imported and profiled there (`test_samples_and_eval.py`). Not built yet: clean → build → stories on all five with recorded responses; `eval notebook --sets all` builds all five with "Use as is" and no model.
 - **Benchmarks (`sherlock eval`)**: corruption benchmark (recovery, harm, row loss), planted-truth ML tests, grounding test, ask-anything eval (≈ 50 questions with expected values and tolerance), all runnable from the CLI and reported as a markdown table for the README.
   - **The corruption benchmark as built** (2026-10-24, Implementation Plan D3.3, `sherlock/eval/corruption.py`, `sherlock/eval/synthetic.py`).
     - **Sets.** Three clean sets, from seeded generators:
@@ -2034,12 +2100,14 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
       - `grounding.check_dataset` checks one built dataset's cards, without writing a synthesis; `evaluate` calls it, then writes and checks the synthesis.
 - **Runners**: `uv run pytest` for the API (the `live` marker is deselected by default; `-m live` runs it) and `pnpm test` (Vitest) for the web app.
 - **Frontend**: component tests for the widget shell, card chips, grid editing buffer, canvas persistence; one Playwright flow: sample → dashboard → edit → save → card badge.
-  - **The Playwright flow as built** (2026-10-25, D8.6, `web/e2e/flow.spec.ts`, `web/playwright.config.ts`). `pnpm e2e` builds the web app, starts one server like production (`api/tests/e2e_server.py`: the API serving `web/dist` on :8010, with an emptied data folder under the system temp and `LLM_MOCK` set to every recorded reply in `api/tests/fixtures/llm/`, so no model is called), and runs Chromium through @playwright/test 1.61.1. The flow: Try with sample → Use as is → the dashboard and its story cards → ask "average fare by class" and open How do you know? → on the CSV tab, "set the fare of row 1 to 100", Approve → the cascade's "stories updated" toast → on Flow, place two cards from the palette with the keyboard, Shift-click both, Make sense of this → a third card node and "summarized in" edges → Export notebook without data → an `.ipynb` downloads. It ran in 11 s on 2026-10-25. The edit goes through a chat proposal rather than typing into the grid, whose cells are drawn on a canvas.
+  - **The Playwright flow as built** (2026-10-25, D8.6, `web/e2e/flow.spec.ts`, `web/playwright.config.ts`). `pnpm e2e` builds the web app, starts one server like production (`api/tests/e2e_server.py`: the API serving `web/dist` on :8010, with an emptied data folder under the system temp and `LLM_MOCK` set to every recorded reply in `api/tests/fixtures/llm/`, so no model is called; `SAMPLE_SEED_DIR=off`, because the replies were recorded on the live pipeline, not the cached sample; `PURGE_INTERVAL_S=0`), and runs Chromium through @playwright/test 1.61.1. The flow: Try with sample → Use as is → the dashboard and its story cards → ask "average fare by class" and open How do you know? → on the CSV tab, "set the fare of row 1 to 100", Approve → the cascade's "stories updated" toast → on Flow, place two cards from the palette with the keyboard, Shift-click both, Make sense of this → a third card node and "summarized in" edges → Export notebook without data → an `.ipynb` downloads. It ran in 11 s on 2026-10-25. The edit goes through a chat proposal rather than typing into the grid, whose cells are drawn on a canvas.
 - **CI**: GitHub Actions running unit + integration (mocked) on push; benchmarks on demand.
+  - As built (`.github/workflows/ci.yml`): on a push to `main` and on pull requests, an `api` job runs `uv sync --frozen` and `uv run pytest`, and a `web` job runs `pnpm test` and `pnpm build`. The Playwright flow and the benchmarks aren't in it; they run from the command line. GitHub doesn't start the jobs because of the account's billing (§11), so the same checks run by hand before each deploy.
 
 - **Notebook execution as built** (2026-10-25, D5.6).
-  - `tests/test_notebook.py` runs on every `uv run pytest`: on the sample it commits a sandboxed cleaning step (with helpers), two edit batches (cells, an invalid value, a new row, a deleted row) and an undo that replays the second, exports, executes the notebook with `nbclient` and a real kernel (the requirements cell skipped, since the test environment has the pins), and asserts (a) no cell errors, (b) the rebuilt DataFrame equals the version (`assert_frame_equal` with dtypes, by `_row_id`) and (c) each widget's table equals the app's widget data. (d) waits for runs (D7.5).
+  - `tests/test_notebook.py` runs on every `uv run pytest`: on the sample it commits a sandboxed cleaning step (with helpers), two edit batches (cells, an invalid value, a new row, a deleted row) and an undo that replays the second, exports, executes the notebook with `nbclient` and a real kernel (the requirements cell skipped, since the test environment has the pins), and asserts (a) no cell errors, (b) the rebuilt DataFrame equals the version (`assert_frame_equal` with dtypes, by `_row_id`) and (c) each widget's table equals the app's widget data. (d) waited for runs (D7.5). Since D7.5 it also asserts (d): each analysis's run cell reproduces its model card's metric within 0.005, half a point (`test_notebook.py`).
   - `uv run sherlock eval notebook [--sets all]` does the same in a **fresh virtualenv per file**: `uv venv --seed`, only `nbclient` and `ipykernel` installed, and the notebook's own `%pip install` cell installs the pinned libraries. On 2026-10-25 titanic3, sales_dated, wide_messy and reviews_text all ran top to bottom and rebuilt their version after an undo with replay (77–93 s each). `broken_latin1.txt` needs header row 3 set at import, so the eval leaves it out.
+    - It checks (a) and (b) only: the notebook must run to the end and the rebuilt DataFrame must equal the version. It builds each dashboard with "Use as is" and `LLM_BASE_URL` empty, so no model is called. Widget tables (c) and run metrics (d) are compared by `test_notebook.py`, on the sample.
     - As of 2026-10-25 (later), the eval passes per-file import options as the import preview would (`IMPORT_OPTIONS` in `sherlock/eval/notebook.py`: `broken_latin1.txt` gets `{"header_row": 3}`), and `all` is the plan's five-file end-to-end set (§6) with `broken_latin1.txt` included. Its run (Latin-1, `;`, header on row 3: 2 steps, 6 widgets) ran top to bottom in a fresh venv and rebuilt its version after the undo with replay (86 s).
   - `api` dev dependencies add `nbclient` and `ipykernel`; `nbformat` and `matplotlib` (pinned to `NOTEBOOK_PINS`) are runtime dependencies, with `scikit-learn` and `statsmodels` for D7.
 
@@ -2054,10 +2122,11 @@ Large files are sampled for LLM context and for ML (stratified 50k rows), never 
   - Implemented in `sherlock/ratelimit.py` as in-memory sliding 60-second windows, which is correct because the API is one process (§3.1). The response carries `Retry-After`.
   - Reads are `GET`, `HEAD` and `OPTIONS`; any other method is a mutation.
   - Routes that call the model also add the `llm_rate_limit` dependency, so they count against both their method's bucket and the LLM bucket.
+    - As built (2026-10-25): `POST /datasets/{id}/chat` and `POST /datasets/{id}/clean` have the dependency; `POST /widgets` checks it only for a widget described in words, and `POST /datasets/{id}/edits` only when it asks to clean the new rows. Other routes that start model-calling jobs don't count yet (docs/BACKLOG.md §5).
 - **New users per client IP** (2026-10-25, owner's decision on the Day 1 review). `IdentityMiddleware` admits at most `NEW_USERS_PER_IP_HOUR` (default 300) new users per client IP in a sliding hour, in memory (one process).
   - A request that would create one past the cap gets `429 rate_limited` with `Retry-After`. Existing cookies are never capped.
-  - The client IP is the last `X-Forwarded-For` entry, the one the host's proxy appended, else the socket's peer. Render appends to whatever the client sends, so the first entry can be forged.
-    - **Corrected after the live check (2026-10-25).** A plain request reached the app with two entries, the client and then a Render proxy whose address varies. The last entry would have grouped unrelated visitors by proxy node. The client is the entry just before the `TRUSTED_PROXY_HOPS` entries the host's own proxies append (default 1, for Render), so a forged entry sent before it is still ignored.
+  - At first the client IP was the last `X-Forwarded-For` entry, the one the host's proxy appended, else the socket's peer. Render appends to whatever the client sends, so the first entry can be forged.
+    - **Corrected after the live check (2026-10-25).** A plain request reached the app with two entries, the client and then a Render proxy whose address varies. The last entry would have grouped unrelated visitors by proxy node. The client is the entry just before the `TRUSTED_PROXY_HOPS` entries the host's own proxies append (default 1, for Render), so a forged entry sent before it is still ignored. With no more entries than that, it's the first one; with no header, the socket's peer (`identity.client_ip`).
   - Each new user is logged with a short hash of the IP and the number of forwarded hops, never the IP itself, so the deployment can confirm which entry is the client's. The `sherlock.*` loggers get a stderr handler at INFO in `create_app`. Before, they had none, so their INFO lines were dropped at the root logger's WARNING level, this one included.
   - 300 an hour (raised from 30 the same day, on the owner's instruction: 30 ran out while testing by hand) leaves room for judges behind one office network and for repeated private-window tests. The app-wide token ceiling (§3.5) bounds the cost either way.
 - Prompt data fencing; no tool call may originate from content inside data blocks (tools are only chosen by the loop from the model's structured output, which is validated against the allowed tool list for the tab).

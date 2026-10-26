@@ -39,9 +39,9 @@ Routes (client-side):
 | `?settings=1` | Settings overlay on top of any route |
 | `?widget=:id` | Dashboard tab with that widget highlighted and scrolled into view |
 | `?rows=:selectionId` | CSV tab filtered to a saved row selection (used by "open these rows") |
+| `?export=notebook` | The Export notebook dialog on top of any dataset route |
 
 As built (2026-10-25, from the Day 4 review): `?widget=:id` works the way clicking a card does. Once the widgets load, the dashboard scrolls to that widget and flashes it, then drops the parameter, so a reload doesn't flash it again. An ID that's no longer on the dashboard just opens the dashboard. Chat's "Open the widget" uses it.
-| `?export=notebook` | The Export notebook dialog on top of any dataset route |
 
 The left panel and the chat bar exist on every dataset route.
 
@@ -72,6 +72,8 @@ The left panel and the chat bar exist on every dataset route.
 | **Try with sample** | Loads the bundled Titanic file. If a dataset named "titanic3.csv (sample)" already exists in the library, it opens that one instead of creating a duplicate. |
 | **Paste (P1)** | Pasting tabular text into the empty state or the library creates a dataset from it. |
 
+As built (2026-10-25, D9.1, TRD §4.2): with the cached seed that ships in the image, Try with sample opens a copy that is already **ready**: its cleaning steps, dashboard, story cards, analysis and a synthesis on the canvas, as the real model made them. There's no import preview, profiling or offer for it. Without the seed, the file is imported and goes through §3.2–§6 live.
+
 ### 3.2 Import preview (modal)
 
 Shown as soon as a file is chosen. The preview is parsed client-side from the local file; nothing is uploaded until Import.
@@ -92,16 +94,19 @@ Rules:
 - Duplicate column names get suffixes (`name`, `name_2`) and a note appears.
 - Files over 50 MB are refused before upload with "This file is 73 MB. The limit is 50 MB."
 - Files that look binary (NUL bytes in the first 64 KB, outside UTF-16) show "Couldn't read this as text. Is it a spreadsheet or a zip? Export it as CSV first."
+- As built (2026-10-25): the delimiter dropdown lists Comma, Tab, Semicolon and Pipe, plus "Other (…)" only when the detected delimiter is none of those. There's no field to type another delimiter. Not built yet (docs/BACKLOG.md).
 
-Import uploads the raw file (with a progress bar for files > 2 MB), creates the dataset, and navigates to `/d/:id/dashboard` (or the default tab) in the **profiling** state. As built (2026-10-24), the Import button shows a spinner while the upload runs; the byte-level progress bar for large files isn't built yet. Only the settings the user changed from what the preview detected are sent as import options; the server detects the rest itself. Until the status is **ready**, the centre panel of every tab route shows the profiling, offer, cleaning or build screen, except that during cleaning the CSV tab shows the read-only grid (§5).
+Import uploads the raw file (with a progress bar for files > 2 MB), creates the dataset, and navigates to `/d/:id/dashboard` (or the default tab) in the **profiling** state. As built (2026-10-24), the Import button shows a spinner while the upload runs; the byte-level progress bar for large files isn't built yet. Only the settings the user changed from what the preview detected are sent as import options; the server detects the rest itself. Until the status is **ready**, the centre panel of every tab route shows the profiling, offer, cleaning or build screen, except that the CSV tab shows the grid once the dataset has left profiling (offer, cleaning and building too; read-only during cleaning per §5). Dashboard and Flow are disabled until then, with the tooltip "Available after cleaning" during cleaning and "Available once the dataset is ready" otherwise.
 
 ### 3.3 Profiling state
 
 Centre: a spinner with "Reading titanic3.csv…" then "Profiling 14 columns…". Left panel row shows status "profiling". Chat bar enabled with the placeholder "Ask about this CSV (profiling in progress)"; questions queue until profiling ends. The right panel shows the three placeholder cards.
 
-Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed". (The Delete button arrives with library delete, Implementation Plan D4.5.)
+As built (2026-10-25): the spinner's line follows the profile job: "Reading titanic3.csv…", then "Typing 14 columns…" (the typing step), then "Profiling 14 columns…". The chat bar shows that placeholder but is disabled while profiling (and on a failed dataset), so questions don't queue. Not built yet (docs/BACKLOG.md).
 
-Until the Glide grid lands (Implementation Plan D5.1), the CSV tab shows a read-only table of the current version, 100 rows a page, with the changed, flagged and invalid marks and quarantined rows struck through. It's available once the dataset leaves profiling.
+Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed". As built: the screen shows the heading "Profiling failed" and "<reason>. You can delete this CSV and try again." but has no Delete button of its own; Delete is in the dataset menu (⋯) and the library row's menu. Not built yet (docs/BACKLOG.md).
+
+Once the dataset leaves profiling, the CSV tab shows the grid of the current version (§8), with the changed, flagged and invalid marks and quarantined rows struck through.
 
 ---
 
@@ -115,10 +120,11 @@ Contents:
 - An expandable "All 7 issues" list: each with column, issue type, count, and what Sherlock would do.
 - Three buttons: **Clean it for me** (primary), **Use as is**, and (P1) **Go step by step**.
 - A checkbox: "Remember my choice" (writes the "After upload" setting). As built (2026-10-24): checked, "Clean it for me" saves `after_upload: always` and "Use as is" saves `never`. Go step by step is shown disabled (P1). The profile job follows the setting: `always` queues the clean (the status goes straight to `cleaning`), `never` queues the build. The "Cleaning automatically (change in Settings)" toast isn't shown yet.
+- As built (2026-10-25): under the heading, a line "1,309 rows · 14 columns · 7 issues", then the top three issues by severity as a list with icons ("263 missing in age", "boat records the outcome"); "Nothing that needs cleaning." when there are none. "All 7 issues" appears only when there are more than three.
 
 Transitions:
 - **Clean it for me** → §5 Headless cleaning.
-- **Use as is** → §6 Dashboard build on the typed version (version 1 plus the automatic typing step, which runs on every path). The CSV tab's "Clean with AI" button later shows a small dot until cleaning has run once.
+- **Use as is** → §6 Dashboard build on the typed version (version 1 plus the automatic typing step, which runs on every path). The CSV tab's "Clean with AI" button later shows a small dot until cleaning has run once. As built: the button has no dot. Not built yet (docs/BACKLOG.md).
 - **Go step by step (P1)** → the Dashboard tab opens with the chat thread expanded and the first proposed step as an approval card.
 
 If the setting is "Always clean", the offer is skipped and cleaning starts; a toast says "Cleaning automatically (change in Settings)". If "Never clean", the dashboard builds directly.
@@ -135,24 +141,24 @@ If the setting is "Always clean", the offer is skipped and cleaning starts; a to
 - **Checks** card: the verifiers with ✓ as they pass on the latest step; the budget line "7 of 20 issues tried · 0:24 of 5:00".
 - Button: **Pause and review** (P1: switches to step-by-step for remaining issues). P0: **Stop** (ends the run; committed steps stay; the report is produced for what ran).
 
-**Tabs.** CSV is enabled (shows the latest committed version, read-only while the job runs, with a banner "Cleaning in progress · editing resumes when it finishes"). Dashboard and Flow are disabled with the tooltip "Available after cleaning".
+**Tabs.** CSV is enabled (shows the latest committed version, read-only while the job runs, with a banner "Cleaning in progress · editing resumes when it finishes"). Dashboard and Flow are disabled with the tooltip "Available after cleaning". As built (2026-10-25): the CSV grid stays editable during cleaning and has no banner; only Clean with AI is disabled ("Cleaning is running."). Not built yet (docs/BACKLOG.md).
 
-**Right panel.** The story placeholders with "No stories yet. They appear once the dashboard is built."
+**Right panel.** The story placeholders with "Stories appear once the dashboard is built."
 
-**Chat.** Enabled. Questions about the data run against the latest committed version and say so ("as of step 5").
+**Chat.** Enabled. Questions about the data run against the latest committed version and say so ("as of step 5"). As built: they run on the latest committed version, but the answer doesn't name the version or step. Not built yet (docs/BACKLOG.md).
 
 **Leaving.** Switching to another dataset keeps the job running; the left panel row shows the progress bar and percentage. Coming back restores the log from the server.
 
 **End of run.**
 - The centre shows the **report** for 3 seconds (counts and the first three steps) with "View full report", then transitions automatically to the dashboard build. The full report lives in the CSV tab's Changes panel.
-- On failure (server error, budget exceeded with zero steps): the centre shows the error and two buttons: **Build dashboard without cleaning** (uses the typed version) and **Try cleaning again**. As built (2026-10-24), the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>", and the offer screen shows that line above its buttons, so "Use as is" and "Clean it for me" are those two buttons.
+- On failure (server error, budget exceeded with zero steps): the centre shows the error and two buttons: **Build dashboard without cleaning** (uses the typed version) and **Try cleaning again**. As built (2026-10-24), the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>". The offer screen shows "<error>. Your data is safe; you can build the dashboard without cleaning or try again." above its buttons, and its two buttons read **Try cleaning again** (instead of Clean it for me) and **Build dashboard without cleaning** (instead of Use as is).
 - **Stop** (as built): the job is cancelled at once (a sandbox worker that's running is killed), committed steps stay, the report covers what ran (`ended_by: stopped`), and the dashboard build starts.
 - **As built (2026-10-24, D3.6).**
   - The log is the dataset's event stream replayed from the start, keeping this job's `job.log` lines. An issue's "running" line ("263 missing values", "checking candidates") is replaced by its outcome when it arrives: the effect or the skip reason, the candidate chips with the chosen one filled, and the gate line in the gate's color.
   - "So far" and the budget line read the run's report, refreshed on every log line.
   - "Checks on the latest step" lists the hard verifiers of the last committed step.
   - During `building`, the centre shows "Building your dashboard…" above the report summary: counts, the first three steps, and "View full report", a dialog with every step, skipped issue, hand-edited cell and decision.
-  - Until the dashboard builder lands (D4.2), the ready Dashboard tab shows the same summary as "Last cleaning report".
+  - Since the dashboard builder landed (D4.2), the ready Dashboard tab shows the widgets. The same summary, titled "Last cleaning report", opens from the Changes panel's "Full cleaning report" (§8.5).
 
 ---
 
@@ -164,6 +170,8 @@ If the builder produces fewer than 3 valid widgets (odd file), the dashboard sho
 
 When done, the dataset status becomes **ready**.
 
+As built (2026-10-25, D4.2, D6): while the status is `building`, the centre shows "Building your dashboard…" above the cleaning report summary (§5), and the job tray shows the build's progress ("Choosing charts", "Picking the story", "Adding widgets · 3 of 8"). The grid appears all at once when the status turns **ready**; the stories job then writes the cards, with "Writing the stories…" under three placeholders in the right panel (§7.4). The skeleton layout, widgets filling in one by one, cards streaming in during the build and the "6 of 8 widgets" banner are not built yet (docs/BACKLOG.md). A card whose story fails after one repair shows its fact sheet as bullets, as specified.
+
 ---
 
 ## 7. Dashboard tab
@@ -174,6 +182,8 @@ When done, the dataset status becomes **ready**.
 - Under them: dataset name, "v7 · 6 steps" (click opens the Changes panel in the CSV tab), the **filter bar** (active global filter chip, selection chip, and a "Filter" button that opens a small filter builder), then **Add widget**, **Edit layout**, and the dataset menu (⋯): Export notebook · Download CSV · Rename · Delete. The dataset menu is the same on all three tabs.
 - Grid of widgets. Chat bar at the bottom per its setting.
 
+As built (2026-10-25): the context row is the dataset name, the "v7 · 6 steps" pill, the filter chip ("pclass = 3" with ×) when a filter is set, then Add widget, Edit layout, the job tray and the dataset menu. The pill isn't clickable, and there's no Filter button or filter builder. Not built yet (docs/BACKLOG.md). The selection chip is removed by cut 8 (Implementation Plan §2.0).
+
 ### 7.2 Widget anatomy and states
 
 Header: drag handle · title · scope chip ("All rows" / "3rd class · 709") · analysis dropdown · menu (⋯).
@@ -183,6 +193,8 @@ Footer: version stamp ("v7") · "How do you know?" link · status (outdated / up
 States: loading (skeleton) · ready · updating (dimmed with a thin progress line) · outdated (footer badge with "Re-run") · error (message in the body with "Retry" and "Show query").
 
 Menu (⋯): Change view (list of compatible views) · Duplicate · Collapse · Pin number as KPI (P1, for single-value results) · Copy as image (P1) · Show as table · Delete.
+
+As built (2026-10-25): the menu is Change view · Duplicate · Collapse (Expand when collapsed) · Show as table (a check item) · Delete, with a toast "Widget deleted" and Undo for 10 s. Pin number as KPI and Copy as image (P1) aren't built. The scope chip reads "All rows" ("Some rows" or "Selection" for a scoped widget), plus " · pclass = 3" when the widget applies the dashboard filter; it hides on narrow widgets. The footer adds "Model card" on an analysis, "Outdated" with Re-run, and "first 2,000 rows" when a result is capped.
 
 ### 7.3 Interactions
 
@@ -206,6 +218,7 @@ As built (2026-10-25, Implementation Plan D4.6–D4.7):
 - **Brushing** is cut (cut 8).
 - **Layout saving.** Moves and resizes save when the drag or resize ends. Collapsing a widget saves `collapsed: true` and keeps its height for when it expands.
 - **Fewer than 3 widgets.** A dashed card above the grid gives the "I could only build n widgets" message. With none, the tab shows "No widgets yet" and Add widget.
+- **Add widget.** The drawer has "Describe it" (a text box and Add) and "Quick templates": Bar of X by Y, KPI of X and Table. Adding one closes the drawer with a toast "Added “<title>”". The histogram template isn't there. Not built yet (docs/BACKLOG.md).
 
 ### 7.4 Story panel interactions
 
@@ -258,7 +271,7 @@ As built (2026-10-25, Implementation Plan D5, cut 5):
 
 Conflicts: if a background job commits a new version while edits are pending (e.g. "Clean with AI" started from chat), the Save button becomes "Rebase and save" and the edits are reapplied on the new version by `_row_id`; edits to cells that the job also changed are listed for the user to resolve (keep mine / keep theirs).
 
-As built (2026-10-25): double-click, Enter or typing edits a cell in place with a text editor; a value that doesn't fit the column's type gets the invalid underline and can be kept. Typing a cell's original value back removes that edit. Undo/redo of pending edits and copy, paste and fill are cut (cut 5). A save whose base is stale is resent automatically when no edited cell changed in between; otherwise a dialog lists each conflict (row, column, yours, theirs) with Mine or Theirs, then "Rebase and save". The save toast's Undo undoes the step; a second toast offers "Clean them" for new rows.
+As built (2026-10-25): double-click, Enter or typing edits a cell in place with a text editor; a value that doesn't fit the column's type gets the invalid underline and can be kept. Typing a cell's original value back removes that edit. Undo/redo of pending edits, block paste and fill down are cut (cut 5). The grid library's default keys still copy a selected range with Ctrl+C and paste the clipboard's text into one cell (PRD CSV-6). A save whose base is stale is resent automatically when no edited cell changed in between; otherwise a dialog lists each conflict (row, column, yours, theirs) with Mine or Theirs, then "Rebase and save". The save toast's Undo undoes the step; a second toast offers "Clean them" for new rows.
 
 ### 8.3 Cell interactions
 
@@ -273,7 +286,7 @@ As built (2026-10-25): double-click, Enter or typing edits a cell in place with 
 | Right-click a column header | Sort asc/desc · Filter… · Auto-fit · (P1) Rename · Change type · Hide · Delete · Add computed column. |
 | Select a range then type in chat | The chat context shows "n cells selected"; "clean this" or "standardize these" proposes "Clean n cells in <column>?"; Approve starts Clean with AI on that selection. |
 
-As built (2026-10-25): the provenance tooltip, right-click menus, jump to row and Ctrl+arrow are cut (cut 5); a step's changed cells are listed under the step in the Changes panel instead. **Find** (toolbar) searches every cell; the grid then shows only the matching rows, with the matching cells highlighted, until the find bar is closed (Esc or ×).
+As built (2026-10-25): the provenance tooltip, right-click menus and jump to row are cut (cut 5). Ctrl+arrow still jumps to the data's edge, and Shift+click, drag and Ctrl+A still select ranges, because they're the grid library's default keys (`Grid.tsx` sets none; PRD CSV-3, CSV-4); a step's changed cells are listed under the step in the Changes panel instead. **Find** (toolbar) searches every cell; the grid then shows only the matching rows, with the matching cells highlighted, until the find bar is closed (Esc or ×).
 
 ### 8.4 Clean with AI (any time)
 
@@ -286,6 +299,8 @@ Clicking opens a small popover:
 It runs as a job with the same live log, shown in a slide-over on the right (the Changes panel) so the grid stays visible. Hand-edited cells are skipped and listed in the report with "Include these next time" as an option.
 
 As built (2026-10-25): the popover's selection scope uses the rows of the selected cells (saved as a selection). While the job runs, the Changes panel shows a "Cleaning…" card with its progress and Stop; each committed step appears in Steps. A whole-dataset clean also sets the dataset to `cleaning`, so the Dashboard tab shows the live log.
+- The scopes read "Whole dataset", "Current selection (n rows)" (disabled with nothing selected) and "Rows added since the last clean". Mode shows Auto alone with "Step by step comes later." The popover says "Cells you edited by hand are left alone and listed in the report." Start toasts "Cleaning started. Its steps appear in Changes as they commit." The button is disabled with its reason while the dataset is profiling, cleaning or building.
+- The report lists hand-edited cells under "Cells you edited (left as they are)" with a count and an example. "Include these next time" isn't offered. Not built yet (docs/BACKLOG.md).
 
 ### 8.5 Changes panel
 
@@ -325,7 +340,7 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7):
 - **Step 5.** Clicking a factor bar opens its partial-dependence mini chart (the probability or prediction as the factor varies) under the bar. For categories the widget has a view switcher (Importance · Confusion · ROC, the last for two classes), and the model card shows the confusion matrix and the ROC curve.
   - **"Who did it get wrong?"** (2026-10-25, D7.4) is in the model card with the count. It saves a selection of the rows the out-of-fold predictions got wrong and opens the CSV tab on `?rows=<selection_id>` ("256 rows selected" on Titanic), with a toast.
   - Predicted cells stay cut (cut 7).
-- **Step 6.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first". Under "Automatic" it re-runs by itself and shows the progress again.
+- **Step 6.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first". Under "Automatic" it re-runs by itself and shows the progress again. Story updates isn't in the Settings dialog (cut 1), so it stays at its default, Automatic, unless set through `PUT /me/settings`.
 - **Compare with Auto** is not built (cut 4: Auto is the only method). A failed or cancelled run says why, with Re-run.
 
 ---
@@ -337,6 +352,8 @@ As built (2026-10-25, Implementation Plan D7 within cuts 4 and 7):
 - Collapsed: a single input with the placeholder "Ask Sherlock, or tell it what to build…", a `/` hint, and a send button. Under it, three **suggested questions** as chips.
 - Focus or typing expands the thread above the input (max 40% of the centre height), showing the dataset's conversation. Esc collapses it.
 - A **context chip** on the left of the input shows what the next message applies to: "All rows", "Selection: 709 rows", "3 cards selected", "Cell B12", or the widget name when a widget is focused. Clicking it clears the context.
+
+As built (2026-10-25): the suggested-question chips are removed by cut 9 (Implementation Plan §2.0); an empty thread shows one hint line instead. The thread's header reads "Ask about <file name>" with a close button. The context chip reads "All rows"; on the Dashboard, the filter ("pclass = 3") or else the focused widget's title, with × to clear it; on the CSV tab "3 rows selected"; on the Flow tab "3 cards selected" or "Whole canvas". The brush selection chip is cut (cut 8).
 
 As built (2026-10-25, D7.3), the answerers behind the bar:
 - **"Is fare significantly different between men and women?"** answers with the test chosen by the column types (Welch's t-test and Mann-Whitney here), the p-value, the effect size and n as chips, a plain verdict, and the test and group tables.
@@ -373,6 +390,8 @@ As built (2026-10-25, Implementation Plan D4.8):
   - "Export a notebook without the data" opens the export dialog with Include data off, and the answer keeps an **Export notebook** button.
 
 Failure modes: "I couldn't turn that into a query. Try naming the column, e.g. 'average fare by pclass'." · "There's no column for nationality. The closest is home.dest; want that?" (button) · "That needs about 100 rows and this selection has 41."
+
+As built (2026-10-25): a question no column answers gets "This file has no column that answers that. The closest I can answer: “…”" as text, with no button. Not built yet (docs/BACKLOG.md). A query that still fails after its repair gets "I couldn't build a working query for that. Try naming the column, …". An analysis with too few rows says "This needs at least N rows with <target> filled in; …". If the router still picks an action that lives on another tab, the answer says where ("Adding a widget works from the Dashboard tab; ask there, or use Add widget.").
 
 Quality of life as built (2026-10-25, Implementation Plan D8.3; the `?` sheet is cut 9):
 - **Toasts with Undo (10 s)** after deleting a widget, a dataset, a story card (new: the trash button on each card) or nodes on the canvas. Deleted rows are pending until Save, and a saved step has Undo in the Changes panel.
@@ -474,6 +493,8 @@ Opened from the gear or `?settings=1`. A centred dialog over a dimmed app. Conte
 | Collapse (« / ») | Panel becomes an icon rail: dataset initials as buttons, Upload, Sample, gear. |
 | Upload / Try with sample | §3. |
 
+As built (2026-10-25): the panel's buttons read "Upload CSV" and "Try with sample", and an empty list says "No CSVs yet." The row menu is Rename · Download original CSV · Delete. The status line reads "ready · v7" when ready and "offer · 7 issues" at the offer; cleaning and building show a thin progress bar under the word.
+
 ---
 
 ## 15. Background jobs tray
@@ -516,7 +537,7 @@ Available from every tab in every status except `profiling` and `failed`.
 | Keyboard: Ctrl+Shift+E | Any tab |
 | `?export=notebook` | Deep link |
 
-As built (2026-10-25): the dataset menu (⋯, with the shortcut shown, disabled with its reason while profiling or failed), the CSV Download menu, the Changes panel link, Ctrl+Shift+E and `?export=notebook`. The Flow palette and chat entries come with D8. The Flow palette's Export → Notebook (.ipynb) opens the dialog (D8.2).
+As built (2026-10-25): the dataset menu (⋯, with the shortcut shown, disabled with its reason while profiling or failed), the CSV Download menu, the Changes panel link, Ctrl+Shift+E and `?export=notebook`. The Flow palette's Export → Notebook (.ipynb) opens the dialog (D8.2), and so does chat's "export a notebook" (D8.5, §10.2), with the options it asked for.
 
 ### 17.2 The dialog
 
@@ -574,15 +595,15 @@ As built (2026-10-25): the toast is a loading toast that becomes "Notebook ready
 | Token Factory unavailable | Jobs that need the LLM pause with "Waiting for the model…" and retry with backoff for at most 2 minutes (time that counts against the cleaning budget), then fail with "The model service is unavailable. Your data is safe; try again in a minute." Chat shows the same message. Non-LLM features (grid, SQL widgets, filters) keep working. |
 | The app-wide daily model budget is used up (added 2026-10-25) | Model features answer "Sherlock has used today's model budget for everyone. It resets at midnight UTC." (chat as a text answer, cleaning and stories as their budget-exceeded paths). Uploads, the grid, edits, widgets and exports keep working (PRD §9, TRD §3.5). |
 | Too many new visitors from one network (added 2026-10-25) | A first visit past 300 new users an hour from one IP gets `429` with "Too many new visitors from your network. Try again in N minutes." Anyone who already has a cookie is unaffected (TRD §15). |
-| Rows with different numbers of fields (added 2026-10-25) | The file imports with its real columns. Short rows are padded with empty cells. A row with extra fields keeps them in `col_N` columns and is quarantined ("extra fields…"), shown in the CSV tab's flagged view, and can be restored (PRD LOAD-3a). |
+| Rows with different numbers of fields (added 2026-10-25) | The file imports with its real columns. Short rows are padded with empty cells. A row with extra fields keeps them in `col_N` columns and is quarantined ("extra fields…"), shown in the CSV tab's flagged view, and can be restored (PRD LOAD-3a). As built: the flagged view (a quick view) is removed by cut 5 (Implementation Plan §2.0); the row shows in the grid with its row number struck through, and Restore brings it back. |
 | LLM returns invalid JSON | One repair retry; then the pipeline step is skipped (cleaning) or the answer falls back to the raw results table (chat). Logged. |
 | SQL from the model fails | One repair retry with the error; then "I couldn't build a working query for that." |
 | Sandbox timeout (30 s) | The candidate fix is discarded; the issue is skipped with "took too long". |
-| Browser offline | A banner "You're offline. Edits are kept locally." Pending edits persist in local storage; Save retries when back online. |
-| Session cookie cleared | The library appears empty. There is no recovery (documented in the README and the empty state's small print). |
-| Dataset expired (7 days) | Removed from the library; opening a stale link shows "This CSV expired." |
-| Two tabs open on the same dataset | Both receive cascade events (SSE); pending edits are per tab; a save in one tab makes the other show "A new version exists. Reload to see it." |
-| Wide file (> 30 columns) | Auto-dashboard uses the 30 most interesting columns; a note says so. The grid shows all. |
+| Browser offline | A banner "You're offline. Edits are kept locally." Pending edits persist in local storage; Save retries when back online. As built: the banner reads "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It also shows when an API call can't reach the server, and clears once `/healthz` answers (checked every 5 s). Save doesn't retry by itself; pressing it again after the banner clears saves. Not built yet (docs/BACKLOG.md). |
+| Session cookie cleared | The library appears empty. There is no recovery (documented in the README and the empty state's small print). As built: the empty state's small print is ".csv, .tsv or .txt · up to 50 MB" and says nothing about the cookie. Not built yet (docs/BACKLOG.md). |
+| Dataset expired (7 days) | Removed from the library; opening a stale link shows "This CSV expired." As built: a stale link opens the library with the toast "That CSV is no longer available.", the same as for a deleted CSV (§2). |
+| Two tabs open on the same dataset | Both receive cascade events (SSE); pending edits are per tab; a save in one tab makes the other show "A new version exists. Reload to see it." As built: the other tab follows the new version by itself through its event stream (version pill, grid, Changes panel and dashboard refresh), so there's no reload message; its own pending edits then save through "Rebase and save" (§8.2). |
+| Wide file (> 30 columns) | Auto-dashboard uses the 30 most interesting columns; a note says so. The grid shows all. As built: the builder keeps the 30 most informative columns (with the target, time and first ID columns), but no note says so in the app. Not built yet (docs/BACKLOG.md). |
 | No numeric columns | Dashboard shows counts and top-value charts; ML options are disabled with reasons. |
 | Tiny file (< 100 rows) | Dashboard builds; supervised ML refuses with the row count needed; stories mention the small sample. |
 | All-text file | Profiling detects free-text columns; the dashboard shows top values and lengths; chat can search text. |

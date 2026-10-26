@@ -76,12 +76,12 @@ flowchart LR
 - **Cleaning gaps.** Placeholder values in numeric columns (`N/A`, `-999`) are often quarantined rather than turned into missing values; quarantined rows keep their text and are left out of analysis.
 - **Files.** A header that isn't on the first rows (as in `broken_latin1.txt`, header on row 3) must be set in the import preview. Files up to 50 MB.
 - **Identity.** Anonymous and per browser, with no recovery: clearing cookies loses access. Datasets expire after 7 days.
-- **Not shipped from P0** (the plan's cut order, applied on 2026-10-24 with the team solo): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill, find and replace, filter row and right-click menus; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet.
+- **Not shipped from P0** (the plan's cut order, applied on 2026-10-24 with the team solo): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill down, duplicate row, undo and redo of unsaved edits, the Review changes drawer, replace (Find is there), the filter row and quick views, the cell history tooltip, selection stats, right-click menus, jump to row and Ctrl+arrow; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet.
 - **Latency.** Token Factory latency varies; we saw one 27 s routing call during an overload. Answers usually take 5–15 s. Cleaning a wide messy file is slow: the 60-column `wide_messy.csv` took 685 s for four steps on the live site; a sample-sized file takes about a minute.
 
 ## Accessibility
 
-- Every control is a real button, link or input; icon buttons are labelled. The chat bar has a `/` shortcut, Escape closes the thread, and dialogs and drawers close with Escape.
+- Controls are real buttons, links or inputs, except the widget drag handle: moving a widget on the dashboard needs a mouse. Icon buttons are labelled. The chat bar has a `/` shortcut, Escape closes the thread, and dialogs and drawers close with Escape.
 - Story cards' palette rows on Flow can be placed with Enter, and canvas nodes are reachable and deletable from the keyboard.
 - Charts have a table view, and each custom chart has a text summary as its label.
 - Light and dark themes with tuned contrast for text and chart marks; a Reduce motion setting, which follows the operating system's (the in-app switch is among the settings cut 1 left out, so the settings dialog has four).

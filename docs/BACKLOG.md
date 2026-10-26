@@ -1,6 +1,6 @@
 # Sherlock · Backlog
 
-Everything still open after the Day 1–9 reviews (2026-10-25), in one list. A tag like "D7 F2" is finding F2 of the Day 7 review.
+Everything still open after the Day 1–9 reviews and the docs audit against the code (both 2026-10-25), in one list. A tag like "D7 F2" is finding F2 of the Day 7 review. An item the audit found is tagged with the doc section that specifies it, like "(App Flow §3.3)": that section carries a "Not built yet (docs/BACKLOG.md)" marker pointing here.
 
 The nine review reports (`reviews/day-1.md` … `day-9.md`, with their screenshots) were removed from the tree on 2026-10-25, after their open findings were copied here. Each report keeps its evidence, live transcripts and token spend in git history: `git show 9051876:reviews/day-7.md`.
 
@@ -26,11 +26,19 @@ The owner's, unless a line says otherwise.
 
 ## 2. Decisions only the owner can make
 
-- **Type-aware cell editors** (PRD CSV-5, P0; D5 O1). Every cell edits as text: no category dropdown (`GET /columns/{col}/values` exists for it), boolean toggle, date picker or number check before saving. Cut 5 doesn't cover these. Build them, or record the drop in the PRD (plan §2.0: any further drop needs a PRD change).
-- **The P0s cut 5 removed are still P0 in the PRD** (D5): CSV-2 (the hover tooltip), CSV-3 (Ctrl+arrow, jump to row), CSV-4 (selection stats), CSV-6 (TSV copy and paste, fill down), CSV-7 (add above or below, duplicate), CSV-9 (replace), CSV-10 (column filters, quick views), CSV-11 (buffer undo/redo, Review changes) and CSV-14 (right-click menus). PRD §12.1 counts only the P0s the cut order didn't remove, so nothing is missing. A note beside each row would make the PRD say so itself.
+- **Type-aware cell editors and autocomplete** (PRD CSV-5, P0; D5 O1). Every cell edits as text: no category dropdown (`GET /columns/{col}/values` exists for it), boolean toggle, date picker, number check before saving, or autocomplete from the column's values. Cut 5 doesn't cover these. Build them, or record the drop in the PRD (plan §2.0: any further drop needs a PRD change).
+- **Multi-column sort, column resize and auto-fit** (PRD CSV-8, P0). The grid sorts by one column, with fixed widths (`Grid.tsx`). Plan §5's cut 5 ("beyond … sort") may cover these, but plan §2.0's exact list doesn't name them. Say which.
+- **`/` with the chat bar set to Hidden.** PRD ASK-1 says `/` summons the bar; UI/UX §5.11 says Hidden removes it, which is what's built (`/` does nothing). Pick one.
+- The cut-5 P0s (CSV-2, 3, 4, 6, 7, 9, 10, 11, 14) and every other P0 a cut removed now carry a "Removed by cut N" marker in the PRD (the audit); their priorities are unchanged.
 - **Imbalanced two-class targets** (D7 F3). The verdict compares accuracy only, so with 3% positives a model with AUC 0.95 reads "weak, 0.0 points better". Use AUC or balanced accuracy for the verdict and the one-column rule, or require both to agree. That's a PRD and TRD change.
 - **Where the story suggestion goes** (D6 F14). Plan D6.3 says side by side. App Flow §11 step 5 says "your text vs the AI's revision". UI/UX §4.5's as-built note says under the body, which is what's built. Pick one; the other docs then add a line saying so.
 - **"Budget exceeded with zero steps"** (D3 L8). App Flow §5 says it returns to the offer. TRD §7.2 and the code build the dashboard anyway.
+- **Specified pieces no cut covers and nobody built** (the audit). Build each, or record the drop (a P2 label, or a PRD change for a P0):
+  - TRD §7.4 steps 1–2: Welch's t, Mann-Whitney, Cohen's d and a trend slope on fact sheets (chat's `ask_stats` computes them, the sheets don't), and the correlation (0.4) and dependency (0.6) relations between widgets;
+  - TRD §12: JSON logs with the request ID on every line, and `GET /metrics`;
+  - TRD §10–§11: `JOB_BACKEND=nebius` and `python -m sherlock.jobs.run` (TRD §1 calls it optional);
+  - TRD §14: the mocked clean → build → stories run on all five files of the end-to-end set (it runs on Titanic and small made-up files).
+- **Narration temperature** (TRD §8.3). The spec says 0.4; every narrate and synthesis call runs at 0 (`stories/narrate.py`, `stories/synthesis.py`), and §8.3's as-built line says so. Keep 0 and change the spec, or pass 0.4.
 
 ## 3. Honesty and Rule 2
 
@@ -47,11 +55,16 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - **`is_nvidia_embed` admits non-NVIDIA IDs** (D9 F10; latent, since embeddings are off). `llm/models.py` accepts "embed" plus "nvidia", "nv-" or "nemotron" anywhere in the ID, so `someorg/conv-embed-v1` passes. Require the `nvidia/` prefix as `is_nemotron_chat` does, and change TRD §3.5 with it.
 - **An outdated synthesis goes into the notebook without a note** (D8 F7). Its chips render from the current sheets beside prose written about the old numbers. An outdated run gets a note; a card doesn't.
 - **Partial dependence for 3+ classes says "predicted <target>"** (D7 F9). It's the share predicted as the most common class.
+- **Widget titles written in chat aren't checked** (PRD STORY-3). `create_widget` and `update_widget` save the model's `draft.title` as it is (`agent/answerers.py`). Apply the builder's title check and fall back to the templated title.
+- **A chat `value:` label can show a count** (PRD STORY-8). A value label is accepted when it's any cell of the answer's results (`compose.label_values`), so a number can appear as a label instead of a chip. Accept only cells of the result's text columns, or known values.
+- **"Sixfold" to "ninefold" pass the number-word check** (TRD §7.4). The spec refuses twofold to tenfold, but the pattern in `stories/narrate.py` lists only two-, three-, four-, five- and tenfold.
+- **Answer cards never go stale** (TRD §7.6). The cascade picks cards by their widget only, and `synthesis.check_sources` skips cards with a sheet of their own, so a pinned answer keeps its old numbers after its columns change, marked neither outdated nor changed. The pseudocode's `rerun_fact_sql` isn't there. Mark one outdated when its `depends_columns` meet the changed columns, or re-run its stored SQL.
+- **Replay doesn't re-run the Cleaner's verifiers** (TRD §7.8). `steps/replay.py` checks only the file, `_row_id` and the row count, though the spec aborts a replay when "its verifiers fail". Run `verifiers.verify` for each replayed cleaner step.
 
 ## 4. Accessibility (UI/UX §2.4, §6, §8)
 
 - Click-to-filter needs a mouse, and a click with no `mousemove` before it only focuses the widget (D4 F2, D7 F20). Touch isn't checked on a device.
-- Widgets, story cards and canvas nodes can't be focused, so card ↔ widget linking has no keyboard path, and a widget's menu has no keyboard route (D4 F11, D6 F13). Canvas nodes have no accessible name, only `role="group"` (D8 F12).
+- Widgets and story cards can't be focused, so card ↔ widget linking has no keyboard path, and a widget's menu has no keyboard route (D4 F11, D6 F13). Canvas nodes can be focused (React Flow's default), but they have no accessible name, only `role="group"` (D8 F12).
 - Bklit charts have no text alternative: their SVGs are `aria-hidden`, and "Show as table" is the only route. The custom charts have one (D4 F10, D6 F13).
 - Reduced motion: the chip pulse is a fixed 400 ms (`StoryCard.tsx`), `scrollIntoView` is smooth, and `animate-spin`, `animate-pulse` and the Bklit bars ignore it (D4 F10, D6 F13). Several custom chart hooks check `useReducedMotion` now, so recheck before fixing.
 - Slide-over panels below 1024 px stay in the tab order, don't trap focus, and don't close on Esc (D2 M8).
@@ -63,14 +76,22 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Identity, limits, operations
 
-- `POST …/use-as-is` and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). The token budgets still apply. TRD §15 should say that routes which start such jobs count.
+- `POST …/use-as-is` and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So do `POST /cards/{cid}/refresh` and approving a `clean_selection` proposal (`agent/actions.py`) (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
+- `LOG_LEVEL` is read but never applied: `main.py` sets the `sherlock.*` loggers to INFO (TRD §10). Fix: `setLevel(settings.log_level.upper())`.
+- `JOB_BACKEND=nebius` is accepted and silently ignored, so jobs run locally (TRD §10). Refuse it at startup until it's built.
+- `PATCH /widgets/{wid}` with `{ prompt }` answers `422` with the stale message "needs chat, which isn't built yet", though `update_widget` exists (TRD §4.5). Route it to `update_widget` under `llm_rate_limit`, or fix the message.
+- Widget and card restore have no 10-minute check, unlike dataset restore; they work until the purge runs (TRD §4.5–§4.6). Low priority.
+- A stopped or failed clean leaves `/data/.clean/<job_id>/` behind, and the purge never clears it (Schema §4; `cleaning/loop.py`). Clean up in a `finally`, or purge `.clean` folders older than an hour.
+- `folder_bytes` isn't recomputed when a run or an export finishes, so run artifacts and notebooks count against the storage limit only after the next purge pass (Schema §4).
+- `llm_calls` is never purged, and the app-wide budget scans it on every model call with no `created_at` index. A cost that grows with use, not a mismatch.
+- `uv run sherlock clean sample` times out after 900 s. With the cached seed, the sample is cloned already `ready`, and the CLI waits for `offer` or `failed` (`cli.py`, `routers/datasets.py`). Set `SAMPLE_SEED_DIR=off` inside `clean()`, or import `samples/titanic3.csv` directly. Also, the `--sets` help names only `corruption` and `ask`, though `notebook` and `grounding` take it too.
 - `/healthz` doesn't report the build's commit (D9 F13). A `GIT_COMMIT` build argument echoed there would make "the deployed commit matches `main`" one request.
 - `scripts/live_check.py --files all` says it checks that each notebook "rebuilds the version", but it only executes it (D9 F12). `sherlock eval notebook` does compare values.
 - The focused widget's title is read without a dataset check (`agent/loop.py`, `SELECT title FROM widgets WHERE id = ?`), so another user's title could reach the prompt (D4 F7). Low risk: the IDs are random ULIDs.
 
 ### Ingest, rows and profile
 
-- The import preview doesn't detect the header row or skip rows, and sends only the options the user changed, so the server's sniffed `skip_rows` can stack on a header row the user set (D2 M6). App Flow §3.2 says the header row is auto-detected.
+- The import preview doesn't detect the header row or skip rows, and sends only the options the user changed, so the server's sniffed `skip_rows` can stack on a header row the user set (D2 M6). App Flow §3.2 and PRD LOAD-2 say the header row is auto-detected.
 - Edits (`rows/edits.py`): the same cell twice in one batch keeps the first one's `invalid` mark and history; `2020-01-01 13:45` in a DATE column drops the time; `nan` in a DOUBLE is accepted and marked changed; restoring a row that isn't quarantined commits an empty version (D2).
 - A conflict that lands between `save()`'s check and `commit_step`'s comes back without `conflicts`, though TRD §4.3 says "always" (D2).
 - `offset=10**20` or `version=10**20` on `GET /rows` is a 500, not a 422 (D2).
@@ -81,6 +102,10 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - `profile/infer.py` `TARGET_NAMES` includes `survived` (D3 L6, Rule 4).
 - Web: CR-only line endings with Skip rows > 0 say "no data rows"; error toasts dismiss after 4 s, though Brief §4.10 says they stay; the status badge's hover text appears only on `failed` (App Flow §14); the empty-state pitch uses `text-foreground-2`, not `--muted-foreground` (Brief §5.1) (D2).
 - LLM client: the `strip_reasoning` docstring claims to handle an unterminated `<think>`, and `embed` isn't in the client's `ROLES` (D2).
+- The import preview's delimiter list has no free-text "Other"; it shows "Other (…)" only when the detected delimiter isn't one of the four (App Flow §3.2).
+- While profiling, the chat bar is disabled, so questions don't queue as App Flow §3.3 says (`ChatBar.tsx`).
+- The "Profiling failed" screen has no Delete button of its own; Delete is only in the dataset and library menus (App Flow §3.3; `StatusScreens.tsx`). Reuse `ConfirmDelete`.
+- `Dataset.cleaning_progress` is never filled, so after a reload the library shows "cleaning 0%" until the next `job.progress` (TRD §4.2; `routers/datasets.py`, `LibraryPanel.tsx`). Fill it from the running clean job's progress.
 
 ### The Cleaner
 
@@ -88,6 +113,12 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - Later versions' `issues` rows keep no `outcome`, while the report reads `from_version` (D3 M4).
 - The end-of-run report can be skipped when the build finishes fast; App Flow §5 says it shows for 3 seconds (D3 M5).
 - Smaller (D3): `counts.found` can be lower than fixed + flagged + skipped (L1); the budget line lags by the issue in progress (L2); the diagnose context includes decisions from undone steps (L3); the ambiguity vote counts option indexes across samples whose option lists differ (L4); the offer's summary leads with issues that are never fixed (L7).
+- `{issue_line}` sits outside the `<data>` block, unescaped, in all three cleaning prompts, and it carries column names (TRD §3.5 prompt hygiene; `cleaning/prompts/diagnose.txt`, `cleaning/loop.py`). The prompt test misses it (`test_cleaning_units.py`). Move it inside `<data>` and add it to the test.
+- The `flag_rows` helper has no effect: its docstring says the step gets flagged, but nothing reads the flags it records (TRD §7.2). Force the gate to `flag`, or drop the helper.
+- The critic prompt says "Effect on a sample", but the effect it's given comes from the full data (`cleaning/prompts/critic.txt`).
+- While cleaning runs, the CSV grid stays editable and shows no "Cleaning in progress" banner (App Flow §5; `DatasetPage.tsx`, `Grid.tsx`). Make cells read-only while the status is `cleaning`, and show the banner.
+- Chat answers given during cleaning don't say which version or step they read ("as of step 5", App Flow §5).
+- The CSV tab's Clean with AI has no dot before the first clean, and neither Clean with AI nor the cleaning report offers to include hand-edited cells ("Include these next time") (App Flow §4, §8.4; PRD CLEAN-8).
 
 ### Dashboard and chat
 
@@ -102,6 +133,25 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - `ask_meaning` drops the general block without a word when the model returns nothing, though TRD §8.2 says it's shown (D7 F13).
 - "The model" means the newest run once another answer comes between (D7 F14, `insight.pick_run`).
 - Once, an edit asked right after a question in the same thread got no proposal within 90 s (D9 F5, not reproduced). Worth one scripted repro.
+- The build shows no skeleton widgets, no cards streaming in and no "6 of 8 widgets" banner: the grid appears all at once (App Flow §6).
+- The version pill isn't clickable (App Flow opens the Changes panel from it), and there's no Filter button or filter builder; a filter comes only from clicking a chart (App Flow §7.1, UI/UX §3.2, §5.5).
+- Add widget has no histogram template; the templates are Bar, KPI and Table (App Flow §7.3).
+- "The closest I can answer: …" is plain text, not a button that asks it (App Flow §10.2).
+- Hitting the 40k-token message budget mid-answer throws away the earlier steps' results and returns only the budget sentence; TRD §8.1 says to compose what exists with a note (`agent/loop.py`).
+- Proposals expire lazily: a stale one keeps its Approve button until it's clicked and answers `409`, instead of reading "Expired: the data changed since" (App Flow §10; `agent/actions.py`). Expire pending proposals in `commit_step`, or compare against `current_version` when listing them.
+- Rule 4, Titanic in generic code: the error message "Try naming the columns, e.g. average fare by pclass" (`agent/loop.py`, copied into App Flow §10.2), and the "Survival by class" and `value:sex:female` examples in `dashboard/prompts.py` and `stories/narrate.py`. The prompt test covers only the cleaning prompts. Use placeholders.
+- A wide file gets no note that the dashboard used only its 30 most informative columns (App Flow §18; the builder keeps `columns_used` in the job result only).
+- The empty library's small print doesn't say that clearing the cookie loses the library, with no recovery (App Flow §18).
+- Save doesn't retry by itself once the connection is back; pressing it again works (App Flow §18).
+- Questions ignore the cells selected in the CSV tab: the chip says "n rows selected" and the loop never reads `selected_cells` (PRD CSV-13; `ChatBar.tsx`, `agent/loop.py`). Create a selection from their `row_ids` and pass it as `selection_id`.
+- A refusal never offers a closer question: `NOT_YET` is empty, so `_suggestion` never runs (PRD ASK-8; `agent/loop.py`, e.g. `insight.py`'s refusals). Append the suggestion to every can't-answer.
+- Some clarifying questions are open text with no buttons (PRD ASK-6; `agent/loop.py`, `agent/insight.py`).
+- A widget made in chat isn't highlighted when it lands, and KPI and table answers have no link to their widget (PRD DASH-8; `ChatBar.tsx`).
+- A deleted widget's card stays in the Stories panel until the overview updates (PRD DASH-9; `api/queries.ts`).
+- The "changed" badge is set only when a stories job's reason is `cascade`, so any card re-told for another reason gets none (PRD STORY-6; `stories/service.py`). D6 F15 is the analysis-card case of this.
+- On the canvas, notes and edge labels never reach the model (PRD FLOW-5; `FlowTab.tsx`, `agent/flow.py`). A note's text is saved only on blur (FLOW-1).
+- The overview accepts 2 bullets, though PRD asks for 3–5 (`stories/narrate.py`).
+- The CSV tab doesn't remember its scroll position or selection (PRD §7.11; `DatasetPage.tsx`).
 
 ### CSV tab
 
@@ -116,6 +166,8 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Stories
 
+- A renamed dataset can get a stale cached notebook: rename doesn't bump `state_rev`, and the name isn't in the export's cache key (`routers/datasets.py`, `notebook/exporter.py`), so `DATA_PATH` still names the old `-raw.csv`. The status isn't in the key either, so PRD NB-1's "exported during cleaning" note can be missing. Bump `state_rev` on rename and on status changes.
+- PRD NB-2's "no data" note is in the notebook's second cell, not its first (`notebook/cells.py`). `RANDOM_SEED` is set there but never used.
 - The notebook puts edited card text into Markdown raw. Escape `\`, `*`, `_`, `#`, `<`, `>` and `&` in text runs (D6 F9; TRD §7.7).
 - "Change view" never offers heatmap or scatter, so a heatmap switched to bars can't go back (D6 F10).
 - The cascade progress line clears only on `cascade.done`, so leaving mid-cascade, or a job that dies, leaves it showing (D6 F11).
@@ -150,17 +202,33 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - The notebook's `%pip` cell needs pip in the kernel's environment: in a `uv venv` without `--seed` it installs nothing, then fails at `import duckdb`. A Markdown line above the cell is enough (D9 F14).
 - At phone width, KPI titles are cut to a few letters (D9 F15).
 
+### Look and feel (UI/UX brief)
+
+Each of these carries a "Not built yet" marker in the brief's section.
+
+- **Motion** (§2.4): only the Bklit charts animate. Widgets, cards, the thread and canvas nodes appear with no enter animation, and drawers don't slide in.
+- **Layout** (§3.1): the centre has no 560px minimum, and the right panel can't collapse at 1024px and up (also PRD P0-03). The slide-over backdrop has no dark-mode variant (`AppShell.tsx`).
+- **Shadows** (§2.3, §10): dialogs, popovers, the chart readout and slide-overs use `--shadow-overlay`, and canvas card nodes have a hard-coded `rgba(0,0,0,0.04)` shadow (`FlowTab.tsx`), against "no card shadows". Drop the node shadow; decide on the rest.
+- **Buttons** (§4.1): secondary buttons show no hover change, since `hover:bg-muted` equals `--secondary`; the loading spinner is added beside the icon instead of replacing it (`ui/button.tsx`). Most icons use lucide's 2px stroke, not 1.75, and many icon-only buttons have no tooltip (`JobTray.tsx`, `DatasetMenu.tsx`, `WidgetShell.tsx`, `ChatBar.tsx`).
+- **Tooltips** (§4.11): outside the charts, every tooltip is the browser's native `title`, so none of the styling applies. Add a Tooltip primitive. Error toasts close after 4 s (§4.10; also D2).
+- **Widgets** (§4.3, §5.5): a related widget gets the border but no half-strength spotlight; the footer has no "updated 2s ago"; the empty message shows with no filter and has no Clear link (D4 F17); Bklit siblings fade to 40% on hover, not 60%, pie and ring slices don't fade when filtered, and tooltip numbers aren't mono.
+- **Hover linking** (§6): it fires and clears at once, with no 80 ms / 120 ms delay (`WidgetShell.tsx`, `StoryCard.tsx`).
+- **Story panel** (§4.5): a synthesis card has the muted overline and no "Cites n cards"; only its canvas node has both (`StoryCard.tsx`).
+- **Chat** (§4.8): proposals have no "Show code" disclosure or impact line, though `Proposal.impact` exists (`ChatBar.tsx`); the selection chip has no `--accent-soft` fill; on the empty library the bar sits 48px under the pitch, not 24px (`EmptyLibrary.tsx`).
+- **Empty states** (§4.13): the dashboard's and the canvas's have no icon or primary action.
+- **Export** (§5.13): no "Save and export" button (the note says to save first), and the Flow palette and chat export entries lack the `book-open` icon.
+
 ## 6. Evals and tests
 
 - The ask eval passes contradictory answers. Any cell of any table can match; `text_any` passes on one word, so "significant" and "could be chance" both pass; and a source can stand in for an answer (D4 F13, D8 F4). The grounding eval checks each chip against its fact, not what the words claim between chips.
 - `test_sandbox.py::test_happy_path_and_log` asserts the machine-wide `%TEMP%/sherlock-sandbox` is empty, so it fails while another process has a worker open. Set `SANDBOX_TMP` to `tmp_path` (D3 L5, D4 F14).
 - The job-polling helpers don't check the status code, so a `429` under load becomes a `TypeError` (`test_jobs.py`, `test_notebook.py`, `test_stories.py`; D5 O11, D7 F16).
 - No test asserts the `run.updated` event (D7 F17).
+- The ask eval has no unanswerable questions (50 questions: 28, 17 and 5 across three files), so PRD §4's "≥ 95% of unanswerable questions answered with an honest can't" isn't measured. Add some to `ask_questions.yaml`.
 - No component tests for Save, conflicts and Undo: `SaveActions`, `ConflictDialog`, `ChangesPanel`, `CsvTab` (D5 O4).
 - Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; a non-retryable 4xx failing at once; `OpenAITransport`'s error classes; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
 
 ## 7. Docs (Rule 1)
 
 - `FEEDBACK.md`'s Bklit and Glide spike records say "passed", though a pass rule wasn't tried: shared hover, and range paste (not needed after cut 5). Say "pass rule partly met" (D1 #3, D4 F18).
-- PRD PROF-1 says the typing step commits "on every path"; with nothing to type there's no step, as TRD §7.1 says (D2).
 - TRD §7.1 step 1 says an upload over the limit is aborted "while streaming", but Starlette spools the multipart body before the handler runs (D2, not probed).
