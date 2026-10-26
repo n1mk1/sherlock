@@ -1,11 +1,13 @@
 // The three-panel frame (UI brief §3.1): library left (240px, 200–320, or a 56px rail), the screen in
 // the centre, stories right (340px, 300–480). The dividers drag to resize, and sizes persist per
 // browser. Below 1024px the side panels become slide-overs opened from the header.
+import { useIsMutating } from "@tanstack/react-query";
 import { Menu, PanelRight } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { Outlet, useLocation, useMatch } from "react-router-dom";
-import { useLibraryEvents } from "@/api/queries";
+import { useDataset, useLibraryEvents } from "@/api/queries";
 import { ChangesPanel } from "@/components/csv/ChangesPanel";
+import { CleanPlanPanel } from "@/components/dataset/CleanPlanPanel";
 import { FlowPalette } from "@/components/flow/FlowPalette";
 import { DropOverlay } from "@/components/library/DropOverlay";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
@@ -22,7 +24,8 @@ const RAIL = 56;
 export function AppShell() {
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen, setProgress, railed, leftWidth, rightWidth, setPanelWidth } = useUi();
   useLibraryEvents(setProgress);
-  // The right panel is Changes on the CSV tab (App Flow §8.1), stories elsewhere.
+  // The right panel is Changes on the CSV tab (App Flow §8.1), or the cleaning plan while one is open
+  // (§8.4); the palette on the Flow tab; stories elsewhere.
   const csv = useMatch("/d/:datasetId/csv");
   const flow = useMatch("/d/:datasetId/flow"); // the palette on the Flow tab (App Flow §12.1)
   const { pathname } = useLocation();
@@ -45,7 +48,7 @@ export function AppShell() {
       <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
         onResize={(w) => setPanelWidth("right", w)}>
         <ErrorBoundary label="side panel" resetKey={pathname}>
-          {csv?.params.datasetId ? <ChangesPanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
+          {csv?.params.datasetId ? <CsvSidePanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
         </ErrorBoundary>
       </SidePanel>
       <DropOverlay />
@@ -53,6 +56,13 @@ export function AppShell() {
       <SettingsDialog />
     </div>
   );
+}
+
+export function CsvSidePanel({ datasetId }: { datasetId: string }) {
+  const { data: dataset } = useDataset(datasetId);
+  const creating = useIsMutating({ mutationKey: ["create-plan", datasetId] }) > 0;
+  if (dataset && (dataset.clean_plan_id || creating)) return <CleanPlanPanel dataset={dataset} layout="side" />;
+  return <ChangesPanel datasetId={datasetId} />;
 }
 
 function SidePanel({ side, open, onClose, width, onResize, children }: {

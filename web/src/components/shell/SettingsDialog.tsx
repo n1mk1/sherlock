@@ -1,12 +1,15 @@
 // Settings (UI brief §5.11, App Flow §13). Cut 1 keeps four settings: mode, accent, chat bar and
 // after upload. Changes apply at once and save to the profile; the mode and accent preview live.
-import type { ReactNode } from "react";
+// `?settings=1` opens the dialog; `&field=after_upload` scrolls to that field and marks it (the
+// "Change" links on screens the setting opened by itself, App Flow §4).
+import { useEffect, useRef, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMe, useSaveSettings } from "@/api/queries";
 import type { Settings } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
+import { cn } from "@/lib/utils";
 
 const ACCENTS: { value: Settings["accent"]; label: string; light: string; dark: string }[] = [
   { value: "verdigris", label: "Verdigris", light: "#2F6B62", dark: "#6FB3A6" },
@@ -22,14 +25,25 @@ export function useSettingsOpen() {
   const setOpen = (next: boolean) => {
     const p = new URLSearchParams(params);
     if (next) p.set("settings", "1");
-    else p.delete("settings");
+    else {
+      p.delete("settings");
+      p.delete("field");
+    }
     setParams(p, { replace: true });
   };
-  return [open, setOpen] as const;
+  const openAt = (field: string) => {
+    const p = new URLSearchParams(params);
+    p.set("settings", "1");
+    p.set("field", field);
+    setParams(p, { replace: true });
+  };
+  return [open, setOpen, openAt] as const;
 }
 
 export function SettingsDialog() {
   const [open, setOpen] = useSettingsOpen();
+  const [params] = useSearchParams();
+  const field = params.get("field");
   const { data: me } = useMe();
   const save = useSaveSettings();
   const s = me?.settings;
@@ -63,9 +77,11 @@ export function SettingsDialog() {
               <Segmented label="Chat bar" value={s.chatbar} onChange={(chatbar) => set({ chatbar })}
                 options={[{ value: "pinned", label: "Pinned" }, { value: "autohide", label: "Auto-hide" }, { value: "hidden", label: "Hidden" }]} />
             </Field>
-            <Field label="After upload" help="What happens once a new CSV is profiled.">
+            <Field label="After upload" help="What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
+              focus={field === "after_upload"}>
               <Segmented label="After upload" value={s.after_upload} onChange={(after_upload) => set({ after_upload })}
-                options={[{ value: "ask", label: "Ask me" }, { value: "always", label: "Always clean" }, { value: "never", label: "Never clean" }]} />
+                options={[{ value: "ask", label: "Ask me" }, { value: "always", label: "Open the cleaning plan" },
+                          { value: "never", label: "I'll clean it myself" }]} />
             </Field>
           </div>
         )}
@@ -80,9 +96,13 @@ export function SettingsDialog() {
   );
 }
 
-function Field({ label, help, children }: { label: string; help: string; children: ReactNode }) {
+function Field({ label, help, focus = false, children }: { label: string; help: string; focus?: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focus) ref.current?.scrollIntoView({ block: "center" });
+  }, [focus]);
   return (
-    <div className="flex flex-col gap-1.5">
+    <div ref={ref} className={cn("flex flex-col gap-1.5", focus && "-mx-3 rounded-[14px] border border-accent px-3 py-2.5")}>
       <span className="text-[13px] font-semibold">{label}</span>
       {children}
       <span className="text-[13px] text-muted-foreground">{help}</span>

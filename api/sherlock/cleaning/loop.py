@@ -7,6 +7,8 @@ For each issue, most severe first, while the budget lasts (`CLEAN_MAX_STEPS` iss
   gate → commit_step (commit or flag) or skip; then re-profile and pick the next issue.
 
 Leakage and ID-like columns are never changed: they are logged as skipped without a model call.
+A run started from a cleaning plan (`params.plan`, PRD CLEAN-8a) skips the fixes the plan leaves
+unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted.
 Hand-edited cells keep their values unless the request includes them. A scope (a selection or the
 rows added since the last clean) limits which rows a step may change. The run's state (`ended_by`,
 time spent waiting for the model, skipped issues) is checkpointed in `jobs.state_json`, and the
@@ -27,6 +29,7 @@ import duckdb
 import pandas as pd
 
 from sherlock.cleaning import gate, prompts, verifiers
+from sherlock.cleaning.plan import SKIP_TEXT, key, never_change, skip_keys
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
@@ -41,9 +44,7 @@ from sherlock.steps.commit import Context, StepSpec, commit_step
 from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
-NEVER_CHANGE = {"leakage": "Records the outcome, so it is marked as leakage and not changed",
-                "id_candidates": "Looks like an ID column, so it is left as is"}
-SKIP_TEXT = {"leakage": "excluded from models", "id_candidates": "left as is"}
+NOT_IN_PLAN = "You left this out of the plan"
 VOTE_DETECTORS = ("ambiguous_dates",)
 VOTES = 3
 
@@ -61,19 +62,16 @@ class RunState:
     skipped: list[dict] = field(default_factory=list)          # {issue_id, column, detector, reason}
     hand_edited_skipped: list[dict] = field(default_factory=list)
     step_ids: list[str] = field(default_factory=list)
+    plan_id: str | None = None                                  # the cleaning plan this run started from
 
     def json(self) -> dict:
         return {
-            "from_version": self.from_version, "ended_by": self.ended_by,
+            "from_version": self.from_version, "ended_by": self.ended_by, "plan_id": self.plan_id,
             "max_steps": self.max_steps, "max_seconds": self.max_seconds,
             "waited_for_model_s": round(self.waited_for_model_s, 1), "attempted": self.attempted,
             "handled": self.handled, "skipped": self.skipped,
             "hand_edited_skipped": self.hand_edited_skipped[:500], "step_ids": self.step_ids,
         }
-
-
-def key(issue: dict) -> str:
-    return f"{issue['detector']}|{issue['column']}"
 
 
 def issue_line(issue: dict) -> str:
@@ -117,6 +115,9 @@ class Cleaner:
         self.folder = dataset_dir(self.settings, self.dataset["user_id"], self.dataset["id"])
         self.state = RunState(from_version=self.dataset["current_version"], max_steps=self.settings.clean_max_steps,
                               max_seconds=self.settings.clean_max_seconds)
+        plan = self.params.get("plan") or {}
+        self.state.plan_id = plan.get("id")
+        self.skip_keys = skip_keys(plan.get("items") or [])
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
         self.work = self.settings.data_dir / ".clean" / ctx.id
@@ -250,21 +251,18 @@ class Cleaner:
 
     def _next_issue(self) -> dict | None:
         card = self._card()
-        # Columns that record the outcome or identify rows are marked, never changed, whatever the issue.
-        leaking = {c["column"] for c in card.get("leakage_candidates", [])}
-        ids = set(card.get("id_columns", []))
         for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
             if key(issue) in self.state.handled:
                 continue
-            reason = NEVER_CHANGE.get(issue["detector"])
-            kind = issue["detector"]
-            if reason is None and issue["column"] in leaking:
-                reason, kind = f"{issue['column']} records the outcome, so it is not changed", "leakage"
-            elif reason is None and issue["column"] in ids:
-                reason, kind = f"{issue['column']} looks like an ID column, so it is left as is", "id_candidates"
-            if reason is not None:
+            # Columns that record the outcome or identify rows are marked, never changed, whatever the issue.
+            kept = never_change(issue, card)
+            if kept is not None:
                 self.state.handled.append(key(issue))
-                self._skip(issue, reason, log_text=SKIP_TEXT[kind])
+                self._skip(issue, kept[0], log_text=SKIP_TEXT[kept[1]])
+                continue
+            if key(issue) in self.skip_keys:  # unticked in the plan: no model call, no budget used
+                self.state.handled.append(key(issue))
+                self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
                 continue
             return issue
         return None

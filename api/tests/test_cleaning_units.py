@@ -224,3 +224,76 @@ def test_verify_fails_a_step_that_quarantines_far_more_rows_than_its_issue():
     assert r.hard["quarantine_scope"] == "fail: 34 rows quarantined for an issue in 4" and r.score == 0.0
     just_those = quarantine_rows(before, before["port"].isna(), "fd: port")
     assert verify(before, just_those, "missing", "port").hard["quarantine_scope"] == "pass"
+
+
+# --- the cleaning plan (PRD CLEAN-8a) ------------------------------------------------------------------
+
+
+def card_with(issues, columns=("fare", "age", "name", "ticket", "boat"), ids=("ticket",), leaking=("boat",)):
+    full = []
+    for n, (detector, column, count, severity) in enumerate(issues):
+        full.append({"id": f"iss_{n}", "detector": detector, "column": column, "count": count, "severity": severity,
+                     "proposal": f"fix {detector}", "examples": list(range(count))[:9], "details": {}})
+    return {"version": 3, "issues": full, "columns": [{"name": c} for c in columns], "id_columns": list(ids),
+            "leakage_candidates": [{"column": c, "target": "survived", "reason": "x"} for c in leaking]}
+
+
+def test_plan_diagnose_groups_dedupes_and_marks_kept_columns():
+    from sherlock.cleaning import plan
+
+    card = card_with([("missing", "age", 263, 0.1), ("duplicates", None, 3, 0.05), ("duplicates", None, 9, 0.2),
+                      ("outliers", "fare", 40, 0.01), ("leakage", "boat", 500, 0.4), ("id_candidates", "ticket", 900, 0.2),
+                      ("whitespace_case", "ticket", 12, 0.02), ("brand_new_check", "name", 2, 0.01)])
+    items = plan.diagnose(card)
+    by_key = {i["key"]: i for i in items}
+    assert len(items) == 7  # the two duplicates findings share a key
+    assert by_key["duplicates|None"]["count"] == 9  # the most severe one, the one the loop attempts
+    assert by_key["missing|age"]["module"] == "missing" and by_key["missing|age"]["ticked"] and by_key["missing|age"]["change"]
+    assert by_key["outliers|fare"]["module"] == "outliers" and by_key["brand_new_check|name"]["module"] == "other"
+    assert len(by_key["missing|age"]["examples"]) == 5
+    kept = {k: i for k, i in by_key.items() if i["module"] == "kept"}
+    assert set(kept) == {"leakage|boat", "id_candidates|ticket", "whitespace_case|ticket"}
+    assert all(not i["ticked"] and not i["change"] for i in kept.values())
+    assert kept["whitespace_case|ticket"]["reason"] == "ticket looks like an ID column, so it is left as is"
+    assert kept["leakage|boat"]["reason"].startswith("Records the outcome")
+    assert all(i["source"] == "sherlock" and i["instruction"] is None and i["id"].startswith("pit_") for i in items)
+
+
+def test_plan_merge_keeps_ticks_by_key_and_ticks_new_fixes():
+    from sherlock.cleaning import plan
+
+    old = plan.diagnose(card_with([("missing", "age", 263, 0.1), ("outliers", "fare", 40, 0.01), ("sentinels", "name", 4, 0.02)]))
+    old, _ = plan.apply_ops(old, [{"op": "untick", "item_id": next(i["id"] for i in old if i["key"] == "outliers|fare")}])
+    items, notes = plan.merge(old, card_with([("missing", "age", 250, 0.1), ("outliers", "fare", 41, 0.01),
+                                              ("mojibake", "name", 3, 0.03)]))
+    by_key = {i["key"]: i for i in items}
+    assert set(by_key) == {"missing|age", "outliers|fare", "mojibake|name"}
+    assert not by_key["outliers|fare"]["ticked"] and by_key["outliers|fare"]["count"] == 41
+    assert by_key["mojibake|name"]["ticked"]
+    assert by_key["missing|age"]["id"] == next(i["id"] for i in old if i["key"] == "missing|age")  # same item
+    assert notes == ["1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."]
+    order = [i["module"] for i in items]
+    assert order == sorted(order, key=list(plan.MODULES).index)
+
+
+def test_plan_ops_tick_untick_modules_and_refusals():
+    from sherlock.cleaning import plan
+
+    items = plan.diagnose(card_with([("outliers", "fare", 40, 0.01), ("outliers", "age", 4, 0.01), ("missing", "age", 9, 0.1),
+                                     ("leakage", "boat", 500, 0.4)]))
+    out, summary = plan.apply_ops(items, [{"op": "untick_module", "module": "outliers"}])
+    assert summary == "Unticked 2 fixes: outliers in fare, outliers in age."
+    assert [i["ticked"] for i in out if i["module"] == "outliers"] == [False, False]
+    assert all(i["ticked"] for i in items if i["module"] == "outliers")  # the input isn't changed
+    age = next(i for i in out if i["key"] == "outliers|age")
+    out, summary = plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}, {"op": "tick", "item_id": age["id"]}])
+    assert summary == "Ticked 1 fix: outliers in age."
+    assert plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}])[1] == "The plan already said that, so nothing changed."
+    assert plan.skip_keys(out) == {"outliers|fare"}
+    boat = next(i for i in out if i["key"] == "leakage|boat")
+    for bad, message in ([{"op": "tick", "item_id": "pit_nope"}], "There's no item"), \
+                        ([{"op": "tick", "item_id": boat["id"]}], "marked, not changed"), \
+                        ([{"op": "untick_module", "module": "kept"}], "no module"), \
+                        ([{"op": "explode"}], "Unknown op"):
+        with pytest.raises(plan.PlanError, match=message):
+            plan.apply_ops(out, bad)

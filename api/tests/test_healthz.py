@@ -14,7 +14,7 @@ def test_healthz_reports_db_llm_and_model_roles(app):
     assert res.status_code == 200
     body = res.json()
     assert body["ok"] is True
-    assert body["db"] == {"ok": True, "schema_version": 1}
+    assert body["db"] == {"ok": True, "schema_version": 2}  # 002 added clean_plans
     assert body["llm"] == {"reachable": True}
     assert set(body["models"]) == {"large", "medium", "small", "embed"}
     assert body["models"]["large"] == "nvidia/nemotron-test-ultra"

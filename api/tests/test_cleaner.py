@@ -173,16 +173,109 @@ def test_stop_kills_the_running_worker_and_builds(slow_model, client):
     assert client.get(f"{API}/datasets/{ds['id']}/report").json()["ended_by"] == "stopped"
 
 
-@pytest.mark.parametrize(("choice", "first_kind"), [("always", "clean"), ("never", "build_dashboard")])
-def test_after_upload_setting_skips_the_offer(client, choice, first_kind):
-    assert client.put(f"{API}/me/settings", json={"after_upload": choice}).status_code == 200
+def test_after_upload_always_opens_the_plan_and_cleans_nothing(client):
+    # Owner's report (2026-10-25): "always" used to clean every upload unattended, with nothing on
+    # screen saying why. Now it makes a draft plan and stops at the offer; Discard shows the offer.
+    assert client.put(f"{API}/me/settings", json={"after_upload": "always"}).status_code == 200
+    ds = offered(client)
+    assert ds["status"] == "offer" and ds["clean_plan_id"]
+    plan = client.get(f"{API}/clean-plans/{ds['clean_plan_id']}").json()
+    assert plan["source"] == "after_upload" and plan["status"] == "draft" and plan["version"] == ds["current_version"]
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["profile"]
+    assert client.delete(f"{API}/clean-plans/{plan['id']}").status_code == 204
+    back = client.get(f"{API}/datasets/{ds['id']}").json()
+    assert back["status"] == "offer" and back["clean_plan_id"] is None
+
+
+def test_after_upload_never_builds_and_says_it_was_automatic(client):
+    assert client.put(f"{API}/me/settings", json={"after_upload": "never"}).status_code == 200
     ds = upload(client, CSV, "messy.csv")
-    done = wait_status(client, ds["id"], "ready", "failed")
-    assert done["status"] == "ready"
-    kinds = [j["kind"] for j in reversed(client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json())]
-    assert kinds[:2] == ["profile", first_kind]
-    statuses = [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
-    assert "offer" not in statuses
+    assert wait_status(client, ds["id"], "ready", "failed")["status"] == "ready"
+    jobs = list(reversed(client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()))
+    assert [j["kind"] for j in jobs][:2] == ["profile", "build_dashboard"]
+    assert jobs[1]["automatic"] is True and jobs[0]["automatic"] is False
+    assert "offer" not in [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
+
+
+def item(plan, key):
+    return next(i for i in plan["items"] if i["key"] == key)
+
+
+def test_a_plan_round_trip_and_an_unticked_fix_is_skipped(client):
+    ds = offered(client)
+    r = client.post(f"{API}/datasets/{ds['id']}/clean/plan")
+    assert r.status_code == 201, r.text
+    plan = r.json()
+    assert plan["status"] == "draft" and plan["source"] == "user" and plan["version"] == ds["current_version"]
+    assert {i["key"] for i in plan["items"]} >= {"numbers_as_text|amount", "whitespace_case|region", "id_candidates|customer_id"}
+    assert all(i["ticked"] for i in plan["items"] if i["change"])
+    assert item(plan, "id_candidates|customer_id")["module"] == "kept" and not item(plan, "id_candidates|customer_id")["ticked"]
+    assert client.get(f"{API}/datasets/{ds['id']}").json()["clean_plan_id"] == plan["id"]
+    again = client.post(f"{API}/datasets/{ds['id']}/clean/plan")
+    assert again.status_code == 200 and again.json()["id"] == plan["id"]  # one draft per dataset
+
+    region = item(plan, "whitespace_case|region")
+    r = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "untick", "item_id": region["id"]}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"] == "Unticked 1 fix: spacing or case variants in region."
+    assert not item(client.get(f"{API}/clean-plans/{plan['id']}").json(), "whitespace_case|region")["ticked"]
+    bad = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "tick", "item_id": "pit_nope"}]})
+    assert bad.status_code == 422 and "no item" in bad.json()["error"]["message"]
+    assert any(t == "plan.updated" and d["plan_id"] == plan["id"] for t, d in events_of(ds["id"]))
+
+    r = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]})
+    assert r.status_code == 201, r.text
+    job = r.json()
+    started = client.get(f"{API}/clean-plans/{plan['id']}").json()
+    assert started["status"] == "started" and started["job_id"] == job["id"]
+    assert client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "tick", "item_id": region["id"]}]}).status_code == 409
+    frozen = json.loads(db_rows("SELECT params_json FROM jobs WHERE id = ?", job["id"])[0][0])["plan"]
+    assert frozen["id"] == plan["id"] and not item(frozen, "whitespace_case|region")["ticked"]
+    assert finished(client, job["id"])["status"] == "done"
+    assert wait_status(client, ds["id"], "ready", "failed")["clean_plan_id"] is None
+
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert [s["summary"] for s in report["steps"]] == ["Parse money as numbers (amount)"]
+    skipped = {(s["detector"], s["column"]): s["reason"] for s in report["skipped"]}
+    assert skipped[("whitespace_case", "region")] == "You left this out of the plan"
+    logs = [d for t, d in events_of(ds["id"]) if t == "job.log" and d["job_id"] == job["id"]]
+    region_lines = [e for e in logs if e.get("column") == "region"]
+    # No "checking candidates" line: the Cleaner logs that before its first model call on an issue.
+    assert [e.get("detail") for e in region_lines] == ["not in your plan"]
+
+
+def test_a_plan_made_before_a_hand_edit_is_merged_before_it_starts(client):
+    ds = offered(client)
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    amount = item(plan, "numbers_as_text|amount")
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "untick", "item_id": amount["id"]}]})
+    r = client.post(f"{API}/datasets/{ds['id']}/edits", json={
+        "base_version": ds["current_version"], "edits": [{"row_id": 3, "column": "region", "value": "West"}]})
+    assert r.status_code == 201, r.text
+    stale = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]})
+    assert stale.status_code == 409
+    merged = stale.json()["error"]["plan"]
+    assert merged["version"] == ds["current_version"] + 1 and merged["notes"]
+    assert not item(merged, "numbers_as_text|amount")["ticked"]  # the untick survives the merge
+    assert item(merged, "numbers_as_text|amount")["id"] == amount["id"]
+    assert client.get(f"{API}/clean-plans/{plan['id']}").json()["version"] == merged["version"]
+    assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).status_code == 201
+
+
+def test_plan_refusals(client):
+    ds = upload(client, CSV, "messy.csv")
+    assert client.post(f"{API}/datasets/{ds['id']}/clean/plan").status_code in (409, 201)  # 409 while profiling
+    ds = wait_status(client, ds["id"], "offer", "failed")
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    ops = [{"op": "untick_module", "module": m} for m in {i["module"] for i in plan["items"] if i["change"]}]
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": ops})
+    nothing = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]})
+    assert nothing.status_code == 422 and "Nothing in the plan is ticked" in nothing.json()["error"]["message"]
+    assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": "pln_nope"}).status_code == 404
+    assert client.get(f"{API}/clean-plans/pln_nope").status_code == 404
+    # Clean it myself discards the draft.
+    assert client.post(f"{API}/datasets/{ds['id']}/use-as-is").status_code == 201
+    assert client.get(f"{API}/clean-plans/{plan['id']}").json()["status"] == "discarded"
 
 
 def test_a_step_the_critic_rejects_is_skipped(monkeypatch, tmp_path):

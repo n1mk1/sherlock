@@ -11,13 +11,18 @@ First visit ──► Empty library ──► (drop / upload / sample) ──►
                                                                                    │
                                                                                    ▼
                                                                           Cleaning offer
-                                                               ┌──────────────┼───────────────┐
-                                                        Clean it for me   Use as is    Go step by step (P1)
-                                                               │              │               │
-                                                               ▼              │               ▼
-                                                        Headless cleaning     │        Step-by-step thread
-                                                               │              │               │
-                                                               └──────► Dashboard build ◄─────┘
+                                                               ┌──────────────┴───────────────┐
+                                                         Clean with AI                 Clean it myself
+                                                               │                              │
+                                                               ▼                              │
+                                                        Cleaning plan (§4.1)                  │
+                                                  Mode: Run on its own ·                      │
+                                                  Ask me before each fix (P1)                 │
+                                                       │ Start cleaning      │                │
+                                                       ▼                     ▼                │
+                                                Headless cleaning   Step-by-step thread       │
+                                                       │                     │                │
+                                                       └──────► Dashboard build ◄─────────────┘ (and the CSV tab opens)
                                                                                 │
                             ┌──────────────────────────────────┬────────────────┴────────────────┐
                             ▼                                  ▼                                 ▼
@@ -117,17 +122,38 @@ Shown in the centre when profiling finishes and the "After upload" setting is "A
 Contents:
 - Heading: "Here's what I found in titanic3.csv".
 - The one-line summary: top 3 issues by impact ("263 missing ages · 1,014 missing cabins · 2 columns look like they record the outcome").
-- An expandable "All 7 issues" list: each with column, issue type, count, and what Sherlock would do.
-- Three buttons: **Clean it for me** (primary), **Use as is**, and (P1) **Go step by step**.
-- A checkbox: "Remember my choice" (writes the "After upload" setting). As built (2026-10-24): checked, "Clean it for me" saves `after_upload: always` and "Use as is" saves `never`. Go step by step is shown disabled (P1). The profile job follows the setting: `always` queues the clean (the status goes straight to `cleaning`), `never` queues the build. The "Cleaning automatically (change in Settings)" toast isn't shown yet.
-- As built (2026-10-25): under the heading, a line "1,309 rows · 14 columns · 7 issues", then the top three issues by severity as a list with icons ("263 missing in age", "boat records the outcome"); "Nothing that needs cleaning." when there are none. "All 7 issues" appears only when there are more than three.
+- An expandable "All 7 issues" list: each with column, issue type, count, and what Sherlock would do. Replaced (2026-10-25, owner's decision) by the cleaning plan (§4.1), which lists every issue with its count, examples and planned fix.
+- Two buttons: **Clean with AI** (primary) and **Clean it myself**. (Amended 2026-10-25, owner's decision: the buttons were **Clean it for me**, **Use as is** and (P1) **Go step by step**. Clean it for me now opens the plan instead of cleaning at once, Clean it myself replaces Use as is with the same build, and step by step moved into the plan's Mode row.)
+- A checkbox: "Remember my choice" (writes the "After upload" setting), with the hint "· You can change this in Settings" beside it. Checked, Clean with AI saves `after_upload: always` and Clean it myself saves `never`.
+- As built (2026-10-25): under the heading, a line "1,309 rows · 14 columns · 7 issues", then the top three issues by severity as a list with icons ("263 missing in age", "boat records the outcome"); "Nothing that needs cleaning." when there are none.
 
 Transitions:
-- **Clean it for me** → §5 Headless cleaning.
-- **Use as is** → §6 Dashboard build on the typed version (version 1 plus the automatic typing step, which runs on every path). The CSV tab's "Clean with AI" button later shows a small dot until cleaning has run once. As built: the button has no dot. Not built yet (docs/BACKLOG.md).
-- **Go step by step (P1)** → the Dashboard tab opens with the chat thread expanded and the first proposed step as an approval card.
+- **Clean with AI** → §4.1 Cleaning plan: the centre shows "Diagnosing v2 of titanic3.csv…", then the plan. Nothing is cleaned until **Start cleaning**, which goes to §5 Headless cleaning.
+- **Clean it myself** → §6 Dashboard build on the typed version (version 1 plus the automatic typing step, which runs on every path), and the CSV tab opens at once. Its grid is read-only while the build runs, with the banner "Building your dashboard · editing opens when it finishes"; then the user edits by hand or asks the chat (§8, §10). The CSV tab's "Clean with AI" button later shows a small dot until cleaning has run once. As built: the button has no dot. Not built yet (docs/BACKLOG.md).
+- **Go step by step (P1)** → now the plan's Mode "Ask me before each fix" (PRD CLEAN-10): when it's built, Start opens the Dashboard tab with the chat thread expanded and the first proposed step as an approval card. Until then the Mode row shows it disabled with "comes later".
 
-If the setting is "Always clean", the offer is skipped and cleaning starts; a toast says "Cleaning automatically (change in Settings)". If "Never clean", the dashboard builds directly.
+After upload set to skip the offer (App Flow amended 2026-10-25 after the owner's report that uploads skipped the offer with nothing saying why; the planned toast "Cleaning automatically (change in Settings)" was never built, and an inline line replaces it, since a toast vanishes):
+- **"Open the cleaning plan"** (stored as `always`): the profile job makes a draft plan and stops at `offer`, so the plan screen opens by itself. It says "Opened because After upload is “Open the cleaning plan” · Change"; Change opens Settings scrolled to After upload. **Discard** on the plan goes back to the offer, so the choice is always one click away. Nothing is cleaned without a click: before this change `always` started a whole-file clean unattended.
+- **"I'll clean it myself"** (stored as `never`): the dashboard builds directly. The building screen says "Building without cleaning because After upload is “I'll clean it myself” · Change".
+
+### 4.1 Cleaning plan (PRD CLEAN-8a)
+
+What Clean with AI will try, shown before anything runs. Sherlock's code detectors diagnose the **current** version (its data card), so every count comes from code and no model is called. A plan made on an older version (the user edited cells, or undid a step, before starting) is diagnosed again and merged before it's shown or started: ticks are kept by issue, fixes that are no longer needed go, new ones come in ticked, and a toast says what changed.
+
+Where it lives: not a modal, so the chat bar stays usable. From the offer the centre becomes the plan screen; from the CSV tab the plan opens in the right panel in place of Changes, so the grid stays visible (§8.4).
+
+Contents:
+- Header: "Cleaning plan · v2" and "Sherlock checked v2. Untick what you don't want cleaned, then start." While it's being made: "Diagnosing v2 of titanic3.csv…".
+- The fixes in modules, in this order: Your steps · Types and parsing · Missing and placeholder values · Spelling and formatting · Duplicates and broken records · Outliers · Other checks · Marked, not changed. A module with nothing in it isn't shown. Each module header has a tri-state checkbox and "n of m" ticked.
+- One row per fix, **every fix ticked**: checkbox, the column, the issue ("missing", "spacing or case variants"), the count, and Sherlock's planned action in one muted line. ▸ shows up to 5 example values as chips. When two findings would be the same fix (exact and near duplicates), the row is the more severe one, the one the Cleaner attempts.
+- **Marked, not changed**: leakage and ID-like columns, and any issue on such a column, with the flag icon and the reason ("ticket looks like an ID column, so it is left as is") and no checkbox. They are never changed.
+- Mode: "Run on its own" (selected) and "Ask me before each fix", disabled with "comes later" (PRD CLEAN-10).
+- Footer: "n of m ticked" (and, past 20, "Sherlock tries up to 20 per run, the most severe first"), "Cells you edited by hand are left alone and listed in the report.", **Discard** and **Start cleaning (n)**, disabled with nothing ticked.
+
+Transitions:
+- Ticking or unticking saves at once (nothing touches the data until Start).
+- **Start cleaning** → §5 Headless cleaning with the plan: unticked fixes are skipped without a model call and logged "not in your plan"; the report lists them with "You left this out of the plan". Issues a fix exposes mid-run, which the plan didn't list, are attempted as before.
+- **Discard** → the offer again (from the CSV tab, the Changes panel).
 
 ---
 
@@ -141,7 +167,7 @@ If the setting is "Always clean", the offer is skipped and cleaning starts; a to
 - **Checks** card: the verifiers with ✓ as they pass on the latest step; the budget line "7 of 20 issues tried · 0:24 of 5:00".
 - Button: **Pause and review** (P1: switches to step-by-step for remaining issues). P0: **Stop** (ends the run; committed steps stay; the report is produced for what ran).
 
-**Tabs.** CSV is enabled (shows the latest committed version, read-only while the job runs, with a banner "Cleaning in progress · editing resumes when it finishes"). Dashboard and Flow are disabled with the tooltip "Available after cleaning". As built (2026-10-25): the CSV grid stays editable during cleaning and has no banner; only Clean with AI is disabled ("Cleaning is running."). Not built yet (docs/BACKLOG.md).
+**Tabs.** CSV is enabled (shows the latest committed version, read-only while the job runs, with a banner "Cleaning in progress · editing resumes when it finishes"). Dashboard and Flow are disabled with the tooltip "Available after cleaning". As built (2026-10-25): the banner shows above the grid while the status is `cleaning` (and, with "Building your dashboard · editing opens when it finishes", while it's `building`); cells can't be edited, and Add row, Delete row and Restore are disabled with the reason. Clean with AI is disabled ("Cleaning is running.").
 
 **Right panel.** The story placeholders with "Stories appear once the dashboard is built."
 
@@ -155,6 +181,7 @@ If the setting is "Always clean", the offer is skipped and cleaning starts; a to
 - **Stop** (as built): the job is cancelled at once (a sandbox worker that's running is killed), committed steps stay, the report covers what ran (`ended_by: stopped`), and the dashboard build starts.
 - **As built (2026-10-24, D3.6).**
   - The log is the dataset's event stream replayed from the start, keeping this job's `job.log` lines. An issue's "running" line ("263 missing values", "checking candidates") is replaced by its outcome when it arrives: the effect or the skip reason, the candidate chips with the chosen one filled, and the gate line in the gate's color.
+  - A run from a cleaning plan (§4.1, 2026-10-25) logs each fix the plan left unticked as a skip line, "You left this out of the plan" with the detail "not in your plan", with no "checking candidates" line before it: no model is called for it and it doesn't count against the 20-issue budget.
   - "So far" and the budget line read the run's report, refreshed on every log line.
   - "Checks on the latest step" lists the hard verifiers of the last committed step.
   - During `building`, the centre shows "Building your dashboard…" above the report summary: counts, the first three steps, and "View full report", a dialog with every step, skipped issue, hand-edited cell and decision.
@@ -251,7 +278,8 @@ As built (2026-10-25, D6.3):
 - Header line: dataset name, version, "n unsaved changes", **Discard**, **Save changes (n)**.
 - The grid.
 - Status bar (bottom of the grid): selection stats · row count · "Row 9, col home.dest".
-- Right panel: **Changes**.
+- Right panel: **Changes**, or the cleaning plan while one is open (§8.4).
+- While a job owns the data (the status is `cleaning` or `building`), the grid is read-only with a banner (§5), and Add row, Delete row and Restore are disabled.
 
 As built (2026-10-25, Implementation Plan D5, cut 5):
 - **Toolbar.** Add row · Delete row (the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (CSV · Notebook (.ipynb)) · the legend. Add column, the Filter row and quick views aren't there (P1 and cut 5).
@@ -290,6 +318,12 @@ As built (2026-10-25): the provenance tooltip, right-click menus and jump to row
 
 ### 8.4 Clean with AI (any time)
 
+As built (2026-10-25, owner's decision): clicking opens the **cleaning plan** (§4.1) in the right panel in place of Changes, so the grid stays visible; a plan already open stays as it was. On a narrow window the right panel slides over. The side plan adds, above the modules:
+- Scope: Whole dataset · Current selection (n rows; disabled with nothing selected) · Rows added since the last clean. With a selection or new-rows scope: "Counts are for the whole file; changes stay inside the rows in scope."
+- With unsaved edits: "Save or discard your 12 unsaved changes first." with Discard edits, and Start is disabled.
+
+Start cleaning starts the job and toasts "Cleaning started. Its steps appear in Changes as they commit."; the right panel goes back to Changes, which shows the running clean as below. Discard also gives the panel back to Changes. The rest of this section is the popover the plan replaced, kept for the record:
+
 Clicking opens a small popover:
 - Scope: Whole dataset · Current selection (n cells) · Rows added since last clean (n).
 - Mode: Auto · Step by step (P1).
@@ -298,8 +332,8 @@ Clicking opens a small popover:
 
 It runs as a job with the same live log, shown in a slide-over on the right (the Changes panel) so the grid stays visible. Hand-edited cells are skipped and listed in the report with "Include these next time" as an option.
 
-As built (2026-10-25): the popover's selection scope uses the rows of the selected cells (saved as a selection). While the job runs, the Changes panel shows a "Cleaning…" card with its progress and Stop; each committed step appears in Steps. A whole-dataset clean also sets the dataset to `cleaning`, so the Dashboard tab shows the live log.
-- The scopes read "Whole dataset", "Current selection (n rows)" (disabled with nothing selected) and "Rows added since the last clean". Mode shows Auto alone with "Step by step comes later." The popover says "Cells you edited by hand are left alone and listed in the report." Start toasts "Cleaning started. Its steps appear in Changes as they commit." The button is disabled with its reason while the dataset is profiling, cleaning or building.
+As built (2026-10-25): the selection scope (the popover's, now the side plan's) uses the rows of the selected cells (saved as a selection). While the job runs, the Changes panel shows a "Cleaning…" card with its progress and Stop; each committed step appears in Steps. A whole-dataset clean also sets the dataset to `cleaning`, so the Dashboard tab shows the live log.
+- Until the plan replaced it (2026-10-25), the popover's scopes read "Whole dataset", "Current selection (n rows)" (disabled with nothing selected) and "Rows added since the last clean"; Mode showed Auto alone with "Step by step comes later."; it said "Cells you edited by hand are left alone and listed in the report." The side plan keeps those words. The Clean with AI button is disabled with its reason while the dataset is profiling, cleaning or building.
 - The report lists hand-edited cells under "Cells you edited (left as they are)" with a count and an example. "Include these next time" isn't offered. Not built yet (docs/BACKLOG.md).
 
 ### 8.5 Changes panel
@@ -480,6 +514,8 @@ As built (2026-10-25, Implementation Plan D8.1–D8.2, cuts 2 and 3 applied: no 
 ## 13. Settings overlay
 
 Opened from the gear or `?settings=1`. A centred dialog over a dimmed app. Contents per PRD §7.10 as segmented controls. Changes apply immediately and save to the server; "Done" closes. Esc or clicking outside closes. The mode and accent switches preview live behind the dialog. As built (2026-10-24, cut 1): mode, accent, chat bar and after upload (UI/UX brief §5.11).
+
+After upload reads "Ask me · Open the cleaning plan · I'll clean it myself" (2026-10-25; the stored values stay `ask|always|never`), with the help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan." `?settings=1&field=after_upload` opens the dialog scrolled to that field and outlines it: the "Change" links on the plan and building screens use it (§4).
 
 ---
 

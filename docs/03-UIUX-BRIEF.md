@@ -405,6 +405,20 @@ Header "Import titanic3.csv · 61 KB". A row of four controls (delimiter, encodi
 
 A single `--card` panel, max 640px, centred vertically in the top third. Display title "Here's what I found in titanic3.csv", then a muted line of rows · columns · issues. The summary as three lines with icons (missing, missing, flag). "All 7 issues" disclosure (a table: column · issue · count · proposed action), shown when there are more than three. Three buttons in a row: Clean it for me (primary), Use as is (secondary), Go step by step (secondary, P1; as built it's disabled with the tooltip "Step-by-step cleaning comes in a later release"). Checkbox "Remember my choice".
 
+As built (2026-10-25, owner's decision, App Flow §4): the "All n issues" disclosure is gone, since the cleaning plan (§5.3a) lists every issue. Two buttons: **Clean with AI** (primary) and **Clean it myself** (secondary); after a failed run they read Try cleaning again and Build dashboard without cleaning. Go step by step moved into the plan's Mode row. "Remember my choice" has the muted hint "· You can change this in Settings" beside it (label size).
+
+### 5.3a Cleaning plan (centre, or the right panel on the CSV tab)
+
+Added 2026-10-25 (PRD CLEAN-8a, App Flow §4.1). `CleanPlanPanel.tsx`, in two layouts.
+- **Centre** (from the offer): a `--card` panel, max 720px, 6vh from the top. Display title "Cleaning plan · v2", a muted line "Sherlock checked v2. Untick what you don't want cleaned, then start." When the After upload setting opened it: a label-size muted line "Opened because After upload is “Open the cleaning plan” · Change" (Change is a link that opens Settings at that field).
+- **Side** (from the CSV tab's Clean with AI): it fills the right panel in place of Changes, 16px padding, title-sm "Cleaning plan · v2". Above the modules, a Scope fieldset (overline legend, radios: Whole dataset · Current selection (n rows) · Rows added since the last clean), with "Counts are for the whole file; changes stay inside the rows in scope." under a narrowed scope. The footer sticks to the bottom of the panel on `--background` with a top border.
+- **While it's made**: a spinner and "Diagnosing v2 of titanic3.csv…" (the same box).
+- **Modules**: an overline title per module (Your steps first, Marked, not changed last) over a 1px border, with a tri-state checkbox on the left (indeterminate when some are ticked) and "n of m" in mono, muted, on the right. Empty modules aren't shown.
+- **Item row** (rows separated by 1px `--border`): checkbox (`--accent`) · the column in mono · the issue in body (muted when unticked) · the count in mono muted · on the next line the planned action in body-sm muted · on the right a ▸ chevron when there are examples, which opens up to 5 values as mono chips (`--muted` fill, 1px border, radius 6, truncated at 240px). Checkbox names read "age: missing".
+- **Marked, not changed** rows: the `flag` icon in `--warning` instead of a checkbox, and the reason ("ticket looks like an ID column, so it is left as is") in place of the action.
+- **Mode**: an overline, then two radios: "Run on its own" (selected) and "Ask me before each fix" at 60% with "comes later" (P1).
+- **Footer**: "n of m ticked" (body-sm muted; past 20, "· Sherlock tries up to 20 per run, the most severe first"), on the CSV tab the unsaved-edits note on `--muted` with Discard edits, "Cells you edited by hand are left alone and listed in the report." (label size), then right-aligned Discard (ghost) and **Start cleaning (n)** (primary; disabled with nothing ticked or with unsaved edits, with the reason as its title).
+
 ### 5.4 Cleaning in progress (centre)
 
 As drawn:
@@ -458,12 +472,14 @@ Toolbar (40px): Add row, Add column (P1), Find (opens an inline find bar under t
 As built (2026-10-25, cut 5): the toolbar holds Add row, Delete row, Restore (when it applies), Find, Clean with AI (secondary, sparkle icon), Download (ghost menu) and the legend on the right; the unsaved count, Discard and Save changes (n) (or "Rebase and save") are in the context row, and they hide when nothing is pending. The find bar is 40px under the toolbar: an input, Find, the match count, ×.
 - **Status bar** (28px). The selected cell count, the row count (with the sort, marked "view only"), the unsaved count in `--accent`, and on the right "Row 9 · home.dest". The selection stats (sum · avg · min · max) are removed by cut 5.
 - **Opened on a selection** (`?rows=`, from a chat answer or "Who did it get wrong?"). A strip under the toolbar shows an "n rows selected" chip (`--accent-soft`, `--accent` border) and Show all rows.
+- **Read-only while a job owns the data** (2026-10-25, App Flow §5). While the status is `cleaning` or `building`, a strip under the toolbar on `--muted` (13px, `role="status"`) reads "Cleaning in progress · editing resumes when it finishes" or "Building your dashboard · editing opens when it finishes"; cells don't open an editor, and Add row, Delete row and Restore are disabled with the reason as their title.
+- **Clean with AI** (2026-10-25) opens the cleaning plan (§5.3a) in the right panel; the popover it used to open is gone.
 
 ### 5.7 Changes panel (right, CSV tab)
 
 Title "Changes" with the version pill. "Unsaved (yours)" card with accent border when non-empty. "Steps" overline, then step cards: number (mono, muted) · summary (title-sm) · detail line (label, muted) · Undo (secondary, 28px). The latest step has a `--border-strong` outline. Expanding a step reveals a code block (mono, `--muted` fill, Shiki-highlighted) or the edit list, then the impact lines. Footer links: Full cleaning report · Export notebook · Export pipeline (P1).
 
-As built (2026-10-25): the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step is at 60%, with its summary struck through and "· undone" on its detail line. The full cleaning report opens in a drawer.
+As built (2026-10-25): the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. While a cleaning plan is open, the right panel shows the plan (§5.3a, side layout) instead; Start or Discard gives it back to Changes. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step is at 60%, with its summary struck through and "· undone" on its detail line. The full cleaning report opens in a drawer.
 
 ### 5.8 ML setup (inside a widget)
 
@@ -530,9 +546,9 @@ As built (2026-10-24), with cut 1: four settings, each a segmented control with 
 - Chat bar: Pinned · Auto-hide · Hidden.
   - Auto-hide fades the bar out until it's pointed at or focused.
   - Hidden removes it.
-- After upload: Ask me · Always clean · Never clean.
+- After upload: Ask me · Always clean · Never clean. As built (2026-10-25): Ask me · Open the cleaning plan · I'll clean it myself, with the help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
 
-It opens from the library panel's gear, or with `?settings=1` in the URL. The other five settings and the "two per row" layout return when cut 1 is lifted.
+It opens from the library panel's gear, or with `?settings=1` in the URL. `&field=after_upload` scrolls to that field and outlines it in `--accent` (radius 14): the "Change" links on the plan and building screens. The other five settings and the "two per row" layout return when cut 1 is lifted.
 
 Title (display), × button. Nine labeled segmented controls in a single column (two per row for Default tab and Spotlight). The Accent control shows a dot of each accent's color beside its name. Help text under each in body-sm muted. Footer: "Saved to your Sherlock profile" (muted) and Done (primary).
 
@@ -565,6 +581,7 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
   - **As built (D8.3, `OfflineBanner.tsx`).** A strip at the top of the centre with `--warning` tint and border and the `wifi-off` icon: "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It shows when the browser goes offline or any API request can't reach the server (`sherlock:offline`), and clears on `online` or when `/healthz` answers (checked every 5 s while it shows).
 - Error boundary (D8.3, `ErrorBoundary.tsx`): a view that crashes shows a `--card` panel in its place, "Something went wrong showing the dashboard" (or the page, CSV tab, canvas, library, side panel), "Your data is safe on the server…", the error's message (its first 300 characters) in mono, and **Try again** (primary) and **Reload** (ghost). The rest of the app keeps working, and moving to another dataset or tab resets it.
 - Story card delete (D8.3): a trash icon button (ghost) after Edit; the toast "Card deleted" offers Undo for 10 s.
+- "Why the offer was skipped" lines (2026-10-25, App Flow §4): a label-size muted line with a Change link, under the plan's title ("Opened because After upload is “Open the cleaning plan” · Change") or under "Building your dashboard…" ("Building without cleaning because After upload is “I'll clean it myself” · Change"). They stay on screen rather than as a toast that vanishes.
 - Cascade progress line: a 2px `--accent` line under the header with a label-size caption ("Updating 4 widgets and 3 stories").
 - Chat sources disclosure: a "How do you know?" link under each answer that expands the SQL, run or step references in a `--muted` mono block.
 - "Data changed" badge: a warning chip on user-edited cards with a "See suggestion" link.

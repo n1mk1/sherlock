@@ -20,6 +20,7 @@ from sherlock.identity import current_user
 from sherlock.ingest.importer import import_csv
 from sherlock.ingest.options import ImportOptions
 from sherlock import sample_seed
+from sherlock.cleaning import plan as plans
 from sherlock.jobs.clean import queue_build
 from sherlock.jobs.events import emit
 from sherlock.jobs.runner import cancel_job
@@ -55,10 +56,13 @@ class Dataset(BaseModel):
     # current version's DataCard (null until it's built) and the steps in its effective chain.
     issue_count: int | None = None
     step_count: int = 0
+    # The draft cleaning plan, while there is one (PRD CLEAN-8a): the offer screen shows the plan instead.
+    clean_plan_id: str | None = None
 
 
 def to_dataset(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> Dataset:
     issue_count, step_count = _counts(db, row) if db is not None else (None, 0)
+    plan_id = plans.draft_id(db, row["id"]) if db is not None else None
     return Dataset(
         id=row["id"],
         name=row["name"],
@@ -72,6 +76,7 @@ def to_dataset(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> Datase
         error=row["error"],
         issue_count=issue_count,
         step_count=step_count,
+        clean_plan_id=plan_id,
     )
 
 

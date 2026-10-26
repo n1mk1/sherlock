@@ -13,10 +13,11 @@ Version 1.1 · 2026-10-24 (migration 001 and the doc-sync test, §1) · Every ta
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
   - `001_initial.sql` creates every table and index in §2 verbatim. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `002_clean_plans.sql` (2026-10-25) adds `clean_plans` (§2.21) and its index.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
-- As built (2026-10-25): `ver_` is never generated, since a version is keyed by `(dataset_id, version)` (§2.3). Issues use `iss_` and exports `exp_`. Canvas nodes and edges the AI adds get `nd_` and `ed_` IDs inside `canvas_json` (`canvas/service.py`).
+- As built (2026-10-25): `ver_` is never generated, since a version is keyed by `(dataset_id, version)` (§2.3). Issues use `iss_` and exports `exp_`. Cleaning plans use `pln_` and their items `pit_` (inside `items_json`, §2.21). Canvas nodes and edges the AI adds get `nd_` and `ed_` IDs inside `canvas_json` (`canvas/service.py`).
 
 ---
 
@@ -397,6 +398,7 @@ Implementation notes (2026-10-24, Implementation Plan D2.5):
 - `jobs.owner_pid` is `<hostname>:<pid>:<ulid>`, unique per process start. At startup, every `running` job is re-queued (one process holds the runner). While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
 - `jobs.progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
 - As built (2026-10-25): no `undo` job is ever queued, since an undo, its replay included, runs inside its request (TRD §7.8); `jobs/runner.py` still lists the kind. A `purge` job has `user_id = 'system'` and `dataset_id` NULL (§6).
+- `params_json` of a `clean` job started from a cleaning plan (2026-10-25, PRD CLEAN-8a) carries `plan: {id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits to a plan can't change a running job. A `clean` or `build_dashboard` job queued by the After upload setting rather than a click has `automatic: true` (the `Job` response shows it, TRD §4.10).
 
 ### 2.15 chat
 
@@ -544,6 +546,30 @@ As built (2026-10-25, D5.6): `version` is the version the notebook rebuilds (the
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 ```
 
+### 2.21 clean_plans
+
+The cleaning plan (PRD CLEAN-8a, CLEAN-8b, TRD §4.4, §7.2): what Clean with AI will try, diagnosed by the code detectors on a version, editable until it starts. Added by migration `002_clean_plans.sql`.
+
+```sql
+CREATE TABLE clean_plans (
+  id         TEXT PRIMARY KEY,                 -- pln_…
+  dataset_id TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  version    INTEGER NOT NULL,                 -- the version the items were diagnosed on
+  items_json TEXT NOT NULL,                    -- [PlanItem] (TRD §4.4)
+  status     TEXT NOT NULL,                    -- draft|started|discarded
+  source     TEXT NOT NULL,                    -- user|after_upload (who opened it)
+  job_id     TEXT,                             -- the clean job a started plan ran as
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE status = 'draft';
+```
+
+- A dataset has at most one `draft` (the partial unique index). `POST /datasets/{id}/clean/plan` returns it or makes it; Discard sets `discarded`; Start sets `started` and `job_id`, and the job's `params_json` keeps a frozen copy of the items (§2.14). Started and discarded plans are kept as history.
+- `version` moves when a draft is merged onto a newer version (`cleaning/plan.py` `merge`): ticks and instructions are kept by issue key, the user's steps while their column exists.
+- `source` is `after_upload` when the profile job made the draft because After upload is "Open the cleaning plan"; the plan screen then says why it opened.
+- Deleted with the dataset: the foreign key cascades on hard delete (§6).
+
 ---
 
 ## 3. DuckDB (in-memory, cached per version)
@@ -622,6 +648,7 @@ As built (2026-10-25):
 | Canvas | user document | `canvases` |
 | Notebook export | derived from steps, widgets, runs, cards at a version and `state_rev` | `exports` + `exports/*.ipynb` (24 h) |
 | Pending edits | client only | browser local storage (`sherlock:edits:<dataset>:<version>`) |
+| Cleaning plan (draft) | `clean_plans` | none; a draft on an older version is merged onto the current one when read |
 | UI state (tab, scroll, panel widths) | client | browser local storage; `datasets.last_tab` server-side |
 
 ---
@@ -636,7 +663,7 @@ A `purge` job runs every 10 minutes:
 5. Recompute `users.storage_bytes`.
 
 As built (2026-10-25, D8.6, `sherlock/jobs/purge.py`):
-- Hard-deleting a dataset removes its folder and its rows. The tables with a cascading foreign key go with it; `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals` and `value_index` are cleared explicitly. `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend figures read them.
+- Hard-deleting a dataset removes its folder and its rows. The tables with a cascading foreign key go with it (`clean_plans` among them); `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals` and `value_index` are cleared explicitly. `llm_calls` and `sandbox_runs` are kept: the daily budgets and the spend figures read them.
 - A purged widget takes its card and fact sheets with it, and a run that pointed at it is unlinked. Canvas nodes of purged cards are pruned on the next canvas read (§2.12).
 - An export's file is deleted with its row.
 - `storage_bytes` counts every dataset still on disk, soft-deleted ones included, since their files remain until they are purged. Each dataset's `folder_bytes` is measured again first.

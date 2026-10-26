@@ -32,10 +32,12 @@ def _clean(ctx: JobContext) -> dict:
     return result
 
 
-def queue_build(db: sqlite3.Connection, bus: EventBus | None, user_id: str, dataset_id: str, runner=None) -> sqlite3.Row:
-    """Dataset → `building`, then the build_dashboard job."""
+def queue_build(db: sqlite3.Connection, bus: EventBus | None, user_id: str, dataset_id: str, runner=None,
+                params: dict | None = None) -> sqlite3.Row:
+    """Dataset → `building`, then the build_dashboard job (`params` `{automatic: true}` when the
+    After upload setting queued it)."""
     set_dataset_status(db, bus, dataset_id, "building")
-    job = insert_job(db, user_id, dataset_id, "build_dashboard")
+    job = insert_job(db, user_id, dataset_id, "build_dashboard", params)
     if runner is not None:
         runner.wake()
     return job

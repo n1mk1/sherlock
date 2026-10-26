@@ -13,7 +13,12 @@ async function ask(page: Page, text: string) {
 test("from the sample to a downloaded notebook", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Try with sample (Titanic)" }).click();
-  await page.getByRole("button", { name: "Use as is" }).click();
+  // Clean it myself: the dashboard builds on the data as it is while the CSV tab opens (read-only until then).
+  await page.getByRole("button", { name: "Clean it myself" }).click();
+  await expect(page).toHaveURL(/\/csv$/);
+  const dashboardTab = page.getByRole("tab", { name: "Dashboard" });
+  await expect(dashboardTab).not.toHaveAttribute("aria-disabled", /.*/, { timeout: 120_000 });
+  await dashboardTab.click();
 
   // The dashboard builds itself, then its story cards are written.
   await expect(page.getByRole("heading", { name: "Stories" })).toBeVisible();

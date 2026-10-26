@@ -77,6 +77,8 @@ def to_job(row: sqlite3.Row) -> dict:
         "progress": _progress(row), "created_at": row["created_at"], "started_at": row["started_at"],
         "finished_at": row["finished_at"], "error": row["error"],
         "result": json.loads(row["result_json"]) if row["result_json"] else None,
+        # Queued by the "After upload" setting rather than a click (App Flow §4).
+        "automatic": bool(json.loads(row["params_json"] or "{}").get("automatic")),
     }
     return job
 

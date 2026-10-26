@@ -16,7 +16,8 @@ def doc_tables() -> dict[str, list[str]]:
     """Table → column names, parsed from the schema doc's CREATE TABLE blocks."""
     tables = {}
     text = SCHEMA_DOC.read_text(encoding="utf-8")
-    multi_line = re.findall(r"CREATE TABLE (\w+) \((.*?)\n\)", text, re.S)
+    # A multi-line block opens with a newline, so a one-line table can't run on into the next block.
+    multi_line = re.findall(r"CREATE TABLE (\w+) \(\n(.*?)\n\)", text, re.S)
     one_line = re.findall(r"CREATE TABLE (\w+) \(([^\n]*)\);", text)
     for name, body in multi_line + one_line:
         columns = []
@@ -54,7 +55,7 @@ def test_migration_matches_schema_doc(conn):
 
 def test_migrate_is_idempotent_and_tracked(conn):
     assert migrate(conn) == []
-    assert current_version(conn) == 1
+    assert current_version(conn) == 2
 
 
 def test_pragmas(conn):

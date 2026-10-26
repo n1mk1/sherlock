@@ -4,8 +4,8 @@ import { canvasKey, ownEtags } from "./canvas";
 import { api, ApiError, request, toApiError, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  Card, CleaningReport, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout, Me,
-  Message, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
+  Card, CleaningReport, CleanPlan, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
+  Me, Message, PlanOp, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
 } from "./types";
 
 export const keys = {
@@ -21,6 +21,7 @@ export const keys = {
   explain: (wid: string, filter: string) => ["explain", wid, filter] as const,
   allJobs: ["jobs", "all"] as const,
   chat: (id: string) => ["chat", id] as const,
+  plan: (pid: string) => ["clean-plan", pid] as const,
 };
 
 export function useMe() {
@@ -132,15 +133,107 @@ export function useSample() {
   });
 }
 
+export type CleanScope = { kind: "all" | "selection" | "new_rows"; selection_id?: string; row_ids?: number[] };
+
+/** Start Clean with AI from a cleaning plan (PRD CLEAN-8a). A plan made on an older version answers
+ * 409 with the merged plan: the cache takes it and the error says so (`stalePlan`). */
 export function useStartCleaning(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () =>
+    mutationFn: ({ plan_id, scope }: { plan_id: string; scope?: CleanScope }) =>
       request<Job>("POST", `/api/v1/datasets/${datasetId}/clean`, {
-        mode: "auto", scope: { kind: "all" }, include_user_edited: false,
+        mode: "auto", scope: scope ?? { kind: "all" }, include_user_edited: false, plan_id,
       }),
-    onSuccess: () => {
+    onSuccess: (_, { plan_id }) => {
+      setDatasetPlan(qc, datasetId, null);
+      qc.invalidateQueries({ queryKey: keys.plan(plan_id) });
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
+      qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
+      qc.invalidateQueries({ queryKey: keys.allJobs });
+    },
+    onError: (err) => {
+      const plan = stalePlan(err);
+      if (plan) qc.setQueryData(keys.plan(plan.id), plan);
+    },
+  });
+}
+
+export function stalePlan(err: unknown): CleanPlan | null {
+  const e = err as ApiError;
+  return e?.status === 409 && e.extra?.plan ? (e.extra.plan as CleanPlan) : null;
+}
+
+// --- the cleaning plan (TRD §4.4, PRD CLEAN-8a) ------------------------------------------------
+
+function setDatasetPlan(qc: QueryClient, datasetId: string, planId: string | null) {
+  const patch = (d: Dataset): Dataset => (d.id === datasetId ? { ...d, clean_plan_id: planId } : d);
+  qc.setQueryData<Dataset>(keys.dataset(datasetId), (d) => (d ? patch(d) : d));
+  qc.setQueryData<Dataset[]>(keys.datasets, (list) => list?.map(patch));
+}
+
+/** Tick ops applied locally as the server applies them (`cleaning/plan.py` `apply_ops`). */
+export function applyPlanOps(plan: CleanPlan, ops: PlanOp[]): CleanPlan {
+  const items = plan.items.map((i) => ({ ...i }));
+  for (const op of ops) {
+    if ("item_id" in op) {
+      const i = items.find((x) => x.id === op.item_id);
+      if (i?.change) i.ticked = op.op === "tick";
+    } else {
+      for (const i of items) if (i.module === op.module && i.change) i.ticked = op.op === "tick_module";
+    }
+  }
+  return { ...plan, items };
+}
+
+export function useCleanPlan(planId: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.plan(planId ?? ""),
+    enabled: !!planId,
+    queryFn: () => request<CleanPlan>("GET", `/api/v1/clean-plans/${planId}`),
+  });
+}
+
+/** Clean with AI: the dataset's draft plan, made from the current version's diagnosis (or the one
+ * already open). Its pending state is the "Diagnosing…" screen (`mutationKey`). */
+export function useCreatePlan(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ["create-plan", datasetId],
+    mutationFn: () => request<CleanPlan>("POST", `/api/v1/datasets/${datasetId}/clean/plan`),
+    onSuccess: (plan) => {
+      qc.setQueryData(keys.plan(plan.id), plan);
+      setDatasetPlan(qc, datasetId, plan.id);
+    },
+  });
+}
+
+/** Ticks and unticks, shown at once and replaced by the server's plan. */
+export function usePlanOps(plan: CleanPlan) {
+  const qc = useQueryClient();
+  const key = keys.plan(plan.id);
+  return useMutation({
+    mutationFn: (ops: PlanOp[]) => request<CleanPlan>("PATCH", `/api/v1/clean-plans/${plan.id}`, { ops }),
+    onMutate: async (ops) => {
+      await qc.cancelQueries({ queryKey: key });
+      const before = qc.getQueryData<CleanPlan>(key);
+      if (before) qc.setQueryData(key, applyPlanOps(before, ops));
+      return { before };
+    },
+    onError: (_, __, ctx) => {
+      if (ctx?.before) qc.setQueryData(key, ctx.before);
+    },
+    onSuccess: (next) => qc.setQueryData(key, next),
+  });
+}
+
+/** Discard: the offer (or the Changes panel) shows again. */
+export function useDiscardPlan(datasetId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => request<void>("DELETE", `/api/v1/clean-plans/${planId}`),
+    onSuccess: (_, planId) => {
+      setDatasetPlan(qc, datasetId, null);
+      qc.removeQueries({ queryKey: keys.plan(planId) });
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
     },
   });
@@ -325,6 +418,11 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
     },
     "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
+    // A cleaning plan was made, changed (in another tab, or by chat), started or discarded.
+    "plan.updated": (data) => {
+      qc.invalidateQueries({ queryKey: keys.plan(String((data as { plan_id?: string }).plan_id)) });
+      qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
+    },
     // The canvas changed in another tab or by the AI; this tab's own saves come back with known etags.
     "canvas.updated": (data) => {
       if (!ownEtags.has(String((data as { etag?: string }).etag))) qc.invalidateQueries({ queryKey: canvasKey(datasetId) });

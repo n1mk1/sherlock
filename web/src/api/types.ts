@@ -30,6 +30,7 @@ export interface Job {
   finished_at: string | null;
   error: string | null;
   result: Record<string, unknown> | null;
+  automatic?: boolean; // queued by the After upload setting, not a click (App Flow §4)
 }
 
 export interface Issue {
@@ -64,6 +65,44 @@ export interface DataCard {
   target_candidates: string[];
   leakage_candidates: { column: string; target: string; reason: string }[];
 }
+
+// The cleaning plan (TRD §4.4, PRD CLEAN-8a): what Clean with AI will try, editable before it starts.
+export type PlanModule = "yours" | "types" | "missing" | "text" | "records" | "outliers" | "other" | "kept";
+
+export interface CleanPlanItem {
+  id: string;
+  source: "sherlock" | "you" | "chat";
+  key: string | null;
+  detector: string;
+  column: string | null;
+  count: number | null;
+  severity: number | null;
+  action: string;
+  instruction: string | null;
+  examples: unknown[];
+  ticked: boolean;
+  change: boolean; // false for leakage and ID columns: marked, never changed
+  reason?: string;
+  module: PlanModule;
+}
+
+export interface CleanPlan {
+  id: string;
+  dataset_id: string;
+  version: number;
+  status: "draft" | "started" | "discarded";
+  source: "user" | "after_upload";
+  job_id: string | null;
+  items: CleanPlanItem[];
+  created_at: string;
+  updated_at: string;
+  notes?: string[];   // what a merge onto a newer version changed
+  summary?: string;   // what a PATCH changed, written by code
+}
+
+export type PlanOp =
+  | { op: "tick" | "untick"; item_id: string }
+  | { op: "tick_module" | "untick_module"; module: PlanModule };
 
 export interface JobLogEntry {
   job_id: string;

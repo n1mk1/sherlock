@@ -395,3 +395,14 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Every gap the pass found where the code falls short of a doc is in `docs/BACKLOG.md`, tagged with the doc section.
   - The help pages now describe the real UI; the retrieval tests pass. `tests/test_db.py` passes against the schema doc.
 - **Not done:** the gaps themselves (code), and the owner decisions in BACKLOG §2.
+
+### 2026-10-25 (night): the cleaning plan, part 1 (plan, ticks and the offer)
+
+- **Done** (owner's decisions of 2026-10-25, PRD CLEAN-1 and the new CLEAN-8a):
+  - **The cleaning plan.** Clean with AI no longer starts at once. Sherlock's code detectors diagnose the current version and the plan lists every fix in modules, all ticked (`cleaning/plan.py`, `clean_plans` in migration 002, `POST /datasets/{id}/clean/plan`, `GET`/`PATCH`/`DELETE /clean-plans/{pid}`). The user unticks fixes or whole modules, then Start cleaning (`POST /clean` with `plan_id`, a frozen copy in the job's params). Unticked fixes are skipped with no model call, "not in your plan". A plan made before an edit or undo is merged onto the current version, ticks kept.
+  - **The offer** keeps its top three and loses the "All n issues" table; its buttons are Clean with AI and Clean it myself (the old Use as is, which now opens the CSV tab). Go step by step moved into the plan's Mode row, disabled (CLEAN-10 is still P1).
+  - **The CSV tab**: Clean with AI opens the plan in the right panel in place of Changes, with the scope; the popover wrapper is gone (the package stays for the job tray). The grid is read-only with a banner while the status is `cleaning` or `building` (a backlog line, now removed).
+  - **Why uploads skipped the offer** (owner's report): `after_upload: always` started a clean unattended, and nothing on screen said why. Now `always` ("Open the cleaning plan") makes a draft plan and stops at the offer, and Discard goes back to it; `never` ("I'll clean it myself") marks its build `automatic`. Both screens say which setting opened them, with a Change link to Settings at that field.
+- **Not done:** part 2: rewriting a fix in plain words, adding steps, and editing the plan from chat (CLEAN-8b).
+- **Decision:** the plan's numbers come from the detectors only (Rule 2); the model's per-issue diagnosis still runs during cleaning.
+

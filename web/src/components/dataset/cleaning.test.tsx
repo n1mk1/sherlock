@@ -1,7 +1,10 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Dataset, JobLogEntry } from "@/api/types";
+import type { CleanPlan, CleanPlanItem, Dataset, JobLogEntry } from "@/api/types";
+import { CsvSidePanel } from "@/components/shell/AppShell";
 import { ME, mockApi, renderAt } from "@/test/render";
+import { CleanPlanPanel } from "./CleanPlanPanel";
 import { collapse, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
 import { OfferActions } from "./OfferActions";
@@ -39,20 +42,34 @@ describe("cleaning screens", () => {
     expect(out[0]).toMatchObject({ text: "263 missing values", outcome: "Fills ages by title" });
   });
 
-  it("starts cleaning and can remember the choice", async () => {
+  it("Clean with AI makes the plan and can remember the choice", async () => {
     const calls = mockApi({
-      "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
+      "POST /api/v1/datasets/ds_1/clean/plan": PLAN,
       "PUT /api/v1/me/settings": ME.settings,
-      "GET /api/v1/jobs": [],
       "GET /api/v1/datasets/ds_1": DS,
     });
     renderAt(<OfferActions dataset={DS} />);
     fireEvent.click(screen.getByLabelText("Remember my choice"));
-    fireEvent.click(screen.getByRole("button", { name: "Clean it for me" }));
-    await waitFor(() => expect(calls.mock.calls.some(([u, i]) => String((u as Request).url ?? u).includes("/clean") && ((u as Request).method ?? i?.method) === "POST")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Clean with AI" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean/plan") && c.method === "POST")).toBe(true));
     const put = calls.mock.calls.find(([u]) => String((u as Request).url ?? u).includes("/me/settings"));
-    expect(put).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Go step by step" })).toBeDisabled();
+    expect(await (put?.[0] as Request).json()).toEqual({ after_upload: "always" });
+    expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(false); // nothing is cleaned yet
+    expect(screen.queryByRole("button", { name: "Go step by step" })).toBeNull();
+    expect(screen.getByText("· You can change this in Settings")).toBeInTheDocument();
+  });
+
+  it("Clean it myself builds without cleaning and opens the CSV tab", async () => {
+    const calls = mockApi({ "POST /api/v1/datasets/ds_1/use-as-is": { id: "job_2", kind: "build_dashboard", status: "queued" } });
+    renderAt(
+      <Routes>
+        <Route path="/" element={<OfferActions dataset={DS} />} />
+        <Route path="/d/ds_1/csv" element={<p>the CSV tab</p>} />
+      </Routes>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Clean it myself" }));
+    expect(await screen.findByText("the CSV tab")).toBeInTheDocument();
+    expect(sent(calls).map((c) => c.path)).toContain("/api/v1/datasets/ds_1/use-as-is");
   });
 
   it("offers retry choices after a failed run", () => {
@@ -95,5 +112,121 @@ describe("cleaning screens", () => {
     });
     renderAt(<ReportSummary datasetId="ds_1" />);
     expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
+  });
+});
+
+// --- the cleaning plan (PRD CLEAN-8a) -------------------------------------------------------------------
+
+const item = (over: Partial<CleanPlanItem>): CleanPlanItem => ({
+  id: "pit_x", source: "sherlock", key: "missing|age", detector: "missing", column: "age", count: 263, severity: 0.1,
+  action: "Fill from a rule over related columns", instruction: null, examples: [], ticked: true, change: true, module: "missing",
+  ...over,
+});
+const PLAN: CleanPlan = {
+  id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, created_at: "", updated_at: "",
+  items: [
+    item({ id: "pit_amount", key: "numbers_as_text|amount", detector: "numbers_as_text", column: "amount", count: 99, module: "types",
+           examples: ["$980", "$2,000"] }),
+    item({ id: "pit_age", key: "missing|age", column: "age", count: 13 }),
+    item({ id: "pit_fare", key: "outliers|fare", detector: "outliers", column: "fare", count: 40, module: "outliers" }),
+    item({ id: "pit_age_out", key: "outliers|age", detector: "outliers", column: "age", count: 4, module: "outliers" }),
+    item({ id: "pit_id", key: "id_candidates|customer_id", detector: "id_candidates", column: "customer_id", count: 120,
+           module: "kept", ticked: false, change: false, reason: "Looks like an ID column, so it is left as is" }),
+  ],
+};
+const WITH_PLAN = { ...DS, clean_plan_id: "pln_1" } as Dataset;
+
+function sent(calls: ReturnType<typeof mockApi>) {
+  return calls.mock.calls.map(([input, init]) => {
+    const req = typeof input === "object" && "url" in input ? (input as Request) : null;
+    const raw = (init as RequestInit | undefined)?.body;
+    return {
+      path: new URL(req ? req.url : String(input), "http://localhost").pathname,
+      method: (req?.method ?? (init as RequestInit | undefined)?.method ?? "GET").toUpperCase(),
+      body: typeof raw === "string" ? JSON.parse(raw) : undefined,
+    };
+  });
+}
+
+describe("the cleaning plan", () => {
+  it("says it's diagnosing until the plan arrives, then shows every fix ticked", async () => {
+    let answer: (v: unknown) => void = () => {};
+    mockApi({ "GET /api/v1/clean-plans/pln_1": () => new Promise((r) => { answer = r; }) });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(screen.getByRole("status")).toHaveTextContent("Diagnosing v2 of messy.csv…");
+    answer(PLAN);
+    expect(await screen.findByRole("heading", { name: "Cleaning plan · v2" })).toBeInTheDocument();
+    for (const name of ["amount: numbers stored as text", "age: missing", "fare: outliers", "age: outliers"]) {
+      expect(screen.getByRole("checkbox", { name })).toBeChecked();
+    }
+    // Leakage and ID columns are info rows, with no checkbox.
+    expect(screen.getByText("Looks like an ID column, so it is left as is")).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /customer_id/ })).toBeNull();
+    expect(screen.getByText("4 of 4 ticked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start cleaning (4)" })).toBeEnabled();
+    expect(screen.getByRole("radio", { name: /Ask me before each fix/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Show examples of amount: numbers stored as text" }));
+    expect(screen.getByText("$2,000")).toBeInTheDocument();
+  });
+
+  it("sends a fix's tick and a module's tick as ops", async () => {
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": PLAN,
+      "PATCH /api/v1/clean-plans/pln_1": (_: URL, init?: RequestInit) => {
+        const ops = JSON.parse(String(init?.body)).ops as { op: string }[];
+        const off = ops[0].op === "untick_module" ? ["pit_fare", "pit_age_out"] : ["pit_age"];
+        return { ...PLAN, items: PLAN.items.map((i) => (off.includes(i.id) ? { ...i, ticked: false } : i)) };
+      },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "age: missing" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "age: missing" })).not.toBeChecked());
+    expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{ op: "untick", item_id: "pit_age" }] });
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Outliers: tick all" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Outliers: tick all" }));
+    await waitFor(() => expect(sent(calls).filter((c) => c.method === "PATCH")).toHaveLength(2));
+    expect(sent(calls).filter((c) => c.method === "PATCH")[1].body).toEqual({ ops: [{ op: "untick_module", module: "outliers" }] });
+  });
+
+  it("can't start with nothing ticked, and starts the plan's job", async () => {
+    const none = { ...PLAN, items: PLAN.items.map((i) => ({ ...i, ticked: false })) };
+    mockApi({ "GET /api/v1/clean-plans/pln_1": none });
+    const { unmount } = renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(await screen.findByRole("button", { name: "Start cleaning (0)" })).toBeDisabled();
+    unmount();
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": PLAN,
+      "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Start cleaning (4)" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(true));
+    expect(sent(calls).find((c) => c.path.endsWith("/clean"))?.body).toEqual({
+      mode: "auto", scope: { kind: "all" }, include_user_edited: false, plan_id: "pln_1" });
+  });
+
+  it("says why it opened when the After upload setting opened it", async () => {
+    mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, source: "after_upload" } });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(await screen.findByText(/Opened because After upload is “Open the cleaning plan”/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
+  });
+
+  it("takes the CSV tab's right panel while a draft is open, and gives it back", async () => {
+    mockApi({
+      "GET /api/v1/datasets/ds_1": { ...DS, status: "ready", clean_plan_id: "pln_1" },
+      "GET /api/v1/clean-plans/pln_1": PLAN,
+    });
+    const { unmount } = renderAt(<CsvSidePanel datasetId="ds_1" />);
+    expect(await screen.findByRole("heading", { name: "Cleaning plan · v2" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Scope" })).toBeInTheDocument(); // the side layout has the scope
+    unmount();
+    mockApi({
+      "GET /api/v1/datasets/ds_1": { ...DS, status: "ready", clean_plan_id: null },
+      "GET /api/v1/datasets/ds_1/steps": [],
+      "GET /api/v1/jobs": [],
+    });
+    renderAt(<CsvSidePanel datasetId="ds_1" />);
+    expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
   });
 });

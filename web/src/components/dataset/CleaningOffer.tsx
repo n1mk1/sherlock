@@ -1,33 +1,10 @@
-// The cleaning offer (App Flow §4, UI brief §5.3): what profiling found, in plain words.
+// The cleaning offer (App Flow §4, UI brief §5.3): what profiling found, in plain words: the counts and
+// the three most severe issues. The full list is the cleaning plan's (Clean with AI).
 import { AlertTriangle, CircleDashed, Flag } from "lucide-react";
 import type { ReactNode } from "react";
 import { useDatacard } from "@/api/queries";
 import type { DataCard, Dataset, Issue } from "@/api/types";
-
-const LABELS: Record<string, string> = {
-  missing: "missing",
-  mixed_types: "mixed types",
-  sentinels: "placeholder values",
-  whitespace_case: "spacing or case variants",
-  near_duplicate_categories: "near-duplicate categories",
-  duplicates: "duplicate rows",
-  impossible_values: "impossible values",
-  numbers_as_text: "numbers stored as text",
-  ambiguous_dates: "ambiguous dates",
-  mojibake: "garbled characters",
-  unit_mixes: "mixed units",
-  cross_column: "values out of order",
-  functional_dependency: "broken dependencies",
-  id_candidates: "looks like an ID",
-  outliers: "outliers",
-  leakage: "records the outcome",
-};
-
-export function issueLine(i: Issue): string {
-  const what = LABELS[i.detector] ?? i.detector.replace(/_/g, " ");
-  if (i.detector === "leakage" || i.detector === "id_candidates") return `${i.column} ${what}`;
-  return `${i.count.toLocaleString()} ${what}${i.column ? ` in ${i.column}` : ""}`;
-}
+import { issueLine } from "./CleanPlanPanel";
 
 export function summaryLines(card: DataCard): Issue[] {
   return [...card.issues].sort((a, b) => b.severity - a.severity).slice(0, 3);
@@ -61,23 +38,6 @@ export function CleaningOffer({ dataset, actions }: { dataset: Dataset; actions?
           ))}
           {card && !card.issues.length && <li className="text-muted-foreground">Nothing that needs cleaning.</li>}
         </ul>
-        {card && card.issues.length > 3 && (
-          <details className="mt-4 text-[13px]">
-            <summary className="cursor-pointer text-accent">All {card.issues.length} issues</summary>
-            <table className="mt-2 w-full">
-              <tbody>
-                {card.issues.map((i) => (
-                  <tr key={i.id} className="border-b border-border">
-                    <td className="py-1.5 pr-3 font-mono">{i.column ?? "rows"}</td>
-                    <td className="py-1.5 pr-3">{LABELS[i.detector] ?? i.detector}</td>
-                    <td className="py-1.5 pr-3 text-right font-mono">{i.count.toLocaleString()}</td>
-                    <td className="py-1.5 text-muted-foreground">{i.proposal}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
-        )}
         {actions}
       </div>
     </div>

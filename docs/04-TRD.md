@@ -164,8 +164,8 @@ Toolchain, pinned on 2026-10-24 (exact versions are in `api/uv.lock`, `web/packa
   - **Day 5 additions (2026-10-25, Implementation Plan D5):**
     - **CSV grid.** `@glideapps/glide-data-grid` 6.0.3 with its peers `lodash`, `marked` and `react-responsive-carousel` (`src/components/csv/Grid.tsx`). Its cell editors open in the `<div id="portal">` in `index.html`. Canvas colors come from the tokens through `src/lib/tokens.ts`, which resolves each CSS variable to `rgba()` and re-resolves when the mode or accent changes.
     - **Pending edits.** `src/state/edits.ts` (Zustand) holds the buffer per dataset and mirrors it to local storage (Schema §5).
-    - **Popovers.** `@radix-ui/react-popover` 1.1.15 under `src/components/ui/popover.tsx` (Clean with AI).
-    - **Right panel.** On `/d/:id/csv` the right panel is the Changes panel (`src/components/csv/ChangesPanel.tsx`); elsewhere it stays the stories panel.
+    - **Popovers.** `@radix-ui/react-popover` 1.1.15 under `src/components/ui/popover.tsx` (Clean with AI). As of 2026-10-25 the wrapper is gone, since Clean with AI opens the cleaning plan in the right panel (App Flow §8.4); the package stays because the job tray (`src/components/shell/JobTray.tsx`) uses it directly.
+    - **Right panel.** On `/d/:id/csv` the right panel is the Changes panel (`src/components/csv/ChangesPanel.tsx`); elsewhere it stays the stories panel. Since 2026-10-25 it's the cleaning plan (`src/components/dataset/CleanPlanPanel.tsx`, side layout) while the dataset has a draft plan (`AppShell.tsx` `CsvSidePanel`).
     - **Day 6 additions (2026-10-25, Implementation Plan D6):** TipTap 3.32.0 (`@tiptap/react`, `core`, `pm`, `starter-kit`) for the card editor, loaded only when a card is edited (its chunk is about 400 kB); the custom charts in `src/components/charts/custom.tsx` use the `@visx/*` packages Bklit already brought.
     - **One dataset stream.** `useDatasetEvents` (`src/api/queries.ts`) opens `GET /datasets/{id}/events` once per open dataset in `DatasetPage`, for every tab. It replaces the dashboard's own stream and adds `version.created` (dataset, steps, data card, jobs), `card.updated` and the cascade events.
   - **Local run.** Vite on :5173 proxies `/api` and `/healthz` to uvicorn on :8000.
@@ -434,6 +434,7 @@ Implementation (2026-10-24, Implementation Plan D2.1):
 - **`GET /datasets/{id}`** sets `last_opened_at`.
 - **Status.** Since D2.5, `POST /datasets` and a new `POST /datasets/sample` import queue a `profile` job (§7.1 steps 3–6) in the same request, and the dataset leaves `profiling` when it ends: `offer`, or `failed` with the reason in `error`. Returning an existing sample queues nothing.
   - As built: the profile job's end follows the user's After upload setting (`jobs/profile.py::_after_upload`, App Flow §4): `ask` → `offer`; `always` → `cleaning`, with a whole-dataset clean queued; `never` → `building`, with the dashboard build queued. A sample cloned from the seed (below) is `ready` at once and queues no profile job.
+  - Since 2026-10-25 (owner's decision, PRD CLEAN-1, CLEAN-8a): `always` ("Open the cleaning plan") makes a draft cleaning plan from the card (`source: "after_upload"`, emitting `plan.updated`) and ends in `offer`, so the plan screen opens by itself; no clean job is queued, and nothing is cleaned without Start. `never` ("I'll clean it myself") queues the build with params `{ automatic: true }`, which its `Job` shows, so the building screen can say why the offer was skipped.
 - **`GET /datasets/{id}/datacard`** (2026-10-24, D2.2):
   - **Build and cache.** It builds the version's DataCard on the first request and stores it, with its `issues` rows and (for the current version) the `value_index`. Later requests return the stored card unchanged, issue IDs included.
   - **Version.** `?version=` must be ≥ 1; an unknown version is `404 not_found`.
@@ -450,6 +451,8 @@ Rename, delete and restore as implemented (2026-10-25, Implementation Plan D4.5)
 As built (2026-10-24), `Dataset` adds two counts for the library row and the version pill (UI/UX brief §5.0, §3.2):
 - `issue_count`: the issues on the current version's DataCard, or `null` until that card is built
 - `step_count`: the steps in the current version's effective chain
+
+Since 2026-10-25, `Dataset` also has `clean_plan_id`: the dataset's draft cleaning plan, or `null` (§4.4). While it's set, the offer screen shows the plan, and so does the CSV tab's right panel.
 
 `row_count` and `column_count` can be `null`. `cleaning_progress` is in the schema but is not filled yet: it is always `null` (`routers/datasets.py::to_dataset`). The library row takes the progress from the user stream's `job.progress` instead, so after a reload it shows 0 until the next progress event.
 
@@ -511,7 +514,11 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 
 | Method | Path | Body / Query | Response |
 |---|---|---|---|
-| POST | `/datasets/{id}/clean` | `{ mode: "auto"|"stepwise", scope: { kind: "all"|"selection"|"new_rows", selection_id? }, include_user_edited: bool }` | `Job` |
+| POST | `/datasets/{id}/clean` | `{ mode: "auto"|"stepwise", scope: { kind: "all"|"selection"|"new_rows", selection_id? }, include_user_edited: bool, plan_id? }` | `Job` |
+| POST | `/datasets/{id}/clean/plan` | — | `CleanPlan`: the draft for the current version, made (`201`) or the one already open (`200`), merged onto the current version when it's older |
+| GET | `/clean-plans/{pid}` | — | `CleanPlan` (a draft on an older version is merged first) |
+| PATCH | `/clean-plans/{pid}` | `{ ops: PlanOp[] }` | `CleanPlan` + `summary` |
+| DELETE | `/clean-plans/{pid}` | — | `204` (Discard) |
 | POST | `/datasets/{id}/use-as-is` | — | `Job` (dashboard build on the current version) |
 | GET | `/datasets/{id}/report` | `?job_id=` (default latest) | `CleaningReport` |
 | GET | `/datasets/{id}/steps` | — | `Step[]` newest first |
@@ -537,6 +544,22 @@ Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/
 - **Reject** marks a pending proposal `rejected`; it is always `204`.
 - **`GET /proposals/{id}`** answers the `Proposal`. Every proposal route resolves through its dataset (`owned("proposal")`).
 - **`Proposal` as built:** the §6.8 shape plus `result_step_id`; `edits` items carry `before`, and `scope` is set for `clean_selection`. The message that made it carries it as `proposal`, read fresh from the table, so the thread shows its current status.
+
+The cleaning plan as implemented (2026-10-25, owner's decision, PRD CLEAN-8a, `sherlock/cleaning/plan.py`, `sherlock/routers/cleaning.py`, Schema §2.21):
+- **`CleanPlan`**: `{ id: "pln_…", dataset_id, version, status: "draft"|"started"|"discarded", source: "user"|"after_upload", job_id, items: PlanItem[], created_at, updated_at, notes?: string[] }`. `notes` is set when this response merged the plan onto a newer version: what changed, in code-written sentences ("1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked.").
+- **`PlanItem`**: `{ id: "pit_…", source: "sherlock"|"you"|"chat", key: "<detector>|<column>"|null, detector, column, count, severity, action, instruction: null, examples (≤ 5), ticked, change, reason?, module }`.
+  - `module` is one of `yours` (Your steps), `types` (mixed_types, numbers_as_text, ambiguous_dates, unit_mixes), `missing` (missing, sentinels), `text` (whitespace_case, near_duplicate_categories, mojibake), `records` (duplicates, cross_column, functional_dependency, impossible_values), `outliers`, `other` (a detector not listed) and `kept` (Marked, not changed), in that display order.
+  - `kept` items are leakage and ID-candidate issues and any issue on a column in the card's `leakage_candidates` or `id_columns` (`plan.never_change`, the rule the Cleaner uses): `change: false`, never ticked, with the Cleaner's `reason`.
+  - `action` is the detector's `proposal`. Every number is the detector's: the plan makes no model call (Rule 2).
+  - One item per `key`: when two findings share one (exact and near duplicates are both `duplicates|None`), the item is the more severe, the one the Cleaner attempts.
+  - `source` is `"sherlock"` and `instruction` `null` on every item until CLEAN-8b (the user's own steps and rewritten fixes).
+- **`PlanOp`**: `{ op: "tick"|"untick", item_id }` or `{ op: "tick_module"|"untick_module", module }` (a module's changeable items). `plan.apply_ops` is the one place a plan changes: all or nothing, `422` for an unknown item or module, ticking a `kept` item, or an unknown op. `summary` is written by code ("Unticked 2 fixes: outliers in fare, outliers in age."; "The plan already said that, so nothing changed.").
+- **Making one.** `POST /clean/plan` is `409` while the dataset is `profiling`, `cleaning`, `building` or `failed`. A dataset has at most one draft. The items are `plan.diagnose(card)` of the current version's DataCard (`profile_service.get_or_build`).
+- **Stale plans.** A draft whose `version` isn't current is merged by `plan.merge` on every read, on PATCH (first) and on make: ticks kept by key, keys no longer on the card dropped, new keys ticked, the item IDs of kept keys unchanged. It's saved with the new version.
+- **`PATCH`** on a plan that isn't a draft is `409`. Every change (make, PATCH, start, discard, merge on make) emits `plan.updated` `{ plan_id }` on the dataset's stream (§5.1).
+- **`POST /clean` with `plan_id`.** The plan must be this dataset's (`404` otherwise) and a draft (`409` "This plan was already started."). If its version is stale, the answer is `409` with the merged plan in `error.plan`, so the user sees what changed before starting. With nothing ticked it's `422`. Otherwise the job's params carry `plan: { id, version, items }`, a frozen copy, and the plan becomes `started` with its `job_id`. Without `plan_id` everything runs as before (chat's `clean_selection` and the "Clean them" toast for new rows don't use plans).
+- **`POST /use-as-is`** ("Clean it myself") discards a draft plan.
+- **Ownership.** `/clean-plans/{pid}` routes resolve through the plan's dataset (`owned("clean_plan")`, §3.1).
 
 Cleaning API as implemented (2026-10-24, Implementation Plan D3.2 and D3.4, `sherlock/routers/cleaning.py`):
 - **`POST /clean`.**
@@ -795,7 +818,7 @@ Chat API as implemented (2026-10-25, Implementation Plan D4.3, `sherlock/routers
 | POST | `/jobs/{jid}/retry` | `Job` (a new job with the same params) |
 | GET | `/jobs/{jid}/log` | `{ entries }`: the job's `job.log` events from `job_events` (kept 24 h), so a returning user sees the full cleaning log |
 
-`Job`: `{ id, dataset_id, kind: "profile"|"clean"|"build_dashboard"|"stories"|"ml_run"|"cascade"|"undo"|"export_notebook"|"purge", status: "queued"|"running"|"done"|"failed"|"cancelled", progress: { step, of, label, pct }, created_at, started_at?, finished_at?, error?, result?: object }`
+`Job`: `{ id, dataset_id, kind: "profile"|"clean"|"build_dashboard"|"stories"|"ml_run"|"cascade"|"undo"|"export_notebook"|"purge", status: "queued"|"running"|"done"|"failed"|"cancelled", progress: { step, of, label, pct }, created_at, started_at?, finished_at?, error?, result?: object }`. Since 2026-10-25 it adds `automatic: bool`: true when the After upload setting queued the job rather than a click (its params' `automatic`, Schema §2.14).
 
 Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`):
 - **`GET /jobs`.** `dataset_id` is optional. With it, the dataset must be owned (`404` otherwise) and the list is its jobs. Without it, the list is all of the user's jobs, leaving out those of deleted datasets. Newest first, at most 200.
@@ -832,6 +855,7 @@ Implementation (2026-10-24, Implementation Plan D2.5, `sherlock/routers/jobs.py`
 | `cascade.done` | `{ version, counts }` | cascade ends |
 | `layout.updated` | `Layout` | another tab saved the layout. As built, the data is `{ layout }` (the saved `Layout`), and it goes to every open stream of the dataset, the saving tab's included |
 | `canvas.updated` | `{ etag }` | another tab saved the canvas. As built, also when the AI changes the canvas (`canvas.mutate`: a synthesis, an answer added to the Flow) |
+| `plan.updated` | `{ plan_id }` | a cleaning plan was made, changed, merged, started or discarded (2026-10-25, §4.4). The web app refetches the plan and the dataset (its `clean_plan_id`) |
 
 As built for stories and the cascade (2026-10-25, Implementation Plan D6.1–D6.2):
 - **`card.updated`** carries the whole `Card` as `GET /cards/{cid}` returns it (§4.6 as built: with `facts` and `related`). It is written to `job_events` under the job when a `stories` job or a cascade sends it, and with `job_id` NULL when a card route, a synthesis or an answer added to the Flow sends it (§5.2: every event is a row, so all of them replay).
@@ -1344,7 +1368,8 @@ The loop as built (2026-10-24, Implementation Plan D3.2, `sherlock/cleaning/loop
   - `done` when the queue is empty
 
   A whole-dataset clean that ends any of these ways, Stop included, sets the dataset to `building` and queues `build_dashboard`, since committed steps stay. If the model is unavailable before any step committed, the job fails and the dataset goes back to `offer` with `error` "Cleaning stopped: <reason>" (App Flow §5).
-- **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys (`handled`), `skipped` and `hand_edited_skipped` (at most 500), plus `max_steps` and `max_seconds` (the report's `budget`) and `step_ids`, written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
+- **The plan** (2026-10-25, PRD CLEAN-8a, §4.4). A run started from a cleaning plan reads its frozen items from `params.plan`. The keys of its unticked fixes (`plan.skip_keys`) are skipped like leakage, with no model call and no budget used: "You left this out of the plan", log detail "not in your plan". Every other issue runs as before, including issues a fix exposes mid-run that the plan didn't list. The leakage and ID rule lives in `cleaning/plan.py` (`never_change`), shared by the plan and the queue, with `key`, `NEVER_CHANGE` and `SKIP_TEXT`.
+- **State.** `jobs.state_json` holds the run's `from_version`, `ended_by`, `waited_for_model_s`, `attempted`, attempted keys (`handled`), `skipped` and `hand_edited_skipped` (at most 500), plus `max_steps` and `max_seconds` (the report's `budget`), `step_ids` and `plan_id` (the plan it started from, or null), written after every issue. The report is assembled from it, from the steps with the job's `job_id`, and from the `issues` table.
 - **Prompts** live in `sherlock/cleaning/prompts/*.txt`: one system message (the rules) and the diagnose, propose and critic templates, plus `helpers.txt`, the helper list the propose template includes. Values sit inside `<data>` blocks, and samples are capped at 20 values of 200 characters (the issue's examples at 10). The diagnose context's earlier decisions are those of the latest ten cleaner steps, at most ten. The prompts name nothing from the sample dataset (CLAUDE.md Rule 4), and a test checks them against `titanic3.csv`'s columns: the propose prompt's example label was "Median by title in name" until the Day 3 review (2026-10-25), and live runs proposed exactly that label. It's now "Median by <group column>".
   - **One data block per template** (2026-10-25, from the Day 2 review). Everything that comes from the file or from an earlier model reply sits inside the template's one `<data>` block. That covers column names, the column list and dtypes, earlier decisions, the diagnosis, approaches, the fix's label and code, and the effect. Every such value has `</data>` defused (`_safe` in `cleaning/loop.py`, as `data_block` does), so a value can't close the block. A test checks each template's placeholders.
 - **Tests** use recorded replies (`api/tests/fixtures/llm/cleaner_messy.json`) through `LLM_MOCK`.

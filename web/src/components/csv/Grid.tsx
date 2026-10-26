@@ -62,9 +62,10 @@ export const Grid = forwardRef<GridHandle, {
   card: ColumnCard[];
   buffer: Buffer | undefined;
   onEdit: (cell: { rowId: number | null; tempId: string | null; column: string; value: string; old: unknown }) => void;
+  readOnly?: boolean; // a job owns the data (cleaning or building): no cell can be edited
   onSelection: (info: GridSelectionInfo) => void;
   onLoaded: (info: { total: number; columns: Column[] }) => void;
-}>(function Grid({ datasetId, version, sort, onSort, selectionId, matches, card, buffer, onEdit, onSelection, onLoaded }, ref) {
+}>(function Grid({ datasetId, version, sort, onSort, selectionId, matches, card, buffer, onEdit, readOnly = false, onSelection, onLoaded }, ref) {
   const t = useTokens();
   const editor = useRef<DataEditorRef>(null);
   const pages = useRef(new Map<number, Row[]>());
@@ -160,7 +161,7 @@ export const Grid = forwardRef<GridHandle, {
     }
     const type = types[name] ?? "VARCHAR";
     const numeric = isNumericType(type);
-    const base = { allowOverlay: true, contentAlign: numeric ? "right" as const : "left" as const,
+    const base = { allowOverlay: !readOnly, readonly: readOnly, contentAlign: numeric ? "right" as const : "left" as const,
                    themeOverride: numeric || type === "BOOLEAN" ? mono : undefined };
     if (at.kind === "new") {
       const v = at.cells[name] ?? "";
@@ -171,10 +172,10 @@ export const Grid = forwardRef<GridHandle, {
     const mark = pending ? "unsaved" : at.row.marks[name];
     const bg = mark === "unsaved" ? t.unsaved : mark === "changed" ? t.changed : matches.has(`${at.row._row_id}:${name}`) ? t.accentSoft : undefined;
     return {
-      kind: GridCellKind.Text, data: v, displayData: v, ...base, readonly: deleted.has(at.row._row_id),
+      kind: GridCellKind.Text, data: v, displayData: v, ...base, readonly: readOnly || deleted.has(at.row._row_id),
       themeOverride: bg ? { ...base.themeOverride, bgCell: bg } : base.themeOverride,
     };
-  }, [rowAt, gridCols, types, buffer, matches, deleted, t, generation]);
+  }, [rowAt, gridCols, types, buffer, matches, deleted, t, generation, readOnly]);
 
   const drawCell = useCallback<DrawCellCallback>((args, drawContent) => {
     drawContent();
@@ -252,10 +253,10 @@ export const Grid = forwardRef<GridHandle, {
   const onCellEdited = useCallback(([col, row]: Item, value: EditableGridCell) => {
     const at = rowAt(row);
     const name = gridCols[col]?.id as string;
-    if (!at || name === ROW_COL || value.kind !== GridCellKind.Text) return;
+    if (!at || readOnly || name === ROW_COL || value.kind !== GridCellKind.Text) return;
     if (at.kind === "new") onEdit({ rowId: null, tempId: at.temp, column: name, value: value.data, old: null });
     else onEdit({ rowId: at.row._row_id, tempId: null, column: name, value: value.data, old: at.row.cells[name] });
-  }, [rowAt, gridCols, onEdit]);
+  }, [rowAt, gridCols, onEdit, readOnly]);
 
   const onSelectionChange = (s: GridSelection) => {
     setSel(s);

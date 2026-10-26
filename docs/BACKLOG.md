@@ -116,7 +116,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - `{issue_line}` sits outside the `<data>` block, unescaped, in all three cleaning prompts, and it carries column names (TRD §3.5 prompt hygiene; `cleaning/prompts/diagnose.txt`, `cleaning/loop.py`). The prompt test misses it (`test_cleaning_units.py`). Move it inside `<data>` and add it to the test.
 - The `flag_rows` helper has no effect: its docstring says the step gets flagged, but nothing reads the flags it records (TRD §7.2). Force the gate to `flag`, or drop the helper.
 - The critic prompt says "Effect on a sample", but the effect it's given comes from the full data (`cleaning/prompts/critic.txt`).
-- While cleaning runs, the CSV grid stays editable and shows no "Cleaning in progress" banner (App Flow §5; `DatasetPage.tsx`, `Grid.tsx`). Make cells read-only while the status is `cleaning`, and show the banner.
+- Exact and near duplicate rows share one issue key, `duplicates|None` (`detectors/duplicates.py`), so the cleaning plan shows, and the Cleaner attempts, only the more severe of the two; the other is never tried or listed (App Flow §4.1, TRD §4.4; `cleaning/plan.py`, `loop.py` `handled`). Give near duplicates a key of their own.
 - Chat answers given during cleaning don't say which version or step they read ("as of step 5", App Flow §5).
 - The CSV tab's Clean with AI has no dot before the first clean, and neither Clean with AI nor the cleaning report offers to include hand-edited cells ("Include these next time") (App Flow §4, §8.4; PRD CLEAN-8).
 

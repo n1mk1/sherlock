@@ -133,6 +133,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clean-plans/{pid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Plan
+         * @description The plan; a draft made on an older version is merged onto the current one first.
+         */
+        get: operations["get_plan_api_v1_clean_plans__pid__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Discard Plan
+         * @description Discard a draft; the offer (or the Changes panel) shows again.
+         */
+        delete: operations["discard_plan_api_v1_clean_plans__pid__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Plan
+         * @description Apply ops, all or nothing. The answer is the plan with a code-written `summary` of the change.
+         */
+        patch: operations["patch_plan_api_v1_clean_plans__pid__patch"];
+        trace?: never;
+    };
     "/api/v1/datasets": {
         parameters: {
             query?: never;
@@ -291,9 +319,32 @@ export interface paths {
         put?: never;
         /**
          * Start Clean
-         * @description Queue a clean job on the current version. Step-by-step mode is P1 (PRD CLEAN-10).
+         * @description Queue a clean job on the current version. With `plan_id`, the job runs that draft plan: its
+         *     items are frozen into the job's params and the plan becomes `started`. Step-by-step mode is P1
+         *     (PRD CLEAN-10).
          */
         post: operations["start_clean_api_v1_datasets__dataset_id__clean_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/clean/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Plan
+         * @description Get or create the draft plan for the current version (merged onto it when it's older).
+         *     Answers 201 for a new plan, 200 for the existing draft.
+         */
+        post: operations["create_plan_api_v1_datasets__dataset_id__clean_plan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -699,7 +750,8 @@ export interface paths {
         put?: never;
         /**
          * Use As Is
-         * @description Skip cleaning: build the dashboard on the current (typed) version.
+         * @description Skip cleaning ("Clean it myself"): build the dashboard on the current (typed) version. A draft
+         *     cleaning plan is discarded.
          */
         post: operations["use_as_is_api_v1_datasets__dataset_id__use_as_is_post"];
         delete?: never;
@@ -1366,6 +1418,8 @@ export interface components {
              * @enum {string}
              */
             mode: "auto" | "stepwise";
+            /** Plan Id */
+            plan_id?: string | null;
             scope?: components["schemas"]["CleanScope"];
         };
         /** CleanScope */
@@ -1392,6 +1446,8 @@ export interface components {
         };
         /** Dataset */
         Dataset: {
+            /** Clean Plan Id */
+            clean_plan_id?: string | null;
             cleaning_progress?: components["schemas"]["CleaningProgress"] | null;
             /** Column Count */
             column_count: number | null;
@@ -1530,6 +1586,23 @@ export interface components {
             order: string;
             /** Up To Step */
             up_to_step?: number | null;
+        };
+        /** PlanOp */
+        PlanOp: {
+            /** Item Id */
+            item_id?: string | null;
+            /** Module */
+            module?: string | null;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "tick" | "untick" | "tick_module" | "untick_module";
+        };
+        /** PlanPatch */
+        PlanPatch: {
+            /** Ops */
+            ops: components["schemas"]["PlanOp"][];
         };
         /**
          * Settings
@@ -1898,6 +1971,81 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_plan_api_v1_clean_plans__pid__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    discard_plan_api_v1_clean_plans__pid__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_plan_api_v1_clean_plans__pid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanPatch"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2314,6 +2462,39 @@ export interface operations {
                 "application/json": components["schemas"]["CleanRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_plan_api_v1_datasets__dataset_id__clean_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             201: {

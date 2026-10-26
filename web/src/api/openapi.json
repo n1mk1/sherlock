@@ -246,6 +246,17 @@
       "title": "Mode",
       "type": "string"
      },
+     "plan_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Plan Id"
+     },
      "scope": {
       "$ref": "#/components/schemas/CleanScope"
      }
@@ -320,6 +331,17 @@
    },
    "Dataset": {
     "properties": {
+     "clean_plan_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Clean Plan Id"
+     },
      "cleaning_progress": {
       "anyOf": [
        {
@@ -747,6 +769,67 @@
      }
     },
     "title": "NotebookOptions",
+    "type": "object"
+   },
+   "PlanOp": {
+    "additionalProperties": false,
+    "properties": {
+     "item_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Item Id"
+     },
+     "module": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Module"
+     },
+     "op": {
+      "enum": [
+       "tick",
+       "untick",
+       "tick_module",
+       "untick_module"
+      ],
+      "title": "Op",
+      "type": "string"
+     }
+    },
+    "required": [
+     "op"
+    ],
+    "title": "PlanOp",
+    "type": "object"
+   },
+   "PlanPatch": {
+    "additionalProperties": false,
+    "properties": {
+     "ops": {
+      "items": {
+       "$ref": "#/components/schemas/PlanOp"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Ops",
+      "type": "array"
+     }
+    },
+    "required": [
+     "ops"
+    ],
+    "title": "PlanPatch",
     "type": "object"
    },
    "Settings": {
@@ -1319,6 +1402,85 @@
     ]
    }
   },
+  "/api/v1/clean-plans/{pid}": {
+   "delete": {
+    "description": "Discard a draft; the offer (or the Changes panel) shows again.",
+    "operationId": "discard_plan_api_v1_clean_plans__pid__delete",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Discard Plan",
+    "tags": [
+     "cleaning"
+    ]
+   },
+   "get": {
+    "description": "The plan; a draft made on an older version is merged onto the current one first.",
+    "operationId": "get_plan_api_v1_clean_plans__pid__get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Plan Api V1 Clean Plans  Pid  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "Get Plan",
+    "tags": [
+     "cleaning"
+    ]
+   },
+   "patch": {
+    "description": "Apply ops, all or nothing. The answer is the plan with a code-written `summary` of the change.",
+    "operationId": "patch_plan_api_v1_clean_plans__pid__patch",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PlanPatch"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Patch Plan Api V1 Clean Plans  Pid  Patch",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Patch Plan",
+    "tags": [
+     "cleaning"
+    ]
+   }
+  },
   "/api/v1/datasets": {
    "get": {
     "operationId": "list_datasets_api_v1_datasets_get",
@@ -1882,7 +2044,7 @@
   },
   "/api/v1/datasets/{dataset_id}/clean": {
    "post": {
-    "description": "Queue a clean job on the current version. Step-by-step mode is P1 (PRD CLEAN-10).",
+    "description": "Queue a clean job on the current version. With `plan_id`, the job runs that draft plan: its\nitems are frozen into the job's params and the plan becomes `started`. Step-by-step mode is P1\n(PRD CLEAN-10).",
     "operationId": "start_clean_api_v1_datasets__dataset_id__clean_post",
     "parameters": [
      {
@@ -1930,6 +2092,51 @@
      }
     },
     "summary": "Start Clean",
+    "tags": [
+     "cleaning"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/clean/plan": {
+   "post": {
+    "description": "Get or create the draft plan for the current version (merged onto it when it's older).\nAnswers 201 for a new plan, 200 for the existing draft.",
+    "operationId": "create_plan_api_v1_datasets__dataset_id__clean_plan_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "201": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Plan Api V1 Datasets  Dataset Id  Clean Plan Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Plan",
     "tags": [
      "cleaning"
     ]
@@ -3270,7 +3477,7 @@
   },
   "/api/v1/datasets/{dataset_id}/use-as-is": {
    "post": {
-    "description": "Skip cleaning: build the dashboard on the current (typed) version.",
+    "description": "Skip cleaning (\"Clean it myself\"): build the dashboard on the current (typed) version. A draft\ncleaning plan is discarded.",
     "operationId": "use_as_is_api_v1_datasets__dataset_id__use_as_is_post",
     "parameters": [
      {

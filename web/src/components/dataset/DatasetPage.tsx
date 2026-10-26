@@ -1,5 +1,6 @@
 // A dataset route (App Flow §1): `/d/:id/:tab`. Until the dataset is ready, the centre shows the
 // status screen for where it is (profiling, offer, cleaning, building, failed).
+import { useIsMutating } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import { DatasetMenu } from "@/components/shell/DatasetMenu";
 import { ErrorBoundary } from "@/components/shell/ErrorBoundary";
 import { ExportDialog } from "@/components/shell/ExportDialog";
 import { JobTray } from "@/components/shell/JobTray";
+import { CleanPlanPanel } from "./CleanPlanPanel";
 import { CleaningOffer } from "./CleaningOffer";
 import { CleaningProgress } from "./CleaningProgress";
 import { OfferActions } from "./OfferActions";
@@ -173,8 +175,15 @@ function StatusScreen({ dataset }: { dataset: Dataset }) {
     case "building":
       return <BuildingScreen dataset={dataset} />;
     default:
-      return <CleaningOffer dataset={dataset} actions={<OfferActions dataset={dataset} />} />;
+      return <OfferOrPlan dataset={dataset} />;
   }
+}
+
+/** The offer, or the cleaning plan once Clean with AI made one (App Flow §4). */
+function OfferOrPlan({ dataset }: { dataset: Dataset }) {
+  const creating = useIsMutating({ mutationKey: ["create-plan", dataset.id] }) > 0;
+  if (dataset.clean_plan_id || creating) return <CleanPlanPanel dataset={dataset} layout="centre" />;
+  return <CleaningOffer dataset={dataset} actions={<OfferActions dataset={dataset} />} />;
 }
 
 function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {

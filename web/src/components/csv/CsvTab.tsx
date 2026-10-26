@@ -1,18 +1,16 @@
 // The CSV tab (App Flow §8, UI/UX brief §5.6), within cut 5: the paged grid with marks, cell edits,
-// add and delete row, sort, find, Save (with conflicts) and Discard, Clean with AI, Restore for
-// quarantined rows, and the Download menu. Toolbar 40px, grid, status bar 28px.
+// add and delete row, sort, find, Save (with conflicts) and Discard, Clean with AI (it opens the cleaning
+// plan in the right panel), Restore for quarantined rows, and the Download menu. Toolbar 40px, grid,
+// status bar 28px. While a job owns the data (cleaning or building) the grid is read-only, with a banner.
 import { BookOpen, Download, Plus, RotateCcw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { busyReason, find, makeSelection, useCleanScoped, type Sort } from "@/api/csv";
-import { useDatacard } from "@/api/queries";
+import { busyReason, find, makeSelection, type Sort } from "@/api/csv";
+import { useCreatePlan, useDatacard } from "@/api/queries";
 import type { Column, Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from "@/components/ui/menu";
-import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Segmented } from "@/components/ui/segmented";
-import { cn } from "@/lib/utils";
 import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { Grid, type GridHandle, type GridSelectionInfo } from "./Grid";
@@ -79,22 +77,26 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   const matches = useMemo(() => found?.matches ?? new Set<string>(), [found]);
   const restoring = selection.quarantined.length;
   const marked = selection.rowIds.length + selection.newRows.length;
+  // A job that owns the data: editing waits for it (App Flow §8).
+  const locked = dataset.status === "cleaning" || dataset.status === "building";
+  const lockedWhy = dataset.status === "cleaning" ? "Cleaning in progress" : "The dashboard is being built";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-3" role="toolbar" aria-label="CSV tools">
-        <Button size="sm" variant="ghost" onClick={addRow}><Plus /> Add row</Button>
-        <Button size="sm" variant="ghost" disabled={marked === 0} onClick={deleteRows}
-          title={marked === 0 ? "Select cells in the rows to delete" : undefined}>
+        <Button size="sm" variant="ghost" disabled={locked} title={locked ? lockedWhy : undefined} onClick={addRow}><Plus /> Add row</Button>
+        <Button size="sm" variant="ghost" disabled={marked === 0 || locked} onClick={deleteRows}
+          title={locked ? lockedWhy : marked === 0 ? "Select cells in the rows to delete" : undefined}>
           <Trash2 /> {marked > 1 ? `Delete ${marked} rows` : "Delete row"}
         </Button>
         {restoring > 0 && (
-          <Button size="sm" variant="ghost" onClick={restoreRows} title="Bring quarantined rows back into charts, models and stories">
+          <Button size="sm" variant="ghost" disabled={locked} onClick={restoreRows}
+            title={locked ? lockedWhy : "Bring quarantined rows back into charts, models and stories"}>
             <RotateCcw /> Restore {restoring > 1 ? `${restoring} rows` : "row"}
           </Button>
         )}
         <Button size="sm" variant="ghost" aria-pressed={findOpen} onClick={() => setFindOpen((o) => !o)}><Search /> Find</Button>
-        <CleanPopover dataset={dataset} selection={selection} />
+        <CleanButton dataset={dataset} />
         <MenuRoot>
           <MenuTrigger asChild>
             <Button size="sm" variant="ghost"><Download /> Download</Button>
@@ -106,6 +108,13 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         </MenuRoot>
         <Legend />
       </div>
+      {locked && (
+        <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-4 py-1.5 text-[13px]">
+          {dataset.status === "cleaning"
+            ? "Cleaning in progress · editing resumes when it finishes"
+            : "Building your dashboard · editing opens when it finishes"}
+        </div>
+      )}
       {(findOpen || found) && (
         <FindBar initial={found?.q ?? ""} found={found} onFind={runFind} onClear={clearFind} />
       )}
@@ -127,11 +136,13 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         matches={matches}
         card={card.data?.version === version ? card.data.columns : card.data?.columns ?? []}
         buffer={buffer}
+        readOnly={locked}
         onEdit={onEdit}
         onSelection={(s) => {
           setSelection(s);
-          // The selected cells are the chat's context on this tab ("set these to 0", "clean these rows").
-          useUi.getState().setCsvSelection(s.rowIds.length ? { row_ids: s.rowIds.slice(0, 500), columns: s.columns } : null);
+          // The selected cells are the chat's context on this tab ("set these to 0", "clean these rows") and
+          // the cleaning plan's selection scope; the chat sends at most 500 of the rows.
+          useUi.getState().setCsvSelection(s.rowIds.length ? { row_ids: s.rowIds, columns: s.columns } : null);
         }}
         onLoaded={setShape}
       />
@@ -202,69 +213,18 @@ function StatusBar({ total, pending, selection, sort }: { total: number; pending
   );
 }
 
-function CleanPopover({ dataset, selection }: { dataset: Dataset; selection: GridSelectionInfo }) {
-  const pending = pendingCount(useEdits((s) => s.buffers[dataset.id]));
-  const discard = useEdits((s) => s.discard);
-  const [scope, setScope] = useState<"all" | "selection" | "new_rows">("all");
-  const clean = useCleanScoped(dataset.id);
+/** Clean with AI opens the cleaning plan in the right panel (App Flow §8.4); a draft already open stays. */
+function CleanButton({ dataset }: { dataset: Dataset }) {
+  const create = useCreatePlan(dataset.id);
+  const setRightOpen = useUi((s) => s.setRightOpen);
   const busy = busyReason(dataset);
-  const start = async () => {
-    try {
-      if (scope === "selection") {
-        const sel = await makeSelection(dataset.id, selection.rowIds, "Clean with AI");
-        await clean.mutateAsync({ kind: "selection", selection_id: sel.selection_id });
-      } else {
-        await clean.mutateAsync({ kind: scope });
-      }
-      toast("Cleaning started. Its steps appear in Changes as they commit.");
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button size="sm" variant="secondary" disabled={!!busy} title={busy ?? undefined}><Sparkles /> Clean with AI</Button>
-      </PopoverTrigger>
-      <PopoverContent>
-        <div className="flex flex-col gap-3">
-          <p className="text-[14px] font-semibold">Clean with AI</p>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Scope</span>
-            {([
-              ["all", "Whole dataset"],
-              ["selection", `Current selection (${selection.rowIds.length.toLocaleString()} rows)`],
-              ["new_rows", "Rows added since the last clean"],
-            ] as const).map(([v, label]) => (
-              <label key={v} className={cn("flex items-center gap-2", v === "selection" && selection.rowIds.length === 0 && "opacity-40")}>
-                <input type="radio" name="clean-scope" checked={scope === v} disabled={v === "selection" && selection.rowIds.length === 0}
-                  onChange={() => setScope(v)} />
-                {label}
-              </label>
-            ))}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</span>
-            <Segmented label="Mode" value="auto" options={[{ value: "auto", label: "Auto" }]} onChange={() => undefined} />
-            <span className="text-[12px] text-muted-foreground">Step by step comes later.</span>
-          </div>
-          {pending > 0 && (
-            <div className="rounded-md bg-muted p-2.5 text-[12px]">
-              Save or discard your {pending} unsaved {pending === 1 ? "change" : "changes"} first.
-              <div className="mt-2 flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => discard(dataset.id)}>Discard</Button>
-              </div>
-            </div>
-          )}
-          <p className="text-[12px] text-muted-foreground">Cells you edited by hand are left alone and listed in the report.</p>
-          <div className="flex justify-end gap-2">
-            <PopoverClose asChild><Button size="sm" variant="ghost">Cancel</Button></PopoverClose>
-            <PopoverClose asChild>
-              <Button size="sm" variant="primary" disabled={pending > 0 || clean.isPending} onClick={start}>Start</Button>
-            </PopoverClose>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
+    <Button size="sm" variant="secondary" disabled={!!busy} title={busy ?? undefined} loading={create.isPending}
+      onClick={() => {
+        setRightOpen(true); // on a narrow window the right panel is a slide-over
+        create.mutate(undefined, { onError: (e) => toast.error((e as Error).message) });
+      }}>
+      <Sparkles /> Clean with AI
+    </Button>
   );
 }

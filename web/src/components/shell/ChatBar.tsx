@@ -113,7 +113,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         ...(tab === "dashboard" && filter ? { global_filter: JSON.parse(filterParam(filter)) } : {}),
         ...(tab === "dashboard" && focused ? { focused_widget_id: focused.id } : {}),
         ...(tab === "flow" ? { selected_card_ids: selectedCards } : {}),
-        ...(tab === "csv" && csvSelection ? { selected_cells: csvSelection } : {}),
+        ...(tab === "csv" && csvSelection ? { selected_cells: { ...csvSelection, row_ids: csvSelection.row_ids.slice(0, 500) } } : {}),
       },
       ...extra,
     };
