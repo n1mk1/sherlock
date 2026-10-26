@@ -11,7 +11,7 @@ import math
 import re
 
 from sherlock.agent.answerers import Result
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Answer, ChipRun, LabelRun, TextRun
 from sherlock.llm.text import has_digits
 
@@ -209,7 +209,7 @@ def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Resul
 
     messages = [{"role": "system", "content": prompts.SYSTEM},
                 {"role": "user", "content": prompts.COMPOSE.format(
-                    message=data_block(question), results="\n\n".join(r.for_prompt() for r in results))}]
+                    message=fence(question), results=fence("\n\n".join(r.for_prompt() for r in results)))}]
     try:
         # `medium`, not `small`: live, Nano strung chips together without words (TRD §8.1 step 6).
         a = llm.structured("medium", messages, Answer, purpose="compose", scope=scope, validate=check).value

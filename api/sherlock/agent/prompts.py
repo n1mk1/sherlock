@@ -10,21 +10,21 @@ Refer to yourself as "I"."""
 
 # One line per intent; the route prompt lists only the intents the current tab exposes (TRD §8.2).
 INTENT_LINES = {
-    "ask_data": "ask_data: a question answered by querying the data: counts, totals, averages, rates, breakdowns by a category, comparisons, top values, trends, and follow-ups like \"and for women only?\" or \"what about first class?\"",
-    "find_rows": "find_rows: show or find particular rows (\"which passengers paid over 500?\", \"show me the rows with missing age\")",
-    "create_widget": "create_widget: only when the user asks to add or put something on the dashboard (\"add a chart of fare by port to the dashboard\", \"pin a KPI of revenue\"). \"Show it as a chart\" or \"plot that\" without the dashboard is ask_data.",
-    "update_widget": "update_widget: change an existing widget (\"make this a line chart\", \"only show first class\")",
+    "ask_data": "ask_data: a question answered by querying the data: counts, totals, averages, rates, breakdowns by a category, comparisons, top values, trends, and follow-ups like \"and only for <a value>?\" or \"what about <another value>?\"",
+    "find_rows": "find_rows: show or find particular rows (\"which <records> have <a column> over <an amount>?\", \"show me the rows with missing <a column>\")",
+    "create_widget": "create_widget: only when the user asks to add or put something on the dashboard (\"add a chart of <a measure> by <a group> to the dashboard\", \"pin a KPI of <a measure>\"). \"Show it as a chart\" or \"plot that\" without the dashboard is ask_data.",
+    "update_widget": "update_widget: change an existing widget (\"make this a line chart\", \"only show <a value>\")",
     "explain_widget": "explain_widget: how a dashboard widget was made, where its numbers come from",
-    "ask_history": "ask_history: what cleaning or edits changed, and why (\"what did you do to age?\")",
-    "ask_why": "ask_why: what drives, affects, predicts or explains a column (\"what drives survival?\", \"which factors matter for churn?\")",
-    "ask_stats": "ask_stats: only when the user asks whether a difference or a relationship between columns is statistically significant, for a p-value or a named test (\"is fare significantly different between men and women?\"). Questions about a model's accuracy are ask_model.",
-    "ask_model": "ask_model: questions about the model of an analysis that already ran (\"how accurate is the model?\", \"why was boat left out?\", \"what did it compare against?\", \"who did the model get wrong?\")",
-    "ask_meaning": "ask_meaning: what a column or a code in it means (\"what does pclass mean?\", \"what is sibsp?\")",
+    "ask_history": "ask_history: what cleaning or edits changed, and why (\"what did you do to <a column>?\")",
+    "ask_why": "ask_why: what drives, affects, predicts or explains a column (\"what drives <an outcome>?\", \"which factors matter for <an outcome>?\")",
+    "ask_stats": "ask_stats: only when the user asks whether a difference or a relationship between columns is statistically significant, for a p-value or a named test (\"is <a measure> significantly different between <two groups>?\"). Questions about a model's accuracy are ask_model.",
+    "ask_model": "ask_model: questions about the model of an analysis that already ran (\"how accurate is the model?\", \"why was <a column> left out?\", \"what did it compare against?\", \"who did the model get wrong?\")",
+    "ask_meaning": "ask_meaning: what a column or a code in it means (\"what does <a column> mean?\", \"what is <a code>?\")",
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I export a notebook?\")",
-    "edit_cells": "edit_cells: change values in particular cells or rows (\"set the fare of row 12 to 30\", \"make these empty\", \"fix the typo in Smith's name\")",
+    "edit_cells": "edit_cells: change values in particular cells or rows (\"set <a column> of row <n> to <a value>\", \"make these empty\", \"fix the typo in <a value>\")",
     "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file (\"clean these rows\", \"clean up the selection\")",
-    "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave cabin alone\", \"also trim spaces in name\", \"fill age by class instead\")",
-    "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about class?\", \"make sense of this\")",
+    "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave <a column> alone\", \"also trim spaces in <a column>\", \"fill <a column> by <a group> instead\")",
+    "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about <a column>?\", \"make sense of this\")",
 }
 
 ROUTE = """Classify the user's latest message about this file.
@@ -40,7 +40,7 @@ List the column names, category values, widget titles or card names the message 
 Message:
 {message}"""
 
-READING = """- People use their own words, not column names. Match each word to a column by the column's name and its example values: a column whose values fit the word's meaning beats one whose name merely looks similar. Write your mapping in reading (for example "class → pclass")."""
+READING = """- People use their own words, not column names. Match each word to a column by the column's name and its example values: a column whose values fit the word's meaning beats one whose name merely looks similar. Write your mapping in reading (for example "<their word> → <column>")."""
 
 SQL = """Write one DuckDB query over table t that answers the question.
 
@@ -50,7 +50,7 @@ Rules:
 - Quote column names with double quotes when they contain anything but lowercase letters, digits and underscores.
 - Give every computed column a short alias. Rates and shares are fractions between 0 and 1 (AVG of a 0/1 column, or a ratio), never multiplied by 100. DuckDB can't average a BOOLEAN directly: use AVG(CAST(col AS INTEGER)).
 - Medians and percentiles are exact: MEDIAN(col) or QUANTILE_CONT(col, 0.5), never APPROX_QUANTILE.
-- Each row of t is one record of the file. "Per <thing>" where each row is one <thing> (per order, per passenger) is an average over the rows.
+- Each row of t is one record of the file. "Per <thing>" where each row is one <thing> (per order, per visit) is an average over the rows.
 - Group and order so the answer reads well: categories in their natural order or by the value, time in order. At most 50 result rows unless the question asks for more.
 - Almost every question about these columns is answerable. Set answerable to false only when no column of this file is about what the question asks (for example a quantity the file never records). If no column can answer it, set answerable to false, return SELECT 1 AS none FROM t WHERE {{{{rows}}}} LIMIT 0 as sql, and suggest the closest question this file can answer.
 
@@ -59,7 +59,8 @@ Rules:
 Question:
 {message}"""
 
-SQL_REPAIR = """That query failed: {error}
+SQL_REPAIR = """That query failed. The error (it may quote the file's names and values):
+{error}
 Fix it and return the whole corrected query."""
 
 PREDICATE = """Write the DuckDB condition that selects the rows the user is asking for.
@@ -103,15 +104,13 @@ Question:
 {message}
 
 Results:
-<data>
-{results}
-</data>"""
+{results}"""
 
 STATS = """Pick the two columns a significance test should compare for the question.
 
 Rules:
 """ + READING + """
-- outcome is the column whose values are compared (a number, or a category such as survived); group is the column that splits the rows (a category), or the second number for a correlation.
+- outcome is the column whose values are compared (a number, or a category such as a yes/no outcome); group is the column that splits the rows (a category), or the second number for a correlation.
 - Use exact column names from the file.
 
 {context}
@@ -183,12 +182,12 @@ Earlier summary:
 Messages:
 {messages}"""
 
-MEANING = """Say what the column {column} most likely records, from general knowledge about data like this file ({file}).
+MEANING = """Say what the column below most likely records, from general knowledge about data like this file.
 
 Rules:
 - One or two plain sentences. No digits: the app shows the numbers from the data itself.
 - Explain codes when the examples suggest what they stand for, and say so when you're unsure.
 - Don't describe the values' counts or ranges.
 
-The column, its type and example values:
+The column (its name, the file's name, its type and example values):
 {about}"""

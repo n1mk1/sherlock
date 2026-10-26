@@ -1,8 +1,7 @@
 Review a proposed cleaning step before it is applied. Decide whether it changed something it should not have, and list concrete concerns (none if it is sound).
 
-Issue: {issue_line}
-
 <data>
+Issue: {issue_line}
 Column: {column}
 Chosen fix: {label}
 Code:

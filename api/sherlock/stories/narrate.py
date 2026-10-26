@@ -12,7 +12,7 @@ import re
 
 from pydantic import Field
 
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import ChipRun, LabelRun, Run, Story, Strict, TextRun
 from sherlock.stories.facts import small_sample
 
@@ -65,7 +65,7 @@ Rules:
 - {small}
 - You may mention a related widget by what it shows, without numbers.
 
-The shape, for example: {{"headline": [{{"text": "Survival was highest for "}}, {{"label": "value:sex:female"}}, {{"text": " passengers, at "}}, {{"chip": "top_value"}}, {{"text": "."}}], "body": [...]}}. A chip or a label is always its own run, never written inside a text run.
+The shape, with placeholders: {{"headline": [{{"text": "<The measure> was highest for "}}, {{"label": "value:<column>:<value>"}}, {{"text": ", at "}}, {{"chip": "top_value"}}, {{"text": "."}}], "body": [...]}}. A chip or a label is always its own run, never written inside a text run.
 
 Widget: {title}
 Facts (key · what it is · value):
@@ -82,7 +82,7 @@ Rules:
 - Column names and values are labels: {{"label": "column:<name>"}}, or a category value as {{"label": "value:<column>:<value>"}} chosen from the allowed value labels.
 - Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - A bullet that compares numbers uses numbers from one widget, or exactly two numbers of the same kind from two widgets, saying which is higher.
-- Each bullet is a list of runs, for example [{{"text": "Survival was highest for "}}, {{"label": "value:sex:female"}}, {{"text": " passengers, at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
+- Each bullet is a list of runs, with placeholders: [{{"text": "<The measure> was highest for "}}, {{"label": "value:<column>:<value>"}}, {{"text": ", at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
 Widgets and their facts:
 {widgets}
@@ -310,8 +310,8 @@ def narrate(llm: LLMClient, scope: CallScope, *, title: str, widget_id: str, spe
             raise ValueError("the widget has fewer than thirty rows: say the sample is small")
 
     prompt = STORY.format(
-        title=data_block(title), facts=data_block(fact_lines(facts)), labels=data_block("\n".join(labels)),
-        related=data_block("\n".join(related) or "none"),
+        title=fence(title), facts=fence(fact_lines(facts)), labels=fence("\n".join(labels)),
+        related=fence("\n".join(related) or "none"),
         small="The sample is small (fewer than thirty rows): say so." if small else "Mention the sample size only if it matters.",
     )
     try:
@@ -347,7 +347,7 @@ def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_colu
     try:
         o = llm.structured("medium", [{"role": "system", "content": SYSTEM},
                                       {"role": "user", "content": OVERVIEW.format(
-                                          widgets=data_block(listing), values=data_block("\n".join(values) or "none"))}],
+                                          widgets=fence(listing), values=fence("\n".join(values) or "none"))}],
                            Overview, purpose="overview", scope=scope, validate=check).value
         return merged, {"blocks": [{"type": "bullets", "runs": to_runs(b, merged, dataset_columns, values=set(values))}
                                    for b in o.bullets]}, True

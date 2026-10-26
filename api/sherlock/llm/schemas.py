@@ -117,7 +117,7 @@ class Story(Strict):
 
 
 class SqlDraft(Strict):
-    reading: str = Field(description="how you read the question's words as columns and values, e.g. 'class → pclass'")
+    reading: str = Field(description="how you read the question's words as columns and values, e.g. '<their word> → <column>'")
     sql: str = Field(description="one DuckDB SELECT over table t that filters its rows with WHERE {{rows}}")
     answerable: bool = Field(description="false when no column in this file can answer the question")
     closest: str | None = Field(description="when not answerable: the closest question this file can answer, else null")
@@ -129,7 +129,7 @@ class PredicateDraft(Strict):
 
 
 class WidgetDraft(Strict):
-    reading: str = Field(description="how you read the request's words as columns, e.g. 'port → embarked'")
+    reading: str = Field(description="how you read the request's words as columns, e.g. '<their word> → <column>'")
     title: str = Field(description="plain-words title, at most eight words")
     sql: str = Field(description="one DuckDB SELECT over table t that filters its rows with WHERE {{rows}}")
     view: Literal["bar", "line", "area", "pie", "ring", "kpi", "table"]
@@ -151,7 +151,7 @@ class Answer(Strict):
 
 
 class StatsDraft(Strict):
-    reading: str = Field(description="how you read the question's words as columns, e.g. 'women vs men → sex'")
+    reading: str = Field(description="how you read the question's words as columns, e.g. '<two groups> → <column>'")
     outcome: str = Field(description="the column whose values are compared (a number or a category)")
     group: str = Field(description="the column that splits the rows into groups, or the second number")
 

@@ -16,7 +16,7 @@ from pydantic import Field
 
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Run, Story, Strict
 from sherlock.stories import narrate as nr
 from sherlock.stories import service as stories
@@ -183,7 +183,7 @@ def synthesize(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: 
     def check(s: Story) -> None:
         _check([s.headline, s.body], facts, columns, _values(labels))
 
-    prompt = SYNTHESIS.format(cards=data_block(listing), labels=data_block("\n".join(labels) or "none"))
+    prompt = SYNTHESIS.format(cards=fence(listing), labels=fence("\n".join(labels) or "none"))
     try:
         s = llm.structured("medium", [{"role": "system", "content": nr.SYSTEM}, {"role": "user", "content": prompt}],
                            Story, purpose="synthesis", scope=scope, validate=check).value
@@ -226,8 +226,8 @@ def answer(llm: LLMClient, scope: CallScope, db: sqlite3.Connection, cards: list
     def check(a: StoryAnswer) -> None:
         _check([a.prose], facts, columns, _values(labels))
 
-    prompt = QUESTION.format(cards=data_block(listing), labels=data_block("\n".join(labels) or "none"),
-                             question=data_block(question))
+    prompt = QUESTION.format(cards=fence(listing), labels=fence("\n".join(labels) or "none"),
+                             question=fence(question))
     a = llm.structured("medium", [{"role": "system", "content": nr.SYSTEM}, {"role": "user", "content": prompt}],
                        StoryAnswer, purpose="ask_story", scope=scope, validate=check).value
     return _rekey(nr.to_runs(a.prose, facts, columns, values=_values(labels)), alias, "a")

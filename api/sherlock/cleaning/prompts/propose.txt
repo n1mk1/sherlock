@@ -1,8 +1,7 @@
 Write pandas code for up to three candidate fixes of this issue, one per approach, preferred approach first.
 
-Issue: {issue_line}
-
 <data>
+Issue: {issue_line}
 Column: {column}
 Diagnosis: {cause}
 Approaches: {approaches}

@@ -14,7 +14,7 @@ from sherlock.dashboard.candidates import Candidate, generate
 from sherlock.dashboard.scoring import rank_columns, score
 from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobContext
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Curation
 from sherlock.llm.text import has_digits
 from sherlock.profile import service as profile_service
@@ -51,7 +51,7 @@ def summary(card: dict) -> str:
     lines = [f"File: {card['row_count']} usable rows, {card['column_count']} columns."]
     for c in card["columns"]:
         lines.append(f"- {c['name']} · {c['type']} · {c['role']} · {c['missing_pct']}% missing · {c['distinct']} distinct")
-    return "Columns:\n" + data_block("\n".join(lines))
+    return "Columns:\n" + fence("\n".join(lines))
 
 
 def _line(i: int, c: Candidate) -> str:
@@ -78,7 +78,7 @@ def curate(llm: LLMClient, scope: CallScope, card: dict, short: list[Candidate])
         {"role": "system", "content": prompts.SYSTEM},
         {"role": "user", "content": prompts.CURATE.format(
             low=low, high=high, datacard=summary(card),
-            candidates="\n".join(_line(i, c) for i, c in enumerate(short)))},
+            candidates=fence("\n".join(_line(i, c) for i, c in enumerate(short))))},
     ]
     try:
         out = llm.structured("medium", messages, Curation, purpose="curate", scope=scope, validate=check).value

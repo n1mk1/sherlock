@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from sherlock.agent import prompts
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import CallScope, LLMClient, data_block
+from sherlock.llm.client import CallScope, LLMClient, fence
 from sherlock.llm.schemas import PredicateDraft, SqlDraft, WidgetDraft
 from sherlock.rows.query import ident
 from sherlock.widgets import compile as wc
@@ -77,6 +77,11 @@ class Toolkit:
     rows: Scope
     calls: list[int] = field(default_factory=lambda: [0])
     reading: str = ""  # how the last widget request's words were read as columns
+    example: str = ""  # a question in this file's own columns, for "try naming the columns" (Rule 4)
+
+    def _try_naming(self, what: str) -> str:
+        return f"I couldn't build a working query for {what}. Try naming the columns" + (
+            f", e.g. “{self.example}”." if self.example else ".")
 
     def _messages(self, user: str) -> list[dict]:
         return [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": user}]
@@ -95,7 +100,7 @@ class Toolkit:
     # --- ask_data ---------------------------------------------------------------------------
 
     def ask_data(self, question: str, rid: str) -> Result:
-        messages = self._messages(prompts.SQL.format(context=self.context, message=data_block(question)))
+        messages = self._messages(prompts.SQL.format(context=self.context, message=fence(question)))
         draft = self.llm.structured("medium", messages, SqlDraft, purpose="sql", scope=self.scope).value
         if not draft.answerable:
             raise CantAnswer(_closest(draft.closest))
@@ -103,20 +108,19 @@ class Toolkit:
             return self._read_as(self._run(draft.sql, rid), draft.reading)
         except ApiError as exc:
             repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=exc.message)}]
+                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
             draft = self.llm.structured("medium", repair, SqlDraft, purpose="sql", scope=self.scope).value
             if not draft.answerable:
                 raise CantAnswer(_closest(draft.closest)) from None
             try:
                 return self._read_as(self._run(draft.sql, rid), draft.reading)
             except ApiError:
-                raise CantAnswer("I couldn't build a working query for that. Try naming the column, "
-                                 "e.g. 'average fare by pclass'.") from None
+                raise CantAnswer(self._try_naming("that")) from None
 
     # --- find_rows --------------------------------------------------------------------------
 
     def find_rows(self, question: str, rid: str, columns: list[str]) -> Result:
-        messages = self._messages(prompts.PREDICATE.format(context=self.context, message=data_block(question)))
+        messages = self._messages(prompts.PREDICATE.format(context=self.context, message=fence(question)))
         draft = self.llm.structured("medium", messages, PredicateDraft, purpose="predicate", scope=self.scope).value
         try:
             predicate = wc.validate_predicate(draft.predicate, columns)
@@ -147,19 +151,18 @@ class Toolkit:
     # --- create_widget ------------------------------------------------------------------------
 
     def create_widget(self, request: str, created_by: str = "chat") -> sqlite3.Row:
-        messages = self._messages(prompts.WIDGET.format(context=self.context, message=data_block(request)))
+        messages = self._messages(prompts.WIDGET.format(context=self.context, message=fence(request)))
         draft = self.llm.structured("medium", messages, WidgetDraft, purpose="widget", scope=self.scope).value
         try:
             return self._save_widget(draft, created_by)
         except ApiError as exc:
             repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=exc.message)}]
+                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
             draft = self.llm.structured("medium", repair, WidgetDraft, purpose="widget", scope=self.scope).value
             try:
                 return self._save_widget(draft, created_by)
             except ApiError:
-                raise CantAnswer("I couldn't build a working query for that widget. Try naming the columns, "
-                                 "e.g. 'a bar chart of average fare by embarked'.") from None
+                raise CantAnswer(self._try_naming("that widget")) from None
 
     def _spec(self, draft: WidgetDraft, selection_id: str | None) -> dict:
         options = {k: v for k, v in (("x", draft.x), ("y", draft.y)) if v}
@@ -183,8 +186,8 @@ class Toolkit:
         cols = (spec.get("scope") or {}).get("columns") or {}
         now = json.dumps({"title": widget["title"], "sql": spec["op"]["sql"], "view": spec["view"]["type"],
                           "x": cols.get("x"), "y": cols.get("y")})
-        messages = self._messages(prompts.UPDATE_WIDGET.format(widget=data_block(now), context=self.context,
-                                                                message=data_block(request)))
+        messages = self._messages(prompts.UPDATE_WIDGET.format(widget=fence(now), context=self.context,
+                                                                message=fence(request)))
         selection = ((spec.get("scope") or {}).get("rows") or {}).get("selection_id")
         draft = self.llm.structured("medium", messages, WidgetDraft, purpose="update_widget", scope=self.scope).value
         for attempt in range(2):
@@ -196,7 +199,7 @@ class Toolkit:
                 if attempt:
                     raise CantAnswer("I couldn't build a working query for that change. Try naming the columns.") from None
                 repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                          {"role": "user", "content": prompts.SQL_REPAIR.format(error=exc.message)}]
+                          {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
                 draft = self.llm.structured("medium", repair, WidgetDraft, purpose="update_widget", scope=self.scope).value
         raise AssertionError("unreachable")
 

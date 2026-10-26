@@ -38,7 +38,7 @@ from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
 from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobCancelled, JobContext
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, cap_values
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, cap_values, escape_data
 from sherlock.llm.schemas import Candidates, Critique, Diagnosis
 from sherlock.profile import service as profile_service
 from sherlock.sandbox import runner as sandbox
@@ -122,8 +122,8 @@ def _instruction(issue: dict) -> str:
 
 
 def _safe(text) -> str:
-    """Text that goes inside a prompt's <data> block can't close it (TRD §3.5, as `data_block` does)."""
-    return str(text).replace("</data>", "</ data>")
+    """Text that goes inside a prompt's <data> block can't close it or open another (TRD §3.5, `escape_data`)."""
+    return escape_data(text)
 
 
 class Cleaner:
@@ -480,7 +480,7 @@ class Cleaner:
         cc = self._column_context(issue, card, df)
         columns = ", ".join(f"{c['name']} ({c['type']})" for c in card["columns"])
         user = prompts.DIAGNOSE.format(
-            issue_line=issue_line(issue), detector=issue["detector"], column=_safe(issue["column"] or "(rows)"),
+            issue_line=_safe(issue_line(issue)), detector=issue["detector"], column=_safe(issue["column"] or "(rows)"),
             rows=card["row_count"], columns=_safe(columns), column_card=_json(cc["entry"]), samples=_json(cc["samples"]),
             examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
             decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet", instruction=_instruction(issue),
@@ -509,7 +509,7 @@ class Cleaner:
             approaches.insert(0, approaches.pop(diagnosis.preferred_option))
         samples = cap_values(df[column].dropna().astype(str).drop_duplicates().head(20)) if column in df else []
         user = prompts.PROPOSE.format(
-            issue_line=issue_line(issue), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
+            issue_line=_safe(issue_line(issue)), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
             approaches=_safe("; ".join(approaches)), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
             samples=_json(samples), examples=_json(cap_values(issue["examples"], 10)), helpers=prompts.HELPERS,
             instruction=_instruction(issue),
@@ -531,7 +531,7 @@ class Cleaner:
                   f"{report.quarantined} rows quarantined")
         if not issue.get("user"):  # a user's step has no detector, so no count to compare
             effect += f"; the issue went from {report.issue_before} to {report.issue_after}"
-        user = prompts.CRITIC.format(issue_line=issue_line(issue), column=_safe(column or "(rows)"), label=_safe(best.label),
+        user = prompts.CRITIC.format(issue_line=_safe(issue_line(issue)), column=_safe(column or "(rows)"), label=_safe(best.label),
                                      code=_safe(best.code), effect=_safe(effect), changes=_json(changes), checks=_json(report.hard),
                                      instruction=_instruction(issue))
         out = self.llm.structured("medium", self._messages(user), Critique, purpose="critic", scope=self.scope)

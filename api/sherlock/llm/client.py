@@ -20,7 +20,7 @@ from sherlock.db.connection import connect
 from sherlock.db.util import now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.repair import parse, repair_messages
-from sherlock.llm.text import extract_json, strip_reasoning
+from sherlock.llm.text import escape_data, extract_json, fence, strip_reasoning  # noqa: F401 - the fence helpers are re-exported
 
 log = logging.getLogger("sherlock.llm")
 
@@ -126,11 +126,6 @@ class OpenAITransport(Transport):
             "prompt_tokens": usage.prompt_tokens if usage else 0,
             "completion_tokens": usage.completion_tokens if usage else 0,
         }
-
-
-def data_block(content: str) -> str:
-    """Cell values and user text always go inside a data block (TRD §3.5)."""
-    return f"<data>\n{content.replace('</data>', '</ data>')}\n</data>"
 
 
 def cap_values(values, limit: int = MAX_SAMPLE_VALUES) -> list[str]:

@@ -113,7 +113,6 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - Later versions' `issues` rows keep no `outcome`, while the report reads `from_version` (D3 M4).
 - The end-of-run report can be skipped when the build finishes fast; App Flow §5 says it shows for 3 seconds (D3 M5).
 - Smaller (D3): `counts.found` can be lower than fixed + flagged + skipped (L1); the budget line lags by the issue in progress (L2); the diagnose context includes decisions from undone steps (L3); the ambiguity vote counts option indexes across samples whose option lists differ (L4); the offer's summary leads with issues that are never fixed (L7).
-- `{issue_line}` sits outside the `<data>` block, unescaped, in all three cleaning prompts, and it carries column names (TRD §3.5 prompt hygiene; `cleaning/prompts/diagnose.txt`, `cleaning/loop.py`). The prompt test misses it (`test_cleaning_units.py`). Move it inside `<data>` and add it to the test.
 - The `flag_rows` helper has no effect: its docstring says the step gets flagged, but nothing reads the flags it records (TRD §7.2). Force the gate to `flag`, or drop the helper.
 - The critic prompt says "Effect on a sample", but the effect it's given comes from the full data (`cleaning/prompts/critic.txt`).
 - Exact and near duplicate rows share one issue key, `duplicates|None` (`detectors/duplicates.py`), so the cleaning plan shows, and the Cleaner attempts, only the more severe of the two; the other is never tried or listed (App Flow §4.1, TRD §4.4; `cleaning/plan.py`, `loop.py` `handled`). Give near duplicates a key of their own.
@@ -139,7 +138,6 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - "The closest I can answer: …" is plain text, not a button that asks it (App Flow §10.2).
 - Hitting the 40k-token message budget mid-answer throws away the earlier steps' results and returns only the budget sentence; TRD §8.1 says to compose what exists with a note (`agent/loop.py`).
 - Proposals expire lazily: a stale one keeps its Approve button until it's clicked and answers `409`, instead of reading "Expired: the data changed since" (App Flow §10; `agent/actions.py`). Expire pending proposals in `commit_step`, or compare against `current_version` when listing them.
-- Rule 4, Titanic in generic code: the error message "Try naming the columns, e.g. average fare by pclass" (`agent/loop.py`, copied into App Flow §10.2), the "Survival by class" and `value:sex:female` examples in `dashboard/prompts.py` and `stories/narrate.py`, and Titanic columns (pclass, sibsp, fare, survived) in the examples of `agent/answerers.py`, `agent/insight.py`, `agent/prompts.py` and `llm/schemas.py`. The prompt test covers only the cleaning prompts. Use placeholders.
 - A wide file gets no note that the dashboard used only its 30 most informative columns (App Flow §18; the builder keeps `columns_used` in the job result only).
 - The empty library's small print doesn't say that clearing the cookie loses the library, with no recovery (App Flow §18).
 - Save doesn't retry by itself once the connection is back; pressing it again works (App Flow §18).

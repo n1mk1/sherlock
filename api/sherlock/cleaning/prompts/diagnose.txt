@@ -1,10 +1,10 @@
 Diagnose this data-quality issue.
 
-Issue: {issue_line}
 Detector: {detector}
 Dataset: {rows} rows
 
 <data>
+Issue: {issue_line}
 Column: {column}
 Columns and types: {columns}
 Column profile: {column_card}

@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from sherlock.llm.text import extract_json
+from sherlock.llm.text import extract_json, fence
 
 T = TypeVar("T", bound=BaseModel)
 MAX_ECHO_CHARS = 8000
@@ -33,6 +33,7 @@ def repair_messages(messages: list[dict], reply: str, error: str) -> list[dict]:
         *messages,
         {"role": "assistant", "content": reply[:MAX_ECHO_CHARS]},
         {"role": "user", "content": (
-            f"That reply failed validation: {error}. Reply again with corrected JSON only, "
+            # The error can quote the reply, and so the file's names and values: it is fenced too (TRD §3.5).
+            "That reply failed validation:\n" + fence(error) + "\nReply again with corrected JSON only, "
             "matching the schema exactly.")},
     ]

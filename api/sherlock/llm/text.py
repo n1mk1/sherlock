@@ -1,4 +1,4 @@
-"""Text helpers for model output: strip reasoning traces, pull out JSON."""
+"""Text helpers: data blocks for prompts (TRD §3.5), and for model output, strip reasoning traces and pull out JSON."""
 
 import json
 import re
@@ -7,6 +7,19 @@ import unicodedata
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```(?:json|python)?\s*\n?(.*?)```", re.DOTALL)
 _DIGIT = re.compile(r"\d")
+# Any spelling of a data tag a cell, a name or a web page could carry: "</data>", "</DATA >", "< /data>", "<data x>".
+DATA_TAG = re.compile(r"<\s*/?\s*data\b[^>]*>", re.I)
+
+
+def escape_data(text) -> str:
+    """Text for inside a data block: every data tag in it is defused (its angle brackets become ‹ ›), so
+    nothing a value holds can close the block or open another (TRD §3.5 prompt hygiene)."""
+    return DATA_TAG.sub(lambda m: m.group(0).replace("<", "‹").replace(">", "›"), str(text))
+
+
+def fence(content) -> str:
+    """Cell values, names and user text always go inside a data block (TRD §3.5)."""
+    return f"<data>\n{escape_data(content)}\n</data>"
 
 
 def strip_reasoning(text: str) -> str:

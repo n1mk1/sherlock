@@ -18,7 +18,7 @@ from sherlock.cleaning import plan as plans
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.jobs.events import emit
-from sherlock.llm.client import StructuredOutputError, data_block
+from sherlock.llm.client import StructuredOutputError, fence
 from sherlock.llm.schemas import EditsDraft, PlanEdits
 from sherlock.profile import service as profile_service
 from sherlock.rows.query import ident
@@ -83,7 +83,7 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
             got = conn.execute(f"SELECT _row_id, {', '.join(ident(c) for c in cols)} FROM t WHERE _row_id IN "  # noqa: S608
                                f"({', '.join(str(r) for r in shown)}) ORDER BY _row_id").fetchall()
             lines = [f"_row_id {r[0]}: " + " | ".join(f"{c} = {v!r}" for c, v in zip(cols, r[1:], strict=True)) for r in got]
-            cells_text = (f"The selected cells ({len(rows)} rows × {', '.join(cols)}):\n" + data_block("\n".join(lines)) + "\n")
+            cells_text = ("The selected cells:\n" + fence("\n".join([f"{len(rows)} rows × {', '.join(cols)}", *lines])) + "\n")
 
         def check(d: EditsDraft) -> None:
             for e in d.edits:
@@ -91,7 +91,7 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
                     raise ValueError(f"{e.column!r} is not a column you can edit; use one of {', '.join(list(types)[:30])}")
 
         messages = [{"role": "system", "content": prompts.SYSTEM},
-                    {"role": "user", "content": prompts.EDITS.format(context=kit.context, cells=cells_text, message=data_block(question))}]
+                    {"role": "user", "content": prompts.EDITS.format(context=kit.context, cells=cells_text, message=fence(question))}]
         draft = kit.llm.structured("medium", messages, EditsDraft, purpose="edits", scope=kit.scope, validate=check).value
         edits = list({(e.row_id, e.column): e for e in draft.edits}.values())  # the last edit of a cell wins
         ids = sorted({e.row_id for e in edits})
@@ -189,8 +189,8 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
         return ops
 
     messages = [{"role": "system", "content": prompts.SYSTEM},
-                {"role": "user", "content": prompts.PLAN_EDITS.format(columns=data_block(", ".join(columns)),
-                                                                      plan=data_block("\n".join(lines)), message=data_block(question))}]
+                {"role": "user", "content": prompts.PLAN_EDITS.format(columns=fence(", ".join(columns)),
+                                                                      plan=fence("\n".join(lines)), message=fence(question))}]
     def check(d: PlanEdits) -> None:
         to_ops(d)
 

@@ -10,12 +10,10 @@ Rules:
 - Pick {low} to {high} candidates (fewer only if fewer are listed). Use each index once.
 - Together they should answer the questions someone who owns this file would ask first. Prefer the higher scores, and avoid two charts that say the same thing.
 - Order them as the dashboard should read: headline numbers (kpi) first, then the most telling charts.
-- Title each in plain words, at most eight words, with no digits and no column codes the reader wouldn't say aloud. Say what the chart shows ("Survival by class"), not the method.
+- Title each in plain words, at most eight words, with no digits and no column codes the reader wouldn't say aloud. Say what the chart shows ("<measure> by <group>"), not the method.
 - For "point", name the one element worth accenting, exactly as written in the candidate's elements, or null.
 
 {datacard}
 
 Candidates (index · view · what it shows · score · elements):
-<data>
-{candidates}
-</data>"""
+{candidates}"""

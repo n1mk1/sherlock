@@ -26,7 +26,7 @@ from sherlock.agent.answerers import CantAnswer, Result, Toolkit
 from sherlock.agent.compose import fmt, fmt_kind, table_block, text_block
 from sherlock.config import REPO_ROOT
 from sherlock.errors import ApiError
-from sherlock.llm.client import BudgetExceeded, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Meaning, StatsDraft
 from sherlock.rows.query import ident
 from sherlock.widgets import service as ws
@@ -106,10 +106,11 @@ def ask_stats(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str)
             if d.outcome == d.group:
                 raise ValueError("pick two different columns")
         try:
-            d = kit.llm.structured("medium", kit._messages(prompts.STATS.format(context=kit.context, message=data_block(question))),
+            d = kit.llm.structured("medium", kit._messages(prompts.STATS.format(context=kit.context, message=fence(question))),
                                    StatsDraft, purpose="stats", scope=kit.scope, validate=check).value
         except StructuredOutputError:
-            raise CantAnswer("Which two columns should I compare? For example “is fare different between men and women?”.") from None
+            raise CantAnswer("Which two columns should I compare? Name them, for example “is <a number> different "
+                             "between the groups of <a category>?”.") from None
         a, b, reading = d.outcome, d.group, d.reading
     ka, kb = _kind(cols[a]), _kind(cols[b])
     if ka == "category" and kb == "number":
@@ -370,11 +371,11 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
     apart, what such a column usually records (general knowledge, no digits)."""
     cols = {c["name"]: c for c in card["columns"]}
     names = mentioned(resolved, list(cols))
-    if not names:  # a bare name in the question ("what is sibsp?")
+    if not names:  # a bare name in the question ("what is <column>?")
         words = re.findall(r"[\w.]+", question.lower())
         names = [c for c in cols if c.lower() in words]
     if not names:
-        raise CantAnswer("Which column? Name it, for example “what does pclass mean?”.")
+        raise CantAnswer(f"Which column? Name it, for example “what does {next(iter(cols), 'a column')} mean?”.")
     col = cols[names[0]]
     q = ident(col["name"])
     numeric = col["type"] in ("int", "float", "date", "datetime")
@@ -391,11 +392,11 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
     blocks = [text_block(runs), table_block(common)]
     sources = [{"kind": "sql", "sql": facts.sql, "label": f"What the data says about {col['name']}"},
                {"kind": "sql", "sql": common.sql, "label": "Its most common values"}]
-    about = f"name: {col['name']}\ntype: {col['type']}\nexamples: " + ", ".join(str(r[0])[:40] for r in common.rows)
+    about = (f"column: {col['name']}\nfile: {kit.dataset['name']}\ntype: {col['type']}\nexamples: "
+             + ", ".join(str(r[0])[:40] for r in common.rows))
     try:
-        general = kit.llm.structured("medium", kit._messages(prompts.MEANING.format(
-            column=col["name"], file=kit.dataset["name"], about=data_block(about))), Meaning, purpose="meaning",
-            scope=kit.scope).value.general.strip()
+        general = kit.llm.structured("medium", kit._messages(prompts.MEANING.format(about=fence(about))), Meaning,
+                                     purpose="meaning", scope=kit.scope).value.general.strip()
     except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
         general = None
     if general:

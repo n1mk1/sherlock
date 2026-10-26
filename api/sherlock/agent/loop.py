@@ -24,7 +24,7 @@ from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import resolve
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, data_block
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Plan, Route
 from sherlock.profile import service as profile_service
 from sherlock.widgets import compile as wc
@@ -88,6 +88,18 @@ def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> dict:
     return out
 
 
+def example_question(card: dict) -> str:
+    """A question this file can answer, in its own columns ("the average <measure> by <group>"), or "".
+    Examples in messages come from the file, never from the sample (Rule 4)."""
+    cols = card["columns"]
+    target = next((c["name"] for c in cols if c["role"] == "target_like"), None)
+    measure = next((c["name"] for c in cols if c["role"] == "measure"), None)
+    dim = next((c["name"] for c in cols if c["role"] == "dimension" and 2 <= (c["distinct"] or 0) <= 12), None)
+    if (target or measure) and dim:
+        return f"{'the rate of ' + target if target else 'the average ' + measure} by {dim}"
+    return ""
+
+
 def card_summary(card: dict) -> str:
     """Column names, types, roles and up to five example values; past the budget, the rest by name and type."""
     lines, used = [], 0
@@ -100,7 +112,7 @@ def card_summary(card: dict) -> str:
             line = f"- {c['name']} · {c['type']}"
         lines.append(line)
         used += len(line)
-    return f"The file has {card['row_count']} usable rows. Columns:\n" + data_block("\n".join(lines))
+    return f"The file has {card['row_count']} usable rows. Columns:\n" + fence("\n".join(lines))
 
 
 class Agent:
@@ -152,27 +164,28 @@ class Agent:
 
     def _context(self, card: dict, scope: Scope, history: list[sqlite3.Row], focus: dict | None, resolved: dict | None,
                  context: dict) -> str:
-        parts = [card_summary(card), f"Rows in scope: {scope.words}. {{{{rows}}}} already applies this."]
+        # The scope's words carry a selection's label and a filter's values, and a title is the user's: fenced.
+        parts = [card_summary(card), "Rows in scope ({{rows}} already applies this):\n" + fence(scope.words)]
         if context.get("focused_widget_id"):
             w = self.db.execute("SELECT title FROM widgets WHERE id = ?", (context["focused_widget_id"],)).fetchone()
             if w:
-                parts.append(f"The user is looking at the widget “{w['title']}”.")
+                parts.append("The user is looking at this widget:\n" + fence(w["title"]))
         if resolved and (resolved["columns"] or resolved["values"]):
             lines = [f"- “{k}” is column {v}" for k, v in resolved["columns"].items()]
             lines += [f"- “{k}” is the value '{v[1]}' of column {v[0]}" for k, v in resolved["values"].items()]
-            parts.append("Names in the message:\n" + data_block("\n".join(lines)))
+            parts.append("Names in the message:\n" + fence("\n".join(lines)))
         if focus and focus.get("question"):
             prev = f"Previous question: {focus['question']}"
             if focus.get("sql"):
                 prev += f"\nIts query: {focus['sql']}"
-            parts.append("Use this only if the message is incomplete on its own and continues it (like \"and for women "
-                         "only?\"); a message that makes sense by itself is a new question:\n" + data_block(prev))
+            parts.append("Use this only if the message is incomplete on its own and continues it (like \"and only for "
+                         "<a value>?\"); a message that makes sense by itself is a new question:\n" + fence(prev))
         summary = self.db.execute("SELECT summary FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
         if summary:
-            parts.append("Earlier in this conversation (a summary):\n" + data_block(summary["summary"]))
+            parts.append("Earlier in this conversation (a summary):\n" + fence(summary["summary"]))
         recent = [f"{r['role']}: {r['text'][:300]}" for r in history if r["text"]]
         if recent:
-            parts.append("Recent messages:\n" + data_block("\n".join(recent)))
+            parts.append("Recent messages:\n" + fence("\n".join(recent)))
         return "\n\n".join(parts)
 
     # --- the loop -----------------------------------------------------------------------------
@@ -231,7 +244,7 @@ class Agent:
 
         resolved = resolve(self.db, dataset["id"], [e.model_dump() for e in route.entities], columns)
         ctx_text = self._context(card, rows_scope, history, focus, resolved, context)
-        kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope)
+        kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope, example=example_question(card))
         blocks, sources, results, actions, notes, streamed, computed = [], [], [], [], [], [], []
         focus_out = {"question": question, "intents": list(route.intents), "selection_id": rows_scope.selection_id}
 
@@ -380,7 +393,8 @@ class Agent:
                 if str(exc) not in notes:
                     notes.append(str(exc))
             except StructuredOutputError:
-                notes.append("I couldn't turn that into a query. Try naming the column, e.g. 'average fare by pclass'.")
+                notes.append("I couldn't turn that into a query. Try naming the columns" +
+                             (f", e.g. “{kit.example}”." if kit.example else "."))
             except ApiError as exc:
                 if exc.code in ("llm_unavailable", "budget_exceeded"):
                     raise
@@ -467,7 +481,7 @@ class Agent:
         """A message that asks for several things becomes two to five steps (TRD §8.1 step 4)."""
         intents = "\n".join(f"- {prompts.INTENT_LINES[i]}" for i in tools)
         messages = [{"role": "system", "content": prompts.SYSTEM},
-                    {"role": "user", "content": prompts.PLAN.format(intents=intents, context=context, message=data_block(question))}]
+                    {"role": "user", "content": prompts.PLAN.format(intents=intents, context=context, message=fence(question))}]
         try:
             plan = self.llm.structured("medium", messages, Plan, purpose="plan", scope=scope).value
         except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
@@ -488,7 +502,7 @@ class Agent:
         if len(older) < SUMMARY_EVERY:
             return
         lines = "\n".join(f"{m['role']}: {m['text'][:300]}" for m in older)
-        prompt = prompts.SUMMARY.format(previous=data_block(row["summary"] if row else "none"), messages=data_block(lines))
+        prompt = prompts.SUMMARY.format(previous=fence(row["summary"] if row else "none"), messages=fence(lines))
         try:
             c = self.llm.complete("small", [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": prompt}],
                                   purpose="summary", scope=scope, max_tokens=600)
@@ -522,13 +536,9 @@ class Agent:
     @staticmethod
     def _suggestion(card: dict) -> str:
         """The closest answerable kind of question, with this file's own columns."""
-        cols = card["columns"]
-        target = next((c["name"] for c in cols if c["role"] == "target_like"), None)
-        measure = next((c["name"] for c in cols if c["role"] == "measure"), None)
-        dim = next((c["name"] for c in cols if c["role"] == "dimension" and 2 <= (c["distinct"] or 0) <= 12), None)
-        if (target or measure) and dim:
-            what = f"the rate of {target}" if target else f"the average {measure}"
-            return f"Meanwhile I can break the data down, for example “{what} by {dim}”."
+        example = example_question(card)
+        if example:
+            return f"Meanwhile I can break the data down, for example “{example}”."
         return "Meanwhile I can answer questions about the data, find rows, explain a widget, or add one."
 
     def create_widget(self, prompt: str, created_by: str = "user") -> sqlite3.Row:
@@ -543,7 +553,7 @@ class Agent:
     def _route(self, question: str, context: str, scope: CallScope, tools=TOOLS["dashboard"]) -> Route:
         intents = "\n".join(f"- {prompts.INTENT_LINES[i]}" for i in tools)
         messages = [{"role": "system", "content": prompts.SYSTEM},
-                    {"role": "user", "content": prompts.ROUTE.format(intents=intents, context=context, message=data_block(question))}]
+                    {"role": "user", "content": prompts.ROUTE.format(intents=intents, context=context, message=fence(question))}]
         try:
             return self.llm.structured("small", messages, Route, purpose="route", scope=scope, reasoning=False).value
         except StructuredOutputError:
