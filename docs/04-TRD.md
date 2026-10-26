@@ -1834,9 +1834,11 @@ As implemented (version 1 of the loop):
     - The SQL must use `{{rows}}`, which here is the quarantine exclusion, the context's selection and its global filter. It's validated and run like widget SQL (§6.3).
     - A failure gets one repair with the error, then "I couldn't build a working query for that…".
     - `answerable: false` answers "This file has no column that answers that. The closest I can answer: …".
+    - An empty draft fails `SqlDraft`'s validator and gets the repair like any invalid reply: an empty `sql`, or `answerable: false` with no `closest`. Under strict decoding Super sometimes returns `{"sql": "", "answerable": false, "closest": null}`, which fits the JSON schema, and taken as written it told the user no column answers a question one does.
     - The `reading` is shown in the source's label.
   - **`find_rows`.** `medium`, schema `PredicateDraft` (`predicate`, `label`).
     - The predicate is validated like a selection's. The answer is the row count and the first 20 rows (`_row_id` and up to 12 columns).
+    - The prompt says rows that "mention" something in a free-text column may word it another way, so each meaningful word is matched on its own, ignoring case, joined with `AND` (`"<column>" ILIKE '%<word>%' AND …`), not as one exact phrase.
     - It saves a selection of the predicate ANDed with the context's scope, and offers `open_rows`.
     - Its prose is written in code ("4 rows match."), not by the model.
   - **`create_widget`.** `medium`, schema `WidgetDraft` (`reading`, `title`, `sql`, `view`, `x`, `y`). It's validated by creating the widget (created by `chat`), with one repair on failure. It's placed under the layout, and the answer shows it with `open_widget`.
@@ -1917,6 +1919,7 @@ As built (`sherlock/agent/insight.py`):
   - Dashboard adds `create_widget` and `update_widget`, and Flow adds `ask_story`.
   - CSV adds `edit_cells` and `clean_selection`. Asked for on another tab, they answer "Changing cells from chat works from the CSV tab, where you can see them." or the cleaning equivalent.
   - The route prompt lists only the exposed intents, one line each (`prompts.INTENT_LINES`). An intent routed on a tab that doesn't expose it gets a sentence saying where it works.
+  - The `find_rows` line describes a row-list question by its shape, with placeholders, not an example from any file: it starts with "which", "who", "show" or "list" and asks for the records that meet a condition. "How many …" stays `ask_data`, and so does "which <group> has the highest …" (a group, not records).
   - `run_recipe` is `ask_why`.
   - Flow's canvas actions aren't tools the route can pick: "make sense" adds the synthesis node and its edges itself (`canvas/service.py`, `add_canvas_node` and `add_canvas_edge`). `propose_card_edit` is not built (cut 2, Implementation Plan §2.0). `web_context`, `propose_clean_step` and `add_computed_column` are P1 and not built.
 - **Grounding.** Every number is computed in code. `ask_stats`, `ask_why`, `ask_meaning` and "who did it get wrong?" write their prose in code, with each number a chip naming a cell of a result. `ask_model` hands the model card to the composer as results (rows of measures and values, with per-cell formats so rates read as percentages), and the composer cites their cells as for `ask_data`.

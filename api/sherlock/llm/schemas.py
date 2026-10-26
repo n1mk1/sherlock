@@ -122,6 +122,17 @@ class SqlDraft(Strict):
     answerable: bool = Field(description="false when no column in this file can answer the question")
     closest: str | None = Field(description="when not answerable: the closest question this file can answer, else null")
 
+    @model_validator(mode="after")
+    def complete(self) -> "SqlDraft":
+        # An empty draft (no query, no closest question) satisfies the JSON schema but none of the prompt's
+        # rules; taken as written, it tells the user no column answers a question one does. It gets the repair.
+        if not self.sql.strip():
+            raise ValueError("sql is empty: write the query that answers the question")
+        if not self.answerable and not (self.closest or "").strip():
+            raise ValueError("closest is empty: if no column can answer the question, give the closest question this file "
+                             "can answer; otherwise write the query and set answerable to true")
+        return self
+
 
 class PredicateDraft(Strict):
     predicate: str = Field(description="a DuckDB boolean condition over the columns of t, without WHERE")

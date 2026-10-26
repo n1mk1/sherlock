@@ -11,7 +11,7 @@ Refer to yourself as "I"."""
 # One line per intent; the route prompt lists only the intents the current tab exposes (TRD §8.2).
 INTENT_LINES = {
     "ask_data": "ask_data: a question answered by querying the data: counts, totals, averages, rates, breakdowns by a category, comparisons, top values, trends, and follow-ups like \"and only for <a value>?\" or \"what about <another value>?\"",
-    "find_rows": "find_rows: show or find particular rows (\"which <records> have <a column> over <an amount>?\", \"show me the rows with missing <a column>\")",
+    "find_rows": "find_rows: list the matching records themselves, not a number about them. A question that starts with \"which\", \"who\", \"show\" or \"list\" and asks for the records that meet a condition is find_rows (\"which <records> <did something> more than <an amount>?\", \"who has no <a column>?\", \"list the <records> whose <a column> mentions <a word>\"). \"How many ...\" is ask_data, and so is \"which <group> has the highest ...\" (a group, not records).",
     "create_widget": "create_widget: only when the user asks to add or put something on the dashboard (\"add a chart of <a measure> by <a group> to the dashboard\", \"pin a KPI of <a measure>\"). \"Show it as a chart\" or \"plot that\" without the dashboard is ask_data.",
     "update_widget": "update_widget: change an existing widget (\"make this a line chart\", \"only show <a value>\")",
     "explain_widget": "explain_widget: how a dashboard widget was made, where its numbers come from",
@@ -68,6 +68,7 @@ PREDICATE = """Write the DuckDB condition that selects the rows the user is aski
 Rules:
 - A boolean expression over the columns of t, without WHERE, without subqueries.
 - Quote column names with double quotes when they contain anything but lowercase letters, digits and underscores.
+- Rows that "mention" or "talk about" something in a free-text column may word it another way ("<a> <b>" written as "<b> was <a>"): match each meaningful word on its own, ignoring case, joined with AND ("<column>" ILIKE '%<word>%' AND "<column>" ILIKE '%<other word>%').
 
 {context}
 

@@ -10,7 +10,7 @@ from sherlock.llm.client import (
     StructuredOutputError, TransientError, Transport,
 )
 from sherlock.llm.fixtures import FixtureMiss, FixtureTransport, RecordingTransport
-from sherlock.llm.schemas import Critique, Diagnosis, Story
+from sherlock.llm.schemas import Critique, Diagnosis, SqlDraft, Story
 
 DIAG = {"cause": "typed by hand", "approach_options": ["parse", "leave"], "preferred_option": 0,
         "risk": "low", "leave_as_is": False}
@@ -86,6 +86,22 @@ def test_story_prose_may_not_contain_digits(db):
     client, _ = llm([{"purpose": "narrate", "content": json.dumps(story)}])
     with pytest.raises(StructuredOutputError):
         client.structured("small", [], Story, purpose="narrate")
+
+
+def test_an_empty_sql_draft_gets_the_repair_not_unanswerable(db):
+    """The ask eval after slice 1: Super sometimes returns {"sql": "", "answerable": false, "closest": null},
+    which fits the schema, and the answer said no column answers a question one does. It's repaired now."""
+    empty = {"reading": "", "sql": "", "answerable": False, "closest": None}
+    good = {"reading": "", "sql": "SELECT SUM(m) AS total FROM t WHERE {{rows}}", "answerable": True, "closest": None}
+    client, transport = llm([{"purpose": "sql", "content": json.dumps(empty)}, {"purpose": "sql", "content": json.dumps(good)}])
+    out = client.structured("medium", [{"role": "user", "content": "x"}], SqlDraft, purpose="sql")
+    assert out.repaired and out.value.answerable and "sql is empty" in transport.calls[1]["prompt"]
+    # An honest "no column answers that" has its query and a closest question; without one it's repaired too.
+    none = {"reading": "", "sql": "SELECT 1 AS none FROM t WHERE {{rows}} LIMIT 0", "answerable": False,
+            "closest": "the total of m"}
+    SqlDraft.model_validate(none)
+    with pytest.raises(ValueError, match="closest is empty"):
+        SqlDraft.model_validate({**none, "closest": " "})
 
 
 class Flaky(Transport):
