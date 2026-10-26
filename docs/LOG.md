@@ -999,3 +999,51 @@ The owner reported that https://sherlock-anw3.onrender.com didn't open in a priv
 - **Final check on `72b5202`** (all of Tier 1 and Tier 2, `TAVILY_API_KEY` unset): `uv run pytest` 527 passed, 3 skipped; `corepack pnpm test` 118 passed; `corepack pnpm build` passed; `corepack pnpm e2e` passed; `uv run sherlock eval web` offline 60 of 60, 0 outbound requests holding a cell value, no answer ended in an error. The ask eval on the Tavily slices, rebased: 50/50, 0 unsourced.
 - **Deployed by hand** (CI is blocked, so Render's `checksPass` trigger never fires): deploy `dep-dbflrmm7bikc73e29usg` of `72b5202`; `/healthz` reports `commit` `72b5202e156c` and `schema_version` 8. `scripts/live_check.py --url https://sherlock-anw3.onrender.com`: **11 of 11 checks passed**. Its chat answer fell back to the result table ("Here is the result (3 rows).", the compose-label item already in BACKLOG), and the cell edit rewrote 4 of 12 cards.
 - **Not done:** Tier 3 (T-4 included), by the goal. With no Tavily key, web retrieval is built but off in the deployed app; the owner's step to turn it on is the first line of BACKLOG §1. Open findings from the night are in BACKLOG: the look-alike benchmark set's recovery after slice 11, ages imputed on Titanic, outside-world questions that sometimes route to the file, and an e2e check that can fail under load.
+
+## 2026-10-26 (Mon, late morning): slice 11's two benchmark drops fixed
+
+The coordinating session asked for slice 11's two open benchmark numbers to be fixed rather than left in BACKLOG: `lookalikes` recovered 41.7% (100% before) and `titanic_clean` had 26 age placeholders filled (Wrong 26). The benchmark now prints each committed step and each skip with its reason, and the model's replies were recorded for every run below (`LLM_RECORD`), so each cause was read from what the model proposed.
+
+- **Causes found and fixed** (all generic; `cleaning/verifiers.py`, `cleaning/loop.py`, `cleaning/prompts/propose.txt`):
+  - **A spelling difference counted as a disagreement.** Candidates for a case fix often include one that recases every value or keeps only the trimming; slice 11 compared their text exactly, so "plan a" against "Plan A" was a disagreement and the whole fix was skipped. Results now compare text without case or spacing (`_merge_key`): a case or spacing variant of one value is the same value. The propose prompt says so too.
+  - **A number against the same number as text counted as a disagreement.** In one run a candidate re-wrote `monthly_fee` as "$19.00" text beside the parse to 19.0, and the fix was skipped ("19.0 → 19 vs $19.00"). When one result is numeric and the other is text that `parse_numbers` reads, they're compared as numbers. The text one still scores lower (its column is still numbers stored as text), so the parse wins.
+  - **Code with its line breaks escaped twice.** In one run all three `country` candidates arrived as one line with a literal `\n`, a syntax error, and the skip said only "The code uses something the sandbox doesn't allow.". Code that doesn't parse but does with `\n` read as line breaks now runs with them (`loop.runnable`), and that is the step's code; a refused candidate's reason names its first violation.
+  - **Ties now go to the fix that touches least,** counting a quarantined row as all of its cells, as the gate's blast does (`loop.best_candidate`). The first version of this counted a quarantined row as one cell, and in its run the "quarantine the 312 rows with a $" candidate beat the fare parse on a tie (the parse also counts "7.0" → 7.0 as a change), the critic refused it, and `titanic_clean` fell to 36.0%. Weighted like the blast, the parse wins.
+  - **Missing values stay missing, in code** (the owner's decision, which only the prompts carried): a new hard check, `missing_fill`, fails a step that fills a missing cell with a value no related column recovers (for some other column, the rows sharing the cell's value there must hold one value in this column, and the fill must be it). A median by group fails; a city → code dependency passes; a step the user asked for may fill. In the run after it, the age imputation candidate failed it: "27 missing values in age filled with values no related column recovers (such as 41)".
+  - **A lone candidate's agreement is a neutral 0.5,** not 1.0 (`verifiers.LONE_AGREEMENT`, as asked). On its own it couldn't have stopped the fill: a fill scoring 0.99 still reaches 0.6 × 0.99 + 0.2 × 0.5 + 0.2 = 0.89, over the 0.8 commit line, so `missing_fill` is what holds the rule.
+- **The benchmark** (live Nemotron, `eval-locked.sh … corruption --sets lookalikes,titanic_clean,dates_dmy,dates_mdy`):
+  - **Before** (slice 11's "after" run, 02:51):
+
+    | Set | Rows | Damaged cells | Recovered | Wrong | Harm | Row loss | Quarantined | Steps | Time | Ended by |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | titanic_clean | 1,043 | 509 | 92.1% | 5.1% | 0.00% | 0.0% | 81 | 5 | 117 s | done |
+    | dates_dmy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 2 s | done |
+    | dates_mdy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 6 s | done |
+    | lookalikes | 600 | 288 | 41.7% | 0.0% | 0.00% | 0.0% | 0 | 1 | 90 s | done |
+
+  - **On the way:** `lookalikes` alone on slice 11's code (10:35) recovered 100%: the skip didn't come back that run, so the recorded replies were read for candidates that could cause it. The first fixes (10:41) brought `titanic_clean` to 36.0% with Wrong 0 (the tie-break above); weighted (10:48), `titanic_clean` was 97.2% with Wrong 0 and `lookalikes` 41.7% again, from the currency-text and escaped-line-break candidates above.
+  - **After** (10:55, the code pushed):
+
+    | Set | Rows | Damaged cells | Recovered | Wrong | Harm | Row loss | Quarantined | Steps | Time | Ended by |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | titanic_clean | 1,043 | 509 | 97.2% | 0.0% | 0.00% | 0.0% | 81 | 4 | 73 s | done |
+    | dates_dmy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 2 s | done |
+    | dates_mdy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 11 s | done |
+    | lookalikes | 600 | 288 | 100.0% | 0.0% | 0.00% | 0.0% | 0 | 4 | 128 s | done |
+
+    | Set | Damage | Recovered | Wrong |
+    |---|---|---|---|
+    | titanic_clean | age: sentinel | 27/41 | 0 |
+    | titanic_clean | embarked: case | 156/156 | 0 |
+    | titanic_clean | fare: money | 312/312 | 0 |
+    | dates_dmy | visit_date: dmy_text | 0/400 | 0 |
+    | dates_mdy | visit_date: mdy_text | 0/400 | 0 |
+    | lookalikes | country: case | 48/48 | 0 |
+    | lookalikes | monthly_fee: money | 120/120 | 0 |
+    | lookalikes | plan: case | 60/60 | 0 |
+    | lookalikes | region: case | 60/60 | 0 |
+
+  - Harm 0.00% and Wrong 0 on all four; `titanic_clean` is back at 97.2% (the same as both slice 11 "before" runs) and `lookalikes` at 100%. The date sets stay text, as slice 11 meant, until the user picks an order (2b.9).
+- **Tests:** `test_cleaning_units.py` (`missing_fill` passes a recovery and fails an estimate, a wrong code and nothing in quarantined rows, and lets a requested step fill; case variants and a number beside its currency text compare equal; a lone result's agreement is 0.5; the tie-break counts a quarantined row whole; `runnable` repairs only code that needs it), `test_cleaner_checks.py` with new recorded replies (title case and most frequent spelling no longer disagree, and the most frequent spelling wins the tie and keeps "McDonald"; a real disagreement, "1,250" read as 1250 or 1.25, still skips with both cells shown; code whose line breaks came escaped commits, and fails without the repair).
+- **Docs:** PRD CLEAN-4b and §7.3.1; TRD §6 (`verifiers`), §7.2 (the comparison, the best candidate, `runnable`, `missing_fill`, agreement, missing values stay missing); App Flow §5 (the disagreement example, the checks card); UI/UX §5.4. The disagreement example in TRD and App Flow changed from McDonald (which no longer disagrees) to the decimal-comma one. FEEDBACK's rerun table gains this run.
+- **BACKLOG:** removed "The look-alike benchmark set's case fixes were skipped live" and "A lone imputation candidate isn't checked by agreement".

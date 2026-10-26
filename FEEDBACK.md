@@ -89,7 +89,16 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 | lookalikes | 41.7% (was 100%) | 0.0% | 0.00% | 0.0% | 1 | 90 s |
 
 - Before, the import typed both date sets day-first without saying so: right on one, wrong on every value of the other. Now neither is guessed; the user picks the order in the plan.
-- The `titanic_clean` and `lookalikes` drops are open (`docs/BACKLOG.md`): a lone imputation candidate filled 26 age placeholders, and the look-alike case fixes were skipped in this run.
+- The `titanic_clean` and `lookalikes` drops were fixed the same morning: a lone imputation candidate had filled 26 age placeholders, and the look-alike fixes were skipped when candidates spelled one value two ways or wrote a number as currency text. After the fixes (`docs/LOG.md`, "slice 11's two benchmark drops fixed"):
+
+| Set | Recovered | Wrong | Harm | Row loss | Steps | Time |
+|---|---|---|---|---|---|---|
+| titanic_clean | 97.2% | 0.0% | 0.00% | 0.0% | 4 | 73 s |
+| dates_dmy | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 2 s |
+| dates_mdy | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 11 s |
+| lookalikes | 100.0% | 0.0% | 0.00% | 0.0% | 4 | 128 s |
+
+- **Feedback for Nemotron 3 Ultra:** in one run all three candidate fixes for a column came back as one line of code with a literal `\n` where the line breaks belong (the code string escaped twice inside the JSON reply), so none parsed. Steps to reproduce: ask for `Candidates` with a `code` field under strict decoding at temperature 0 and check `ast.parse` on each; it happened for one column in one of five benchmark runs on 2026-10-26, and in none of the others. Sherlock now repairs it when the repaired code parses. Suggestion: validate that a string field meant to hold code has real line breaks, or document the escaping the structured-output mode applies.
 
 - **What it recovered fully:** money formatting (`$1,234.5` → numbers), case and spacing variants, mojibake (`ZÃ¼rich` → `Zürich`) and day-first dates. Typos in categories were 42 of 45.
 - **Weak spot:** placeholder values (`N/A`, `-999`, `?`) in numeric columns. Only 28 of 102 became missing; the rest were quarantined as parse failures, or `-999` stayed a number. The quarantined rows keep their text and are excluded from analysis, so nothing is silently wrong, but the cleaning is incomplete. This is our pipeline's order (the issue is diagnosed after the typing step), not a model fault.

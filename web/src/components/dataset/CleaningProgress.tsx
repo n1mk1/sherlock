@@ -22,6 +22,7 @@ const CHECK_LABELS: Record<string, string> = {
   placeholder_fill: "No placeholder fills",
   quarantine_scope: "Quarantine fits the issue",
   merge_safety: "No look-alike categories merged",
+  missing_fill: "Missing values stay missing",
   lossless: "Lossless round-trip",
 };
 

@@ -11,8 +11,8 @@ version), with the real model unless `LLM_MOCK` is set. Scores per set:
 - harm: undamaged cells whose final value no longer equals the clean value
 - row loss: rows missing from the final version (must be 0); quarantined rows are counted apart
 
-The output ends with every issue the Cleaner skipped and why, so a fix that didn't happen can be
-told from one that went wrong.
+The output ends with every step the Cleaner committed (its gate and confidence) and every issue it
+skipped and why, so a fix that didn't happen can be told from one that went wrong.
 
 Three sets test what the Cleaner must not do (plan 2.6): `dates_dmy` and `dates_mdy` hold the same
 kind of column, dates whose every day is 12 or less, written day-first in one and month-first in
@@ -212,6 +212,7 @@ class Score:
     ended_by: str
     by_kind: dict = field(default_factory=dict)  # "column: kind" → [recovered, damaged, wrong]
     skipped: list = field(default_factory=list)  # the report's skipped issues: (column, detector, reason)
+    committed: list = field(default_factory=list)  # the report's steps: (summary, gate, confidence)
 
     def row(self) -> str:
         rec = self.recovered / self.damaged if self.damaged else 1.0
@@ -278,6 +279,7 @@ def run_case(client, case: Case, timeout_s: float = 900) -> Score:
     final = _final(client, ds_id)
     result = score(case, final, len(report["steps"]), time.monotonic() - started, report["ended_by"])
     result.skipped = [(s["column"], s["detector"], s["reason"]) for s in report["skipped"]]
+    result.committed = [(s["summary"], s["gate"], s["confidence"]) for s in report["steps"]]
     return result
 
 
@@ -325,6 +327,7 @@ def run(names: list[str] | None = None) -> str:
         lines = [HEADER]
         details = ["", "| Set | Damage | Recovered | Wrong |", "|---|---|---|---|"]
         skips = ["", "| Set | Skipped | Reason |", "|---|---|---|"]
+        steps = ["", "| Set | Step | Gate | Confidence |", "|---|---|---|---|"]
         with TestClient(create_app()) as client:
             for case in cases():
                 if names and case.name not in names:
@@ -333,5 +336,7 @@ def run(names: list[str] | None = None) -> str:
                 lines.append(result.row())
                 details += [f"| {case.name} | {k} | {r}/{n} | {w} |" for k, (r, n, w) in sorted(result.by_kind.items())]
                 skips += [f"| {case.name} | {d} in {c or 'rows'} | {why.replace('|', '/')} |" for c, d, why in result.skipped]
+                steps += [f"| {case.name} | {name.replace('|', '/')} | {g} | {'—' if conf is None else f'{conf:.2f}'} |"
+                          for name, g, conf in result.committed]
         get_settings.cache_clear()
-    return "\n".join(lines + details + skips)
+    return "\n".join(lines + details + steps + skips)

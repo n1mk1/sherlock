@@ -16,11 +16,16 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
 - `merge_safety`: no text value was rewritten into another value that was already in its column
   when the two differ only in their numbers or are both common (`helpers._merge_refusal`, plan 2.5):
   "Region 2" → "Region 1" and "Austria" → "Australia" fail; "male " → "Male" passes.
+- `missing_fill`: missing values stay missing (owner's decision) unless a related column recovers
+  them: every filled cell must hold the one value its row's group has in this column, for some
+  other column (a city → region code dependency recovers a code; a median by class doesn't). A
+  step the user asked for (`requested`) may fill as it was told.
 
 `changed` is the per-cell rule all of this counts by. `compare` sets candidates' results side by side
 (plan 2.4): the share of the cells two candidates both change where their values differ (the gate
 skips over 1%, with two example cells shown both ways), and the output agreement, the share of
-candidates whose results match the best one's on the cells either changes.
+candidates whose results match the best one's on the cells either changes. Text compares without
+case or spacing: "plan a" and "Plan A" are one value spelled two ways, not a disagreement.
 
 `effect_line` turns a report into the cleaning log's main line for the step (cells changed, rows
 quarantined, the issue's count before → after), so every number on that line comes from code.
@@ -36,7 +41,7 @@ import numpy as np
 import pandas as pd
 
 from sherlock.cleaning import detectors
-from sherlock.cleaning.helpers import SENTINELS, _merge_key, _merge_refusal
+from sherlock.cleaning.helpers import SENTINELS, _merge_key, _merge_refusal, parse_numbers
 from sherlock.profile.datacard import build_frame
 
 SYSTEM = ("_row_id", "_quarantine_reason")
@@ -127,7 +132,8 @@ def changed(bc: pd.Series, ac: pd.Series) -> pd.Series:
     return differs
 
 
-def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, column: str | None) -> Report:
+def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, column: str | None,
+           requested: bool = False) -> Report:
     r = Report()
     # --- row ledger -------------------------------------------------------------------------
     if "_row_id" not in after or len(after) != len(before) or set(after["_row_id"]) != set(before["_row_id"]):
@@ -180,6 +186,7 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
     r.hard["parse_quarantine"] = "pass" if parse_failures == 0 else f"fail: {parse_failures} unparsed values not quarantined"
     r.hard["placeholder_fill"] = _placeholder_fill(b, a, user_cols)
     r.hard["merge_safety"] = _merge_safety(b, a, user_cols)
+    r.hard["missing_fill"] = "pass" if requested else _missing_fill(b, a, user_cols, quarantined_now)
 
     # --- soft score -------------------------------------------------------------------------------
     r.soft["parse_rate"] = r.parse_rate
@@ -223,20 +230,30 @@ def effect_line(report: Report, issue_words: str | None) -> str:
 
 
 AGREE_SHARE = 0.01  # results that differ on at most 1% of the cells they change agree
+LONE_AGREEMENT = 0.5  # the agreement of a result no other candidate's result could confirm
 
 
 def _as_text(s: pd.Series) -> pd.Series:
-    """Values as text for comparing two results: a whole float as an integer, a midnight as its date."""
+    """Values as text for comparing two results: a whole float as an integer, a midnight as its date,
+    and text without case or spacing (`helpers._merge_key`), since a case or spacing variant of one
+    value is the same value."""
     if s.dtype.kind == "M":
         return s.dt.strftime("%Y-%m-%d").where(s.dt.normalize() == s, s.astype(str))
-    return s.astype(str).str.replace(r"\.0$", "", regex=True)
+    return s.astype(str).str.replace(r"\.0$", "", regex=True).map(_merge_key)
 
 
 def results_differ(x: pd.Series, y: pd.Series) -> pd.Series:
     """The cells where two candidates' results differ: numbers within a relative 1e-9, both missing
-    as equal, otherwise by value or, when the types differ, as text."""
+    as equal, dates and booleans by value, otherwise as text without case or spacing. A number and a
+    text that reads as the same number (19.0 and "$19.00") are one value written two ways."""
     both_missing = x.isna() & y.isna()
     one_missing = x.isna() != y.isna()
+    if (x.dtype.kind in "iuf") != (y.dtype.kind in "iuf") and "b" not in (x.dtype.kind, y.dtype.kind):
+        number, text = (x, y) if x.dtype.kind in "iuf" else (y, x)
+        read = parse_numbers(text.astype(object).where(text.notna(), None))
+        if read.notna().any():  # the text side reads as numbers: compare those numbers
+            y_num, x_num = (read, number) if x is number else (number, read)
+            return results_differ(x_num.astype(float), y_num.astype(float))
     if x.dtype.kind in "iuf" and y.dtype.kind in "iuf":
         close = np.isclose(x.astype(float), y.astype(float), rtol=1e-9, atol=0.0)
         return pd.Series(~close, index=x.index) & ~both_missing | one_missing
@@ -272,7 +289,8 @@ def compare(before: pd.DataFrame, results: list[pd.DataFrame | None], best: int)
     changed: the worst pair's share of those cells with different values is the disagreement, with
     up to two of them as examples. The agreement is the share of all candidates (failed ones count
     as not agreeing) whose result differs from the best one's on at most 1% of the cells either
-    changed; the best agrees with itself."""
+    changed; the best agrees with itself. With fewer than two passing results nothing confirms the
+    best one, so its agreement is at most a neutral 0.5 (`LONE_AGREEMENT`), not a full 1.0."""
     b = before.set_index("_row_id")
     cols = [c for c in b.columns if c not in SYSTEM]
     frames = {i: r.set_index("_row_id").reindex(b.index) for i, r in enumerate(results) if r is not None}
@@ -315,6 +333,8 @@ def compare(before: pd.DataFrame, results: list[pd.DataFrame | None], best: int)
         if either == 0 or differ / either <= AGREE_SHARE:
             agree += 1
     out.agreement = agree / len(results) if results else 0.0
+    if len(frames) < 2:  # a lone passing result has nothing to agree with: neutral, not full
+        out.agreement = min(out.agreement, LONE_AGREEMENT)
     return out
 
 
@@ -366,6 +386,51 @@ def _merge_safety(b: pd.DataFrame, a: pd.DataFrame, columns: list[str]) -> str:
             if why:
                 return f"fail: merged {old!r} into {new!r}, which {why}"
     return "pass"
+
+
+def _missing_fill(b: pd.DataFrame, a: pd.DataFrame, columns: list[str], quarantined: pd.Series) -> str:
+    """Missing cells that became values no related column recovers. A filled cell is recovered when,
+    for some other column, the rows sharing its value there (missing in neither column) hold one
+    value in this column, and the fill is that value."""
+    for c in columns:
+        filled = b[c].isna() & a[c].notna() & ~quarantined
+        if not filled.any():
+            continue
+        target = a[c].where(~filled)  # the values that were there before, the only evidence a rule can use
+        open_cells = filled.copy()
+        for other in columns:
+            if other == c or not open_cells.any():
+                continue
+            key = b[other]
+            known = target.notna() & key.notna()
+            if not known.any():
+                continue
+            groups = pd.DataFrame({"k": key[known].astype(str), "v": target[known].astype(str)}).groupby("k")["v"]
+            single = groups.nunique()
+            single = single[single == 1].index
+            only = groups.first()
+            rows = open_cells & key.notna() & key.astype(str).isin(single)
+            if not rows.any():
+                continue
+            expected = key[rows].astype(str).map(only)
+            got = a.loc[rows, c].astype(str)
+            same = _same_text(got, expected)
+            open_cells.loc[same[same].index] = False
+        n = int(open_cells.sum())
+        if n:
+            example = a.loc[open_cells, c].iloc[0]
+            return (f"fail: {n} missing values in {c} filled with values no related column recovers "
+                    f"(such as {show(example)}); missing values stay missing")
+    return "pass"
+
+
+def _same_text(x: pd.Series, y: pd.Series) -> pd.Series:
+    """Two columns of the same cells as text, numbers equal when they parse to the same float."""
+    nx, ny = pd.to_numeric(x, errors="coerce"), pd.to_numeric(y, errors="coerce")
+    both = nx.notna() & ny.notna()
+    out = x == y
+    out[both] = np.isclose(nx[both], ny[both], rtol=1e-9, atol=1e-12)
+    return out
 
 
 def _conservation(before: pd.Series, after: pd.Series) -> float:

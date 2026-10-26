@@ -2,6 +2,75 @@
   {
     "purpose": "diagnose",
     "match": [
+      "Column: city",
+      "whitespace_case"
+    ],
+    "content": {
+      "cause": "Cities were typed with stray spaces.",
+      "approach_options": [
+        "Trim spaces",
+        "Leave them"
+      ],
+      "preferred_option": 0,
+      "risk": "low",
+      "leave_as_is": false
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: city"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Trim spaces",
+          "code": "result = df.copy()\\nresult['city'] = normalize_whitespace_case(df['city'], mode='keep')",
+          "expected_effect": "Trims the spaces around each city."
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "diagnose",
+    "match": [
+      "Column: amount",
+      "numbers_as_text"
+    ],
+    "content": {
+      "cause": "Amounts were typed as text with a comma in them.",
+      "approach_options": [
+        "Read the comma as a thousands separator",
+        "Read the comma as a decimal comma"
+      ],
+      "preferred_option": 0,
+      "risk": "medium",
+      "leave_as_is": false
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: amount"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Thousands separator",
+          "code": "result = df.copy()\nparsed = parse_numbers(df['amount'])\nresult['amount'] = parsed\nresult = quarantine_rows(result, parse_failures(df['amount'], parsed), 'parse: amount')\n",
+          "expected_effect": "Reads each comma as a thousands separator."
+        },
+        {
+          "label": "Decimal comma",
+          "code": "result = df.copy()\nparsed = parse_numbers(df['amount'], locale_hint='comma')\nresult['amount'] = parsed\nresult = quarantine_rows(result, parse_failures(df['amount'], parsed), 'parse: amount')\n",
+          "expected_effect": "Reads each comma as a decimal comma."
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "diagnose",
+    "match": [
       "Column: name",
       "whitespace_case"
     ],

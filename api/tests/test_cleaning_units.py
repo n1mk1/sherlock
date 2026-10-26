@@ -488,3 +488,67 @@ def test_candidates_that_value_the_same_cells_differently_disagree():
     near = compare(many, [a, b], best=0)
     assert near.disagreement == pytest.approx(0.005) and gate.disagree(near.disagreement) is None
     assert near.agreement == 1.0
+
+
+def test_missing_values_stay_missing_unless_a_related_column_recovers_them():
+    before = frame(city=["Bern", "Bern", "Basel", "Basel", "Bern", "Basel"], code=["BE", "BE", "BS", None, None, "BS"],
+                   age=[30.0, 40.0, 50.0, None, 35.0, None])
+    recovered = before.assign(code=["BE", "BE", "BS", "BS", "BE", "BS"])  # city → code: one code per city
+    assert verify(before, recovered, "functional_dependency", "code").hard["missing_fill"] == "pass"
+    estimated = before.assign(age=[30.0, 40.0, 50.0, 41.25, 35.0, 41.25])  # a median, not a recovery
+    r = verify(before, estimated, "missing", "age")
+    assert r.hard["missing_fill"] == ("fail: 2 missing values in age filled with values no related column recovers "
+                                      "(such as 41.25); missing values stay missing")
+    assert r.score == 0.0
+    assert verify(before, estimated, None, "age", requested=True).hard["missing_fill"] == "pass"  # the user asked
+    wrong_code = before.assign(code=["BE", "BE", "BS", "BE", "BE", "BS"])  # Basel's code is BS
+    assert verify(before, wrong_code, "functional_dependency", "code").hard["missing_fill"].startswith("fail: 1 missing")
+    hidden = quarantine_rows(estimated, estimated["_row_id"].isin([4, 6]), "bad row")
+    assert verify(before, hidden, "missing", "age").hard["missing_fill"] == "pass"  # quarantined rows don't count
+
+
+def test_case_variants_are_one_value_and_a_lone_result_is_not_full_agreement():
+    from sherlock.cleaning.verifiers import compare, results_differ
+
+    a = pd.Series(["Plan A", "plan a ", None, "Region 1"], dtype=object)
+    b = pd.Series(["PLAN A", "Plan  A", None, "Region 2"], dtype=object)
+    assert results_differ(a, b).tolist() == [False, False, False, True]
+    before = frame(plan=["plan a", "Plan A", "PLAN B", "Plan B"])
+    keep = before.assign(plan=["Plan A", "Plan A", "Plan B", "Plan B"])
+    lower = before.assign(plan=["plan a", "plan a", "plan b", "plan b"])
+    both = compare(before, [keep, lower], best=0)
+    assert both.disagreement == 0.0 and both.agreement == 1.0
+    assert compare(before, [keep], best=0).agreement == 0.5  # nothing to confirm it
+    assert compare(before, [keep, None], best=0).agreement == 0.5
+    assert compare(before, [keep, None, None], best=0).agreement == pytest.approx(1 / 3)
+
+
+def test_the_tie_break_prefers_the_fix_that_touches_least_and_counts_a_quarantined_row_whole():
+    from sherlock.cleaning.loop import best_candidate
+    from sherlock.cleaning.verifiers import Report
+
+    def report(cells, rows):
+        return Report(hard={"row_ledger": "pass"}, soft={"x": 1.0}, cells_changed=cells, quarantined=rows)
+
+    # A parse that rewrites 400 cells against a quarantine of the 312 rows it would parse, 8 columns:
+    # the quarantine takes 2,496 cells out of use, so the parse wins the tie.
+    scored = [("quarantine", 1.0, report(0, 312), None), ("parse", 1.0, report(400, 0), None)]
+    assert best_candidate(scored, columns=8) == 1
+    title_vs_keep = [("title", 1.0, report(83, 0), None), ("keep", 1.0, report(63, 0), None)]
+    assert best_candidate(title_vs_keep, columns=3) == 1  # the most frequent spelling rewrites fewer cells
+    assert best_candidate([("a", 0.9, report(1, 0), None), ("b", 1.0, report(500, 0), None)], 3) == 1  # score first
+    assert best_candidate([], 3) is None
+
+
+def test_one_value_written_two_ways_and_code_with_escaped_line_breaks():
+    from sherlock.cleaning.loop import runnable
+    from sherlock.cleaning.verifiers import results_differ
+
+    fee = pd.Series([19.0, 29.0, None])
+    assert results_differ(fee, pd.Series(["$19.00", "$30.00", None], dtype=object)).tolist() == [False, True, False]
+    assert results_differ(pd.Series(["abc", "x"], dtype=object), pd.Series([1.0, 2.0])).tolist() == [True, True]
+    escaped = "result = df.copy()" + "\\" + "nresult['city'] = df['city'].str.strip()"
+    assert runnable(escaped) == "result = df.copy()\nresult['city'] = df['city'].str.strip()"
+    fine = "result = df.copy()\nresult['note'] = df['note'].str.replace('\n', ' ')"
+    assert runnable(fine) == fine  # code that parses keeps its escapes
+    assert runnable("result = (") == "result = ("  # still broken: left for the sandbox to refuse

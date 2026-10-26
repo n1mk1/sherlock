@@ -18,6 +18,7 @@ time spent waiting for the model, skipped issues) is checkpointed in `jobs.state
 report (`GET /report`) is assembled from it, the run's steps and the `issues` table.
 """
 
+import ast
 import json
 import random
 import re
@@ -114,6 +115,23 @@ def short_line(issue: dict) -> str:
         text = issue["instruction"]
         return f"Your step: {text if len(text) <= 80 else text[:79] + '…'}"
     return f"{issue['count']:,} {issue_words(issue)}"
+
+
+def runnable(code: str) -> str:
+    """A candidate's code with its line breaks back when the model escaped them twice: a reply whose
+    code reads `result = df.copy()\\nresult[...] = ...` on one line doesn't parse, and with its
+    literal `\\n` read as line breaks it does. Code that parses, or still doesn't, is left as it came."""
+    try:
+        ast.parse(code)
+        return code
+    except SyntaxError:
+        pass
+    fixed = code.replace("\\n", "\n")
+    try:
+        ast.parse(fixed)
+    except SyntaxError:
+        return code
+    return fixed
 
 
 def order_needed(issue: dict) -> str:
@@ -418,7 +436,8 @@ class Cleaner:
             if r.cancelled:
                 raise JobCancelled()
             if not r.ok:
-                scored.append((cand, 0.0, None, r.error or "the code failed"))
+                why = r.error or "the code failed"
+                scored.append((cand, 0.0, None, f"{why} ({r.violations[0]})" if r.violations else why))
                 results.append(None)
                 continue
             try:
@@ -427,11 +446,11 @@ class Cleaner:
                 scored.append((cand, 0.0, None, str(exc)))
                 results.append(None)
                 continue
-            report = verifiers.verify(sample, after, detector, column)
+            report = verifiers.verify(sample, after, detector, column, requested=requested)
             scored.append((cand, report.score, report, None if report.passed else _first_failure(report)))
             results.append(after if report.passed else None)
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
-        best_i = max(range(len(scored)), key=lambda i: scored[i][1]) if scored else None
+        best_i = best_candidate(scored, len([c for c in sample.columns if c not in verifiers.SYSTEM]))
         if best_i is None or scored[best_i][1] == 0.0:
             why = next((e for *_, e in scored if e), "no candidate passed the checks")
             return self._skip(issue, f"No candidate passed the checks ({why})", candidates=chips)
@@ -460,7 +479,7 @@ class Cleaner:
             after_full = self._restrict(before, self._read(full_out))
         except ScopeError as exc:
             return self._skip(issue, f"Not applied: {exc}", candidates=chips)
-        full_report = verifiers.verify(before, after_full, detector, column)
+        full_report = verifiers.verify(before, after_full, detector, column, requested=requested)
         if not full_report.passed:
             return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", candidates=chips,
                               checks=full_report.hard)
@@ -591,7 +610,8 @@ class Cleaner:
         out = self.llm.structured("large", self._messages(user), Candidates, purpose="propose", scope=self.scope,
                                   max_tokens=6000)
         self._track(out.completion)
-        return out.value
+        return out.value.model_copy(update={"candidates": [c.model_copy(update={"code": runnable(c.code)})
+                                                           for c in out.value.candidates]})
 
     def _critic(self, issue, best, before: pd.DataFrame, after: pd.DataFrame, report) -> Critique:
         column = issue["column"]
@@ -699,6 +719,20 @@ def _copy_rows(src: Path, dst: Path, row_ids: list[int] | None) -> None:
                      "(FORMAT PARQUET)")
     finally:
         conn.close()
+
+
+def best_candidate(scored: list[tuple], columns: int) -> int | None:
+    """The index of the best of `scored` [(candidate, score, report, error)]: the highest score and, on
+    equal scores, the one that touches the fewest cells, a quarantined row counting as all of its
+    cells as in the gate's blast (`gate.cells_affected`): the most conservative fix of the same
+    quality. None when nothing was scored."""
+    if not scored:
+        return None
+
+    def touched(report) -> int:
+        return report.cells_changed + report.quarantined * max(columns, 1) if report else 0
+
+    return max(range(len(scored)), key=lambda i: (scored[i][1], -touched(scored[i][2])))
 
 
 def _first_failure(report: verifiers.Report) -> str:
