@@ -4,7 +4,7 @@ import type { CleaningReport } from "@/api/types";
 import { FullReport } from "@/components/dataset/CleaningReport";
 import { Sources } from "@/components/shell/ChatBar";
 import { mockApi, renderAt } from "@/test/render";
-import { type ModelCall, type Receipt, seconds, totalLine } from "./Receipts";
+import { type ModelCall, type Receipt, seconds, stepName, totalLine } from "./Receipts";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -73,6 +73,10 @@ describe("How I worked it out", () => {
     expect(screen.getByText("2. Reviewed a fix")).toBeInTheDocument();
     expect(screen.getByText("and 7 more calls")).toBeInTheDocument(); // the API lists the first 500
     expect(screen.getByText(/^Total: 9 calls · 9\.0 s waiting on them · 9,900 tokens$/)).toBeInTheDocument();
+  });
+
+  it("names the result check's repair (plan 2.7)", () => {
+    expect(stepName(call({ purpose: "sql_check" }))).toBe("Checked the result");
   });
 
   it("formats times", () => {

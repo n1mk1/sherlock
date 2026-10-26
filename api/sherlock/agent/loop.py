@@ -19,9 +19,9 @@ from collections.abc import Callable
 
 from sherlock.agent import actions as acts
 from sherlock.agent import flow, insight, prompts
-from sherlock.agent.answerers import CantAnswer, Scope, Toolkit, ask_history, explain_widget
+from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, explain_widget
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
-from sherlock.agent.resolve import resolve
+from sherlock.agent.resolve import resolve, widget_options
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.client import (
@@ -29,6 +29,7 @@ from sherlock.llm.client import (
 )
 from sherlock.llm.schemas import Plan, Route
 from sherlock.profile import service as profile_service
+from sherlock.stories.wording import wording_problem
 from sherlock.widgets import compile as wc
 from sherlock.widgets import service as ws
 
@@ -144,6 +145,8 @@ class Agent:
             (self.dataset["id"], HISTORY),
         ).fetchall()[::-1]
         focus = next((json.loads(r["focus_json"]) for r in reversed(rows) if r["role"] == "assistant" and r["focus_json"]), None)
+        if focus:  # a clarification's focus carries the answer's before it
+            focus = {k: v for k, v in focus.items() if k != "clarify"}
         return rows, focus
 
     # --- context ------------------------------------------------------------------------------
@@ -201,16 +204,22 @@ class Agent:
         scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], message_id=mid,
                           on_wait=lambda t: self.emit("status", {"text": t}), deadline=self.started + WALL_S)
         question = text
+        chosen = None  # what the picked option of a code-built clarification stands for (plan 2.8)
         if clarification_of:
             asked = self.db.execute("SELECT * FROM messages WHERE id = ? AND dataset_id = ?", (clarification_of, dataset["id"])).fetchone()
             original = self.db.execute(
                 "SELECT text FROM messages WHERE dataset_id = ? AND role = 'user' AND created_at <= ? AND id != ? "
                 "ORDER BY created_at DESC, id DESC LIMIT 1", (dataset["id"], asked["created_at"] if asked else now_iso(), user["id"]),
             ).fetchone() if asked else None
-            question = f"{original['text']}\n(Clarified: {choice or text})" if original else (choice or text)
+            clar = (json.loads(asked["focus_json"]) if asked and asked["focus_json"] else {}).get("clarify") or {}
+            picked = choice or text
+            means = clar.get("means", {}).get(picked)
+            chosen = {"name": clar.get("name") or picked, **means} if means else None
+            said = f"by “{clar['name']}” I mean {picked}" if means and clar.get("name") else picked
+            question = f"{original['text']}\n(Clarified: {said})" if original else picked
 
         try:
-            return self._answer(mid, question, context, scope, history, focus, clarified=bool(clarification_of))
+            return self._answer(mid, question, context, scope, history, focus, clarified=bool(clarification_of), chosen=chosen)
         except (LLMUnavailable, BudgetExceeded) as exc:
             self.emit("error", {"code": exc.code, "message": exc.message})
             generic = type(exc) is LLMUnavailable  # a refused request or a deadline says so in its own words
@@ -220,7 +229,8 @@ class Agent:
             self.emit("message", out)
             return out
 
-    def _answer(self, mid: str, question: str, context: dict, scope: CallScope, history, focus, clarified: bool) -> dict:
+    def _answer(self, mid: str, question: str, context: dict, scope: CallScope, history, focus, clarified: bool,
+                chosen: dict | None = None) -> dict:
         dataset = self.dataset
         self.emit("status", {"text": "Thinking…"})
         card = profile_service.get_or_build(self.env.settings, self.db, self.env.cache, dataset)
@@ -238,8 +248,8 @@ class Agent:
             route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
         else:
             route = self._route(question, base_context, scope, tools)
-        if route.ambiguous and route.clarification and not clarified:
-            clar = route.clarification.model_dump()
+        clar = checked_clarification(route)
+        if route.ambiguous and clar and not clarified:
             self.emit("clarification", clar)
             out = self._save(mid, "assistant", clar["question"], clarification=clar, context=context,
                              route=route.model_dump(), tokens=scope.message_tokens[0])
@@ -247,8 +257,12 @@ class Agent:
             return out
 
         resolved = resolve(self.db, dataset["id"], [e.model_dump() for e in route.entities], columns)
+        if chosen:
+            choose(resolved, chosen)
         ctx_text = self._context(card, rows_scope, history, focus, resolved, context)
-        kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope, example=example_question(card))
+        kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope, example=example_question(card),
+                      resolved=resolved, types=types, roles={c["name"]: c["role"] for c in card["columns"]})
+        asking: Clarify | None = None  # a code-built clarification (plan 2.8), asked when no other step answers
         blocks, sources, results, actions, notes, streamed, computed = [], [], [], [], [], [], []
         focus_out = {"question": question, "intents": list(route.intents), "selection_id": rows_scope.selection_id}
 
@@ -321,7 +335,7 @@ class Agent:
                     w = self.db.execute("SELECT * FROM widgets WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL",
                                         (wid, dataset["id"])).fetchone() if wid else None
                     if w is None:
-                        raise CantAnswer("Which widget? Point at one on the dashboard, or name it.")
+                        w = self._which_widget(q, "Which widget? Point at one on the dashboard, or name it.")
                     ex = explain_widget(self.env, dataset, w, wc.parse_filter(context.get("global_filter")))
                     blocks.append(text_block([{"type": "label", "ref": f"widget:{w['id']}", "text": w["title"]},
                                               {"type": "text", "text": " runs the query below on the current version, "
@@ -361,7 +375,8 @@ class Agent:
                     w = self.db.execute("SELECT * FROM widgets WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL",
                                         (wid, dataset["id"])).fetchone() if wid else None
                     if w is None:
-                        raise CantAnswer("Which widget? Click one on the dashboard (it becomes the chat's context), or name it.")
+                        w = self._which_widget(q, "Which widget? Click one on the dashboard (it becomes the chat's context), "
+                                                  "or name it.")
                     self.emit("status", {"text": "Changing the widget"})
                     w = kit.update_widget(q, w)
                     spec = json.loads(w["spec_json"])
@@ -393,6 +408,11 @@ class Agent:
                                                "Approve to start Clean with AI; each fix it makes is a step you can undo."}]))
                 else:
                     raise CantAnswer(NOT_YET.get(intent, "I can't do that yet."))
+            except Clarify as exc:
+                if asking is None and not clarified and len(exc.options) >= 2:
+                    asking = exc
+                elif str(exc) not in notes:
+                    notes.append(str(exc))
             except CantAnswer as exc:
                 if str(exc) not in notes:
                     notes.append(str(exc))
@@ -412,19 +432,25 @@ class Agent:
                     plan[n - 1]["status"] = "done" if ok else "failed"
                     self.emit("plan.step", {"index": n - 1, "status": plan[n - 1]["status"]})
 
+        if asking is not None:
+            if not (blocks or results or notes or proposal):
+                return self._ask(mid, asking, route, context, scope, focus, plan)
+            notes.append(str(asking))
         if results:
             self.emit("status", {"text": "Writing the answer"})
             known = {c["name"]: [v["value"] for v in c.get("top_values") or []] for c in card["columns"]}
-            composed, _ = compose(self.llm, scope, question, results, columns, dataset["current_version"], rows_scope.selection_id,
-                                  known)
+            composed, by_model = compose(self.llm, scope, question, results, columns, dataset["current_version"],
+                                         rows_scope.selection_id, known)
             by_id = {r.id: r for r in results}
             # A model card's numbers have no query to pin: shown as a table, never a pinnable chart.
             composed = [table_block(by_id[b["result"]]) if b["type"] == "chart" and b.get("result") in computed else b
                         for b in composed]
-            # Of a model card's tables, show only those the prose cites.
+            # Of a model card's tables, show only those the prose cites; the fallback (no prose) shows them all.
             cited = {r.get("key", "").split(":")[0] for b in composed if b["type"] == "text"
                      for para in b["body"]["blocks"] for r in para["runs"] if r["type"] == "chip"}
-            composed = [b for b in composed if not (b["type"] == "table" and b.get("result") in computed and b["result"] not in cited)]
+            if by_model:
+                composed = [b for b in composed
+                            if not (b["type"] == "table" and b.get("result") in computed and b["result"] not in cited)]
             blocks = composed + blocks
             for i, b in enumerate(blocks):
                 if b["type"] == "chart" and "widget_id" not in b:
@@ -469,6 +495,31 @@ class Agent:
         self.emit("message", out)
         self._summarize(scope)
         return out
+
+    def _ask(self, mid: str, asking: Clarify, route: Route, context: dict, scope: CallScope, focus: dict | None,
+             plan: list | None) -> dict:
+        """A clarification built in code (plan 2.8): its buttons, and in the focus what each one stands for,
+        so the choice resumes with the name resolved. The focus keeps the previous answer's, for follow-ups."""
+        clar = asking.clarification()
+        self.emit("clarification", clar)
+        kept = {k: v for k, v in (focus or {}).items() if k != "actions"}
+        out = self._save(mid, "assistant", clar["question"], clarification=clar, context=context,
+                         focus={**kept, "clarify": {"name": asking.name, "means": asking.means}},
+                         route=route.model_dump(), tokens=scope.message_tokens[0], plan={"steps": plan} if plan else None)
+        self.emit("message", out)
+        return out
+
+    def _which_widget(self, question: str, fallback: str) -> sqlite3.Row:
+        """The dashboard's only widget, or a clarification with the two or three whose titles best match
+        the message as buttons (PRD ASK-6). With no widget, the honest sentence."""
+        rows = self.db.execute("SELECT * FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL ORDER BY order_no",
+                               (self.dataset["id"],)).fetchall()
+        if len(rows) == 1:
+            return rows[0]
+        options = widget_options(question, rows)
+        if not options:
+            raise CantAnswer("There are no widgets on the dashboard yet. Ask me to add one, or use Add widget.")
+        raise Clarify(fallback, "Which widget? Pick one, or click it on the dashboard.", options)
 
     def _export(self, mid: str, question: str, context: dict, scope: CallScope) -> dict:
         """"Export a notebook" (App Flow §17.1): the dialog, with the options the wording asks for."""
@@ -566,3 +617,32 @@ class Agent:
         except StructuredOutputError:
             # TRD §3.5: the router's fallback treats the message as a single ask_data question.
             return Route(intents=["ask_data"], ambiguous=False, clarification=None, multi_step=False, entities=[])
+
+
+def checked_clarification(route: Route) -> dict | None:
+    """The router's clarification under the wording check (plan 2.9): its question and options are the
+    model's words shown as buttons. An option that fails is dropped; with fewer than two left, or a
+    question that fails, there's no clarification and the message is answered as routed."""
+    if not route.ambiguous or route.clarification is None:
+        return None
+    clar = route.clarification.model_dump()
+    options = [o.strip() for o in clar["options"] if o.strip() and not wording_problem(o)]
+    if wording_problem(clar["question"]) or len(options) < 2:
+        return None
+    return {"question": clar["question"], "options": options[:3]}
+
+
+def choose(resolved: dict, chosen: dict) -> None:
+    """Put the picked option of a code-built clarification into the message's names (plan 2.8)."""
+    name = chosen["name"]
+    if "column" in chosen:
+        resolved["columns"][name] = chosen["column"]
+    elif "value" in chosen:
+        resolved["values"][name] = list(chosen["value"])
+    elif "columns" in chosen:
+        for c in chosen["columns"]:
+            resolved["columns"][c] = c
+    elif "widget" in chosen:
+        resolved["widgets"][name] = chosen["widget"]
+    if name in resolved["unresolved"]:
+        resolved["unresolved"].remove(name)

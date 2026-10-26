@@ -3,8 +3,9 @@
 The model (`small`, schema `Answer`) picks the answer's shape and writes chip-based prose: every
 number is a chip naming a result cell (`r1:0:2`, or `r1:total` for a row count), and text runs
 can't contain digits. Code fills every value from the referenced cells, so the model never types a
-number. The validator rejects a chip that names no cell, a label with digits, or a number answer
-without its chip; after one repair the fallback is the raw results with their sources.
+number. The validator rejects a chip that names no cell, a label with digits, a number answer
+without its chip, and prose that breaks the wording rules (a number in words, causal wording, markup);
+after one repair the fallback is the raw results with their sources.
 """
 
 import math
@@ -14,10 +15,13 @@ from sherlock.agent.answerers import Result
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Answer, ChipRun, LabelRun, TextRun
 from sherlock.llm.text import has_digits
+from sherlock.stories.wording import wording_problem
 
 from sherlock.agent import prompts
 
 CHIP = re.compile(r"^(r\d+):(?:(\d+):(\d+)|total)$")
+# A value label shows a result cell as written, so a number type's cells are chips, never labels (PRD STORY-8).
+NUMBER_TYPE = re.compile(r"^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|FLOAT|DOUBLE|REAL|DECIMAL|NUMERIC)\b", re.I)
 PCT_NAME = re.compile(r"(rate|share|pct|percent|ratio|proportion|fraction)", re.I)
 INLINE_ROWS = 20
 
@@ -88,9 +92,11 @@ def label_text(ref: str, columns: list[str], values: set[str] | None = None) -> 
 
 
 def label_values(results: dict[str, Result], known: dict[str, list] | None = None) -> set[str]:
-    """The values a `value:` label may show (Day 6 review F2): any cell of the answer's results, and
-    `<column>:<value>` for the values the DataCard knows (its top values)."""
-    out = {str(v) for res in results.values() for row in res.rows for v in row if v is not None}
+    """The values a `value:` label may show (Day 6 review F2): a cell of one of the answer's result columns
+    that isn't a number type (text, a date, a yes/no; plan 2.9, PRD STORY-8), and `<column>:<value>` for
+    the values the DataCard knows (its top values). A count or an average is a chip, never a label."""
+    out = {str(row[i]) for res in results.values() for i, c in enumerate(res.columns)
+           if not NUMBER_TYPE.match(str(c.get("type") or "")) for row in res.rows if row[i] is not None}
     return out | {f"{col}:{v}" for col, vals in (known or {}).items() for v in vals if v is not None}
 
 
@@ -198,12 +204,17 @@ def compose(llm: LLMClient, scope: CallScope, question: str, results: list[Resul
             if not any(isinstance(r, TextRun) and sum(any(ch.isalpha() for ch in w) for w in r.text.split()) >= 2
                        for r in a.prose):
                 raise ValueError("the prose needs a sentence in words around the chips, not only chips or names")
+            problem = wording_problem(" ".join(r.text for r in a.prose if isinstance(r, TextRun)))
+            if problem:
+                raise ValueError(f"the prose has {problem}")
         if a.shape == "number":
             if not a.number:
                 raise ValueError("shape number needs the chip of the value in `number`")
             resolve_chip(a.number, by_id)
             if a.label and has_digits(a.label):
                 raise ValueError("the label may not contain digits")
+            if a.label and wording_problem(a.label):
+                raise ValueError(f"the label has {wording_problem(a.label)}")
         if a.shape == "chart" and not any(r.row_count >= 2 for r in results):
             raise ValueError("a chart needs a result with at least two rows; use number, table or text")
 

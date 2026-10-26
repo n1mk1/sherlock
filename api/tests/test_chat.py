@@ -129,7 +129,7 @@ def test_a_chart_answer_doesnt_add_a_widget_unasked(client, ready):
 
 def test_clarification_then_the_choice(client, ready):
     _, ask = send(client, ready["id"], "compare the groups")
-    assert ask["clarification"] == {"question": "Which groups?", "options": ["men and women", "the three classes"]}
+    assert ask["clarification"] == {"question": "Which groups?", "options": ["men and women", "the passenger classes"]}
     assert ask["blocks"] == []
     _, msg = send(client, ready["id"], "men and women", clarification_of=ask["id"], choice="men and women")
     assert msg["text"].startswith("Women survived at 72.7%") and "men at 19.1%" in msg["text"]
@@ -138,6 +138,8 @@ def test_clarification_then_the_choice(client, ready):
 def test_honest_limits(client, ready):
     _, msg = send(client, ready["id"], "make this a line chart")  # update_widget (D8.5) with no widget in view
     assert msg["text"].startswith("Which widget?")
+    titles = {w["title"] for w in client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"]}
+    assert 2 <= len(msg["clarification"]["options"]) <= 3 and set(msg["clarification"]["options"]) <= titles  # ASK-6
     _, msg = send(client, ready["id"], "nationality breakdown")
     assert msg["text"].startswith("This file has no column that answers that.")
     assert "passengers by home destination" in msg["text"]
@@ -184,21 +186,27 @@ def test_a_value_label_must_be_a_value_the_answer_or_the_data_has():
     "three quarters" as a label would put a number the model made up into the answer."""
     from sherlock.llm.schemas import ChipRun, LabelRun, TextRun
 
-    res = Result("r1", "sql", "tpl", [{"name": "class", "type": "BIGINT"}, {"name": "avg_fare", "type": "DOUBLE"}],
-                 [[1, 87.51], [3, 13.3]], 2)
+    res = Result("r1", "sql", "tpl", [{"name": "class", "type": "BIGINT"}, {"name": "avg_fare", "type": "DOUBLE"},
+                                      {"name": "port", "type": "VARCHAR"}],
+                 [[1, 87.51, "C"], [3, 13.3, "S"]], 2)
     cols = ["pclass", "fare", "sex", "embarked"]
-    known = {"sex": ["male", "female"], "embarked": ["S", "C", "Q"]}
+    known = {"sex": ["male", "female"], "embarked": ["S", "Q"]}
 
-    def shown(label):
+    def shown(label, known=known):
         runs = comp.to_runs([TextRun(text="The highest is "), LabelRun(label=label), TextRun(text=" at "), ChipRun(chip="r1:0:1")],
                             {"r1": res}, cols, known)
         return runs[1]["text"]
 
-    assert shown("value:pclass:1") == "1"  # a cell of the result
+    assert shown("value:embarked:C") == "C"  # a cell of one of the result's text columns
     assert shown("value:sex:female") == "female" and shown("value:embarked:Q") == "Q"  # values the DataCard knows
     for label in ("value:fare:512.33", "value:sex:three quarters", "value:embarked:female"):
         with pytest.raises(ValueError, match="no result shows"):
             shown(label)
+    # Plan 2.9 (PRD STORY-8): a number column's cells are chips, never labels, so an average can't pass as a name.
+    for label in ("value:fare:87.51", "value:pclass:1"):
+        with pytest.raises(ValueError, match="no result shows"):
+            shown(label)
+    assert shown("value:pclass:1", known={**known, "pclass": ["3", "1", "2"]}) == "1"  # a code the DataCard knows
 
 
 def test_eval_checks():

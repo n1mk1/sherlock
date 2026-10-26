@@ -51,7 +51,7 @@
                "view": "kpi", "x": null, "y": "avg_age"}},
 
   {"purpose": "route", "match": ["<data>\ncompare the groups\n</data>"],
-   "content": {"intents": ["ask_data"], "ambiguous": true, "clarification": {"question": "Which groups?", "options": ["men and women", "the three classes"]},
+   "content": {"intents": ["ask_data"], "ambiguous": true, "clarification": {"question": "Which groups?", "options": ["men and women", "the passenger classes"]},
                "multi_step": false, "entities": []}},
   {"purpose": "route", "match": ["<data>\ncompare the groups\n(Clarified: men and women)\n</data>"],
    "content": {"intents": ["ask_data"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "men", "kind": "value"}]}},

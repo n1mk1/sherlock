@@ -15,23 +15,11 @@ from pydantic import Field
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import ChipRun, LabelRun, Run, Story, Strict, TextRun
 from sherlock.stories.facts import small_sample
+from sherlock.stories.wording import CAUSAL, MARKUP, NUMBER_WORDS, ROMAN, number_in_words  # noqa: F401
 
-# D9: "how class influences ticket price" got past the first list in the cached sample's stories.
-CAUSAL = re.compile(r"\b(cause[sd]?|causing|because|leads? to|led to|results? in|resulted in|drives?|driven by|due to"
-                    r"|influenc(?:e[sd]?|ing)|affect(?:s|ed|ing)?|impact(?:s|ed|ing)?)\b", re.I)
-# An HTML entity ("&frac34;") is markup too: the notebook's Markdown renders it as a number.
-MARKUP = re.compile(r"[{}\[\]]|\bchip\b|\b(column|value):|&#?\w+;", re.I)
 NUMERIC_VALUE = re.compile(r"^-?\d+(\.\d+)?$")
 SPLICE = re.compile(r"([.!?])(?=[A-Z])")
 SMALL = re.compile(r"\b(small|few|limited|only a handful)\b", re.I)
-# Numbers spelled out are still numbers the model wrote ("six", "twice"): they must be chips too.
-NUMBER_WORDS = re.compile(r"\b(zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-                          r"|(?:thir|four|fif|six|seven|eigh|nine)teen|(?:twen|thir|for|fif|six|seven|eigh|nine)ty"
-                          r"|hundreds?|thousands?|millions?|billions?|trillions?|dozens?|twice|thrice|tripled?|doubled?"
-                          r"|quadrupled?|quintupled?|halved|half|halves|(?:two|three|four|five|ten|hundred|thousand)fold"
-                          r"|one (?:in|out of)|an? (?:third|quarter|fifth|tenth) of)\b", re.I)
-# So are Roman numerals ("XLV passengers"): upper case, two letters or more.
-ROMAN = re.compile(r"\b(?=[MDCLXVI]{2,}\b)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})\b")
 # "0.373 lower than unit_price" says the gap is 0.373: only a fact that is a difference or a ratio may be read that way.
 GAP_AFTER = re.compile(r"^\s*(?:points?\s+|times\s+)?(?:lower|higher|less|more|greater|smaller|larger|bigger|fewer|better|worse)\s+than\b", re.I)
 DIFFERENCE = re.compile(r"\b(than|over|above|below|change|gap|difference|ratio)\b", re.I)
@@ -43,11 +31,6 @@ COMPARE = re.compile(r"\b(higher|lower|more|less|greater|smaller|larger|bigger|f
 UP = re.compile(r"\b(higher|more|greater|larger|bigger|better|above|exceed\w*|outpac\w*|surpass\w*)\b", re.I)
 DOWN = re.compile(r"\b(lower|less|smaller|fewer|worse|below|trail\w*|lag\w*)\b", re.I)
 
-
-def number_in_words(text: str) -> str | None:
-    """The first number the text spells out, if any."""
-    m = NUMBER_WORDS.search(text) or ROMAN.search(text)
-    return m.group(0) if m else None
 
 SYSTEM = """You are Sherlock, a data analyst who writes short story cards for dashboard widgets.
 Every number you mention is a chip naming a fact that code computed; you never type a digit.

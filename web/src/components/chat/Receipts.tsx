@@ -13,7 +13,8 @@ export type ModelCall = components["schemas"]["ModelCall"];
 
 // What each call purpose did, in plain words (UI/UX §7). An unknown purpose shows as itself.
 const DID: Record<string, string> = {
-  route: "Read the question", plan: "Planned the steps", sql: "Wrote the query", predicate: "Wrote the row filter",
+  route: "Read the question", plan: "Planned the steps", sql: "Wrote the query", sql_check: "Checked the result",
+  predicate: "Wrote the row filter",
   widget: "Designed the widget", update_widget: "Changed the widget", compose: "Wrote the answer",
   stats: "Chose the test", meaning: "Explained the column", edits: "Drafted the edits", ask_story: "Read the cards",
   plan_edits: "Changed the cleaning plan", summary: "Summarized the thread",

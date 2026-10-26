@@ -1,29 +1,61 @@
 """Answerers and actions for chat v1 (TRD §8.2, Implementation Plan D4.3): `ask_data`, `find_rows`,
 `explain_widget`, `ask_history`, and the `create_widget` action. Each returns a result the composer
 can cite and the sources that prove it. SQL from the model goes through the same validation as
-widget SQL (TRD §6.3) and runs on the cached connection; a failure gets one repair with the error."""
+widget SQL (TRD §6.3) and runs on the cached connection; a failure gets one repair with the error.
+A query that runs is checked in code (`findings`), and what code found goes back for one repair."""
 
 import json
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass, field
 
+from sqlglot import exp
+
 from sherlock.agent import prompts
+from sherlock.agent.resolve import candidates
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import CallScope, LLMClient, fence
+from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import PredicateDraft, SqlDraft, WidgetDraft
+from sherlock.profile.service import MAX_INDEXED_VALUES
 from sherlock.rows.query import ident
+from sherlock.stories.wording import title_problem, wording_problem
 from sherlock.widgets import compile as wc
 from sherlock.widgets import layout as wl
 from sherlock.widgets import service as ws
 from sherlock.widgets.execute import run_query
 
+log = logging.getLogger("sherlock.agent")
 TABLE_ROWS = 20
+SHOWN_VALUES = 8  # a finding about a literal lists this many of the column's values
+NAMED_ROLES = ("dimension", "measure", "target_like", "time")  # a named column of these roles must be used
 
 
 class CantAnswer(Exception):
     """The answerer gave up with a message for the user (App Flow §10.2 failure modes)."""
+
+
+class Clarify(CantAnswer):
+    """The answerer needs the user to pick one of two or three options first (PRD ASK-6). `means` says
+    what each option stands for (`{"column": c}`, `{"value": [c, v]}`, `{"columns": [a, b]}` or
+    `{"widget": id}`), so the choice resumes with the name resolved. Where a clarification can't be
+    asked (the message already answers one, or another step answered), the message is the note."""
+
+    def __init__(self, fallback: str, question: str, options: list[tuple[str, dict]], name: str | None = None) -> None:
+        super().__init__(fallback)
+        self.question, self.name = question, name
+        self.options = [o for o, _ in options][:3]
+        self.means = {o: m for o, m in options[:3]}
+
+    def clarification(self) -> dict:
+        return {"question": self.question, "options": self.options}
+
+
+def reading_text(reading: str) -> str:
+    """The model's reading as the source label shows it, or "" when it breaks the wording rules (plan 2.9)."""
+    reading = (reading or "").strip()[:200]
+    return "" if wording_problem(reading) else reading
 
 
 @dataclass
@@ -78,6 +110,9 @@ class Toolkit:
     calls: list[int] = field(default_factory=lambda: [0])
     reading: str = ""  # how the last widget request's words were read as columns
     example: str = ""  # a question in this file's own columns, for "try naming the columns" (Rule 4)
+    resolved: dict = field(default_factory=dict)  # the message's names (`resolve.resolve`), for the result checks
+    types: dict = field(default_factory=dict)     # the file's columns and their DuckDB types
+    roles: dict = field(default_factory=dict)     # the file's columns and their DataCard roles
 
     def _try_naming(self, what: str) -> str:
         return f"I couldn't build a working query for {what}. Try naming the columns" + (
@@ -94,7 +129,7 @@ class Toolkit:
 
     @staticmethod
     def _read_as(res: Result, reading: str) -> Result:
-        res.extra["reading"] = reading.strip()[:200]
+        res.extra["reading"] = reading_text(reading)
         return res
 
     # --- ask_data ---------------------------------------------------------------------------
@@ -103,19 +138,111 @@ class Toolkit:
         messages = self._messages(prompts.SQL.format(context=self.context, message=fence(question)))
         draft = self.llm.structured("medium", messages, SqlDraft, purpose="sql", scope=self.scope).value
         if not draft.answerable:
-            raise CantAnswer(_closest(draft.closest))
+            raise self._unanswered(self._closest(draft.closest))
         try:
-            return self._read_as(self._run(draft.sql, rid), draft.reading)
+            res = self._read_as(self._run(draft.sql, rid), draft.reading)
         except ApiError as exc:
-            repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
-            draft = self.llm.structured("medium", repair, SqlDraft, purpose="sql", scope=self.scope).value
+            messages = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
+                        {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
+            draft = self.llm.structured("medium", messages, SqlDraft, purpose="sql", scope=self.scope).value
             if not draft.answerable:
-                raise CantAnswer(_closest(draft.closest)) from None
+                raise self._unanswered(self._closest(draft.closest)) from None
             try:
-                return self._read_as(self._run(draft.sql, rid), draft.reading)
+                res = self._read_as(self._run(draft.sql, rid), draft.reading)
             except ApiError:
-                raise CantAnswer(self._try_naming("that")) from None
+                raise self._unanswered(self._try_naming("that")) from None
+        return self._checked(res, messages, draft, rid)
+
+    def _checked(self, res: Result, messages: list[dict], draft: SqlDraft, rid: str) -> Result:
+        """Plan 2.7: a result that ran is checked in code; what was found goes back for one repair. The
+        repaired query replaces the first when it runs and shows no more findings; otherwise, or when the
+        repair fails, the first result stands (it ran, and the question may really have no rows)."""
+        found = self.findings(res, draft.sql)
+        if not found:
+            return res
+        log.info("ask_data result check: %s", " | ".join(found))
+        ask = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
+               {"role": "user", "content": prompts.RESULT_REPAIR.format(findings=fence("\n".join(f"- {f}" for f in found)))}]
+        try:
+            again = self.llm.structured("medium", ask, SqlDraft, purpose="sql_check", scope=self.scope).value
+        except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
+            return res
+        if not again.answerable or " ".join(again.sql.split()) == " ".join(draft.sql.split()):
+            return res
+        try:
+            fixed = self._read_as(self._run(again.sql, rid), again.reading)
+        except ApiError:
+            return res
+        left = self.findings(fixed, again.sql)
+        log.info("ask_data result check: the repaired query %s (%d findings left)", "is kept" if len(left) <= len(found) else
+                 "is dropped", len(left))
+        return res if len(left) > len(found) else fixed
+
+    def findings(self, res: Result, template: str) -> list[str]:
+        """What code sees wrong with a result that ran (plan 2.7, TRD §8.1 step 5): no rows; a column of
+        the result that is empty in every row; a column the message names (one that groups, measures or
+        dates the rows) that the query never uses; and a text literal compared to a column whose values
+        (the value index) don't include it."""
+        out = []
+        if res.row_count == 0:
+            out.append("The query returned no rows.")
+        else:
+            out += [f"The result column {c['name']} is empty (null) in every row." for i, c in enumerate(res.columns)
+                    if all(row[i] is None for row in res.rows)]
+        try:
+            tree = wc._parse_one(template.replace("{{rows}}", "TRUE"))
+        except ApiError:
+            return out
+        by_lower = {c.lower(): c for c in self.types}
+        used = {by_lower.get(c.name.lower()) for c in tree.find_all(exp.Column)}
+        star = any(isinstance(e, exp.Star) for s in tree.find_all(exp.Select) for e in s.expressions)
+        # A named column counts when it groups, measures or dates the rows: an ID or free-text column named
+        # like the records ("how many reviews" → `review`) is the rows themselves, not a column to use.
+        named = {col: text for text, col in (self.resolved.get("columns") or {}).items()
+                 if self.roles.get(col) in NAMED_ROLES}
+        named |= {cv[0]: text for text, cv in (self.resolved.get("values") or {}).items() if cv[0] not in named}
+        if not star:
+            out += [f"The question names {col} (“{text}”), but the query never uses that column."
+                    for col, text in named.items() if col in self.types and col not in used]
+        index = self._value_index()
+        for col, literal in _compared_literals(tree):
+            col = by_lower.get(col.lower())
+            values = index.get(col) if col and self.types.get(col) == "VARCHAR" else None
+            if not values or len(values) >= MAX_INDEXED_VALUES or literal in values:
+                continue
+            shown = ", ".join(f"'{v}'" for v in values[:SHOWN_VALUES]) + (", …" if len(values) > SHOWN_VALUES else "")
+            out.append(f"{col} = '{literal}' matches no row: {col} has {shown}.")
+        return out
+
+    def _value_index(self) -> dict[str, list[str]]:
+        """Each indexed column's values, most common first (the current version's value index)."""
+        out: dict[str, list[str]] = {}
+        for r in self.env.db.execute("SELECT column, value FROM value_index WHERE dataset_id = ? ORDER BY count DESC",
+                                     (self.dataset["id"],)):
+            out.setdefault(r["column"], []).append(r["value"])
+        return out
+
+    def _closest(self, closest: str | None) -> str:
+        """ASK-8's honest limit with the model's closest question, or this file's own example when the
+        model's breaks the wording rules (plan 2.9)."""
+        closest = (closest or "").strip()
+        if closest and wording_problem(closest):
+            closest = self.example
+        return _closest(closest)
+
+    def _unanswered(self, fallback: str) -> CantAnswer:
+        """A name the message used that nothing resolved, and that looks like one of the file's columns or
+        values, becomes a clarification with its closest matches as buttons (plan 2.8, PRD ASK-6). Asked
+        only when the query can't be written: a name the SQL step read correctly needs no question."""
+        columns = list(self.types)
+        for text in self.resolved.get("unresolved") or []:
+            kind = (self.resolved.get("unresolved_kinds") or {}).get(text, "column")
+            options = candidates(self.env.db, self.dataset["id"], text, kind, columns)
+            if options:
+                what = "column" if kind == "column" else "value"
+                log.info("ask_data: asking which %s “%s” means: %s", what, text, ", ".join(o for o, _ in options))
+                return Clarify(fallback, f"Which {what} do you mean by “{text}”?", options, name=text)
+        return CantAnswer(fallback)
 
     # --- find_rows --------------------------------------------------------------------------
 
@@ -192,8 +319,9 @@ class Toolkit:
         draft = self.llm.structured("medium", messages, WidgetDraft, purpose="update_widget", scope=self.scope).value
         for attempt in range(2):
             try:
-                row = ws.update(self.env, self.dataset, widget, self._spec(draft, selection), draft.title.strip() or None)
-                self.reading = draft.reading.strip()[:200]
+                new = self._spec(draft, selection)
+                row = ws.update(self.env, self.dataset, widget, new, widget_title(draft.title, new))
+                self.reading = reading_text(draft.reading)
                 return row
             except ApiError as exc:
                 if attempt:
@@ -205,8 +333,8 @@ class Toolkit:
 
     def _save_widget(self, draft: WidgetDraft, created_by: str) -> sqlite3.Row:
         spec = self._spec(draft, self.rows.selection_id)
-        row = ws.create(self.env, self.dataset, spec, title=draft.title.strip() or None, created_by=created_by)
-        self.reading = draft.reading.strip()[:200]
+        row = ws.create(self.env, self.dataset, spec, title=widget_title(draft.title, spec), created_by=created_by)
+        self.reading = reading_text(draft.reading)
         saved = wl.stored(self.env.db, self.dataset["id"])
         if saved is not None:
             wl.save(self.env.db, self.dataset["id"], wl.append(saved, row["id"], draft.view))
@@ -218,6 +346,27 @@ def _closest(closest: str | None) -> str:
     if closest:
         text += f" The closest I can answer: “{closest.strip()}”"
     return text
+
+
+def widget_title(title: str, spec: dict) -> str:
+    """A chat widget's title: the model's when it passes the builder's title check and the wording check
+    (plan 2.9, PRD STORY-3), otherwise the templated title from the spec, as the builder falls back."""
+    title = (title or "").strip()
+    return ws.templated_title(spec) if title_problem(title) else title
+
+
+def _compared_literals(tree: exp.Expression) -> list[tuple[str, str]]:
+    """(column, text) for each text literal the query compares a bare column with: `col = 'x'`,
+    `col <> 'x'` and `col IN ('x', …)`. A column inside a function (`lower(col) = 'x'`) is left alone."""
+    out = []
+    for node in tree.find_all(exp.EQ, exp.NEQ):
+        for a, b in ((node.this, node.expression), (node.expression, node.this)):
+            if isinstance(a, exp.Column) and isinstance(b, exp.Literal) and b.is_string:
+                out.append((a.name, b.this))
+    for node in tree.find_all(exp.In):
+        if isinstance(node.this, exp.Column):
+            out += [(node.this.name, e.this) for e in node.expressions if isinstance(e, exp.Literal) and e.is_string]
+    return out
 
 
 # --- answerers without the model ------------------------------------------------------------

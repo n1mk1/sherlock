@@ -115,6 +115,13 @@ def test_every_prompt_keeps_the_files_text_inside_data_blocks(script, client):  
                         {"reading": EVIL, "sql": "SELECT region, sum(amount) AS total FROM t WHERE {{rows}} GROUP BY 1",
                          "answerable": True, "closest": None}]
     chat(client, ds_id, s, f"total amount by {EVIL}", "ask_data")
+    # The result check (plan 2.7): a literal that isn't one of region's values quotes those values, the evil one
+    # among them, and the column the message names, to the repair.
+    nowhere = {"reading": EVIL, "sql": "SELECT sum(amount) AS total FROM t WHERE {{rows}} AND region = 'Nowhere'",
+               "answerable": True, "closest": None}
+    s.replies["sql"], s.replies["sql_check"] = nowhere, nowhere
+    chat(client, ds_id, s, f"total amount in {EVIL}", "ask_data")
+    assert any(p == "sql_check" and "region = 'Nowhere' matches no row" in prompt for p, prompt in s.prompts)
     # find_rows: its label (the model's, here carrying the marker) becomes the next message's scope.
     s.replies["predicate"] = {"predicate": "region = 'North'", "label": EVIL}
     found = chat(client, ds_id, s, f"show the rows of {EVIL}", "find_rows")
@@ -150,7 +157,7 @@ def test_every_prompt_keeps_the_files_text_inside_data_blocks(script, client):  
     wait_for(lambda: client.get(f"{API}/jobs/{job['id']}").json()["status"] in ("done", "failed"), timeout=120)
 
     purposes = {p for p, _ in s.prompts}
-    expected = {"curate", "narrate", "overview", "route", "sql", "compose", "predicate", "widget", "update_widget", "stats",
+    expected = {"curate", "narrate", "overview", "route", "sql", "sql_check", "compose", "predicate", "widget", "update_widget", "stats",
                 "meaning", "plan", "edits", "plan_edits", "summary", "synthesis", "ask_story", "diagnose", "propose", "critic"}
     assert expected <= purposes, expected - purposes
     for purpose, prompt in s.prompts:

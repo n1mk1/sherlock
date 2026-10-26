@@ -22,8 +22,9 @@ from rapidfuzz import fuzz
 from scipy import stats
 
 from sherlock.agent import prompts
-from sherlock.agent.answerers import CantAnswer, Result, Toolkit
+from sherlock.agent.answerers import CantAnswer, Clarify, Result, Toolkit, reading_text
 from sherlock.agent.compose import fmt, fmt_kind, table_block, text_block
+from sherlock.agent.resolve import column_options
 from sherlock.config import REPO_ROOT
 from sherlock.errors import ApiError
 from sherlock.llm.client import BudgetExceeded, LLMUnavailable, StructuredOutputError, fence
@@ -90,6 +91,20 @@ def _kind(col: dict) -> str:
     return "number" if col["type"] in ("int", "float") and (col.get("distinct") or 0) > NUMBER_DISTINCT else "category"
 
 
+def pair_options(question: str, card: dict, names: list[str]) -> list[tuple[str, dict]]:
+    """Two or three pairs of columns to test, as clarification options (PRD ASK-6): the column the message
+    names (else the first outcome-like column, else the first number) with the columns that best match
+    its words among those a test can compare."""
+    cols = {c["name"]: c for c in card["columns"]}
+    testable = [n for n, c in cols.items() if _kind(c) == "number" or 2 <= (c.get("distinct") or 0) <= MAX_GROUPS]
+    first = next(iter(names), None) or next((t for t in card.get("target_candidates") or [] if t in cols), None) \
+        or next((n for n in testable if _kind(cols[n]) == "number"), None) or next(iter(testable), None)
+    others = [n for n in testable if n != first]
+    if first is None or len(others) < 2:
+        return []
+    return [(f"{first} and {o}", {"columns": [first, o]}) for o, _ in column_options(question, others)]
+
+
 def ask_stats(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str) -> Reply:
     """The test chosen by rules (TRD §8.2): two groups of a number → Welch's t and Mann-Whitney; more
     groups → Kruskal-Wallis; two categories → chi-square; two numbers → Pearson and Spearman. Each
@@ -109,9 +124,10 @@ def ask_stats(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str)
             d = kit.llm.structured("medium", kit._messages(prompts.STATS.format(context=kit.context, message=fence(question))),
                                    StatsDraft, purpose="stats", scope=kit.scope, validate=check).value
         except StructuredOutputError:
-            raise CantAnswer("Which two columns should I compare? Name them, for example “is <a number> different "
-                             "between the groups of <a category>?”.") from None
-        a, b, reading = d.outcome, d.group, d.reading
+            raise Clarify("Which two columns should I compare? Name them, for example “is <a number> different "
+                          "between the groups of <a category>?”.", "Which two columns should I compare?",
+                          pair_options(question, card, names)) from None
+        a, b, reading = d.outcome, d.group, reading_text(d.reading)
     ka, kb = _kind(cols[a]), _kind(cols[b])
     if ka == "category" and kb == "number":
         a, b, ka, kb = b, a, kb, ka  # the number is the outcome
@@ -375,7 +391,10 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
         words = re.findall(r"[\w.]+", question.lower())
         names = [c for c in cols if c.lower() in words]
     if not names:
-        raise CantAnswer(f"Which column? Name it, for example “what does {next(iter(cols), 'a column')} mean?”.")
+        fallback = f"Which column? Name it, for example “what does {next(iter(cols), 'a column')} mean?”."
+        if len(cols) < 2:
+            raise CantAnswer(fallback)
+        raise Clarify(fallback, "Which column do you mean?", column_options(question, list(cols)))
     col = cols[names[0]]
     q = ident(col["name"])
     numeric = col["type"] in ("int", "float", "date", "datetime")

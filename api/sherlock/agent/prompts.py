@@ -63,6 +63,10 @@ SQL_REPAIR = """That query failed. The error (it may quote the file's names and 
 {error}
 Fix it and return the whole corrected query."""
 
+RESULT_REPAIR = """That query ran, and code checked its result. What it found (it may quote the file's names and values):
+{findings}
+If the question needs a different query, fix it and return the whole corrected query. If the result already answers the question (some questions really match no rows), return the same query."""
+
 PREDICATE = """Write the DuckDB condition that selects the rows the user is asking for.
 
 Rules:
@@ -94,7 +98,7 @@ COMPOSE = """Shape the answer to the user's question from the query results belo
 
 Rules:
 - shape: number when one value answers it, table for a list or breakdown, chart when a breakdown or trend is clearer as a picture, text when the answer is a sentence.
-- Every number in the prose is a chip naming a result cell as "<result id>:<row>:<column>" (both zero-based), for example {{"chip": "r1:0:1"}}. Text runs never contain digits.
+- Every number in the prose is a chip naming a result cell as "<result id>:<row>:<column>" (both zero-based), for example {{"chip": "r1:0:1"}}. Text runs never contain digits or numbers in words ("two", "half").
 - Column names and category values may be written as labels: {{"label": "column:<name>"}} or {{"label": "value:<column>:<value>"}}, or simply as text when they have no digits.
 - One to three short sentences. Say plainly when the results can't answer the question. The query shows what was filtered, so a filter in the query is part of the answer.
 - For shape number, set number to the chip of the value and label to what it is (no digits).
