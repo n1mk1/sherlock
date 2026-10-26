@@ -214,3 +214,42 @@ def test_app_wide_daily_ceiling(db, monkeypatch):
         client.complete("small", [], purpose="plain", scope=CallScope(user_id="usr_3"))
     finally:
         get_settings.cache_clear()
+
+
+def test_a_cut_off_reply_is_asked_again_with_twice_the_cap_not_repaired(db):
+    # Plan 0.2 (B16): a reply cut off at its token cap was sent to a repair call with the same cap.
+    client, transport = llm([
+        {"purpose": "diagnose", "content": '{"cause": "typed by h', "finish_reason": "length", "completion_tokens": 1000},
+        {"purpose": "diagnose", "content": json.dumps(DIAG)},
+    ])
+    out = client.structured("large", [{"role": "user", "content": "x"}], Diagnosis, purpose="diagnose", max_tokens=1000)
+    assert out.value.cause == "typed by hand" and not out.repaired
+    assert [c["max_tokens"] for c in transport.calls] == [1000, 2000]
+    assert all("failed validation" not in c["prompt"] for c in transport.calls)  # no repair message
+    first, second = calls(db)
+    assert (first["ok"], second["ok"]) == (0, 1) and "cut off at 1000 tokens" in first["error"]
+    assert first["completion_tokens"] == 1000  # the tokens were spent, so they count
+
+
+def test_the_larger_cap_stops_at_eight_thousand_and_a_reply_still_cut_off_is_not_repaired(db):
+    cut = {"purpose": "diagnose", "content": '{"cause": "', "finish_reason": "length"}
+    client, transport = llm([cut, cut, {"purpose": "diagnose", "content": json.dumps(DIAG)}])
+    with pytest.raises(StructuredOutputError, match="cut off"):
+        client.structured("large", [{"role": "user", "content": "x"}], Diagnosis, purpose="diagnose", max_tokens=6000)
+    assert [c["max_tokens"] for c in transport.calls] == [6000, 8192]  # two calls: no repair of a cut-off reply
+
+    client, transport = llm([{"purpose": "plain", "content": "half a sent", "finish_reason": "length"},
+                             {"purpose": "plain", "content": "a whole sentence."}])
+    assert client.complete("small", [], purpose="plain", max_tokens=600).text == "a whole sentence."
+    assert [c["max_tokens"] for c in transport.calls] == [600, 1200]
+    client, transport = llm([{"purpose": "plain", "content": "cut", "finish_reason": "length"}])
+    assert client.complete("small", [], purpose="plain", max_tokens=8192).cut_off and len(transport.calls) == 1
+
+
+def test_an_unterminated_think_is_stripped():
+    from sherlock.llm.text import strip_reasoning
+
+    assert strip_reasoning("<think>a long chain of thought that never") == ""
+    assert strip_reasoning("The answer. <THINK>trailing") == "The answer."
+    assert strip_reasoning("<think>done</think>{\"a\": 1}") == '{"a": 1}'
+    assert strip_reasoning("reasoning without its opening tag</think> the reply") == "the reply"

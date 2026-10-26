@@ -505,7 +505,7 @@ class Agent:
         prompt = prompts.SUMMARY.format(previous=fence(row["summary"] if row else "none"), messages=fence(lines))
         try:
             c = self.llm.complete("small", [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": prompt}],
-                                  purpose="summary", scope=scope, max_tokens=600)
+                                  purpose="summary", scope=scope, max_tokens=1500)
         except Exception:  # noqa: BLE001 - the summary is never worth failing an answer
             return
         summary = (c.text or "").strip()[:1500]

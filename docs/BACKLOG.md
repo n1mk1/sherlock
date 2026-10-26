@@ -101,7 +101,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - `cleaning/detectors/impossible_values.py` `NON_NEGATIVE` has no word boundaries, so `average_temp`, `account_balance` and `percentage_change` count as non-negative quantities (D2).
 - `profile/infer.py` `TARGET_NAMES` includes `survived` (D3 L6, Rule 4).
 - Web: CR-only line endings with Skip rows > 0 say "no data rows"; error toasts dismiss after 4 s, though Brief §4.10 says they stay; the status badge's hover text appears only on `failed` (App Flow §14); the empty-state pitch uses `text-foreground-2`, not `--muted-foreground` (Brief §5.1) (D2).
-- LLM client: the `strip_reasoning` docstring claims to handle an unterminated `<think>`, and `embed` isn't in the client's `ROLES` (D2).
+- LLM client: `embed` isn't in the client's `ROLES` (D2).
 - The import preview's delimiter list has no free-text "Other"; it shows "Other (…)" only when the detected delimiter isn't one of the four (App Flow §3.2).
 - While profiling, the chat bar is disabled, so questions don't queue as App Flow §3.3 says (`ChatBar.tsx`).
 - The "Profiling failed" screen has no Delete button of its own; Delete is only in the dataset and library menus (App Flow §3.3; `StatusScreens.tsx`). Reuse `ConfirmDelete`.

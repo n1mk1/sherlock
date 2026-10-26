@@ -2,7 +2,8 @@
 instead of calling Token Factory, and `LLM_RECORD` writes them from live calls.
 
 A fixture file is a JSON list of entries:
-`{"purpose", "match": [substrings of the prompt], "content", "tool_calls", "prompt_tokens", "completion_tokens"}`.
+`{"purpose", "match": [substrings of the prompt], "content", "tool_calls", "prompt_tokens", "completion_tokens",
+"finish_reason"}` (the last five optional; `finish_reason` defaults to "stop").
 A call looks at the entries whose purpose matches and whose `match` strings all occur in the prompt,
 keeps the most specific ones (the most `match` strings), and takes the first unused of those; once
 all of them are used, the last one repeats. `LLM_MOCK` names a file or a
@@ -62,6 +63,7 @@ class FixtureTransport(Transport):
             "tool_calls": e.get("tool_calls", []),
             "prompt_tokens": e.get("prompt_tokens", 100),
             "completion_tokens": e.get("completion_tokens", 50),
+            "finish_reason": e.get("finish_reason", "stop"),
         }
 
 

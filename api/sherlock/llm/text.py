@@ -23,10 +23,13 @@ def fence(content) -> str:
 
 
 def strip_reasoning(text: str) -> str:
-    """Remove <think>…</think> blocks (and an unterminated leading one) that reasoning models emit."""
+    """Remove the <think>…</think> blocks reasoning models emit, a lone closing tag (the opening one was
+    never sent) and an unterminated one (a reply cut off mid-reasoning: everything after <think> goes)."""
     text = _THINK.sub("", text)
     if "</think>" in text.lower():
         text = text[text.lower().rindex("</think>") + len("</think>") :]
+    if "<think>" in text.lower():
+        text = text[: text.lower().index("<think>")]
     return text.strip()
 
 

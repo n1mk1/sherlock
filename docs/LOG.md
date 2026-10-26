@@ -463,3 +463,12 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - Docs: TRD §3.5 (prompt hygiene, helpers), §7.2 (one data block per template), §15; App Flow §10.2's failure copy.
   - BACKLOG: removed "`{issue_line}` sits outside the `<data>` block" and "Rule 4, Titanic in generic code".
 - **Decision:** an assistant turn (the model's own earlier reply, echoed back for a repair) isn't checked, since the model wrote it; everything the model reads as instructions is.
+
+### Slice 2 (plan 0.2): cut-off replies
+
+- **Done:**
+  - `Completion.finish_reason` from the transport (`OpenAITransport`, and fixtures with an optional `finish_reason`). A reply cut off at its cap (`length`) is asked again once with twice the cap, at most 8,192 tokens, instead of going to the repair call with the same cap; the cut-off attempt is logged with `ok = 0` and "cut off at N tokens". A reply still cut off after that raises `StructuredOutputError` without a repair, and the caller's fallback applies.
+  - The thread summary's cap went from 600 to 1,500 tokens (reasoning stays on: TRD §3.5 lets only `route` turn it off).
+  - `strip_reasoning` drops an unterminated `<think>` and everything after it, as its docstring already claimed.
+  - Tests (`test_llm_client.py`): `length` then `stop` makes two calls with caps 1,000 and 2,000 and no repair message; the cap stops at 8,192 and a reply still cut off isn't repaired; `complete` without a schema does the same; an unterminated `<think>` is stripped.
+  - Docs: TRD §3.5 (traces, `Completion`, cut-off replies) and §8.1 step 1. BACKLOG: the `strip_reasoning` half of the D2 LLM client line is gone; the `embed` half stays.
