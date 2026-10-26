@@ -1051,4 +1051,4 @@ The coordinating session asked for slice 11's two open benchmark numbers to be f
   - Slice 11's two benchmark drops were fixed in `857a926` (the `cleaner` session; its entry above): `titanic_clean` 97.2% with Wrong 0, `lookalikes` 100%, harm 0 on every set.
   - A script checked the specs against the code: every route, setting, error code, job kind, eval, model purpose, event type and chat intent the code has, against the TRD, `.env.example` and CLAUDE.md. Its one gap, `WEB_MOCK` missing from `.env.example`, is fixed in `d3fa9ee`, and on `857a926` it finds none (73 routes, 47 settings, 9 error codes, 9 job kinds, 6 evals, 25 purposes, 13 event types, 16 intents).
   - Redeployed by hand: deploy `dep-dbfmv32jnfac73cvdojg` of `857a926`; `/healthz` reports `commit` `857a926d497c`, `schema_version` 8. `scripts/live_check.py`: **11 of 11 checks passed**; this time the chat answer was composed ("The average fare for first class is 87.51…").
-  - The seven sessions are archived and their scratch worktrees removed.
+  - The six sessions are archived and their scratch worktrees removed.
