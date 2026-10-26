@@ -85,17 +85,16 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
     touched = {r["dataset_id"] for r in db.execute(
         "SELECT dataset_id FROM cards WHERE (deleted_at IS NOT NULL AND deleted_at < ?) OR widget_id IN "
         "(SELECT id FROM widgets WHERE deleted_at IS NOT NULL AND deleted_at < ?)", (grace, grace))}
-    for wid in gone:  # a widget's card goes with it; its canvas node is pruned on the next read
+    for wid in gone:  # a widget's card goes with it; its canvas node is pruned below
         db.execute("DELETE FROM cards WHERE widget_id = ?", (wid,))
         db.execute("DELETE FROM fact_sheets WHERE widget_id = ?", (wid,))
         db.execute("UPDATE runs SET widget_id = NULL WHERE widget_id = ?", (wid,))
         db.execute("DELETE FROM widgets WHERE id = ?", (wid,))
     counts["widgets"] = len(gone)
     counts["cards"] = db.execute("DELETE FROM cards WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,)).rowcount
-    from sherlock.stories import synthesis
-
     from sherlock.canvas import service as canvas
     from sherlock.jobs.events import emit
+    from sherlock.stories import synthesis
 
     for ds_id in touched:
         dataset = db.execute("SELECT * FROM datasets WHERE id = ? AND deleted_at IS NULL", (ds_id,)).fetchone()
