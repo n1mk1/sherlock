@@ -122,6 +122,34 @@ def test_substituted_only_flags_a_word_named_nothing_like_its_column():
     assert k.substituted("class → pclass") == []          # not an unresolved word
 
 
+def test_substituted_skips_a_word_with_a_plausible_link_to_its_column():
+    # Live (ask eval), the check sent back "paid → fare", "first class → pclass" and "overall survival rate → survived".
+    words = ["paid", "first class", "overall survival rate", "average income"]
+    k = kit({"fare": "DOUBLE", "pclass": "BIGINT", "survived": "BIGINT"},
+            resolved={"unresolved": words, "unresolved_kinds": dict.fromkeys(words, "column")})
+    assert k.substituted("paid → fare", "Which passengers paid more than 500?") == []  # a condition on the column
+    assert k.substituted("first class → pclass", "Why did first class passengers survive more often?") == []
+    assert k.substituted("overall survival rate → survived", "What is the overall survival rate?") == []
+    assert len(k.substituted("average income → fare", "What was the average income of first-class passengers?")) == 1
+    assert len(k.substituted("paid → fare", "How much was paid on average?")) == 1  # the repair decides this one
+
+
+def test_a_survival_rate_isnt_sent_back_or_refused(client, ready):
+    # The fixture's sql_check reply refuses: it's reached only if the check fires on "overall survival rate → survived".
+    q = "What is the overall survival rate?"
+    _, msg = send(client, ready["id"], q)
+    assert "sql_check" not in purposes(ready["id"]) and "no column" not in msg["text"]
+    in_eval(msg, q)
+
+
+def test_records_over_an_amount_are_a_row_list_even_when_routed_to_ask_data(client, ready):
+    q = "Which passengers paid more than 500?"
+    _, msg = send(client, ready["id"], q)
+    table = blocks_of(msg, "table")[0]
+    assert table["total"] == 4 and table["selection_id"] and "sql" not in purposes(ready["id"])
+    in_eval(msg, q)
+
+
 # --- 11: misrouted questions -----------------------------------------------------------------------
 
 def test_quarantine_questions_are_counted_in_code(client, ready):
@@ -167,6 +195,20 @@ def test_why_a_group_differs_names_the_group(client, ready):
     assert "The rate of survived by pclass is 1: 61.9%, 2: 43.0% and 3: 25.5%." in msg["text"]
     assert "not its cause" in msg["text"] and any(s["kind"] == "run" for s in msg["sources"])
     in_eval(msg, q)
+    # Live, Nano sent the same question to ask_data; a "why" about the data is ask_why all the same.
+    _, msg = send(client, ready["id"], "Why did first-class passengers survive more often?")
+    assert "The rate of survived by pclass is 1: 61.9%" in msg["text"] and any(s["kind"] == "run" for s in msg["sources"])
+    assert ask_eval.check(msg, EVAL[q])[0]
+
+
+def test_a_group_over_an_amount_isnt_a_row_list():
+    roles = {"pclass": "dimension", "fare": "measure", "name": "id"}
+    assert loop.ROW_LIST.search("Which class has more than 300 passengers?")
+    assert loop.names_group("Which class has more than 300 passengers?", {"columns": {}}, roles)
+    assert not loop.names_group("Which passengers paid more than 500?", {"columns": {}}, roles)
+    assert not loop.ROW_LIST.search("How many passengers paid more than 500?")
+    assert loop.WHY_ASK.search("Why did first class passengers survive more often?")
+    assert not loop.WHY_ASK.search("Why did you drop cabin?") and not loop.WHY_ASK.search("Why were some rows quarantined?")
 
 
 # --- 12: edit requests -----------------------------------------------------------------------------

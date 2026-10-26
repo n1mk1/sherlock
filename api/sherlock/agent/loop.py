@@ -21,7 +21,7 @@ from collections.abc import Callable
 from sherlock.agent import actions as acts
 from sherlock.agent import flow, insight, prompts
 from sherlock.agent import web as aw
-from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, explain_widget
+from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, explain_widget, stem_linked
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import drop_counts, resolve, widget_options
 from sherlock.db.util import new_id, now_iso
@@ -100,12 +100,34 @@ DELETE_ASK = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(delete|r
 DELETE_NOTE = ("I can't delete rows from chat, and there's no chat proposal to quarantine them either: data only changes "
                "through a step you make. These are the rows that match; open them in the CSV tab, where Delete row takes "
                "them out as a step you can undo.")
+# Records that meet a numeric condition are a row list: live (ask eval), Nano sent "which <records> paid more than
+# <an amount>?" to ask_data, which answered with a table, not the rows. Not when it asks for a number about them, or
+# a ranking; a group ("which <a group column> has more than …") is checked against the resolved names.
+ROW_LIST = re.compile(r"^\W*(which|who|list|show|find)\b(?![^.?!]*\b(how many|number of|average|mean|median|total|sum|"
+                      r"rate|share|percent\w*|proportion|count)\b)[^.?!]*\b((more|less|fewer|\w+er)\s+than|"
+                      r"over|under|above|below|at\s+(least|most))\s+\$?\d", re.I)
+GROUP_NOUN = re.compile(r"^\W*(which|what)\s+(\w+)", re.I)
+# "Why did <a group> <do something> more often?" asks what explains an outcome: live (ask eval), Nano sent it to
+# ask_data, which gave one rate and no model. Not a question about what Sherlock did ("why did you …", the quarantine).
+WHY_ASK = re.compile(r"^\W*why\b(?![^.?!]*\b(you|quarantin\w*|clean\w*|steps?|chang\w*|left out|dropp\w*|exclud\w*)\b)", re.I)
 # A cell edit named by its row: on the Dashboard, "set the <a column> of row <n> to <a value>" went to update_widget.
 ROW_EDIT = re.compile(r"\b(set|change|make|replace|update|put|correct|fix|edit)\b[^.?!]*\brows?\s+#?\d+|"
                       r"\brows?\s+#?\d+\b[^.?!]*\b(set|change|make|replace|update|put|correct|fix|edit)\b", re.I)
 # A question about the future: there's no forecast recipe (PRD ML-11, P1), and the model never makes up a number.
 FORECAST = re.compile(r"\b(forecast\w*|predict\w*|project\w*|extrapolat\w*)\b[^.?!]*\b(next|future|coming|upcoming|tomorrow|ahead)\b|"
                       r"\b(next|coming|upcoming)\s+(\d+\s+|few\s+)?(years?|months?|weeks?|quarters?|seasons?|decades?|days?)\b|\bin the future\b", re.I)
+
+
+def names_group(question: str, resolved: dict, roles: dict) -> bool:
+    """Whether "which <noun> …" asks about a group column ("which class has more than …"), not the records: the noun
+    resolved to a column, or shares a stem with a category column's name."""
+    m = GROUP_NOUN.match(question)
+    if not m:
+        return False
+    noun = m.group(2).lower()
+    if any(noun in t.lower().split() for t in resolved.get("columns") or {}):
+        return True
+    return any(role == "dimension" and (noun == c.lower() or stem_linked(noun, c)) for c, role in roles.items())
 
 
 def swap(intents: list[str], old: tuple[str, ...], new: str) -> list[str]:
@@ -347,6 +369,10 @@ class Agent:
             intents = swap(intents, ("ask_history",), "web_context")
         if HOW_TO.search(question):
             intents = swap(intents, ("ask_history", "ask_model"), "app_help")
+        if WHY_ASK.search(question):
+            intents = swap(intents, ("ask_data", "find_rows"), "ask_why")
+        if ROW_LIST.search(question) and not RANKING.search(question) and not names_group(question, resolved, kit.roles):
+            intents = swap(intents, ("ask_data",), "find_rows")
         if QUARANTINE_ASK.search(question):
             intents = swap(intents, ("ask_data", "find_rows", "ask_why", "ask_stats", "ask_model"), "ask_history")
         if RANKING.search(question):

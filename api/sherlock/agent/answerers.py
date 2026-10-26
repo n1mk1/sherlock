@@ -33,6 +33,27 @@ SHOWN_VALUES = 8  # a finding about a literal lists this many of the column's va
 NAMED_ROLES = ("dimension", "measure", "target_like", "time")  # a named column of these roles must be used
 READ_PAIR = re.compile(r"([^,;→]+?)\s*(?:→|->)\s*([^,;]+)")  # "<their word> → <column>" pairs of a reading
 COMPARED = re.compile(r"=|<|>|\b(in|like|ilike|between|is)\b", re.I)
+# Words that say how a quantity is summed up, not what it is ("average income" asks about income).
+AMOUNT_WORDS = {"average", "avg", "mean", "median", "typical", "total", "sum", "overall", "rate", "rates", "share", "number",
+                "count", "amount", "percent", "percentage", "proportion", "the", "of", "per", "and", "for"}
+# A word followed by a comparison is a condition on the column it was read as ("paid more than <an amount>").
+CONDITION_AFTER = (r"\s+((more|less|fewer|greater|higher|lower|bigger|smaller)\s+than|over|under|above|below|"
+                   r"at\s+(least|most)|exactly|between)\b")
+
+
+def stem_linked(word: str, col: str) -> bool:
+    """Whether a word shares a stem with a column's name, leaving out the words that only say how it's summed up:
+    "overall survival rate" and survived share "surviv", "first class" and pclass share "class". A word made only
+    of those summing-up words has nothing to check, so it counts as linked."""
+    tokens = [t for t in re.findall(r"[a-z]+", word.lower()) if len(t) >= 3 and t not in AMOUNT_WORDS]
+    names = [t for t in re.findall(r"[a-z]+", col.lower()) if len(t) >= 3]
+    if not tokens:
+        return True
+
+    def close(t: str, n: str) -> bool:
+        shared = next((i for i, (x, y) in enumerate(zip(t, n)) if x != y), min(len(t), len(n)))
+        return shared >= 4 or (min(len(t), len(n)) >= 4 and (t in n or n in t))
+    return any(close(t, n) for t in tokens for n in names)
 
 
 class CantAnswer(Exception):
@@ -154,13 +175,13 @@ class Toolkit:
                 res = self._read_as(self._run(draft.sql, rid), draft.reading)
             except ApiError:
                 raise self._unanswered(self._try_naming("that")) from None
-        return self._checked(res, messages, draft, rid)
+        return self._checked(res, messages, draft, rid, question)
 
-    def _checked(self, res: Result, messages: list[dict], draft: SqlDraft, rid: str) -> Result:
+    def _checked(self, res: Result, messages: list[dict], draft: SqlDraft, rid: str, question: str = "") -> Result:
         """Plan 2.7: a result that ran is checked in code; what was found goes back for one repair. The
         repaired query replaces the first when it runs and shows no more findings; otherwise, or when the
         repair fails, the first result stands (it ran, and the question may really have no rows)."""
-        found = self.findings(res, draft.sql) + self.substituted(draft.reading)
+        found = self.findings(res, draft.sql) + self.substituted(draft.reading, question)
         if not found:
             return res
         log.info("ask_data result check: %s", " | ".join(found))
@@ -170,7 +191,7 @@ class Toolkit:
             again = self.llm.structured("medium", ask, SqlDraft, purpose="sql_check", scope=self.scope).value
         except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
             return res
-        if not again.answerable and self.substituted(draft.reading):
+        if not again.answerable and self.substituted(draft.reading, question):
             # The repair agrees that no column records what the question asks for: the honest limit (ASK-8).
             raise self._unanswered(self._closest(again.closest))
         if not again.answerable or " ".join(again.sql.split()) == " ".join(draft.sql.split()):
@@ -179,7 +200,7 @@ class Toolkit:
             fixed = self._read_as(self._run(again.sql, rid), again.reading)
         except ApiError:
             return res
-        left = self.findings(fixed, again.sql) + self.substituted(again.reading)
+        left = self.findings(fixed, again.sql) + self.substituted(again.reading, question)
         log.info("ask_data result check: the repaired query %s (%d findings left)", "is kept" if len(left) <= len(found) else
                  "is dropped", len(left))
         return res if len(left) > len(found) else fixed
@@ -222,11 +243,14 @@ class Toolkit:
             out.append(f"{col} = '{literal}' matches no row: {col} has {shown}.")
         return out
 
-    def substituted(self, reading: str) -> list[str]:
+    def substituted(self, reading: str, question: str = "") -> list[str]:
         """A word the router took for a column, that no column is named like and nothing resolved, which the query
         reads as a column named nothing like it ("income → fare"): live, "the average income of <a group>" was
         answered with another column's average, without a word. The repair decides whether that column records
-        what the word means ("port → embarked" does) or no column does."""
+        what the word means ("port → embarked" does) or no column does. A word with a plausible link to its column
+        isn't sent back (live, the check fired on "paid → fare", "first class → pclass" and "overall survival rate →
+        survived"): one that shares a stem with the column's name once the summing-up words are left out, and one
+        the question uses as a condition ("paid more than <an amount>")."""
         words = [t for t in self.resolved.get("unresolved") or []
                  if (self.resolved.get("unresolved_kinds") or {}).get(t, "column") == "column"]
         by_lower = {c.lower(): c for c in self.types}
@@ -238,10 +262,14 @@ class Toolkit:
                 continue
             col = next((by_lower[t.lower()] for t in re.findall(r"[\w.]+", right) if t.lower() in by_lower), None)
             a, b = _norm(word), _norm(col or "")
-            if col and fuzz.ratio(a, b) < CLOSE_FUZZ and a not in b and b not in a:
-                out.append(f"The question asks about “{word}”, and no column is named like it; the query reads it as {col}. "
-                           f"Keep {col} only if it records {word} itself. If no column of this file records {word}, set "
-                           "answerable to false and give the closest question this file can answer.")
+            if not col or fuzz.ratio(a, b) >= CLOSE_FUZZ or a in b or b in a or stem_linked(word, col):
+                continue
+            if question and re.search(re.escape(word) + CONDITION_AFTER, question, re.I):
+                continue
+            out.append(f"The question asks about “{word}”, and no column is named like it; the query reads it as {col}. "
+                       f"Keep {col} if it is how this file records {word}, under another name. Set answerable to false "
+                       f"only if {word} is a different quantity that no column of this file records, and give the "
+                       "closest question this file can answer.")
         return out
 
     def _value_index(self) -> dict[str, list[str]]:
