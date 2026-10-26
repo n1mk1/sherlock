@@ -18,13 +18,26 @@ from IPython.display import display
 GREY, LIGHT, ACCENT = "#55575c", "#a9a69f", "#2f6b62"
 
 
-def plot(result, view, x=None, y=None, series=None, title=None, point=None):
+def kpi_text(v, format=None):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "—" if v is None else str(v)
+    if f != f:
+        return "—"
+    if format == "pct":
+        return f"{f:.1%}"
+    return f"{f:,.0f}" if f.is_integer() else f"{f:,.2f}"
+
+
+def plot(result, view, x=None, y=None, series=None, title=None, point=None, value=None, format=None):
     cols = list(result.columns)
+    if view in ("kpi", "gauge"):  # as the app's KPI tile: the `value` column, else the first (not the count `n`)
+        value = value if value in cols else cols[0]
+        print(f"{title or value}: {kpi_text(result[value].iloc[0] if len(result) else None, format)}")
+        return
     x = x if x in cols else cols[0]
     y = y if y in cols else (cols[1] if len(cols) > 1 else cols[0])
-    if view == "kpi":
-        print(f"{title or y}: {result[y].iloc[0]}")
-        return
     if view == "table" or result.empty:
         display(result.head(50))
         return
@@ -206,7 +219,7 @@ def widget(w: dict, sql: str, output, point: str | None) -> list:
     data = new_code_cell(f'{note}t = df\nresult = duckdb.sql("""\n{sql}\n""").df()\nresult\n')
     data.outputs = [output]
     args = [f"{view['type']!r}"]
-    for key in ("x", "y", "series"):
+    for key in ("x", "y", "series") + (("value", "format") if view["type"] in ("kpi", "gauge") else ()):
         if opts.get(key):
             args.append(f"{key}={opts[key]!r}")
     args.append(f"title={w['title']!r}")

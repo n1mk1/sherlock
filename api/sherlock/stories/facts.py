@@ -18,6 +18,10 @@ from sherlock.agent.compose import fmt, fmt_kind
 from sherlock.rows.query import ident
 
 SMALL_SAMPLE = 30
+# A group with fewer rows than this is never named the highest or the lowest: live, two passengers with
+# no port led the overview at 100% (live test 2026-10-26, finding 9). It stays in the chart and the tests.
+MIN_GROUP = 10
+MISSING = "missing"  # the NULL group's name, not "None"
 DATED = ("DATE", "TIMESTAMP")
 
 
@@ -50,11 +54,15 @@ def _numeric(v) -> bool:
 
 def _value_col(src: Source) -> int | None:
     """The result column the chart plots: the view's `y` option, else the first numeric column after
-    the first."""
+    the first. A KPI shows its `value` option, else its first column, as the app's tile does (not the
+    count `n` beside it)."""
     names = [c["name"] for c in src.columns]
-    y = (src.spec.get("view", {}).get("options") or {}).get("y") or (src.spec.get("view", {}).get("options") or {}).get("value")
+    view = src.spec.get("view", {})
+    y = (view.get("options") or {}).get("y") or (view.get("options") or {}).get("value")
     if y in names:
         return names.index(y)
+    if view.get("type") == "kpi":
+        return 0
     for i in range(1, len(names)):
         if any(_numeric(r[i]) for r in src.rows):
             return i
@@ -80,6 +88,63 @@ def p_text(p: float) -> str:
 def _scalar(conn: duckdb.DuckDBPyConnection, sql: str):
     row = conn.execute(sql).fetchone()
     return row[0] if row else None
+
+
+def group_name(value) -> str:
+    return MISSING if value is None else str(value)
+
+
+def _leading_groups(tree) -> int | None:
+    """How many leading SELECT columns are the query's GROUP BY keys (by expression, alias or ordinal),
+    or None when the keys aren't the first columns."""
+    from sqlglot import exp
+
+    group = tree.args.get("group")
+    keys = group.expressions if group else []
+    sel = tree.expressions
+    found = set()
+    for g in keys:
+        for i, s in enumerate(sel):
+            if (isinstance(g, exp.Literal) and g.is_int and int(g.name) == i + 1) or g == s.unalias() \
+                    or (isinstance(g, exp.Column) and not g.table and s.alias and g.name == s.alias):
+                found.add(i)
+                break
+        else:
+            return None
+    return len(found) if found and found == set(range(len(found))) else None
+
+
+def _row_sizes(conn: duckdb.DuckDBPyConnection, src: Source) -> list[int | None]:
+    """The rows behind each result row: its `n` column, else a `COUNT(*)` added to the widget's grouped
+    query, matched on the group keys. None where that can't be told (no GROUP BY, a UNION)."""
+    names = [c["name"] for c in src.columns]
+    if "n" in names:
+        ni = names.index("n")
+        return [int(r[ni]) if _numeric(r[ni]) else None for r in src.rows]
+    unknown: list[int | None] = [None] * len(src.rows)
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        tree = sqlglot.parse_one(src.sql, read="duckdb")
+    except sqlglot.errors.ParseError:
+        return unknown
+    k = _leading_groups(tree) if isinstance(tree, exp.Select) else None
+    if not k:
+        return unknown
+    try:
+        rows = conn.execute(tree.select("COUNT(*)", copy=True).sql(dialect="duckdb")).fetchall()
+    except duckdb.Error:
+        return unknown
+    sizes = {tuple(group_name(v) for v in r[:k]): r[-1] for r in rows}
+    return [sizes.get(tuple(group_name(v) for v in r[:k])) for r in src.rows]
+
+
+def _rankable(pairs: list, sizes: list[int | None]) -> list:
+    """The groups that may be named highest or lowest: those with `MIN_GROUP` rows or more (or an
+    unknown size). When every group is that small, all of them (the small-sample note covers it)."""
+    big = [p for p in pairs if sizes[p[0]] is None or sizes[p[0]] >= MIN_GROUP]
+    return big or pairs
 
 
 def compute(conn: duckdb.DuckDBPyConnection, src: Source) -> dict[str, dict]:
@@ -118,21 +183,25 @@ def compute(conn: duckdb.DuckDBPyConnection, src: Source) -> dict[str, dict]:
     elif view == "scatter":
         _scatter(facts, conn, src)
     elif view == "box":
-        _box(facts, src)
+        _box(facts, conn, src)
     elif view == "heatmap":
-        _heatmap(facts, src, vc, kind)
+        _heatmap(facts, conn, src, vc, kind)
     else:
         _categories(facts, conn, src, pairs, vc, kind, vname, xname)
     return facts
 
 
 def _categories(facts, conn, src: Source, pairs, vc, kind, vname, xname) -> None:
-    top = max(pairs, key=lambda p: p[2])
-    bottom = min(pairs, key=lambda p: p[2])
+    ranked = _rankable(pairs, _row_sizes(conn, src))
+    top = max(ranked, key=lambda p: p[2])
+    bottom = min(ranked, key=lambda p: p[2])
     facts["groups"] = fact(len(pairs), "int", f"{xname} groups shown", sql=src.sql, formula="rows the query returned")
-    facts["top_group"] = fact(str(top[1]), "text", f"{xname} with the highest {vname}", sql=src.sql, cell=[top[0], 0])
+    if len(ranked) < len(pairs):
+        facts["small_groups"] = fact(len(pairs) - len(ranked), "int", f"{xname} groups too small to rank",
+                                     **{"from": ["result"], "formula": f"groups with fewer than {MIN_GROUP} rows"})
+    facts["top_group"] = fact(group_name(top[1]), "text", f"{xname} with the highest {vname}", sql=src.sql, cell=[top[0], 0])
     facts["top_value"] = fact(top[2], kind, f"{vname} for the top {xname}", sql=src.sql, cell=[top[0], vc])
-    facts["bottom_group"] = fact(str(bottom[1]), "text", f"{xname} with the lowest {vname}", sql=src.sql, cell=[bottom[0], 0])
+    facts["bottom_group"] = fact(group_name(bottom[1]), "text", f"{xname} with the lowest {vname}", sql=src.sql, cell=[bottom[0], 0])
     facts["bottom_value"] = fact(bottom[2], kind, f"{vname} for the bottom {xname}", sql=src.sql, cell=[bottom[0], vc])
     if bottom[2] and bottom[2] > 0 and top[2] > 0:
         facts["ratio_top_bottom"] = fact(round(top[2] / bottom[2], 3), "x", "top value over bottom value",
@@ -254,7 +323,7 @@ def _scatter(facts, conn, src: Source) -> None:
                               **{"from": ["correlation"], "formula": "sign of the correlation"})
 
 
-def _box(facts, src: Source) -> None:
+def _box(facts, conn, src: Source) -> None:
     names = [c["name"] for c in src.columns]
     if "median" not in names:
         return
@@ -262,21 +331,22 @@ def _box(facts, src: Source) -> None:
     pairs = [(i, r[0], r[mi]) for i, r in enumerate(src.rows) if _numeric(r[mi])]
     if not pairs:
         return
-    top, bottom = max(pairs, key=lambda p: p[2]), min(pairs, key=lambda p: p[2])
+    ranked = _rankable(pairs, _row_sizes(conn, src))
+    top, bottom = max(ranked, key=lambda p: p[2]), min(ranked, key=lambda p: p[2])
     k = fmt_kind(top[2], "median")
-    facts["top_group"] = fact(str(top[1]), "text", "group with the highest median", sql=src.sql, cell=[top[0], 0])
+    facts["top_group"] = fact(group_name(top[1]), "text", "group with the highest median", sql=src.sql, cell=[top[0], 0])
     facts["top_median"] = fact(top[2], k, "highest median", sql=src.sql, cell=[top[0], mi])
-    facts["bottom_group"] = fact(str(bottom[1]), "text", "group with the lowest median", sql=src.sql, cell=[bottom[0], 0])
+    facts["bottom_group"] = fact(group_name(bottom[1]), "text", "group with the lowest median", sql=src.sql, cell=[bottom[0], 0])
     facts["bottom_median"] = fact(bottom[2], k, "lowest median", sql=src.sql, cell=[bottom[0], mi])
 
 
-def _heatmap(facts, src: Source, vc, kind) -> None:
+def _heatmap(facts, conn, src: Source, vc, kind) -> None:
     pairs = [(i, r) for i, r in enumerate(src.rows) if _numeric(r[vc])]
     if not pairs or len(src.columns) < 3:
         return
-    i, r = max(pairs, key=lambda p: p[1][vc])
-    facts["max_x"] = fact(str(r[0]), "text", f"{src.columns[0]['name']} of the highest cell", sql=src.sql, cell=[i, 0])
-    facts["max_y"] = fact(str(r[1]), "text", f"{src.columns[1]['name']} of the highest cell", sql=src.sql, cell=[i, 1])
+    i, r = max(_rankable(pairs, _row_sizes(conn, src)), key=lambda p: p[1][vc])
+    facts["max_x"] = fact(group_name(r[0]), "text", f"{src.columns[0]['name']} of the highest cell", sql=src.sql, cell=[i, 0])
+    facts["max_y"] = fact(group_name(r[1]), "text", f"{src.columns[1]['name']} of the highest cell", sql=src.sql, cell=[i, 1])
     facts["max_value"] = fact(r[vc], kind, f"highest {src.columns[vc]['name']}", sql=src.sql, cell=[i, vc])
 
 
@@ -307,7 +377,10 @@ def verify(conn: duckdb.DuckDBPyConnection, facts: dict[str, dict], keys: list[s
                 if rows is None:
                     rows = results[f["sql"]] = conn.execute(f["sql"]).fetchall()
                 r, c = f["cell"]
-                ok = r < len(rows) and _close(rows[r][c], f["value"])
+                actual = rows[r][c] if r < len(rows) else None
+                if actual is None and f.get("format") == "text":
+                    actual = group_name(actual)  # the NULL group, named "missing"
+                ok = r < len(rows) and _close(actual, f["value"])
             elif f.get("formula") == "a / b":
                 a, b = (facts[k]["value"] for k in f["from"])
                 ok = bool(b) and _close(a / b, f["value"])

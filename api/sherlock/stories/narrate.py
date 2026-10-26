@@ -67,6 +67,7 @@ Rules:
 - Associations only: never say causes, because, leads to, results in, drives, due to, influences, affects or impacts.
 - Say "highest", "lowest", a rank or that something rises or falls only of what a widget's facts name: its top and bottom groups, its factors in order, its trend.
 - A bullet that compares numbers uses numbers from one widget, or exactly two numbers of the same kind from two widgets, saying which is higher.
+- When two widgets rank the same measure by different columns, a bullet saying which group is highest or lowest names the column it groups by ("by region"), or keep only one of them.
 - Each bullet is a list of runs, with placeholders: [{{"text": "<The measure> was highest for "}}, {{"label": "value:<column>:<value>"}}, {{"text": ", at "}}, {{"chip": "w3.top_value"}}, {{"text": "."}}]. A chip or a label is always its own run, never written inside a text run.
 
 Widgets and their facts:
@@ -438,6 +439,54 @@ def narrate(llm: LLMClient, scope: CallScope, *, title: str, widget_id: str, spe
             body(to_runs(s.body, facts, dataset_columns, values=values)), True)
 
 
+RANKED = re.compile(r"^(.+?) with the (?:highest|lowest) (.+)$")
+
+
+def _ranking(w: dict) -> tuple[str, str] | None:
+    """(measure, the column it groups by) of a widget that names a top or bottom group, else None."""
+    f = w["facts"]
+    if not any(k in f for k in ("top_group", "bottom_group", "max_x")):
+        return None
+    cols = (w.get("spec") or {}).get("scope", {}).get("columns") or {}
+    m = RANKED.match((f.get("top_group") or f.get("bottom_group") or {}).get("label", ""))
+    dim = " and ".join(c for c in (cols.get("x"), cols.get("series") if "max_x" in f else None) if c) or (m.group(1) if m else "")
+    measure = " ".join(c for c in (cols.get("agg"), cols.get("y")) if c) if cols.get("y") else \
+        (m.group(2) if m else (f.get("max_value") or {}).get("label", "").removeprefix("highest "))
+    return (measure.lower(), dim) if measure and dim else None
+
+
+def check_rankings(bullets: list[list[dict]], widgets: list[dict]) -> None:
+    """The overview never says one measure is highest (or lowest) for two groups from two widgets that
+    group it by different columns, unless each sentence names its column: live, "The median units was
+    highest for Y, at 27.00. The median units was highest for Wst, at 27.50." (live test 2026-10-26,
+    finding 15). A sentence's widget is the prefix of its chips, or the widget whose top or bottom group
+    its value label names."""
+    by_prefix = {w["prefix"]: w for w in widgets}
+    seen: dict[tuple[str, str], dict[str, str]] = {}  # (measure, highest|lowest) → widget prefix → its column
+    for out in bullets:
+        for sent in sentences(out):
+            text = "".join(x.get("text", "") for x in sent).lower()
+            words = "".join(x.get("text", "") for x in sent if x["type"] == "text")
+            prefixes = {x["key"].partition(".")[0] for x in sent if x["type"] == "chip" and "." in x.get("key", "")}
+            for x in sent:
+                if x["type"] == "label" and x.get("ref", "").startswith("value:"):
+                    _, col, val = x["ref"].split(":", 2)
+                    prefixes |= {p for p, w in by_prefix.items() if (r := _ranking(w)) and r[1] == col
+                                 and val in {str(_value(w["facts"].get(k))) for k in ("top_group", "bottom_group", "max_x")}}
+            for direction, pattern in (("highest", HIGH), ("lowest", LOW)):
+                if not pattern.search(words):
+                    continue
+                for p in prefixes:
+                    r = _ranking(by_prefix[p]) if p in by_prefix else None
+                    if r and not any(name in text for name in (r[1].lower(), r[1].lower().replace("_", " "))):
+                        seen.setdefault((r[0], direction), {})[p] = r[1]
+    for (measure, direction), dims in seen.items():
+        if len(set(dims.values())) > 1:
+            raise ValueError(f"two bullets say which group has the {direction} {measure}, from widgets grouped by "
+                             f"{' and by '.join(sorted(set(dims.values())))}: name the column each one groups by "
+                             f"(\"by region\"), or keep one of them")
+
+
 def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_columns: list[str]) -> tuple[dict, dict, bool]:
     """`widgets`: [{prefix, title, facts, score, spec?, columns?}]. Returns (merged facts, body, by_model)."""
     # A derived fact's `from` names keys on its widget's sheet; here they carry the same prefix.
@@ -447,8 +496,8 @@ def overview(llm: LLMClient, scope: CallScope, widgets: list[dict], dataset_colu
                                 if lab.startswith("value:")))
 
     def check(o: Overview) -> None:
+        check_rankings([to_runs(b, merged, dataset_columns, values=set(values)) for b in o.bullets], widgets)
         for b in o.bullets:
-            to_runs(b, merged, dataset_columns, values=set(values))
             if not _words(b):
                 raise ValueError("each bullet needs words around its chips")
             if number_in_words(plain(b)):

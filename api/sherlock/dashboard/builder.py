@@ -101,9 +101,10 @@ def curate(llm: LLMClient, scope: CallScope, card: dict, short: list[Candidate])
 def driver_widget(env: ws.Env, dataset: sqlite3.Row, card: dict) -> sqlite3.Row | None:
     """"What drives this?" on the top target candidate when there are enough rows (TRD §7.3 step 5).
     Its run is queued; the widget shows the progress until the importance arrives."""
+    from sherlock.ml import registry
     from sherlock.ml.plan import MIN_ROWS
 
-    targets = card.get("target_candidates") or []
+    targets = registry.candidates(card)  # never a free-text, ID or many-valued column (live test 2026-10-26, finding 10)
     if not targets or (card.get("row_count") or 0) < MIN_ROWS:
         return None
     spec = {"scope": {"columns": {"target": targets[0]}}, "op": {"type": "ml", "recipe": "driver_analysis"},

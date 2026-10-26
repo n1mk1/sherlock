@@ -6,7 +6,8 @@ dashboard ("Use as is"), commit two edit batches (cells, a new row, a deleted ro
 one, which replays the second. Then export the notebook, create a new venv with `uv venv --seed`,
 install only the notebook runner (nbclient, ipykernel) into it, and execute the notebook there: its
 `%pip install` cell installs the pinned libraries. The rebuilt DataFrame must equal the current
-version by `_row_id`, with the same columns, values and dtypes.
+version by `_row_id`, with the same columns, values and dtypes, and each KPI line the notebook prints
+must show the app's KPI value (live, every KPI printed the row count `n`: live test 2026-10-26, finding 7).
 """
 
 import json
@@ -31,6 +32,7 @@ from nbformat.v4 import new_code_cell
 nb = nbformat.read(sys.argv[1], as_version=4)
 nb.cells.append(new_code_cell("import pickle\npickle.dump(df, open('out.pkl', 'wb'))"))
 NotebookClient(nb, timeout=900, kernel_name="python3", resources={"metadata": {"path": sys.argv[2]}}).execute()
+nbformat.write(nb, sys.argv[2] + "/executed.ipynb")
 '''
 
 
@@ -97,6 +99,7 @@ def _one(name: str, root: Path) -> dict:
         expected = conn.execute(f"SELECT * FROM read_parquet({sql_path(folder / parquet)}) ORDER BY _row_id").df()
         conn.close()
         counts = exp["counts"]
+        kpis = _app_kpis(client, ds["id"])
 
     venv = root / "venv"
     subprocess.run(["uv", "venv", "--seed", "--python", "3.12", str(venv)], check=True, capture_output=True)
@@ -113,7 +116,42 @@ def _one(name: str, root: Path) -> dict:
         ok, why = True, ""
     except AssertionError as exc:
         ok, why = False, str(exc).splitlines()[0]
+    if ok:
+        printed = _printed_kpis(work / "executed.ipynb")
+        wrong = [f"{line!r} for {want!r}" for want, line in zip(kpis, printed) if line != want]
+        if wrong or len(printed) != len(kpis):
+            ok, why = False, f"KPI lines differ from the app: {wrong[0] if wrong else f'{len(printed)} of {len(kpis)} printed'}"
     return {"file": name, "ok": ok, "why": why, "seconds": round(time.monotonic() - started), **counts}
+
+
+def _app_kpis(client, dataset_id: str) -> list[str]:
+    """Each KPI widget's line as the notebook should print it, in the notebook's order: the app's tile
+    value (its `value` option, else its first column) formatted by the notebook's own `kpi_text`."""
+    from sherlock.notebook.cells import PLOT_HELPERS
+
+    helpers: dict = {}
+    exec(PLOT_HELPERS, helpers)  # noqa: S102 - Sherlock's own helper source, for its number format
+    body = client.get(f"/api/v1/datasets/{dataset_id}/widgets").json()
+    order = {it["i"]: (it["y"], it["x"]) for it in body["layout"]["lg"]}
+    out = []
+    for w in sorted(body["widgets"], key=lambda w: order.get(w["id"], (10**9, 0))):
+        view = w["spec"]["view"]
+        if view["type"] not in ("kpi", "gauge"):
+            continue
+        data = client.get(f"/api/v1/widgets/{w['id']}/data").json()
+        names = [c["name"] for c in data["columns"]]
+        opts = view.get("options") or {}
+        vi = names.index(opts["value"]) if opts.get("value") in names else 0
+        value = data["rows"][0][vi] if data["rows"] else None
+        out.append(f"{w['title']}: {helpers['kpi_text'](value, opts.get('format'))}")
+    return out
+
+
+def _printed_kpis(path: Path) -> list[str]:
+    nb = json.loads(path.read_text(encoding="utf-8"))
+    return ["".join(o.get("text", "")).strip() for c in nb["cells"] if c["cell_type"] == "code"
+            and "".join(c["source"]).startswith(("plot(result, 'kpi'", "plot(result, 'gauge'"))
+            for o in c.get("outputs", []) if o.get("output_type") == "stream"]
 
 
 def _wait(fn, timeout_s: float = 120):

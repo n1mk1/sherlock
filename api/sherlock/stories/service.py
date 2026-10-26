@@ -21,6 +21,7 @@ from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError, not_found
 from sherlock.jobs.events import emit
 from sherlock.llm.client import CallScope, LLMClient
+from sherlock.ml import registry
 from sherlock.stories import facts as fx
 from sherlock.stories import narrate as nr
 from sherlock.widgets import compile as wc
@@ -284,7 +285,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
     chosen = [r for r in rows if (widget_ids is None or r["id"] in widget_ids) and not _waiting_for_run(db, r)]
     card = _datacard(env, dataset)
     dataset_columns = [c["name"] for c in card["columns"]]
-    target = (card.get("target_candidates") or [None])[0]
+    target = next(iter(registry.candidates(card)), None)
 
     if reason == "cascade" and ask_first:
         marked = []

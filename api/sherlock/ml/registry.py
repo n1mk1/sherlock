@@ -22,14 +22,34 @@ STUBS = [
 ]
 
 
+FREE_TEXT_LENGTH = 40  # mean characters per value: the profile's free-text rule (TRD §6.1)
+
+
+def target_ok(c: dict) -> bool:
+    """A column a driver analysis can explain: a number, or two to twenty values; never an ID, a time,
+    an empty column or free text. A category whose values average more than 40 characters is free text
+    even when it repeats a few values (live, a `note` column of ten pasted sentences was the last column,
+    so the profile took it for an outcome: "What drives note?", live test 2026-10-26, finding 10)."""
+    if c["role"] in ("id", "free_text", "empty", "time") or c["type"] not in ("bool", "category", "int", "float"):
+        return False
+    if c["type"] in ("int", "float"):
+        return True
+    mean_length = (c.get("stats") or {}).get("mean_length")
+    return 2 <= (c.get("distinct") or 0) <= 20 and not (mean_length and mean_length > FREE_TEXT_LENGTH)
+
+
 def targets(card: dict) -> list[str]:
-    """Columns a driver analysis can explain: two to twenty values, or numbers; never IDs, text or
-    empty columns. The DataCard's target candidates come first."""
-    ok = [c["name"] for c in card["columns"]
-          if c["role"] not in ("id", "free_text", "empty", "time") and c["type"] in ("bool", "category", "int", "float")
-          and (c["type"] in ("int", "float") or 2 <= (c.get("distinct") or 0) <= 20)]
+    """Columns a driver analysis can explain (`target_ok`). The DataCard's target candidates come first."""
+    ok = [c["name"] for c in card["columns"] if target_ok(c)]
     first = [t for t in card.get("target_candidates") or [] if t in ok]
     return first + [t for t in ok if t not in first]
+
+
+def candidates(card: dict) -> list[str]:
+    """The DataCard's target candidates that a driver analysis can explain, best first: what the builder
+    and the stories take as the file's outcome. A card stored before `target_ok` may still list a text column."""
+    ok = {c["name"] for c in card["columns"] if target_ok(c)}
+    return [t for t in card.get("target_candidates") or [] if t in ok]
 
 
 def manifests(card: dict, rows: int) -> list[dict]:

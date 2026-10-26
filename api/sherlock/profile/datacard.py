@@ -39,7 +39,11 @@ def build_frame(df: pd.DataFrame, types: dict[str, str]) -> Frame:
         infer_type(col, types.get(name))
         infer_role(col, is_last=position == len(names) - 1)
         columns[name] = col
-    targets = [n for n, c in columns.items() if c.role == "target_like"]
+    from sherlock.ml.registry import target_ok
+
+    # An outcome is a column a driver analysis can explain: not free text that repeats a few values.
+    targets = [n for n, c in columns.items() if c.role == "target_like" and target_ok(
+        {"role": c.role, "type": c.type, "distinct": c.distinct, "stats": stats.column_stats(c)})]
     return Frame(df=df, columns=columns, target_candidates=targets)
 
 

@@ -343,3 +343,22 @@ def test_one_broken_widget_or_an_update_never_spoils_an_export(client, monkeypat
     assert time.monotonic() - started >= 0.9
     first = nbformat.reads(client.get(out["download_url"]).text, as_version=4).cells[0].source
     assert "still being updated" not in first
+
+
+def test_a_kpi_prints_its_value_not_the_count_beside_it(capsys):
+    """Live, every KPI printed `n` ("Survival rate: 1309"): `plot` took the second column. It reads the
+    tile's `value` option, else the first column, as the app's KPI does (live test 2026-10-26, finding 7)."""
+    from sherlock.notebook import cells
+
+    ns: dict = {}
+    exec(cells.PLOT_HELPERS, ns)  # noqa: S102
+    rate = pd.DataFrame({"rate": [0.382], "n": [1309]})
+    ns["plot"](rate, "kpi", title="Survival rate", value="rate", format="pct")
+    ns["plot"](pd.DataFrame({"value": [33.2762], "n": [1308]}), "kpi", title="Average fare")  # no option: the first column
+    ns["plot"](pd.DataFrame({"n_rows": [1309]}), "kpi", title="Rows", value="n_rows", format="int")
+    assert capsys.readouterr().out.splitlines() == ["Survival rate: 38.2%", "Average fare: 33.28", "Rows: 1,309"]
+    w = {"title": "Survival rate", "spec": {"scope": {"rows": {}}, "view": {"type": "kpi", "options": {
+        "value": "rate", "format": "pct", "sub": "n"}}}}
+    out = nbformat.v4.new_output("execute_result", data={"text/plain": ""}, execution_count=None)
+    chart = cells.widget(w, "SELECT 1", out, None)[2]
+    assert chart.source == "plot(result, 'kpi', value='rate', format='pct', title='Survival rate')\n"

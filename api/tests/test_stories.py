@@ -877,3 +877,87 @@ def test_under_automatic_a_synthesis_is_written_again_and_a_deleted_widgets_run_
         assert ml["run_id"] not in [r["id"] for r in exporter._extra_runs(db, ds, live)]
     finally:
         db.close()
+
+
+def _bar(conn, sql: str, spec: dict | None = None) -> fx.Source:
+    rows = [list(r) for r in conn.execute(sql).fetchall()]
+    names = [d[0] for d in conn.description]
+    return fx.Source(sql=sql, rows_sql="_quarantine_reason IS NULL AND (1=1)", spec=spec or {"view": {"type": "bar"}},
+                     title="Survival by port", columns=[{"name": n, "type": "VARCHAR"} for n in names], rows=rows)
+
+
+def test_a_tiny_group_is_never_named_highest_and_the_null_group_is_missing():
+    """Live, chat's "Survival rate by port" (no `n` column) made 2 passengers with no port the overview's
+    first fact at 100% (live test 2026-10-26, finding 9). A group under `MIN_GROUP` rows stays in the
+    chart but is never the top or the bottom; its size comes from `COUNT(*)` added to the widget's query."""
+    df = pd.DataFrame({"_quarantine_reason": [None] * 102, "embarked": [None, None] + ["C"] * 40 + ["S"] * 60,
+                       "survived": [1, 1] + [1] * 22 + [0] * 18 + [1] * 20 + [0] * 40})
+    conn = conn_with(df)
+    sql = "SELECT embarked AS port, AVG(survived) AS survival_rate FROM t WHERE _quarantine_reason IS NULL AND (1=1) GROUP BY embarked\nLIMIT 2000"
+    f = fx.compute(conn, _bar(conn, sql))
+    assert (f["top_group"]["value"], f["top_value"]["formatted"], f["bottom_group"]["value"]) == ("C", "55.0%", "S")
+    assert f["groups"]["value"] == 3 and f["small_groups"]["value"] == 1
+    assert fx.verify(conn, f, list(f)) == []
+    # By ordinal, with an `n` column: the same rule, and no `small_groups` when every group is big enough.
+    with_n = "SELECT embarked, AVG(survived) AS rate, COUNT(*) AS n FROM t WHERE _quarantine_reason IS NULL AND (1=1) GROUP BY 1 ORDER BY 2 DESC"
+    f = fx.compute(conn, _bar(conn, with_n))
+    assert f["top_group"]["value"] == "C" and f["small_groups"]["value"] == 1
+    # A NULL group big enough to rank is named "missing", and its cell still verifies.
+    conn.execute("UPDATE t SET embarked = NULL WHERE embarked = 'S'")
+    f = fx.compute(conn, _bar(conn, sql))
+    assert (f["top_group"]["value"], f["bottom_group"]["value"]) == ("C", "missing") and "small_groups" not in f
+    assert fx.verify(conn, f, list(f)) == []
+    assert "value:embarked:missing" in nr.allowed_labels(["embarked"], f, {"scope": {"columns": {"x": "embarked"}}})
+
+
+def test_a_kpi_fact_is_the_tile_value_not_its_count():
+    """A KPI with no `value` option reads its first column, as the app's tile does, not `n` beside it."""
+    conn = conn_with(pd.DataFrame({"_quarantine_reason": [None] * 4, "fare": [10.0, 20, 30, 40]}))
+    sql = "SELECT AVG(fare) AS value, COUNT(fare) AS n FROM t"
+    src = _bar(conn, sql, {"view": {"type": "kpi"}})
+    assert fx.compute(conn, src)["value"]["value"] == 25.0
+
+
+def test_the_overview_never_names_two_highest_groups_for_one_measure():
+    """Live: "The median units was highest for Y, at 27.00. The median units was highest for Wst, at 27.50."
+    from two widgets grouping units by `returned` and by `region` (live test 2026-10-26, finding 15)."""
+    def widget(prefix, x, top, value):
+        return {"prefix": prefix, "title": f"Median units by {x}", "score": 1, "widget_id": f"wdg_{prefix}",
+                "spec": {"scope": {"columns": {"x": x, "y": "units", "agg": "median"}}}, "columns": [x, "units"],
+                "facts": {"top_group": fx.fact(top, "text", f"{x} with the highest median_units"),
+                          "top_value": fx.fact(value, "num", f"median_units for the top {x}"),
+                          "bottom_group": fx.fact("N", "text", f"{x} with the lowest median_units"),
+                          "bottom_value": fx.fact(20.0, "num", f"median_units for the bottom {x}")}}
+
+    widgets = [widget("w1", "returned", "Y", 27.0), widget("w2", "region", "Wst", 27.5)]
+
+    def bullet(prefix, x, top, by=""):
+        return [TextRun(text=f"The median units{by} was highest for "), LabelRun(label=f"value:{x}:{top}"),
+                TextRun(text=", at "), ChipRun(chip=f"{prefix}.top_value"), TextRun(text=".")]
+
+    class Fake:
+        def __init__(self, bullets):
+            self.bullets = bullets
+
+        def structured(self, role, messages, schema, *, purpose, scope, validate):
+            from sherlock.llm.client import StructuredOutputError
+
+            o = nr.Overview(bullets=self.bullets)
+            try:
+                validate(o)
+            except ValueError as exc:
+                raise StructuredOutputError(str(exc)) from exc
+            return type("S", (), {"value": o})()
+
+    columns = ["returned", "region", "units"]
+    clash = [bullet("w1", "returned", "Y"), bullet("w2", "region", "Wst")]
+    _, body, by_model = nr.overview(Fake(clash), None, widgets, columns)
+    assert not by_model and all(b["runs"][0]["type"] == "label" for b in body["blocks"])  # the titled fallback
+    with pytest.raises(ValueError, match="highest median units"):
+        nr.check_rankings([nr.to_runs(b, {f"{w['prefix']}.{k}": f for w in widgets for k, f in w["facts"].items()},
+                                      columns) for b in clash], widgets)
+    named = [bullet("w1", "returned", "Y", " by returned"), bullet("w2", "region", "Wst", " by region")]
+    assert nr.overview(Fake(named), None, widgets, columns)[2]
+    one = [bullet("w2", "region", "Wst", ""), [TextRun(text="The lowest median units was for "), LabelRun(label="value:region:N"),
+                                                TextRun(text=" by region, at "), ChipRun(chip="w2.bottom_value"), TextRun(text=".")]]
+    assert nr.overview(Fake(one), None, widgets, columns)[2]  # one widget's top and bottom never clash

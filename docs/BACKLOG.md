@@ -171,12 +171,15 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - The story panel: suggestion chips have no handler; the outdated badge can queue repeat jobs; hover isn't cleared on Edit layout or widget delete; the evidence query isn't invalidated on `card.updated`; the drawer shows no run for an analysis fact; the panel says "Stories appear once the dashboard is built" when the request fails (D6 F17).
 - An edited card doesn't say that its chips re-render from the latest sheet (D6 F21; by design, TRD §4.6).
 - The cascade toast leaves out `outdated` and `errors` (D6 F23).
+- A group's size for the tiny-group rule (TRD §6.4, `facts.MIN_GROUP`) is unknown when the widget's group keys aren't its query's leading columns, or for a UNION; such a group can still be named highest. Chat answers (`agent/`) don't apply the rule at all: "Which port had the best survival?" can still answer with a 2-row group (live test 2026-10-26, finding 9).
+- Old overview and widget cards keep "None" and tiny-group facts until they are told again (a refresh, a cascade or a rebuild); nothing re-tells them on deploy.
 - Cramér's V uses the Yates-corrected χ² on 2×2 tables, and Cohen's d the unweighted mean of the two variances (D6 F19, D7 F21). Both understate a little. State them in TRD §8.2, or use `correction=False` and the pooled SD.
 
 ### ML
 
 - The progress labels misreport the work: "setting baselines" and "testing models" are sent back to back, and "explaining" takes about half the run (D7 F8).
 - Constant columns stay in as features with importance 0 (D7 F10).
+- The profile still gives a repeating free-text column the role `target_like` (`profile/infer.py` checks the last column's distinct count before its text length), and chat reads that role directly: `agent/loop.py` takes the first `target_like` column, and `insight.ROLE_WORDS` calls it "it looks like an outcome". The DataCard's `target_candidates`, the builder and the stories leave it out (`ml.registry.target_ok`; live test 2026-10-26, finding 10).
 - `GET /recipes` doesn't give the per-method compatibility TRD §4.8 promises (D7 F11).
 - The setup form's number fields drop an out-of-range value on each keystroke, so "120" can't be typed into Time budget (D7 F18).
 - An analysis widget's scope chip says "Some rows", not the filter (D7 F19).
