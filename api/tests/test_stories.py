@@ -1,6 +1,7 @@
 """Story cards (TRD §7.4, §7.6; PRD STORY-1–STORY-8): fact sheets in code, the narrator's checks,
 cards and evidence, edits, and the cascade re-narrating only the cards that depend on what changed."""
 
+import json
 from pathlib import Path
 
 import duckdb
@@ -543,3 +544,162 @@ def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
                 [TextRun(text="Over XLV passengers survived, at "), ChipRun(chip="c1.top_value")]):
         with pytest.raises(ValueError):
             synthesis._check([bad], facts, ["sex", "fare"], values)
+
+
+# --- the update path: one job per dataset, write guards, failure hooks (plan 1.1, 1.2) -------------
+
+def _settled(client, ds, timeout=120):
+    """Every job of the dataset has finished (a cascade's re-runs and their stories too)."""
+    return wait_for(lambda: (js := client.get(f"{API}/jobs?dataset_id={ds}").json())
+                    and all(j["status"] in ("done", "failed", "cancelled") for j in js) and js, timeout=timeout)
+
+
+def _edit(client, ds, column, value, row=1) -> int:
+    v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+    r = client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": row, "column": column,
+                                                                                       "value": value}]})
+    assert r.status_code == 201, r.text
+    return r.json()["version"]
+
+
+def _fare_widgets(client, ds) -> set[str]:
+    return {w["id"] for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
+            if w["spec"]["op"]["type"] == "sql" and "fare" in w["spec"]["op"]["sql"]}
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_tell_that_a_newer_version_overtook_writes_nothing(mocked, client):
+    """Plan 1.1: every card write is guarded by the version it was told on. A tell whose version is no
+    longer the current one stores no text and no `ready`; its cards are left outdated for the newer
+    version's cascade, and the overview isn't rewritten."""
+    from sherlock.db.connection import connect
+    from sherlock.llm.client import CallScope, LLMClient
+    from sherlock.stories import service
+    from sherlock.widgets import service as ws
+
+    ds = _ready_with_stories(client)
+    before = {c["id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json()}
+    settings = client.app.state.settings
+    db = connect(settings)
+    try:
+        old = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        db.execute("UPDATE datasets SET current_version = current_version + 1 WHERE id = ?", (ds,))  # a newer version
+        out = service.tell(ws.Env(settings, db, client.app.state.duckdb, None), LLMClient(settings),
+                           CallScope(user_id=old["user_id"], dataset_id=ds), old, None, reason="refresh")
+        after = {r["id"]: r for r in db.execute("SELECT * FROM cards WHERE dataset_id = ?", (ds,)).fetchall()}
+        db.execute("UPDATE datasets SET current_version = ? WHERE id = ?", (old["current_version"], ds))
+    finally:
+        db.close()
+    assert out["cards"] == 0 and out["overtaken"]
+    assert set(out["overtaken"]) <= {c["widget_id"] for c in before.values() if c["kind"] == "widget"}
+    for cid, c in before.items():
+        r = after[cid]
+        assert json.loads(r["headline_json"]) == c["headline"] and json.loads(r["body_json"]) == c["body"], c["kind"]
+        assert r["version"] == c["version"] and r["fact_sheet_id"] == c["fact_sheet_id"]
+        assert r["status"] == ("outdated" if c["widget_id"] in out["overtaken"] else c["status"]), c["kind"]
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_cancelled_cascade_leaves_no_card_updating_and_the_next_one_tells_them(mocked, client, monkeypatch):
+    """Plan 1.2: Cancel while the cards are being told leaves them outdated (Refresh), not spinning, and
+    the widgets' versions don't move, so the next cascade tells them again."""
+    from sherlock.db.connection import connect
+
+    ds = _ready_with_stories(client)
+    fare = _fare_widgets(client, ds)
+    real = nr.narrate
+
+    def cancel_then_narrate(*args, **kwargs):  # the user presses Cancel while the cards are being told
+        db = connect(client.app.state.settings)
+        try:
+            db.execute("UPDATE jobs SET cancel_requested = 1 WHERE dataset_id = ? AND kind = 'cascade' AND status = 'running'",
+                       (ds,))
+        finally:
+            db.close()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(nr, "narrate", cancel_then_narrate)
+    first = _edit(client, ds, "fare", "500")
+    _settled(client, ds)
+    cascades = [j for j in client.get(f"{API}/jobs?dataset_id={ds}").json() if j["kind"] == "cascade"]
+    assert [j["status"] for j in cascades] == ["cancelled"], cascades
+    cards = client.get(f"{API}/datasets/{ds}/cards").json()
+    assert not [c for c in cards if c["status"] == "updating"]
+    by_widget = {c["widget_id"]: c for c in cards if c["kind"] == "widget"}
+    # A card told before Cancel took effect is ready on the new version; the rest offer Refresh.
+    assert all(by_widget[w]["status"] == "outdated" or (by_widget[w]["status"] == "ready" and by_widget[w]["version"] == first)
+               for w in fare)
+    assert any(by_widget[w]["status"] == "outdated" for w in fare)
+    built = {w["id"]: w["version_built"] for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
+    assert all(built[w] < first for w in fare)
+
+    monkeypatch.setattr(nr, "narrate", real)
+    second = _edit(client, ds, "age", "30", row=2)  # the next cascade reaches back to the cancelled one's change
+    _settled(client, ds)
+    cascades = [j for j in client.get(f"{API}/jobs?dataset_id={ds}").json() if j["kind"] == "cascade"]
+    assert sorted(j["status"] for j in cascades) == ["cancelled", "done"]
+    by_widget = {c["widget_id"]: c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"}
+    assert all(by_widget[w]["status"] == "ready" and by_widget[w]["version"] == second for w in fare)
+    built = {w["id"]: w["version_built"] for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]}
+    assert all(built[w] == second for w in fare)
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_widget_the_user_changes_during_a_cascade_keeps_the_change(mocked, client, monkeypatch):
+    """Plan 1.1: the cascade's widget writes are guarded by the `updated_at` it read. A user's change that
+    lands between its read and its write wins: the old query's error isn't stamped over it."""
+    from sherlock.db.connection import connect
+    from sherlock.errors import ApiError
+    from sherlock.widgets import service as ws
+
+    ds = _ready_with_stories(client)
+    fare = _fare_widgets(client, ds)
+    target = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["id"] in fare)
+    settings, real, raced = client.app.state.settings, ws.data, []
+
+    def racing(env, dataset, row, *args, **kwargs):
+        if row["id"] == target["id"] and not raced:
+            raced.append(True)  # the user saves a change to this widget now, and the old query fails on the new version
+            db = connect(settings)
+            try:
+                fresh = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+                ws.update(ws.Env(settings, db, env.cache, None), fresh, ws.get_row(db, target["id"]), target["spec"],
+                          "My own chart")
+            finally:
+                db.close()
+            raise ApiError(422, "invalid", "the old query fails on the new version")
+        return real(env, dataset, row, *args, **kwargs)
+
+    monkeypatch.setattr(ws, "data", racing)
+    _edit(client, ds, "fare", "500")
+    _settled(client, ds)
+    assert raced
+    after = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["id"] == target["id"])
+    assert after["title"] == "My own chart" and after["status"] == "ready" and after["error"] is None
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_a_failed_rerun_leaves_its_card_outdated(mocked, client, monkeypatch):
+    """Plan 1.2: an analysis card says `updating` while its run re-runs and `outdated` when the run fails,
+    never `ready` with the old run's story, and never spinning."""
+    from sherlock.jobs.runner import HANDLERS, JobKind
+
+    ds = _ready_with_stories(client)
+    client.put(f"{API}/me/settings", json={"story_updates": "ask"})  # the cascade outdates the run without re-running it
+    widget = next(w for w in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if w["spec"]["op"]["type"] == "ml")
+    _edit(client, ds, "fare", "500")  # the analysis reads fare
+    _settled(client, ds)
+
+    async def broken(ctx):
+        raise RuntimeError("the fit failed")
+
+    monkeypatch.setitem(HANDLERS, "ml_run", JobKind(broken, HANDLERS["ml_run"].on_failure))
+    run = client.post(f"{API}/widgets/{widget['id']}/rerun").json()
+    _settled(client, ds)
+    assert client.get(f"{API}/runs/{run['id']}").json()["status"] == "failed"
+    card = next(c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["widget_id"] == widget["id"])
+    assert card["status"] == "outdated"
+    events = (json.loads(r["data_json"]) for r in db_rows(
+        "SELECT data_json FROM job_events WHERE dataset_id = ? AND type = 'card.updated' ORDER BY id", ds))
+    told = [d["status"] for d in events if d["id"] == card["id"]]
+    assert told[-2:] == ["updating", "outdated"]

@@ -10,6 +10,10 @@ A job kind can checkpoint (`ctx.checkpoint(state)` writes `state_json`); a re-qu
 state back as `ctx.state` and resumes from it (D8.6). Kinds without checkpoints start over, which is
 safe because job kinds are idempotent. The sweeper also queues the `purge` job every
 `PURGE_INTERVAL_S` (Schema §6).
+
+The kinds that write a dataset's widgets and cards (`SERIAL_KINDS`) run one at a time per dataset:
+the claim skips a queued one while another of them runs for its dataset, so an older update can't
+land after a newer one (plan 1.1).
 """
 
 import asyncio
@@ -32,6 +36,9 @@ from sherlock.storage import VersionConnections
 log = logging.getLogger("sherlock.jobs")
 
 KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "undo", "export_notebook", "purge")
+# At most one of these runs per dataset at a time: each writes the dataset's widgets and story cards.
+SERIAL_KINDS = ("cascade", "stories", "build_dashboard")
+_SERIAL = ", ".join(f"'{k}'" for k in SERIAL_KINDS)
 FINISHED = ("done", "failed", "cancelled")
 HEARTBEAT_S = 10.0
 STALE_S = 60.0
@@ -269,6 +276,16 @@ class JobRunner:
     def _recover(self) -> None:
         db = connect(self.settings)
         try:
+            # A job the user cancelled while it ran is cancelled, not run again, and its kind's hook
+            # tidies up after it (cards left updating, a run left running).
+            stopped = db.execute(
+                "UPDATE jobs SET status = 'cancelled', error = 'Cancelled.', finished_at = ?, owner_pid = NULL "
+                "WHERE status = 'running' AND cancel_requested = 1 AND (owner_pid IS NULL OR owner_pid != ?) RETURNING *",
+                (now_iso(), self.owner),
+            ).fetchall()
+            for row in stopped:
+                _failure_hook(db, self.bus, row, "Cancelled.")
+                _end_event(db, self.bus, row)
             requeued = db.execute(
                 "UPDATE jobs SET status = 'queued', owner_pid = NULL, heartbeat_at = NULL "
                 "WHERE status = 'running' AND (owner_pid IS NULL OR owner_pid != ?)",
@@ -282,8 +299,9 @@ class JobRunner:
             ).fetchall()
             for row in orphans:
                 insert_job(db, row["user_id"], row["id"], "profile")
-            if requeued or orphans:
-                log.info("jobs: re-queued %d running job(s), queued %d profile job(s)", requeued, len(orphans))
+            if requeued or orphans or stopped:
+                log.info("jobs: re-queued %d running job(s), cancelled %d, queued %d profile job(s)", requeued, len(stopped),
+                         len(orphans))
         finally:
             db.close()
 
@@ -330,10 +348,14 @@ class JobRunner:
         db = connect(self.settings)
         try:
             now = now_iso()
+            # One statement, so no job runs twice; a queued cascade, stories or build waits while one of
+            # those runs for its dataset (SERIAL_KINDS).
             rows = db.execute(
                 "UPDATE jobs SET status = 'running', owner_pid = ?, heartbeat_at = ?, started_at = coalesce(started_at, ?) "
-                "WHERE id = (SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1) "
-                "RETURNING *",
+                "WHERE id = (SELECT q.id FROM jobs q WHERE q.status = 'queued' AND NOT ("
+                f"q.kind IN ({_SERIAL}) AND q.dataset_id IS NOT NULL AND EXISTS (SELECT 1 FROM jobs r WHERE "
+                f"r.dataset_id = q.dataset_id AND r.status = 'running' AND r.kind IN ({_SERIAL}))) "
+                "ORDER BY q.created_at, q.id LIMIT 1) RETURNING *",
                 (self.owner, now, now),
             ).fetchall()
             return rows[0] if rows else None

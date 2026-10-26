@@ -175,7 +175,8 @@ def test_cancel_running_job_and_log(client, monkeypatch):
     assert client.post(f"{API}/jobs/{job_id}/cancel").status_code == 204
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "cancelled" and j)
     assert job["error"] == "Cancelled."
-    assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer"  # stories has no failure hook
+    # The stories job's failure hook settles its cards (plan 1.2); it never touches the dataset's status.
+    assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer"
     entries = client.get(f"{API}/jobs/{job_id}/log").json()["entries"]
     assert [(e["text"], e["icon"], e["column"]) for e in entries] == [("looking at age", "search", "age")]
     assert events_of(ds["id"])[-1][0] == "job.failed"
@@ -207,6 +208,61 @@ def test_startup_requeues_orphans(no_workers, monkeypatch):
     with TestClient(create_app(), cookies=cookies) as client:
         for ds in (first, second):
             assert wait_status(client, ds["id"], "offer", "failed")["status"] == "offer"
+
+
+def test_update_jobs_run_one_at_a_time_per_dataset(client, monkeypatch):
+    """Plan 1.1: a queued cascade, stories or build job waits while another of those runs for its
+    dataset, so an older update can't land after a newer one; another dataset's isn't held up."""
+    spans, lock = {}, threading.Lock()
+
+    async def slow(ctx):
+        start = time.monotonic()
+        await asyncio.sleep(1.0)
+        with lock:
+            spans[ctx.id] = (start, time.monotonic())
+        return {}
+
+    for kind in ("cascade", "stories"):
+        monkeypatch.setitem(HANDLERS, kind, JobKind(slow))
+    a, b = upload(client, TEXT_CSV), upload(client, TEXT_CSV)
+    for ds in (a, b):
+        wait_status(client, ds["id"], "offer")
+    mine = [_start(client, a["id"], "cascade"), _start(client, a["id"], "cascade"), _start(client, a["id"], "stories")]
+    other = _start(client, b["id"], "cascade")
+    wait_for(lambda: len(spans) == 4, timeout=30)
+    assert sorted(mine, key=lambda j: spans[j][0]) == mine  # in the order they were queued
+    for before, after in zip(mine, mine[1:]):
+        assert spans[after][0] >= spans[before][1], "two update jobs of one dataset ran at once"
+    assert spans[other][0] < spans[mine[0]][1], "another dataset's cascade waited"
+
+
+def test_restart_cancels_a_job_cancelled_while_it_ran(no_workers, monkeypatch):
+    """A job the user cancelled while it ran, in a process that then died, is cancelled at the next start
+    rather than run again, and its kind's failure hook runs: a card it left updating becomes outdated."""
+    from sherlock.db.util import new_id, now_iso
+
+    with TestClient(create_app()) as client:
+        ds = upload(client, TEXT_CSV)
+        cookies = dict(client.cookies)
+    conn = connect(get_settings())
+    try:
+        user_id = conn.execute("SELECT user_id FROM datasets WHERE id = ?", (ds["id"],)).fetchone()[0]
+        job_id, card_id = new_id("job"), new_id("crd")
+        conn.execute("INSERT INTO jobs (id, dataset_id, user_id, kind, status, params_json, cancel_requested, owner_pid, "
+                     "created_at) VALUES (?, ?, ?, 'stories', 'running', '{}', 1, 'gone:1:x', ?)",
+                     (job_id, ds["id"], user_id, now_iso()))
+        conn.execute("INSERT INTO cards (id, dataset_id, kind, headline_json, body_json, status, version, created_at, "
+                     "updated_at) VALUES (?, ?, 'overview', '{\"blocks\": []}', '{\"blocks\": []}', 'updating', 1, ?, ?)",
+                     (card_id, ds["id"], now_iso(), now_iso()))
+    finally:
+        conn.close()
+    monkeypatch.setenv("JOB_WORKERS", "2")
+    get_settings.cache_clear()
+    with TestClient(create_app(), cookies=cookies) as client:
+        job = client.get(f"{API}/jobs/{job_id}").json()
+        assert job["status"] == "cancelled" and job["error"] == "Cancelled." and job["finished_at"]
+        assert client.get(f"{API}/cards/{card_id}").json()["status"] == "outdated"
+        assert any(t == "job.failed" and d["id"] == job_id for t, d in events_of(ds["id"]))
 
 
 def test_sweeper_requeues_stale_jobs(client, monkeypatch):

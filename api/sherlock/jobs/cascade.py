@@ -133,6 +133,10 @@ def _cascade(ctx: JobContext) -> dict:
     ctx.emit("cascade.started", {"version": version, "widget_ids": [r["id"] for r in affected], "card_ids": cards,
                                  "run_ids": sorted(outdated_runs), "columns": sorted(changed), "all": everything})
     errors = 0
+    # Widget id → the `updated_at` its `version_built` write is guarded by. The versions move only after the
+    # cards are told, so a cascade that dies or is overtaken mid-tell leaves them stale and the next one
+    # tells them again; a widget the user changed meanwhile (a new `updated_at`) is left to that change.
+    built: dict[str, str] = {}
     for i, row in enumerate(stale, 1):
         ctx.check_cancel()
         ctx.progress(i, len(stale) + 1, f"Updating {len(affected)} widget{'s' if len(affected) != 1 else ''}")
@@ -145,18 +149,23 @@ def _cascade(ctx: JobContext) -> dict:
                     errors += 1
                 ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
             elif row not in affected:
-                ctx.db.execute("UPDATE widgets SET version_built = ? WHERE id = ?", (version, row["id"]))
+                built[row["id"]] = row["updated_at"]
             continue  # an outdated one keeps its run's version and shows "Outdated" with Re-run
+        if row not in affected:
+            built[row["id"]] = row["updated_at"]  # its query reads nothing that changed: status and error stay
+            continue
         status, error = "ready", None
-        if row in affected and json.loads(row["spec_json"])["op"]["type"] == "sql":
+        if json.loads(row["spec_json"])["op"]["type"] == "sql":
             try:
                 widgets.data(env, dataset, row, [], version)
             except ApiError as exc:
                 status, error, errors = "error", exc.message, errors + 1
-        ctx.db.execute("UPDATE widgets SET status = ?, error = ?, version_built = ?, updated_at = ? WHERE id = ?",
-                       (status, error, version, now_iso(), row["id"]))
-        if row in affected:
-            ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
+        now = now_iso()
+        written = ctx.db.execute("UPDATE widgets SET status = ?, error = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
+                                 (status, error, now, row["id"], row["updated_at"])).rowcount
+        if written:
+            built[row["id"]] = now
+        ctx.emit("widget.updated", widgets.to_widget(widgets.get_row(ctx.db, row["id"])))
     told = {"cards": 0}
     with_cards = [r["id"] for r in affected
                   if ctx.db.execute("SELECT 1 FROM cards WHERE widget_id = ? AND deleted_at IS NULL", (r["id"],)).fetchone()]
@@ -166,6 +175,11 @@ def _cascade(ctx: JobContext) -> dict:
                           on_wait=lambda text: ctx.log(text, icon="wait"))
         told = stories.tell(env, LLMClient(ctx.settings), scope, dataset, with_cards, reason="cascade", ask_first=ask,
                             check_cancel=ctx.check_cancel)
+    overtaken = set(told.get("overtaken", []))  # a newer version came in mid-tell: its cascade tells them
+    for wid, stamp in built.items():
+        if wid not in overtaken:  # only forward: an older cascade never moves a widget back
+            ctx.db.execute("UPDATE widgets SET version_built = MAX(version_built, ?) WHERE id = ? AND updated_at = ?",
+                           (version, wid, stamp))
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
               "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
     ctx.emit("cascade.done", {"version": version, "counts": counts})
@@ -176,4 +190,13 @@ async def run(ctx: JobContext) -> dict:
     return await asyncio.to_thread(_cascade, ctx)
 
 
-register("cascade", run)
+def on_failure(db: sqlite3.Connection, bus, job: sqlite3.Row, message: str) -> None:
+    """A cascade that failed or was cancelled leaves no card spinning: those still `updating` become
+    `outdated` (Refresh). Its widgets' versions didn't move, so the next cascade tells them again."""
+    from sherlock.stories import service as stories
+
+    if job["dataset_id"]:
+        stories.settle_updating(db, bus, job["dataset_id"], job["id"])
+
+
+register("cascade", run, on_failure)

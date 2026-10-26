@@ -225,6 +225,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
 ### 3.3 Job runner
 
 - `jobs.runner`: an asyncio task pool (default 4) pulling from the `jobs` table (`status = queued`), ordered by creation. Each claim is a single statement, `UPDATE jobs SET status='running', owner_pid=?, heartbeat_at=? WHERE id = (SELECT id FROM jobs WHERE status='queued' ORDER BY created_at LIMIT 1) RETURNING *`, so no job runs twice.
+- One update job per dataset: the claim's subquery skips a queued `cascade`, `stories` or `build_dashboard` job while another job of those kinds is `running` for the same dataset (`runner.SERIAL_KINDS`, a `NOT EXISTS` on `jobs`). Those kinds write the dataset's widgets and story cards, so they run one at a time per dataset, in the order they were queued, and an older update can't land after a newer one. Other kinds, and other datasets' jobs, are claimed as before.
 - Each job type is a coroutine that calls blocking work via `asyncio.to_thread` or the sandbox subprocess.
 - Progress: jobs write `job_events` rows and publish to the in-process event bus; the SSE endpoint streams them.
 - Checkpoints: pipelines persist state after each step (`jobs.state_json`); on restart, queued and running jobs are resumed from their checkpoint. A running job refreshes `jobs.heartbeat_at` every 10 s; on startup, any running job whose heartbeat is older than 60 s is re-queued from its checkpoint.
@@ -237,13 +238,14 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
     - On stop, running jobs get 10 s to finish. Anything still running is left `running` and re-queued at the next start.
     - `JOB_WORKERS=0` queues jobs without running them, which the tests use.
   - **Kinds.** A job kind registers an async `run(ctx)` and an optional `on_failure(db, bus, job, message)`, which also runs on cancellation. A kind with no handler fails with "No handler for <kind> jobs yet."
+  - **Failure hooks.** `profile` marks the dataset `failed`; a whole-file `clean` builds the dashboard from the committed steps after Stop and otherwise puts the dataset back to `offer` with "Cleaning stopped: <reason>"; `build_dashboard` sets it `ready`; `export_notebook` marks its export `failed`; `ml_run` marks its run `failed` or `cancelled` and its widgets' cards `outdated`; `cascade` and `stories` turn every card still `updating` into `outdated` (`stories.service.settle_updating`, with `card.updated`), so a failed or cancelled update never leaves a card spinning. An analysis card whose run is still queued or running is left `updating`: that run's story or its own failure hook settles it.
   - **`JobContext`.** Its methods are synchronous and thread-safe, so a kind can call them from its `to_thread` work:
     - `progress(step, of, label, pct?)`: `step` is the one now running, and `pct` defaults to the share of steps done. It is stored in `progress_json` and emitted as `job.progress`. A job that ends `done` has `pct` 100.
     - `log(text, level, icon, **fields)` emits `job.log`.
     - `set_dataset_status(status, error?)` emits `dataset.status`.
     - `check_cancel()` raises when `cancel_requested` is set.
   - **Endings.** A job that returns ends `done` with its return value as `result`. One that raises ends `failed` with the first line of the error (at most 500 characters). One cancelled ends `cancelled` with the error "Cancelled." `job.done` reports `done`; `job.failed` reports both `failed` and `cancelled`, and its `Job.status` tells them apart.
-  - **Heartbeats and recovery.** A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so at startup every job still `running` is re-queued, whatever its heartbeat. A sweep every 30 s also re-queues a `running` job of another owner whose heartbeat is older than 60 s. Startup also queues a `profile` job for any `profiling` dataset that has none queued or running (datasets imported before jobs existed).
+  - **Heartbeats and recovery.** A running job refreshes `heartbeat_at` every 10 s. One process holds the runner, so at startup every job still `running` is re-queued, whatever its heartbeat. The exception is a job the user cancelled while it ran (`cancel_requested = 1`): it ends `cancelled` ("Cancelled."), its kind's `on_failure` runs and `job.failed` is emitted, instead of it running again. A sweep every 30 s also re-queues a `running` job of another owner whose heartbeat is older than 60 s. Startup also queues a `profile` job for any `profiling` dataset that has none queued or running (datasets imported before jobs existed).
   - **Not yet.** `JOB_BACKEND=nebius` is not built (§1).
   - **Checkpoints.** `JobContext.checkpoint(state)` writes `jobs.state_json`; a job that is re-queued (at startup, or by the sweep after a stale heartbeat) starts with that state as `ctx.state`.
     - The `stories` job checkpoints `{ told: [widget_id…] }` after each card it stores, and a resumed run tells only the rest; the overview is written again at the end.
@@ -267,7 +269,8 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
     - a card's Refresh (`POST /cards/{cid}/refresh`, `reason: "refresh"`)
     - a synthesis card's Refresh, with params `{ synthesis_ids: [card_id], reason: "refresh" }` instead. It writes that card again ("Writing the synthesis again"), its result is `{ cards, widgets: 0 }`, and it never absorbs another request or is absorbed (`jobs/stories.py`, §7.4)
   - **Coalescing.** A `stories` job still `queued` for the dataset absorbs the next request. Its `widget_ids` become the union of both lists, and a job for every widget stays one.
-  - **Progress:** "Reading the facts · i of n" per widget, then "Writing the overview". The result is `{ cards, widgets }`.
+  - **Progress:** "Reading the facts · i of n" per widget, then "Writing the overview". The result is `{ cards, widgets }`, plus `overtaken` (the widgets whose cards a newer version made stale mid-run, left `outdated`; §7.6).
+  - **One at a time.** It waits while a cascade or a build runs for its dataset (§3.3), and a failed or cancelled one leaves no card `updating` (its failure hook).
   - The cascade doesn't queue a `stories` job. It runs the same pipeline itself (§7.6).
 
 ### 3.4 Sandbox
@@ -772,7 +775,7 @@ As built (within cuts 4 and 7, `sherlock/routers/runs.py`, `sherlock/ml/runner.p
   - `view` defaults to `importance`; any other value is `422`. A `feature` outside the top five is `404`.
 - **`GET /runs/{rid}/model-card`** is `409` until there is one, and the card comes with the run's `status` added. `GET /runs/{rid}/code` serves `repro.py` once it's written, and is `409` before.
 - **`POST /runs/{rid}/cancel`** cancels the run's job while the run is queued or running, else does nothing; it is always `204`.
-- **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6). It answers the full `Run`; a deleted widget or one that isn't an analysis is `422`.
+- **`POST /widgets/{wid}/rerun`** (added): re-runs an analysis widget's spec on the current version (the "Outdated" footer's Re-run, App Flow §9 step 6). It answers the full `Run`; a deleted widget or one that isn't an analysis is `422`. While the new run is queued or running, the widget's card is `updating` (`card.updated`); it's told when the run finishes and becomes `outdated` if the run fails or is cancelled (§7.6).
 - **`GET /widgets/{wid}/data` for an analysis widget** returns its run's importance plus `run` (the `Run` summary), so the widget can show progress, the verdict or "Outdated". An analysis ignores the dashboard's filter.
 - **Confusion, ROC and wrong rows.**
   - For a classification run, `results?view=confusion` gives `actual`, `predicted` and `n` for every pair of classes. `view=roc` gives `fpr`, `tpr` and `threshold` (at most 50 points) for two classes. Both come from the out-of-fold predictions; a run without them answers `422`.
@@ -1550,6 +1553,8 @@ As implemented (`sherlock/stories/`), with cut 6 applied:
   - **No card is left `updating`.**
     - When a widget's query fails on the version, its card becomes `outdated` and keeps its text; Refresh tries again.
     - When the widget has no facts, the card goes back to `ready` with its text unchanged.
+    - When a newer version came in while it was told, nothing is stored and the card becomes `outdated`; the newer version's cascade tells it (§7.6 write guards).
+    - When the job fails or is cancelled, its failure hook turns the cards still `updating` into `outdated` (§3.3).
   - **Numbers in words count as numbers.** Text runs may not spell numbers: two to twelve, the tens, hundred, thousand, million, billion, dozen, twice, thrice, doubled, tripled and halved. Such a story is repaired like one with a digit.
   - **A heatmap names both categories of its cell.** The allowed labels add the series column's value of the highest cell (`value:<series>:<max_y>`), and the prompt asks for both.
 - Four rules keep a model-written number off a card (Rule 2):
@@ -1661,12 +1666,12 @@ As built, the pseudocode's `rerun_fact_sql` for answer cards isn't there: the ca
 
 The cascade as implemented (`sherlock/jobs/cascade.py`):
 - **Trigger.** `emit_version_created` (every commit and undo) queues a `cascade` job when the dataset has a live widget. A cascade that is queued, or running but still in its 2 s wait, absorbs the next one, so saves within 2 s cascade once. The job waits until 2 s after it was queued, then reads the dataset's current version.
-- **Work.** Each affected widget (below) re-runs its query on that version through the data cache, its `version_built` is set (status `ready`, or `error` with the reason), and `widget.updated` is emitted. `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
+- **Work.** Each affected widget (below) re-runs its query on that version through the data cache, its status is set (`ready`, or `error` with the reason), and `widget.updated` is emitted. Its `version_built` moves to that version only after the cards are told (below). `cascade.started` lists the widget IDs, and `cascade.done` gives the counts.
 - **Web.** `cascade.started` dims the listed widgets ("updating") and shows the progress line under the header ("Updating 9 widgets"); `cascade.done` refetches the widgets and shows the toast "v8: 9 widgets re-queried." (App Flow §16). Both also count stories: "Updating 9 widgets and 3 stories", and "v8: 9 widgets re-queried, 3 stories updated." (`web/src/components/dataset/DatasetPage.tsx`).
 
 Cascade with cards (cut 6 applied; `sherlock/jobs/cascade.py`):
 - **What changed.** The steps since the oldest stale widget's `version_built`: their `column_targets`, plus those of the steps an undo replayed and of the step it undid. Added or removed columns, the typing step, and any rows added, deleted, quarantined or restored affect every widget.
-- **Affected widgets** are stale widgets whose dependencies (§6.4 `depends_on`) meet the changed columns, or every stale widget when everything changed; a widget whose query no longer compiles counts as affected. Only they re-run their query and emit `widget.updated`; the others just record the new `version_built`. `cascade.started` lists the affected widgets and their cards, the changed `columns` and `all`.
+- **Affected widgets** are stale widgets whose dependencies (§6.4 `depends_on`) meet the changed columns, or every stale widget when everything changed; a widget whose query no longer compiles counts as affected. Only they re-run their query and emit `widget.updated`; the others keep their status and error (an erroring widget isn't reset to `ready`) and just record the new `version_built`, after the cards are told. `cascade.started` lists the affected widgets and their cards, the changed `columns` and `all`.
 - **Cards.** The affected widgets' cards go through `tell` with reason `cascade`: a new sheet and a new narration, the `changed` badge set, an edited card given a `suggestion` instead, and the overview rewritten. With the user's "Story updates: Ask first", those cards become `outdated` (no narration) until Refresh.
 - **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
 - **Widgets added, changed or deleted** queue a `stories` job for that widget (deleted: the overview only), once the dataset has cards.
@@ -1677,6 +1682,13 @@ Cascade with cards (cut 6 applied; `sherlock/jobs/cascade.py`):
   - Runs that read none of the changed columns stay done on their version: their result still holds.
   - `cascade.started` lists `run_ids`, and `counts.runs` counts the outdated runs. An analysis widget's card is told again when its new run finishes, not during the cascade.
 - **Two job runners on one database.** A runner from an older build that lacks a job kind fails that kind's jobs ("No handler…"), as a second local API on the same `api/data` can do to a cascade; production runs one process.
+
+One writer per dataset, write guards and failure hooks (`jobs/runner.py`, `jobs/cascade.py`, `stories/service.py`, `ml/runner.py`):
+- **One at a time.** A cascade, a `stories` job and a dashboard build never run at once for one dataset (§3.3 `SERIAL_KINDS`): a second cascade queued during the first waits for it, then reads the newer version.
+- **Card writes are guarded by the version told.** `_upsert` and `_set_status` write only while the version the card was told on is still `datasets.current_version` (one conditional statement each); `outdated` is always written, since it's true of a card on any version. A tell that a newer version overtook while it narrated stores no text and no `ready`: `tell` returns those widgets as `overtaken` and marks their cards `outdated`, and the overview isn't rewritten.
+- **`version_built` moves after the cards, forward only.** The cascade records each widget's new `version_built` only once `tell` has returned, as `MAX(version_built, v)`, and not for an `overtaken` widget. A cascade that dies, is cancelled or is overtaken mid-tell leaves the versions where they were, so the next cascade (or the same one re-queued after a restart) sees those widgets as stale and tells their cards again; an older cascade can never move a widget back.
+- **A user's change wins.** Every widget write of the cascade carries `WHERE updated_at = <the value it read>`. A widget the user changed between the cascade's read and its write (a PATCH, an Undo) keeps that change: the old query's status or error isn't stamped over it, and its `version_built` is the one the change set.
+- **Failure hooks.** A failed or cancelled cascade or `stories` job turns the cards it left `updating` into `outdated` with `card.updated` (Refresh). An analysis card goes `updating` when its run relaunches (the cascade under "Automatic", or Re-run, `POST /widgets/{wid}/rerun`), is told when the run finishes, and becomes `outdated` when the run fails or is cancelled (`ml.on_failure`). A job the user cancelled while it ran is cancelled at the next start, with its hook, rather than run again (§3.3).
 
 ### 7.7 Notebook exporter
 

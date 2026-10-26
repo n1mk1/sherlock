@@ -6,6 +6,10 @@ the card, emitting `card.updated` as each one is ready; then the overview. With 
 is no material-change check: every affected card is narrated again. A card the user edited keeps its
 text and gets the new narration as a suggestion; with "Story updates: Ask first", a cascade marks
 cards outdated instead of narrating them.
+
+Every card write is conditional on the version it was told on still being the dataset's current
+version (`_upsert`, `_set_status`): a tell that a newer version overtook writes nothing, and the
+newer version's cascade (which waits for it, `runner.SERIAL_KINDS`) tells the cards again.
 """
 
 import json
@@ -178,39 +182,85 @@ def _bump(db, dataset_id):
     db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset_id,))
 
 
+# A write guard: the version a card was told on is still the dataset's current version.
+CURRENT = "? = (SELECT current_version FROM datasets WHERE id = ?)"
+
+
 def _upsert(db, dataset_id: str, kind: str, widget_id: str | None, headline: dict, body: dict, sheet_id: str,
-            version: int, narrated_by: str | None, changed: bool) -> str:
+            version: int, narrated_by: str | None, changed: bool) -> str | None:
+    """Store a told card; None (nothing written) when `version` is no longer the current one."""
     now = now_iso()
     q = ("SELECT * FROM cards WHERE dataset_id = ? AND kind = 'overview' AND deleted_at IS NULL" if kind == "overview"
          else "SELECT * FROM cards WHERE dataset_id = ? AND widget_id = ? AND deleted_at IS NULL")
     existing = db.execute(q, (dataset_id,) if kind == "overview" else (dataset_id, widget_id)).fetchone()
     if existing is None:
         card_id = new_id("crd")
-        db.execute(
+        cur = db.execute(
             "INSERT INTO cards (id, dataset_id, kind, widget_id, headline_json, body_json, fact_sheet_id, status, version, "
-            "narrated_by, verified_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?)",
+            "narrated_by, verified_at, created_at, updated_at) "
+            f"SELECT ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ? WHERE {CURRENT}",
             (card_id, dataset_id, kind, widget_id, json.dumps(headline), json.dumps(body), sheet_id, version, narrated_by,
-             now, now, now))
-        return card_id
+             now, now, now, version, dataset_id))
+        return card_id if cur.rowcount else None
     if existing["edited_by_user"]:
-        db.execute("UPDATE cards SET suggestion_json = ?, fact_sheet_id = ?, changed_badge = ?, status = 'ready', "
-                   "updated_at = ? WHERE id = ?",
-                   (json.dumps({"headline": headline, "body": body}), sheet_id, int(changed), now, existing["id"]))
+        cur = db.execute("UPDATE cards SET suggestion_json = ?, fact_sheet_id = ?, changed_badge = ?, status = 'ready', "
+                         f"updated_at = ? WHERE id = ? AND {CURRENT}",
+                         (json.dumps({"headline": headline, "body": body}), sheet_id, int(changed), now, existing["id"],
+                          version, dataset_id))
     else:
-        db.execute("UPDATE cards SET headline_json = ?, body_json = ?, fact_sheet_id = ?, status = 'ready', version = ?, "
-                   "narrated_by = ?, verified_at = ?, changed_badge = ?, updated_at = ? WHERE id = ?",
-                   (json.dumps(headline), json.dumps(body), sheet_id, version, narrated_by, now,
-                    int(changed or existing["changed_badge"]), now, existing["id"]))
-    return existing["id"]
+        cur = db.execute("UPDATE cards SET headline_json = ?, body_json = ?, fact_sheet_id = ?, status = 'ready', version = ?, "
+                         f"narrated_by = ?, verified_at = ?, changed_badge = ?, updated_at = ? WHERE id = ? AND {CURRENT}",
+                         (json.dumps(headline), json.dumps(body), sheet_id, version, narrated_by, now,
+                          int(changed or existing["changed_badge"]), now, existing["id"], version, dataset_id))
+    return existing["id"] if cur.rowcount else None
 
 
-def _set_status(db, dataset_id: str, widget_id: str, status: str) -> str | None:
+def _set_status(db, dataset_id: str, widget_id: str, status: str, version: int) -> str | None:
+    """A widget card's status, when `version` is still the current one; its id if it was written.
+    `outdated` is always written: it's true of any card whatever version it was told on."""
     r = db.execute("SELECT id FROM cards WHERE dataset_id = ? AND widget_id = ? AND deleted_at IS NULL",
                    (dataset_id, widget_id)).fetchone()
     if r:
-        db.execute("UPDATE cards SET status = ?, updated_at = ? WHERE id = ?", (status, now_iso(), r["id"]))
-        return r["id"]
+        guard = "" if status == "outdated" else f" AND {CURRENT}"
+        cur = db.execute(f"UPDATE cards SET status = ?, updated_at = ? WHERE id = ?{guard}",
+                         (status, now_iso(), r["id"], *((version, dataset_id) if guard else ())))
+        return r["id"] if cur.rowcount else None
     return None
+
+
+def settle_updating(db: sqlite3.Connection, bus, dataset_id: str, job_id: str | None = None,
+                    widget_ids: list[str] | None = None) -> int:
+    """Cards a failed or cancelled job left `updating` become `outdated`, so they offer Refresh instead of
+    spinning (the cascade's and the stories job's failure hooks). `widget_ids`: only those widgets' cards.
+    An analysis card whose run is still queued or running stays `updating`: the run's story tells it, or
+    the run's own failure hook marks it outdated. Returns how many changed."""
+    dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (dataset_id,)).fetchone()
+    if dataset is None:
+        return 0
+    changed = 0
+    for r in db.execute(
+            "SELECT c.id, c.widget_id FROM cards c WHERE c.dataset_id = ? AND c.deleted_at IS NULL AND c.status = 'updating' "
+            "AND NOT EXISTS (SELECT 1 FROM widgets w JOIN runs r ON r.id = w.run_id WHERE w.id = c.widget_id "
+            "AND r.status IN ('queued', 'running'))", (dataset_id,)).fetchall():
+        if widget_ids is not None and r["widget_id"] not in widget_ids:
+            continue
+        db.execute("UPDATE cards SET status = 'outdated', updated_at = ? WHERE id = ?", (now_iso(), r["id"]))
+        emit_card(db, bus, dataset, r["id"], job_id)
+        changed += 1
+    if changed:
+        _bump(db, dataset_id)
+    return changed
+
+
+def mark_widget_card(db: sqlite3.Connection, bus, dataset: sqlite3.Row, widget_id: str, status: str,
+                     job_id: str | None = None) -> str | None:
+    """Set a widget's card's status and emit `card.updated`: an analysis card goes `updating` when its run
+    relaunches and `outdated` when the run fails or is cancelled."""
+    cid = _set_status(db, dataset["id"], widget_id, status, dataset["current_version"])
+    if cid:
+        emit_card(db, bus, dataset, cid, job_id)
+        _bump(db, dataset["id"])
+    return cid
 
 
 def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, widget_ids: list[str] | None, *,
@@ -230,7 +280,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
     if reason == "cascade" and ask_first:
         marked = []
         for w in chosen:
-            cid = _set_status(db, dataset["id"], w["id"], "outdated")
+            cid = _set_status(db, dataset["id"], w["id"], "outdated", version)
             if cid:
                 emit_card(db, env.bus, dataset, cid, scope.job_id)
                 marked.append(cid)
@@ -242,7 +292,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
     for i, w in enumerate(chosen, 1):
         check_cancel()
         progress(i, len(chosen) + 1, f"Reading the facts · {i} of {len(chosen)}")
-        cid = _set_status(db, dataset["id"], w["id"], "updating")
+        cid = _set_status(db, dataset["id"], w["id"], "updating", version)
         if cid:
             emit_card(db, env.bus, dataset, cid, scope.job_id)
         try:
@@ -271,6 +321,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
                                                widget_columns=sheets[w["id"]]["depends"], dataset_columns=dataset_columns,
                                                related=related)))
     done = 0
+    overtaken: set[str] = set()  # cards a newer version made stale while they were being told
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         futures = [(w, sheet, pool.submit(nr.narrate, llm, scope, **kw)) for w, sheet, kw in jobs]
         for w, sheet, fut in futures:
@@ -283,22 +334,30 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
                                  (dataset["id"], w["id"])).fetchone() is not None
             cid = _upsert(db, dataset["id"], "widget", w["id"], headline, body, sheet["id"], version,
                           llm.settings.model_medium if by_model else None, changed=existed and reason == "cascade")
+            if cid is None:  # a newer version came in while it was told: nothing written (below)
+                overtaken.add(w["id"])
+                continue
             emit_card(db, env.bus, dataset, cid, scope.job_id)
             on_told(w["id"])  # the stories job's checkpoint (D8.6)
             done += 1
-    told = {w["id"] for w, _, _ in jobs}
+    told = {w["id"] for w, _, _ in jobs} - overtaken
     for w in chosen:  # never leave a card spinning: a failed query asks for Refresh, no facts keeps the text
-        if w["id"] not in told:
-            cid = _set_status(db, dataset["id"], w["id"], "outdated" if w["id"] in failed else "ready")
-            if cid:
-                emit_card(db, env.bus, dataset, cid, scope.job_id)
+        if w["id"] in overtaken:
+            # Its numbers are for a version that's gone: outdated, which the newer version's cascade tells again.
+            cid = _set_status(db, dataset["id"], w["id"], "outdated", version)
+        elif w["id"] not in told:
+            cid = _set_status(db, dataset["id"], w["id"], "outdated" if w["id"] in failed else "ready", version)
+        else:
+            continue
+        if cid:
+            emit_card(db, env.bus, dataset, cid, scope.job_id)
     progress(len(chosen) + 1, len(chosen) + 1, "Writing the overview")
     tell_overview(env, llm, scope, dataset, rows, dataset_columns, changed=reason == "cascade")
     from sherlock.stories import synthesis  # a synthesis citing a number that moved says so
 
     synthesis.check_sources(db, env.bus, dataset, scope.job_id)
     _bump(db, dataset["id"])
-    return {"cards": done, "widgets": len(chosen)}
+    return {"cards": done, "widgets": len(chosen), "overtaken": sorted(overtaken)}
 
 
 def _waiting_for_run(db: sqlite3.Connection, widget: sqlite3.Row) -> bool:
@@ -337,7 +396,7 @@ def tell_overview(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite
     headline = {"blocks": [{"type": "paragraph", "runs": [{"type": "text", "text": "What stands out"}]}]}
     cid = _upsert(db, dataset["id"], "overview", None, headline, body, sheet["id"], dataset["current_version"],
                   llm.settings.model_medium if by_model else None, changed=changed)
-    return emit_card(db, env.bus, dataset, cid, scope.job_id)
+    return emit_card(db, env.bus, dataset, cid, scope.job_id) if cid else None
 
 
 def _datacard(env: ws.Env, dataset: sqlite3.Row) -> dict:

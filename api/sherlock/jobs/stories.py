@@ -63,4 +63,10 @@ async def run(ctx: JobContext) -> dict:
     return await asyncio.to_thread(_run, ctx)
 
 
-register("stories", run)
+def on_failure(db: sqlite3.Connection, bus, job: sqlite3.Row, message: str) -> None:
+    """A stories job that failed or was cancelled leaves no card spinning: `updating` becomes `outdated`."""
+    if job["dataset_id"]:
+        stories.settle_updating(db, bus, job["dataset_id"], job["id"])
+
+
+register("stories", run, on_failure)

@@ -553,6 +553,12 @@ The cascade is debounced: multiple saves within 2 seconds produce one cascade.
 
 As built, the progress line reads "Updating 4 widgets and 4 stories". Only widgets that read a changed column dim; their cards show a spinner while they're rewritten, then the "changed" badge. The toast reads "v3: 4 widgets re-queried, 4 stories updated." 
 
+Also as built (TRD §7.6):
+- A second save while a cascade runs queues the next cascade behind it; the two never run at once, so the cards end on the newer version.
+- A cascade that fails or is cancelled leaves no card spinning: the cards it hadn't finished show "outdated, click to refresh", and the next cascade rewrites them.
+- An analysis card shows the spinner while its run re-runs, and "outdated, click to refresh" if the run fails.
+- A widget changed while the cascade runs keeps the change.
+
 ---
 
 ## 17. Notebook export

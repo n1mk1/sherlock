@@ -537,6 +537,11 @@ def on_failure(db: sqlite3.Connection, bus: EventBus | None, job: sqlite3.Row, m
     dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (row["dataset_id"],)).fetchone()
     if dataset is not None:
         _emit_run(db, bus, dataset, run_id, job["id"])
+        from sherlock.stories import service as stories
+
+        # Its widgets' cards tell an earlier run, or nothing: outdated, not ready or spinning (plan 1.2).
+        for w in db.execute("SELECT id FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run_id,)).fetchall():
+            stories.mark_widget_card(db, bus, dataset, w["id"], "outdated", job["id"])
 
 
 register("ml_run", run, on_failure)
@@ -603,4 +608,8 @@ def rerun_widget(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, created
     p = prepare(env, dataset, request_from_spec(spec))
     run = launch(env, dataset, p, created_by, widget["id"])
     link(env.db, widget["id"], run)
+    if run["status"] in RUNNING:  # its card says so until the run's story is told (or the run fails)
+        from sherlock.stories import service as stories
+
+        stories.mark_widget_card(env.db, env.bus, dataset, widget["id"], "updating")
     return run
