@@ -506,6 +506,21 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A widget whose title alone the user changed mid-cascade keeps its old `version_built` until the next cascade; the footer's version stamp of a SQL widget comes from its data, so nothing shows it.
   - BACKLOG: no line closes (A1, A16–A18 were audit findings, not BACKLOG lines). D6 F11 (the progress line clears only on `cascade.done`) stays open: a cancelled cascade ends with `job.failed`.
 
+### Slice 7 (plan 1.5): the widget data key carries its spec
+
+- **Done:**
+  - The web `Widget` type has `updated_at` (the server always sent it), and it's the last part of `keys.widgetData` and `keys.explain`. A chart changed from chat (`update_widget`), a PATCH or an Undo gets a new key once the widget list is read again, so it redraws from its new query. Before, chat's "make it a pie chart" retitled the widget and kept the old query's rows (A20).
+  - `widget.updated` goes through `invalidateWidget`: the list is read again, and that widget's data and explain queries already on the event's `updated_at` are read again too (nothing in their key moved). Older keys aren't re-read on the way, so a changed spec costs one data read, not two. The dashboard's Undo no longer re-reads every widget's data, only its own.
+  - Chat's Undo reuses `useWidgetActions().undo` instead of its own request.
+  - **Found by the new e2e step, fixed here:**
+    - A pie drawn in a chat answer covered the answer's Undo button. Bklit's pie is an `aspect-square w-full` box, so in a wide, 220 px-tall chat block it became a square as wide as the thread and spilled over what sat under it (on the dashboard the widget clipped it). The adapter now sizes it on the box's height (`h-full w-auto max-w-full`), and the chat chart block clips its content.
+    - Undo brought back the query but kept the title chat gave it, so the restored KPI read "Average fare by sex". A spec change that renames a chart now keeps the replaced title in `view.options.undo_title` (the pattern `chart_title` already uses for analyses); Undo restores it, and a second undo puts the new one back (`widgets/service.py`; `test_chat_actions.py`).
+  - Tests: `dashboard.test.tsx` renders a widget under a fake `EventSource` (`src/test/eventsource.ts`, for 2b.1 too); a `widget.updated` with a new `updated_at` and spec redraws it with one more data read, and one with the same `updated_at` reads the data again. It fails on the old `queries.ts` (the chart keeps "38.2%"). The e2e flow now ends on the dashboard: focus "Top 3 fares by class", "make it a pie chart" (the recorded `update_widget` reply), the pie shows female and male, and the answer's Undo puts it back.
+  - Docs: TRD §4 (web: widget data keys), §4.5 (Undo restores the title) and §5.1 (the web app's reaction to `widget.updated`); App Flow §10.2.
+- **Decisions:**
+  - The event invalidates only the queries on its own `updated_at` rather than every query of the widget, because an older key is about to be replaced; invalidating it would read the same new data twice.
+  - The e2e step picks the KPI "Average fare paid" by its dashboard element (story cards share the article role), not "Top 3 fares by class": the built sample dashboard has no widget of that title (in its place is "Rate of survived"), though the recorded curate reply names it. A KPI's one-column rows can't draw the pie's slices, so the step fails on the old key.
+- BACKLOG: no line closes (A20 was an audit finding).
 ### Slice 8 (plan 2.1): receipts
 
 - **Done:**

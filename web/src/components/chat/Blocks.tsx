@@ -80,7 +80,7 @@ export function BlockView({ block, datasetId, onPin, pinning }: {
     case "chart":
       return (
         <div className="flex flex-col gap-1.5">
-          <div className="h-[220px] rounded-lg border border-border bg-card p-2">
+          <div className="h-[220px] overflow-hidden rounded-lg border border-border bg-card p-2">
             <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
               <WidgetChart spec={block.spec} data={block.data} compact />
             </Suspense>

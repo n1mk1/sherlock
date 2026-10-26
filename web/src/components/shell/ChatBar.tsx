@@ -11,7 +11,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { request } from "@/api/client";
-import { filterParam, keys, sendChat, showPlan, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
+import { filterParam, keys, sendChat, showPlan, useAddToFlow, useMe, usePin, useThread, useWidgetActions, useWidgets } from "@/api/queries";
 import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Receipts } from "@/components/chat/Receipts";
@@ -433,20 +433,20 @@ export function ProposalView({ proposal, dataset }: { proposal: Proposal; datase
   );
 }
 
+/** The widget's own Undo (`useWidgetActions().undo`), so its chart redraws the way the dashboard's does. */
 function UndoWidget({ widgetId, datasetId }: { widgetId: string; datasetId: string }) {
-  const qc = useQueryClient();
+  const { undo } = useWidgetActions(datasetId);
   const [done, setDone] = useState(false);
   return (
-    <Button size="sm" className="self-start" disabled={done} onClick={async () => {
-      try {
-        await request("POST", `/api/v1/widgets/${widgetId}/undo`);
-        setDone(true);
-        qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
-        toast("The widget is back as it was.");
-      } catch (e) {
-        toast.error((e as Error).message);
-      }
-    }}>{done ? "Undone" : "Undo"}</Button>
+    <Button size="sm" className="self-start" disabled={done} loading={undo.isPending} onClick={() =>
+      undo.mutate(widgetId, {
+        onSuccess: () => {
+          setDone(true);
+          toast("The widget is back as it was.");
+        },
+        onError: (e) => toast.error((e as Error).message),
+      })
+    }>{done ? "Undone" : "Undo"}</Button>
   );
 }
 

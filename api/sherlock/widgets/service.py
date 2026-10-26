@@ -217,6 +217,8 @@ def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, 
                 title = analysis_title(spec)
         else:
             run_spec(env, dataset, spec, dataset["current_version"])
+            if old["op"]["type"] == "sql":
+                spec = _with_undo_title(spec, row["title"] if title is not None and title.strip()[:200] != row["title"] else None)
         # Undo goes back to the chart: changing an analysis's settings keeps the chart it replaced.
         prev = row["prev_spec_json"] if old["op"]["type"] == "ml" and spec["op"]["type"] == "ml" else row["spec_json"]
         sets += ["spec_json = ?", "spec_hash = ?", "prev_spec_json = ?", "version_built = ?", "status = 'ready'", "error = NULL"]
@@ -241,6 +243,15 @@ def update(env: Env, dataset: sqlite3.Row, row: sqlite3.Row, spec: dict | None, 
     return new
 
 
+def _with_undo_title(spec: dict, title: str | None) -> dict:
+    """A chart spec that remembers the title the change replaced (`view.options.undo_title`), or none: a
+    chat change that retitles a chart is undone title and all, not just its query."""
+    options = {k: v for k, v in (spec["view"].get("options") or {}).items() if k != "undo_title"}
+    if title:
+        options["undo_title"] = title
+    return {**spec, "view": {**spec["view"], "options": options}}
+
+
 def undo(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> sqlite3.Row:
     """Swap the spec with the one before the last change, so a second undo puts it back."""
     if not row["prev_spec_json"]:
@@ -251,10 +262,15 @@ def undo(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> sqlite3.Row:
         title = (current["view"].get("options") or {}).get("chart_title") or title  # back to the chart's own title
     elif current["op"]["type"] == "sql" and prev["op"]["type"] == "ml":
         title = analysis_title(prev)
+    elif current["op"]["type"] == "sql" and prev["op"]["type"] == "sql":
+        back = (current["view"].get("options") or {}).get("undo_title")
+        swap = back if back and back != title else None
+        prev = _with_undo_title(prev, title if swap else None)  # so a second undo puts this title back
+        title = swap or title
     env.db.execute(
         "UPDATE widgets SET spec_json = ?, spec_hash = ?, prev_spec_json = ?, point_json = NULL, status = 'ready', "
         "error = NULL, title = ?, updated_at = ? WHERE id = ?",
-        (row["prev_spec_json"], spec_hash(prev), row["spec_json"], title, now_iso(), row["id"]),
+        (json.dumps(prev), spec_hash(prev), row["spec_json"], title, now_iso(), row["id"]),
     )
     run = env.db.execute("SELECT * FROM runs WHERE id = ?", (row["run_id"],)).fetchone() if row["run_id"] else None
     if run is not None and json.loads(row["prev_spec_json"])["op"]["type"] == "ml":

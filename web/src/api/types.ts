@@ -206,6 +206,8 @@ export interface Widget {
   version_built: number;
   score: number | null;
   point: Highlight | null;
+  created_at?: string;
+  updated_at: string; // every spec, title or status write moves it; the data and explain keys carry it
   deleted_at: string | null;
 }
 

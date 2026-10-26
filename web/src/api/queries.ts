@@ -17,8 +17,10 @@ export const keys = {
   steps: (id: string) => ["steps", id] as const,
   report: (id: string, jobId?: string) => ["report", id, jobId ?? "latest"] as const,
   widgets: (id: string) => ["widgets", id] as const,
-  widgetData: (wid: string, filter: string, version: number) => ["widget-data", wid, filter, version] as const,
-  explain: (wid: string, filter: string) => ["explain", wid, filter] as const,
+  // A widget's data and "How do you know?" carry its updated_at: a new spec is a new key, so it redraws.
+  widgetData: (wid: string, filter: string, version: number, updatedAt: string) =>
+    ["widget-data", wid, filter, version, updatedAt] as const,
+  explain: (wid: string, filter: string, updatedAt: string) => ["explain", wid, filter, updatedAt] as const,
   allJobs: ["jobs", "all"] as const,
   chat: (id: string) => ["chat", id] as const,
   plan: (pid: string) => ["clean-plan", pid] as const,
@@ -359,7 +361,7 @@ export function useWidgets(datasetId: string) {
 
 export function useWidgetData(widget: Widget, filter: string, version: number, enabled = true) {
   return useQuery({
-    queryKey: keys.widgetData(widget.id, filter, version),
+    queryKey: keys.widgetData(widget.id, filter, version, widget.updated_at),
     enabled,
     queryFn: () =>
       request<WidgetData>("GET", `/api/v1/widgets/${widget.id}/data${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
@@ -368,13 +370,26 @@ export function useWidgetData(widget: Widget, filter: string, version: number, e
   });
 }
 
-export function useExplain(widgetId: string | null, filter: string) {
+export function useExplain(widget: Widget | null, filter: string) {
   return useQuery({
-    queryKey: keys.explain(widgetId ?? "", filter),
-    enabled: !!widgetId,
+    queryKey: keys.explain(widget?.id ?? "", filter, widget?.updated_at ?? ""),
+    enabled: !!widget,
     queryFn: () =>
-      request<Explain>("GET", `/api/v1/widgets/${widgetId}/explain${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
+      request<Explain>("GET", `/api/v1/widgets/${widget!.id}/explain${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
   });
+}
+
+/** After `widget.updated`: the widget list is read again, and so are this widget's data and explain
+ * queries that are already on its new `updated_at`. Older keys aren't re-read; the list's new
+ * `updated_at` replaces them (TRD §5.1 "In the web app"). */
+export function invalidateWidget(qc: QueryClient, datasetId: string, widget: { id: string; updated_at?: string }) {
+  qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
+  for (const prefix of ["widget-data", "explain"]) {
+    qc.invalidateQueries({
+      queryKey: [prefix, widget.id],
+      predicate: (q) => widget.updated_at === undefined || q.queryKey[q.queryKey.length - 1] === widget.updated_at,
+    });
+  }
 }
 
 export function useWidgetActions(datasetId: string) {
@@ -404,10 +419,7 @@ export function useWidgetActions(datasetId: string) {
     }),
     undo: useMutation({
       mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/undo`),
-      onSuccess: () => {
-        refresh();
-        qc.invalidateQueries({ queryKey: ["widget-data"] });
-      },
+      onSuccess: (widget) => invalidateWidget(qc, datasetId, widget),
     }),
     saveLayout: useMutation({
       mutationFn: (layout: Layout) => request<Layout>("PUT", `/api/v1/datasets/${datasetId}/layout`, layout),
@@ -423,7 +435,7 @@ export function useWidgetActions(datasetId: string) {
 export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "started" | "done"; data: Record<string, unknown> }) => void) {
   const qc = useQueryClient();
   useEventStream(`/api/v1/datasets/${datasetId}/events`, {
-    "widget.updated": () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
+    "widget.updated": (data) => invalidateWidget(qc, datasetId, data as Widget),
     "layout.updated": () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
     "version.created": () => {
       qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });

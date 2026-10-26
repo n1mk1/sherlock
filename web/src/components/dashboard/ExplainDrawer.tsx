@@ -12,7 +12,7 @@ import { appliedFilter, useGlobalFilter } from "@/state/filters";
 
 export function ExplainDrawer({ widget, data, onClose }: { widget: Widget | null; data?: WidgetData; onClose: () => void }) {
   const filter = useGlobalFilter(widget?.dataset_id ?? "");
-  const explain = useExplain(widget?.id ?? null, filterParam(widget ? appliedFilter(widget, filter) : null));
+  const explain = useExplain(widget, filterParam(widget ? appliedFilter(widget, filter) : null));
   const isMl = widget?.spec.op.type === "ml";
   const code = useRunCode(isMl ? widget?.run_id ?? null : null, isMl);
   const [copied, setCopied] = useState(false);

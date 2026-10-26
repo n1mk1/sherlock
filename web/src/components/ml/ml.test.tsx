@@ -10,7 +10,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const DRIVER: Widget = {
   id: "wdg_9", dataset_id: "ds_1", title: "What drives survived?", status: "ready", error: null, created_by: "builder",
-  version_built: 2, score: null, point: null, deleted_at: null, run_id: "run_1",
+  version_built: 2, score: null, point: null, updated_at: "2026-10-26T00:00:00Z", deleted_at: null, run_id: "run_1",
   spec: {
     scope: { columns: { target: "survived" }, rows: { inherit_global_filters: false } },
     op: { type: "ml", recipe: "driver_analysis", method: "auto", params: { cv_folds: 5, time_budget_s: 60 } },

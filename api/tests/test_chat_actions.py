@@ -115,6 +115,16 @@ def test_update_widget_changes_the_focused_widget_with_undo(client, ready):
     assert any(b["type"] == "chart" and b["widget_id"] == wid for b in msg["blocks"])
     undone = client.post(f"{API}/widgets/{wid}/undo").json()
     assert undone["spec"]["view"]["type"] == "bar"
+    assert undone["title"] == "Fare by sex"  # the title chat gave it goes too, not just the query
+    redone = client.post(f"{API}/widgets/{wid}/undo").json()  # a second undo puts both back
+    assert redone["spec"]["view"]["type"] == "pie" and redone["title"] == "Average fare by sex"
+    # A change that keeps the title (the menu's Change view, which sends the options it has) is undone
+    # without touching the title.
+    client.patch(f"{API}/widgets/{wid}", json={"title": "My pie"})
+    view = {"type": "bar", "options": redone["spec"]["view"]["options"]}
+    assert client.patch(f"{API}/widgets/{wid}", json={"view": view}).status_code == 200
+    back = client.post(f"{API}/widgets/{wid}/undo").json()
+    assert back["spec"]["view"]["type"] == "pie" and back["title"] == "My pie"
 
 
 def test_a_two_part_question_runs_as_a_plan(client, ready):

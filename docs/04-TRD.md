@@ -163,6 +163,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
   - **Stores.** `src/state/filters.ts` holds the global filter per dataset. `src/state/ui.ts` adds the Edit layout toggle, the Add widget drawer, the focused widget and the chat thread, plus panel widths and the library rail, kept in `localStorage` under `sherlock.panels`.
   - **Chat.** `sendChat` (`src/api/queries.ts`) reads `POST /chat`'s SSE frames from a `fetch` stream.
   - **Dataset events.** The dashboard opens `GET /datasets/{id}/events` and refetches its widgets on `widget.updated`, `layout.updated` and `version.created`. Any `dataset.status` also refetches the widget list, so the builder's widgets appear when the dataset becomes ready.
+  - **Widget data keys.** A widget's data query is keyed by its ID, the filter, the dataset version and the widget's `updated_at`, and its "How do you know?" query by its ID, the filter and `updated_at`. Every write that changes a spec (a PATCH, chat's `update_widget`, Undo) moves `updated_at`, so the widget list read after `widget.updated` gives the chart a new key and it redraws from the new query; before, the key held still and a chart changed from chat kept the old query's rows (plan 1.5). Chat's Undo is the widget's own (`useWidgetActions().undo`).
   - **CSV grid.** `@glideapps/glide-data-grid` 6.0.3 with its peers `lodash`, `marked` and `react-responsive-carousel` (`src/components/csv/Grid.tsx`). Its cell editors open in the `<div id="portal">` in `index.html`. Canvas colors come from the tokens through `src/lib/tokens.ts`, which resolves each CSS variable to `rgba()` and re-resolves when the mode or accent changes.
   - **Pending edits.** `src/state/edits.ts` (Zustand) holds the buffer per dataset and mirrors it to local storage (Schema §5).
   - **Popovers.** `@radix-ui/react-popover` 1.1.15, which the job tray (`src/components/shell/JobTray.tsx`) uses directly. There's no `src/components/ui/popover.tsx` wrapper: Clean with AI opens the cleaning plan in the right panel (App Flow §8.4).
@@ -633,6 +634,7 @@ Widgets API as implemented (`sherlock/routers/widgets.py`, `sherlock/widgets/`):
 - **`PATCH /widgets/{wid}`.** A partial `WidgetSpec` is merged over the current one (objects merge, other values replace), and `title` renames. The new spec runs first, as on create. The old spec goes to `prev_spec_json`, and a view change clears the accent.
   - The `{ prompt }` form is not built yet: it's `422` ("Changing a widget in words needs chat, which isn't built yet."). Chat does change a widget in words (`update_widget`, §8.1), but this route doesn't call it.
 - **`POST /widgets/{wid}/undo`** swaps the spec with `prev_spec_json`, so a second undo puts the change back. With nothing to go back to it's `409 conflict`.
+  - **The title goes back too.** A change to a chart's spec that also renames it (chat's `update_widget` titles the widget for its new query) keeps the title it replaced in the new spec's `view.options.undo_title`; undoing it restores that title, and the spec put aside remembers the title it leaves, so a second undo puts both back. A change that keeps the title (Change view) drops `undo_title`, so Undo leaves the title alone. Before, Undo restored the query and kept the new title (a KPI of the average fare titled "Average fare by sex").
 - **`DELETE`** soft-deletes the widget and its story cards together, and `restore` brings back the cards deleted with it. A deleted widget's data, explain, patch and duplicate are `404`; restore still finds it.
 - **`POST /duplicate`** answers `201` with a copy titled "<title> (copy)".
 - **`GET /data`.**
@@ -887,6 +889,9 @@ As built for stories and the cascade:
   - **During a stories run or a cascade**, a card is sent when it goes to `updating`, again when its new text (or suggestion) is stored, and the overview last.
   - **With "Story updates: Ask first"**, a cascade sends each affected card once, as `outdated`.
   - A deleted card is sent with its `deleted_at` set. The web app refetches the dataset's cards on every `card.updated`.
+
+In the web app (`useDatasetEvents`, `src/api/queries.ts`):
+- **`widget.updated`** reads the widget list again (`invalidateWidget`). That widget's data and explain queries that are already on the event's `updated_at` are read again too, since nothing in their key moved (a status write). Queries on an older `updated_at` aren't: the list's new `updated_at` gives the widget a new key, which is read once, while the old chart stays on screen until it arrives.
 - **`cascade.started`** adds `columns`: the changed columns, sorted. It also adds `all`: true when the change affects every widget, such as rows added, deleted, quarantined or restored, a column added or removed, or the typing step. `widget_ids` lists only the affected widgets, `card_ids` their cards, and `run_ids` lists the runs the cascade marked outdated, sorted (§7.6 "Runs").
 - **`cascade.done`** `counts` is `{ widgets, errors, cards, outdated, runs }`.
   - `widgets` is the number of affected widgets re-queried, and `errors` how many of them failed.

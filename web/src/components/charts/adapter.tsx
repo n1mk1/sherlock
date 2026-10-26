@@ -157,7 +157,10 @@ function Pie({ rows, x, y, donut, point, selected, onSelect, fmt }: {
         className={cn("relative h-full min-h-0 flex-1", onSelect && "cursor-pointer")}
         onClick={() => onSelect && hovered !== null && onSelect(rows[hovered].raw)}
       >
-        <PieChart data={slices} innerRadius={donut ? 48 : 0} padAngle={0.01} onHoverChange={setHovered} hoveredIndex={hovered}>
+        {/* Square on the box's height: the chart's own `w-full` square overflowed a wide, short box (a chat
+            answer's pie spilled over the buttons under it). */}
+        <PieChart className="mx-auto h-full w-auto max-w-full" data={slices} innerRadius={donut ? 48 : 0} padAngle={0.01}
+          onHoverChange={setHovered} hoveredIndex={hovered}>
           {slices.map((_, i) => <PieSlice key={i} index={i} />)}
         </PieChart>
       </div>

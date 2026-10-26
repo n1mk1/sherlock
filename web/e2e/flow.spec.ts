@@ -1,7 +1,7 @@
 // The flow a judge follows (Implementation Plan D8.6 and D9 exit), end to end in a real browser against
 // one server with recorded model replies: sample → dashboard with stories → ask a question → change a
 // cell from chat (a proposal, approved) → its stories update → Flow: place two cards, make sense of
-// them → Export notebook → the .ipynb downloads.
+// them → Export notebook → the .ipynb downloads → change a chart from chat, and undo it.
 import { expect, test, type Page } from "@playwright/test";
 
 async function ask(page: Page, text: string) {
@@ -74,4 +74,21 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   const download = page.waitForEvent("download");
   await dialog.getByRole("button", { name: "Export" }).click();
   expect((await download).suggestedFilename()).toMatch(/\.ipynb$/);
+  await expect(dialog).toBeHidden();
+
+  // Change a widget from chat (plan 1.5): the focused KPI becomes a pie drawn from its new query (the old
+  // query's one-column rows can't show the slices), and the answer's Undo puts it back.
+  const widget = (title: string) =>
+    page.locator("article[data-widget-id]").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+  await page.getByRole("tab", { name: "Dashboard" }).click();
+  await widget("Average fare paid").getByRole("heading").click();
+  await expect(page.getByTitle("Clear the context")).toHaveText("Average fare paid");
+  await ask(page, "make it a pie chart");
+  const pie = widget("Average fare by sex");
+  await expect(pie.getByText("female", { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(pie.getByText("male", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Undo", exact: true }).last().click();
+  await expect(page.getByText("The widget is back as it was.")).toBeVisible();
+  await expect(widget("Average fare paid")).toBeVisible();
+  await expect(widget("Average fare paid").getByText("female", { exact: true })).toHaveCount(0);
 });

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Job, Widget } from "@/api/types";
 import { initials } from "@/components/library/LibraryPanel";
@@ -7,6 +7,8 @@ import { formatCell, formatNumber, isPctColumn } from "@/lib/format";
 import { useLocation } from "react-router-dom";
 import { appliedFilter, useFilters } from "@/state/filters";
 import { useUi } from "@/state/ui";
+import { useDatasetEvents, useWidgets } from "@/api/queries";
+import { stubEventSource } from "@/test/eventsource";
 import { mockApi, renderAt } from "@/test/render";
 import { templateSpec } from "./AddWidgetDrawer";
 import { derive, toStored, useWidgetParam } from "./Dashboard";
@@ -16,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const KPI: Widget = {
   id: "wdg_1", dataset_id: "ds_1", title: "Survival rate", status: "ready", error: null, created_by: "builder",
-  version_built: 2, score: 0.2, point: null, deleted_at: null,
+  version_built: 2, score: 0.2, point: null, updated_at: "2026-10-26T00:00:00Z", deleted_at: null,
   spec: {
     scope: { columns: { x: null, y: "survived" }, rows: { inherit_global_filters: true } },
     op: { type: "sql", sql: "SELECT AVG(survived) AS rate, COUNT(*) AS n FROM t WHERE {{rows}}" },
@@ -119,6 +121,37 @@ describe("widget shell", () => {
     const filtered = fetchMock.mock.calls.map(([u]) => String((u as Request).url ?? u)).find((u) => u.includes("filters="));
     expect(decodeURIComponent(filtered!)).toContain('{"and":[{"col":"sex","op":"eq","value":"female"}]}');
     useFilters.getState().clear("ds_1");
+  });
+
+  it("reads its data again when widget.updated brings a new updated_at (a changed spec)", async () => {
+    // Plan 1.5 (A20): chat's "make it a pie chart" changed the spec, but the data key didn't move, so the
+    // chart kept the old query's rows.
+    const ES = stubEventSource();
+    let current = KPI;
+    let reads = 0;
+    mockApi({
+      "GET /api/v1/datasets/ds_1/widgets": () => ({ widgets: [current], layout: { lg: [] } }),
+      "GET /api/v1/widgets/wdg_1/data": () => {
+        reads += 1;
+        return { version: 2, columns: [{ name: "rate", type: "DOUBLE" }, { name: "n", type: "BIGINT" }],
+          rows: [[current === KPI ? 0.382 : 0.5, 1309]], row_count: 1, truncated: false };
+      },
+    });
+    function Live() {
+      useDatasetEvents("ds_1", () => {});
+      const w = useWidgets("ds_1").data?.widgets[0];
+      return w ? <WidgetShell widget={w} version={2} columns={[]} collapsed={false} onToggleCollapse={() => {}} onExplain={() => {}} /> : null;
+    }
+    renderAt(<Live />);
+    expect(await screen.findByText("38.2%")).toBeInTheDocument();
+    current = { ...KPI, updated_at: "2026-10-26T00:01:00Z",
+      spec: { ...KPI.spec, op: { type: "sql", sql: "SELECT AVG(survived) AS rate, COUNT(*) AS n FROM t WHERE {{rows}} AND sex = 'female'" } } };
+    act(() => ES.last().emit("widget.updated", current, 7));
+    expect(await screen.findByText("50.0%")).toBeInTheDocument();
+    expect(reads).toBe(2); // the old key isn't read again on the way
+    // A write that keeps updated_at (nothing in the key moved) reads the data again too.
+    act(() => ES.last().emit("widget.updated", current, 8));
+    await waitFor(() => expect(reads).toBe(3));
   });
 
   it("shows the error with Retry and Show query", async () => {
