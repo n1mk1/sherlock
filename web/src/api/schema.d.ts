@@ -342,7 +342,8 @@ export interface paths {
         /**
          * Create Plan
          * @description Get or create the draft plan for the current version (merged onto it when it's older).
-         *     Answers 201 for a new plan, 200 for the existing draft.
+         *     Answers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's "Clean
+         *     them"), the plan is for those rows; without it, a draft keeps the scope it has.
          */
         post: operations["create_plan_api_v1_datasets__dataset_id__clean_plan_post"];
         delete?: never;
@@ -1610,6 +1611,10 @@ export interface components {
             /** Ops */
             ops: components["schemas"]["PlanOp"][];
         };
+        /** PlanRequest */
+        PlanRequest: {
+            scope?: components["schemas"]["CleanScope"] | null;
+        };
         /**
          * Settings
          * @description User settings with the PRD §7.10 defaults. Unknown keys are rejected.
@@ -2500,7 +2505,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PlanRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {

@@ -1,6 +1,6 @@
 # Sherlock · Backend Schema
 
-Version 1.2 · 2026-10-25 (migration 002, `clean_plans`, §2.21) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
+Version 1.3 · 2026-10-25 (migrations 002 and 003, `clean_plans` and its scope, §2.21) · Every table, column, file and index. SQLite holds app state; Parquet holds data (queried through in-memory DuckDB); the filesystem holds artifacts.
 
 ---
 
@@ -12,7 +12,7 @@ Version 1.2 · 2026-10-25 (migration 002, `clean_plans`, §2.21) · Every table,
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2.1–§2.19, and `002_clean_plans.sql` §2.21 (this doc's column comments have grown since; the test compares tables and columns, not comments). `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` §2.21, and `003_plan_scope.sql` adds `clean_plans.scope_json` (this doc's column comments have grown since; the test compares tables and columns, not comments). `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - `002_clean_plans.sql` (2026-10-25) adds `clean_plans` (§2.21) and its index.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
@@ -443,7 +443,7 @@ CREATE TABLE proposals (
 );
 ```
 
-As built (2026-10-25, D8.5): `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection`; `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
+As built (2026-10-25, D8.5): `messages.plan_json` holds `{ steps: [{ text, status }] }` with the final statuses, and `proposal_id` the proposal the message made. `proposals.payload_json` is `{ summary, edits: [{ row_id, column, value, before }], impact }` for `edit_cells` and `{ summary, scope: { kind, selection_id }, impact }` for `clean_selection` (approving it opens the cleaning plan with that scope, §2.21); `result_step_id` is the edit step an approved `edit_cells` committed. `thread_summaries` is written by the running summary (TRD §8.1).
 - Only `edit_cells` and `clean_selection` proposals are written. `card_edit` is not built (cut 2, Implementation Plan §2.0), and `clean_step` and `computed_column` are P1; approving another kind answers `422` (`agent/actions.py`). An approved `edit_cells` commits its step with `created_by = 'user'`, through the same save as the grid (`rows/edits.py`).
 
 ### 2.16 selections
@@ -548,7 +548,7 @@ CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT
 
 ### 2.21 clean_plans
 
-The cleaning plan (PRD CLEAN-8a, CLEAN-8b, TRD §4.4, §7.2): what Clean with AI will try, diagnosed by the code detectors on a version, editable until it starts. Added by migration `002_clean_plans.sql`.
+The cleaning plan (PRD CLEAN-8a, CLEAN-8b, TRD §4.4, §7.2): what Clean with AI will try, diagnosed by the code detectors on a version, editable until it starts. Added by migration `002_clean_plans.sql`; `scope_json` by `003_plan_scope.sql`.
 
 ```sql
 CREATE TABLE clean_plans (
@@ -560,7 +560,8 @@ CREATE TABLE clean_plans (
   source     TEXT NOT NULL,                    -- user|after_upload (who opened it)
   job_id     TEXT,                             -- the clean job a started plan ran as
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  scope_json TEXT                              -- {kind: selection|new_rows, selection_id, row_ids, rows}; NULL = the whole dataset (003)
 );
 CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE status = 'draft';
 ```
@@ -568,6 +569,7 @@ CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE statu
 - A dataset has at most one `draft` (the partial unique index). `POST /datasets/{id}/clean/plan` returns it or makes it; Discard sets `discarded`, and so does Clean it myself (`POST /use-as-is`); Start sets `started` and `job_id`, and the job's `params_json` keeps a frozen copy of the items (§2.14). Started and discarded plans are kept as history.
 - `version` moves when a draft is merged onto a newer version (`cleaning/plan.py` `merge`): ticks and instructions are kept by issue key, the user's steps while their column exists.
 - `items_json` holds Sherlock's fixes and the user's own steps (PRD CLEAN-8b: `detector: "user_request"`, `key: null`, `source: "you"|"chat"`), and each fix's rewritten `instruction`. The clean job's `state_json` adds `plan_outcomes` (item ID → outcome), which the report's `your_steps` reads (TRD §7.2).
+- `scope_json` is the rows a plan was opened for, so a reload can't widen it to the whole file: `new_rows` with the saved rows' IDs from the new-rows toast's "Clean them", or `selection` with the selection's ID from approving chat's `clean_selection` (PRD CLEAN-1). `rows` is the count the panel shows. `POST …/clean/plan` with a scope replaces it, a whole-dataset scope clears it, and no scope leaves it. The job's own scope still comes from `POST /clean`, which the panel sends from the scope the user leaves picked.
 - `source` is `after_upload` when the profile job made the draft because After upload is "Open the cleaning plan"; the plan screen then says why it opened.
 - Deleted with the dataset: the foreign key cascades on hard delete (§6).
 

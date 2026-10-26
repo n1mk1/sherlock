@@ -28,7 +28,6 @@ The owner's, unless a line says otherwise.
 
 - **Type-aware cell editors and autocomplete** (PRD CSV-5, P0; D5 O1). Every cell edits as text: no category dropdown (`GET /columns/{col}/values` exists for it), boolean toggle, date picker, number check before saving, or autocomplete from the column's values. Cut 5 doesn't cover these. Build them, or record the drop in the PRD (plan §2.0: any further drop needs a PRD change).
 - **Multi-column sort, column resize and auto-fit** (PRD CSV-8, P0). The grid sorts by one column, with fixed widths (`Grid.tsx`). Plan §5's cut 5 ("beyond … sort") may cover these, but plan §2.0's exact list doesn't name them. Say which.
-- **Cleans that skip the plan.** PRD CLEAN-1 says nothing is cleaned without Start cleaning, but two clicks still start a clean with no plan, attempting every issue: "Clean them" on the toast after saving new rows (`SaveActions.tsx` → `useCleanScoped` in `api/csv.ts`), and Approve on chat's `clean_selection` proposal (`agent/actions.py`). Route both through a plan, or record them as exceptions in CLEAN-8a.
 - **`/` with the chat bar set to Hidden.** PRD ASK-1 says `/` summons the bar; UI/UX §5.11 says Hidden removes it, which is what's built (`/` does nothing). Pick one.
 - The cut-5 P0s (CSV-2, 3, 4, 6, 7, 9, 10, 11, 14) and every other P0 a cut removed now carry a "Removed by cut N" marker in the PRD (the audit); their priorities are unchanged.
 - **Imbalanced two-class targets** (D7 F3). The verdict compares accuracy only, so with 3% positives a model with AUC 0.95 reads "weak, 0.0 points better". Use AUC or balanced accuracy for the verdict and the one-column rule, or require both to agree. That's a PRD and TRD change.
@@ -77,7 +76,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Identity, limits, operations
 
-- `POST …/use-as-is` (the Clean it myself button) and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So do `POST /cards/{cid}/refresh` and approving a `clean_selection` proposal (`agent/actions.py`) (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
+- `POST …/use-as-is` (the Clean it myself button) and `POST /jobs/{jid}/retry` start model-calling jobs without `llm_rate_limit`, and so does an upload whose profile job queues the build (D1 #5). So does `POST /cards/{cid}/refresh` (the audit). The token budgets still apply. TRD §15 lists the routes that do count.
 - `LOG_LEVEL` is read but never applied: `main.py` sets the `sherlock.*` loggers to INFO (TRD §10). Fix: `setLevel(settings.log_level.upper())`.
 - `JOB_BACKEND=nebius` is accepted and silently ignored, so jobs run locally (TRD §10). Refuse it at startup until it's built.
 - `PATCH /widgets/{wid}` with `{ prompt }` answers `422` with the stale message "needs chat, which isn't built yet", though `update_widget` exists (TRD §4.5). Route it to `update_widget` under `llm_rate_limit`, or fix the message.

@@ -10,8 +10,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { request } from "@/api/client";
-import { filterParam, keys, sendChat, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
-import type { AnswerBlock, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
+import { filterParam, keys, sendChat, showPlan, useAddToFlow, useMe, usePin, useThread, useWidgets } from "@/api/queries";
+import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -373,15 +373,22 @@ function PlanView({ steps }: { steps: PlanStep[] }) {
   );
 }
 
-/** A proposed change (PRD ASK-10): what would change, with Approve and Reject. Nothing applies before. */
-function ProposalView({ proposal, dataset }: { proposal: Proposal; dataset: Dataset }) {
+/** A proposed change (PRD ASK-10): what would change, with Approve and Reject. Nothing applies before.
+ * Approving a clean opens the cleaning plan for those rows; the user starts it (PRD CLEAN-1). */
+export function ProposalView({ proposal, dataset }: { proposal: Proposal; dataset: Dataset }) {
   const qc = useQueryClient();
+  const setRightOpen = useUi((s) => s.setRightOpen);
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const decide = async (what: "approve" | "reject") => {
     setBusy(what);
     try {
-      const out = await request<{ version?: number; kind?: string }>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
-      if (what === "approve") toast(proposal.kind === "edit_cells" ? `Saved as v${out?.version}. Undo it from the Changes panel.` : "Clean with AI started.");
+      const out = await request<{ version?: number } & Partial<CleanPlan>>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
+      if (what === "approve" && proposal.kind === "edit_cells") toast(`Saved as v${out?.version}. Undo it from the Changes panel.`);
+      if (what === "approve" && proposal.kind === "clean_selection" && out?.id) {
+        showPlan(qc, dataset.id, out as CleanPlan);
+        setRightOpen(true);
+        toast("The cleaning plan is open for those rows. Look it over, then press Start cleaning.");
+      }
     } catch (e) {
       toast.error((e as Error).message);
     } finally {

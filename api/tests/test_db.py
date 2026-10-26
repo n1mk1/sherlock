@@ -55,7 +55,7 @@ def test_migration_matches_schema_doc(conn):
 
 def test_migrate_is_idempotent_and_tracked(conn):
     assert migrate(conn) == []
-    assert current_version(conn) == 2
+    assert current_version(conn) == 3
 
 
 def test_pragmas(conn):

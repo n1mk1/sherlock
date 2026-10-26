@@ -869,6 +869,23 @@
     "title": "PlanPatch",
     "type": "object"
    },
+   "PlanRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "scope": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CleanScope"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "title": "PlanRequest",
+    "type": "object"
+   },
    "Settings": {
     "additionalProperties": false,
     "description": "User settings with the PRD \u00a77.10 defaults. Unknown keys are rejected.",
@@ -2136,7 +2153,7 @@
   },
   "/api/v1/datasets/{dataset_id}/clean/plan": {
    "post": {
-    "description": "Get or create the draft plan for the current version (merged onto it when it's older).\nAnswers 201 for a new plan, 200 for the existing draft.",
+    "description": "Get or create the draft plan for the current version (merged onto it when it's older).\nAnswers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's \"Clean\nthem\"), the plan is for those rows; without it, a draft keeps the scope it has.",
     "operationId": "create_plan_api_v1_datasets__dataset_id__clean_plan_post",
     "parameters": [
      {
@@ -2149,6 +2166,23 @@
       }
      }
     ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/PlanRequest"
+         },
+         {
+          "type": "null"
+         }
+        ],
+        "title": "Body"
+       }
+      }
+     }
+    },
     "responses": {
      "201": {
       "content": {

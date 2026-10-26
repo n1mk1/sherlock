@@ -4,7 +4,8 @@
 // the chat to do any of that, then starts. Leakage and ID columns are info rows under "Marked, not changed".
 // While it's open, the chat bar sends its `plan_id`, so chat can change it.
 // From the offer it fills the centre (`layout="centre"`); from the CSV tab it replaces Changes in the right
-// panel (`layout="side"`), with the scope radios, so the grid stays visible.
+// panel (`layout="side"`), with the scope radios, so the grid stays visible. A plan opened for some rows
+// (the new-rows toast's "Clean them", chat's "clean these rows") starts on those rows (PRD CLEAN-1).
 import { useIsMutating } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +14,7 @@ import { makeSelection } from "@/api/csv";
 import {
   stalePlan, useCleanPlan, useDatacard, useDiscardPlan, usePlanOps, useStartCleaning, type CleanScope,
 } from "@/api/queries";
-import type { CleanPlan, CleanPlanItem, Dataset, Issue, PlanModule, PlanOp } from "@/api/types";
+import type { CleanPlan, CleanPlanItem, Dataset, Issue, PlanModule, PlanOp, PlanScope } from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { displayValue } from "@/lib/cells";
@@ -62,6 +63,14 @@ const ISSUE_BUDGET = 20; // CLEAN_MAX_STEPS's default: issues attempted per run 
 const MAX_INSTRUCTION = 500; // cleaning/plan.py MAX_INSTRUCTION
 const AFTER_UPLOAD_LABEL = "Open the cleaning plan";
 
+/** The scope radio for rows the plan was opened for. */
+export function presetLabel(s: PlanScope): string {
+  const n = s.rows ?? 0;
+  const rows = `${n.toLocaleString()} ${n === 1 ? "row" : "rows"}`;
+  if (s.kind === "new_rows") return s.rows ? `The ${rows} you just added` : "Rows added since the last clean";
+  return `The ${rows} you asked to clean`;
+}
+
 export function CleanPlanPanel({ dataset, layout }: { dataset: Dataset; layout: "centre" | "side" }) {
   const creating = useIsMutating({ mutationKey: ["create-plan", dataset.id] }) > 0;
   const { data: plan } = useCleanPlan(dataset.clean_plan_id);
@@ -91,12 +100,17 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
   const discard = useDiscardPlan(dataset.id);
   const [, , openSettingsAt] = useSettingsOpen();
   const side = layout === "side";
-  const [scope, setScope] = useState<CleanScope["kind"]>("all");
+  const preset = plan.scope;
+  const [scope, setScope] = useState<CleanScope["kind"] | "preset">(preset ? "preset" : "all");
+  const presetKey = preset ? JSON.stringify(preset) : "";
+  useEffect(() => {
+    if (presetKey) setScope("preset"); // "Clean them" or chat set the plan's rows: show them picked
+  }, [presetKey]);
   const csvSelection = useUi((s) => s.csvSelection);
   const selected = csvSelection?.row_ids.length ?? 0;
   useEffect(() => {
-    if (scope === "selection" && selected === 0) setScope("all");
-  }, [scope, selected]);
+    if ((scope === "selection" && selected === 0) || (scope === "preset" && !preset)) setScope("all");
+  }, [scope, selected, preset]);
   const pending = pendingCount(useEdits((s) => s.buffers[dataset.id]));
   const discardEdits = useEdits((s) => s.discard);
   const unsaved = side && pending > 0;
@@ -133,7 +147,11 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
   const begin = async () => {
     try {
       let s: CleanScope = { kind: "all" };
-      if (side && scope === "selection" && csvSelection) {
+      if (scope === "preset" && preset) {
+        s = preset.kind === "selection"
+          ? { kind: "selection", selection_id: preset.selection_id ?? undefined }
+          : { kind: "new_rows", row_ids: preset.row_ids ?? undefined };
+      } else if (side && scope === "selection" && csvSelection) {
         const sel = await makeSelection(dataset.id, csvSelection.row_ids, "Clean with AI");
         s = { kind: "selection", selection_id: sel.selection_id };
       } else if (side && scope === "new_rows") {
@@ -162,12 +180,16 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
             <Button variant="link" size="sm" className="text-[13px]" onClick={() => openSettingsAt("after_upload")}>Change</Button>
           </p>
         )}
+        {preset && !side && (
+          <p className="mt-2 text-[13px] text-muted-foreground">Only {presetLabel(preset).charAt(0).toLowerCase() + presetLabel(preset).slice(1)}.</p>
+        )}
       </header>
 
       {side && (
         <fieldset className="flex flex-col gap-1.5 text-[13px]">
           <legend className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Scope</legend>
           {([
+            ...(preset ? [["preset", presetLabel(preset)] as const] : []),
             ["all", "Whole dataset"],
             ["selection", `Current selection (${selected.toLocaleString()} rows)`],
             ["new_rows", "Rows added since the last clean"],

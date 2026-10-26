@@ -518,7 +518,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 | Method | Path | Body / Query | Response |
 |---|---|---|---|
 | POST | `/datasets/{id}/clean` | `{ mode: "auto"|"stepwise", scope: { kind: "all"|"selection"|"new_rows", selection_id? }, include_user_edited: bool, plan_id? }` | `Job` |
-| POST | `/datasets/{id}/clean/plan` | — | `CleanPlan`: the draft for the current version, made (`201`) or the one already open (`200`), merged onto the current version when it's older |
+| POST | `/datasets/{id}/clean/plan` | `{ scope?: CleanScope }` | `CleanPlan`: the draft for the current version, made (`201`) or the one already open (`200`), merged onto the current version when it's older |
 | GET | `/clean-plans/{pid}` | — | `CleanPlan` (a draft on an older version is merged first) |
 | PATCH | `/clean-plans/{pid}` | `{ ops: PlanOp[] }` | `CleanPlan` + `summary` |
 | DELETE | `/clean-plans/{pid}` | — | `204` (Discard; a plan that isn't a draft is left as it is) |
@@ -528,7 +528,7 @@ Rows API as implemented (2026-10-24, Implementation Plan D2.6, `sherlock/routers
 | GET | `/datasets/{id}/steps/{step_id}` | — | `Step` with code / edit list, impact, decisions |
 | POST | `/datasets/{id}/steps/{step_id}/undo` | `{ confirm: bool, base_version: number }` | `{ step, version }`; when `confirm` is false and the undo needs confirmation (later steps to replay, or the step is the automatic typing step), `200 { confirm_required: true, replay_needed: [step_no], warning?: "typing" }`; `409 { failed_step_id, reason }` when a replay fails |
 | GET | `/proposals/{proposal_id}` | — | `Proposal` (§6.8; as built below) |
-| POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, `Job` for `clean_selection`, or `Card` for card edits (not built, cut 2, Implementation Plan §2.0); `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
+| POST | `/proposals/{proposal_id}/approve` | `{ edited_code? }` | `{ step, version }` for data proposals, the `CleanPlan` it opens for `clean_selection`, or `Card` for card edits (not built, cut 2, Implementation Plan §2.0); `409 conflict` (the proposal becomes `expired`) when its `base_version` is no longer current |
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
 Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/actions.py`, `sherlock/routers/proposals.py`):
@@ -542,14 +542,14 @@ Proposals as implemented (2026-10-25, Implementation Plan D8.5, `sherlock/agent/
   - A proposal that isn't `pending` is `409` ("This proposal was already approved.").
   - A `base_version` that is no longer current marks it `expired` and answers `409` with `current_version`.
   - `edit_cells` commits one edit batch through the same `rows.edits.save` as the CSV tab's Save, and answers `{ step, version }` with `result_step_id` stored.
-  - `clean_selection` queues the clean job under the same rules as `POST /clean` and answers the `Job`.
+  - `clean_selection` opens the dataset's draft plan (made, or the one open) with the proposal's scope, as `POST …/clean/plan` with a scope does, and answers the `CleanPlan`; no job starts until the user presses Start (PRD CLEAN-1). The web app shows the plan in the CSV tab's right panel.
   - Both answer `200`. The body is optional and ignored: `edited_code` is for code proposals, which are P1. A proposal of any other kind is `422` ("Proposals of kind … aren't built").
 - **Reject** marks a pending proposal `rejected`; it is always `204`.
 - **`GET /proposals/{id}`** answers the `Proposal`. Every proposal route resolves through its dataset (`owned("proposal")`).
 - **`Proposal` as built:** the §6.8 shape plus `result_step_id`; `edits` items carry `before`, and `scope` is set for `clean_selection`. The message that made it carries it as `proposal`, read fresh from the table, so the thread shows its current status.
 
 The cleaning plan as implemented (2026-10-25, owner's decision, PRD CLEAN-8a, `sherlock/cleaning/plan.py`, `sherlock/routers/cleaning.py`, Schema §2.21):
-- **`CleanPlan`**: `{ id: "pln_…", dataset_id, version, status: "draft"|"started"|"discarded", source: "user"|"after_upload", job_id, items: PlanItem[], created_at, updated_at, notes?: string[] }`. `notes` is set when this response merged the plan onto a newer version: what changed, in code-written sentences ("1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."), or "The data changed, so the plan was checked again." when the merge changed nothing.
+- **`CleanPlan`**: `{ id: "pln_…", dataset_id, version, status: "draft"|"started"|"discarded", source: "user"|"after_upload", job_id, items: PlanItem[], scope: PlanScope|null, created_at, updated_at, notes?: string[] }`. `PlanScope` is `{ kind: "selection"|"new_rows", selection_id, row_ids, rows }`: the rows the plan was opened for (null is the whole dataset; Schema §2.21). `POST …/clean/plan` with `scope` (the new-rows toast's "Clean them") sets it, a `selection` scope's `selection_id` must be this dataset's (`422`), `kind: "all"` clears it, and no scope leaves it. The panel starts on it and sends it as `POST /clean`'s `scope`. `notes` is set when this response merged the plan onto a newer version: what changed, in code-written sentences ("1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."), or "The data changed, so the plan was checked again." when the merge changed nothing.
 - **`PlanItem`**: `{ id: "pit_…", source: "sherlock"|"you"|"chat", key: "<detector>|<column>"|null, detector, column, count, severity, action, instruction: string|null (a user's step or a rewritten fix), examples (≤ 5), ticked, change, reason?, module }`.
   - `module` is one of `yours` (Your steps), `types` (mixed_types, numbers_as_text, ambiguous_dates, unit_mixes), `missing` (missing, sentinels), `text` (whitespace_case, near_duplicate_categories, mojibake), `records` (duplicates, cross_column, functional_dependency, impossible_values), `outliers`, `other` (a detector not listed) and `kept` (Marked, not changed), in that display order.
   - `kept` items are leakage and ID-candidate issues and any issue on a column in the card's `leakage_candidates` or `id_columns` (`plan.never_change`, the rule the Cleaner uses): `change: false`, never ticked, with the Cleaner's `reason`.
@@ -561,8 +561,8 @@ The cleaning plan as implemented (2026-10-25, owner's decision, PRD CLEAN-8a, `s
   - `merge` keeps a rewritten fix's instruction by key, and the user's steps while their column exists ("Dropped your step on cabin: the column is no longer in the file.").
 - **Making one.** `POST /clean/plan` is `409` while the dataset is `profiling`, `cleaning`, `building` or `failed`. A dataset has at most one draft. The items are `plan.diagnose(card)` of the current version's DataCard (`profile_service.get_or_build`).
 - **Stale plans.** A draft whose `version` isn't current is merged by `plan.merge` on every read, on PATCH (first) and on make: ticks kept by key, keys no longer on the card dropped, new keys ticked, the item IDs of kept keys unchanged. It's saved with the new version.
-- **`PATCH`** on a plan that isn't a draft is `409`. Make, PATCH, start, Discard of a draft, chat's `edit_plan`, the After-upload plan, and the merge on make or on a stale `POST /clean` emit `plan.updated` `{ plan_id }` on the dataset's stream (§5.1). A merge on `GET` and the discard by `POST /use-as-is` don't (the latter's `dataset.status` refetches the dataset).
-- **`POST /clean` with `plan_id`.** The plan must be this dataset's (`404` otherwise) and a draft (`409` "This plan was already started." or "…already discarded."). If its version is stale, the answer is `409` with the merged plan in `error.plan`, so the user sees what changed before starting. With nothing ticked it's `422`. Otherwise the job's params carry `plan: { id, version, items }`, a frozen copy, and the plan becomes `started` with its `job_id`. Without `plan_id` everything runs as before (chat's `clean_selection` and the "Clean them" toast for new rows don't use plans).
+- **`PATCH`** on a plan that isn't a draft is `409`. Make, a new scope, PATCH, start, Discard of a draft, chat's `edit_plan`, approving a `clean_selection`, the After-upload plan, and the merge on make or on a stale `POST /clean` emit `plan.updated` `{ plan_id }` on the dataset's stream (§5.1). A merge on `GET` and the discard by `POST /use-as-is` don't (the latter's `dataset.status` refetches the dataset).
+- **`POST /clean` with `plan_id`.** The plan must be this dataset's (`404` otherwise) and a draft (`409` "This plan was already started." or "…already discarded."). If its version is stale, the answer is `409` with the merged plan in `error.plan`, so the user sees what changed before starting. With nothing ticked it's `422`. Otherwise the job's params carry `plan: { id, version, items }`, a frozen copy, and the plan becomes `started` with its `job_id`. Without `plan_id` everything runs as before; no click in the web app sends that, since the new-rows toast and chat's `clean_selection` open a plan too (owner's decision of 2026-10-25). It stays for the evals and API clients.
 - **`POST /use-as-is`** ("Clean it myself") discards a draft plan.
 - **Ownership.** `/clean-plans/{pid}` routes resolve through the plan's dataset (`owned("clean_plan")`, §3.1).
 
@@ -1893,7 +1893,7 @@ As implemented (2026-10-25, Implementation Plan D4.3, version 1 of the loop):
 | `app_help(question)` | | `{ text }` | retrieval over `docs/help/*.md` |
 | `web_context(query)` (P1) | | `{ results: [{ title, url, snippet }] }` | Tavily |
 
-Actions: `create_widget(prompt|spec)`, `update_widget(id, patch|prompt)`, `run_recipe(RunRequest)`, `clean_selection(selection, columns, mode)` → proposal (Approve starts the Clean with AI job), `edit_cells(edits)` → proposal, `open_export(options)`, `add_canvas_node`, `add_canvas_edge`, `propose_card_edit(card_id, instruction)` → proposal, `propose_clean_step` (P1), `add_computed_column` (P1) → proposal.
+Actions: `create_widget(prompt|spec)`, `update_widget(id, patch|prompt)`, `run_recipe(RunRequest)`, `clean_selection(selection, columns, mode)` → proposal (Approve opens the cleaning plan for those rows), `edit_cells(edits)` → proposal, `open_export(options)`, `add_canvas_node`, `add_canvas_edge`, `propose_card_edit(card_id, instruction)` → proposal, `propose_clean_step` (P1), `add_computed_column` (P1) → proposal.
 
 Tool exposure by tab: Dashboard → answerers + `create_widget`, `update_widget`, `run_recipe`; CSV → answerers + `find_rows`, `clean_selection`, `edit_cells`; Flow → answerers + canvas actions + `ask_story`; everywhere → `ask_data`, `ask_stats`, `ask_history`, `ask_meaning`, `app_help`.
 

@@ -262,6 +262,25 @@ def test_a_plan_made_before_a_hand_edit_is_merged_before_it_starts(client):
     assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).status_code == 201
 
 
+def test_a_plan_for_new_rows_keeps_its_scope_and_cleans_nothing_until_start(client):
+    # PRD CLEAN-1: the new-rows toast's "Clean them" opens the plan for those rows instead of cleaning.
+    ds = offered(client)
+    r = client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"scope": {"kind": "new_rows", "row_ids": [7, 5, 7]}})
+    assert r.status_code == 201, r.text
+    plan = r.json()
+    assert plan["scope"] == {"kind": "new_rows", "selection_id": None, "row_ids": [5, 7], "rows": 2}
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["profile"]
+    # Clean with AI without a scope keeps the draft's; a whole-dataset scope clears it.
+    again = client.post(f"{API}/datasets/{ds['id']}/clean/plan")
+    assert again.status_code == 200 and again.json()["scope"]["rows"] == 2
+    assert client.get(f"{API}/clean-plans/{plan['id']}").json()["scope"]["row_ids"] == [5, 7]
+    cleared = client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"scope": {"kind": "all"}}).json()
+    assert cleared["id"] == plan["id"] and cleared["scope"] is None
+    bad = client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"scope": {"kind": "selection", "selection_id": "sel_nope"}})
+    assert bad.status_code == 422 and "selection" in bad.json()["error"]["message"]
+    assert sum(t == "plan.updated" and d["plan_id"] == plan["id"] for t, d in events_of(ds["id"])) == 2  # made, cleared
+
+
 def test_plan_refusals(client):
     ds = upload(client, CSV, "messy.csv")
     assert client.post(f"{API}/datasets/{ds['id']}/clean/plan").status_code in (409, 201)  # 409 while profiling

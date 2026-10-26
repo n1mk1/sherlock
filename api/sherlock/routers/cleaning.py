@@ -39,6 +39,11 @@ class CleanRequest(BaseModel):
     plan_id: str | None = None  # a draft cleaning plan: run what it ticks (PRD CLEAN-8a)
 
 
+class PlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scope: CleanScope | None = None  # the rows the plan is for: the new-rows toast, chat's clean_selection
+
+
 class PlanOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
     op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove"]
@@ -113,6 +118,40 @@ def _plan_event(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row, 
     emit(db, request.app.state.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": plan_id})
 
 
+def plan_scope(db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
+    """A plan's stored scope with its row count, or None for the whole dataset."""
+    if scope is None or scope.kind == "all":
+        return None
+    if scope.kind == "selection":
+        sel = db.execute("SELECT row_count FROM selections WHERE id = ? AND dataset_id = ?",
+                         (scope.selection_id or "", dataset["id"])).fetchone()
+        if sel is None:
+            raise ApiError(422, "invalid", "scope: that selection isn't one of this CSV's")
+        return {"kind": "selection", "selection_id": scope.selection_id, "row_ids": None, "rows": sel["row_count"]}
+    row_ids = sorted({int(i) for i in scope.row_ids}) if scope.row_ids else None
+    return {"kind": "new_rows", "selection_id": None, "row_ids": row_ids, "rows": len(row_ids) if row_ids else None}
+
+
+def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanScope | None = None) -> tuple[dict, bool]:
+    """Get or create the dataset's draft plan on the current version (PRD CLEAN-8a), with `scope` when
+    given. Returns the `CleanPlan` and whether it was made now. Nothing is cleaned until Start."""
+    if dataset["status"] not in PLANNABLE:
+        raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; a cleaning plan can be made once that finishes.")
+    stored = plan_scope(db, dataset, scope)
+    card = lambda d: profile_service.get_or_build(app.state.settings, db, app.state.duckdb, d)  # noqa: E731
+    existing = plans.draft_id(db, dataset["id"])
+    if existing:
+        row, notes = plans.current(db, plans.get(db, existing), dataset, card)
+        changed = bool(notes)
+    else:
+        row, notes, changed = plans.create(db, dataset, card(dataset)), [], True
+    if scope is not None:
+        row, changed = plans.set_scope(db, row["id"], stored), True
+    if changed:
+        emit(db, app.state.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]})
+    return plans.to_plan(row, notes), existing is None
+
+
 def _owned_plan(owned_plan: Owned, db: sqlite3.Connection) -> tuple[sqlite3.Row, sqlite3.Row]:
     row = plans.get(db, owned_plan.id)
     dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (row["dataset_id"],)).fetchone()
@@ -123,23 +162,17 @@ def _owned_plan(owned_plan: Owned, db: sqlite3.Connection) -> tuple[sqlite3.Row,
 def create_plan(
     request: Request,
     response: Response,
+    body: PlanRequest | None = None,
     dataset: sqlite3.Row = Depends(owned_dataset),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
     """Get or create the draft plan for the current version (merged onto it when it's older).
-    Answers 201 for a new plan, 200 for the existing draft."""
-    if dataset["status"] not in PLANNABLE:
-        raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; a cleaning plan can be made once that finishes.")
-    existing = plans.draft_id(db, dataset["id"])
-    if existing:
-        row, notes = plans.current(db, plans.get(db, existing), dataset, lambda d: _card(request, db, d))
+    Answers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's "Clean
+    them"), the plan is for those rows; without it, a draft keeps the scope it has."""
+    plan, created = open_plan(request.app, db, dataset, body.scope if body else None)
+    if not created:
         response.status_code = status.HTTP_200_OK
-        if notes:
-            _plan_event(request, db, dataset, row["id"])
-        return plans.to_plan(row, notes)
-    row = plans.create(db, dataset, _card(request, db, dataset))
-    _plan_event(request, db, dataset, row["id"])
-    return plans.to_plan(row)
+    return plan
 
 
 @router.get("/clean-plans/{pid}")

@@ -4,7 +4,7 @@ Data changes asked for in chat never apply on their own: `edit_cells` and `clean
 proposal (Schema §2.15) that the chat shows with Approve and Reject. `edit_plan` (PRD CLEAN-8b)
 changes the open cleaning plan at once, since nothing touches the data until Start. Approving re-checks that the
 data is still the version the proposal was computed on (else the proposal expires), then commits an
-edit step or starts the Clean with AI job, the same code the CSV tab uses. "Export a notebook" needs
+edit step or opens the cleaning plan for the proposal's rows, the same code the CSV tab uses. "Export a notebook" needs
 no model call: the options come from the wording and the answer opens the export dialog.
 """
 
@@ -205,10 +205,10 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
 
 
 def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
-    """`POST /proposals/{id}/approve`: `{ step, version }` for edits, the `Job` for a clean."""
-    from sherlock.jobs.runner import to_job
+    """`POST /proposals/{id}/approve`: `{ step, version }` for edits; for a clean, the `CleanPlan` it
+    opens with the proposal's scope (PRD CLEAN-1: nothing is cleaned without Start cleaning)."""
     from sherlock.rows.edits import CellEdit, EditBatch, save
-    from sherlock.routers.cleaning import STARTABLE, _busy
+    from sherlock.routers.cleaning import CleanScope, open_plan
     from sherlock.steps.commit import Context
 
     if row["status"] != "pending":
@@ -226,14 +226,9 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
                    (result["step"]["id"], now_iso(), row["id"]))
         return {"step": result["step"], "version": result["version"]}
     if row["kind"] == "clean_selection":
-        if dataset["status"] not in STARTABLE:
-            raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; cleaning can start once that finishes.")
-        if _busy(db, dataset["id"]):
-            raise ApiError(409, "conflict", "A job is already running on this CSV.")
-        params = {"mode": "auto", "scope": {**payload["scope"], "row_ids": None}, "include_user_edited": False}
-        job = app.state.jobs.enqueue(db, dataset["user_id"], dataset["id"], "clean", params)
+        plan, _ = open_plan(app, db, dataset, CleanScope(**{**payload["scope"], "row_ids": None}))
         db.execute("UPDATE proposals SET status = 'approved', resolved_at = ? WHERE id = ?", (now_iso(), row["id"]))
-        return to_job(job)
+        return plan
     raise ApiError(422, "invalid", f"Proposals of kind {row['kind']} aren't built.")
 
 

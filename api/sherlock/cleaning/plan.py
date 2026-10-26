@@ -274,6 +274,7 @@ def to_plan(row: sqlite3.Row, notes: list[str] | None = None) -> dict:
     """The TRD §4.4 `CleanPlan`."""
     out = {"id": row["id"], "dataset_id": row["dataset_id"], "version": row["version"], "status": row["status"],
            "source": row["source"], "job_id": row["job_id"], "items": json.loads(row["items_json"]),
+           "scope": json.loads(row["scope_json"]) if row["scope_json"] else None,
            "created_at": row["created_at"], "updated_at": row["updated_at"]}
     if notes:
         out["notes"] = notes
@@ -316,6 +317,14 @@ def current(db: sqlite3.Connection, row: sqlite3.Row, dataset: sqlite3.Row, card
     card = card_for(dataset)
     items, notes = merge(json.loads(row["items_json"]), card)
     return save(db, row["id"], items, card["version"]), notes or ["The data changed, so the plan was checked again."]
+
+
+def set_scope(db: sqlite3.Connection, plan_id: str, scope: dict | None) -> sqlite3.Row:
+    """The rows the plan was opened for (`{kind, selection_id, row_ids, rows}`), or None for the whole
+    dataset. The panel starts on it, so a reload can't widen a plan opened for some rows."""
+    db.execute("UPDATE clean_plans SET scope_json = ?, updated_at = ? WHERE id = ?",
+               (json.dumps(scope) if scope else None, now_iso(), plan_id))
+    return get(db, plan_id)
 
 
 def set_status(db: sqlite3.Connection, plan_id: str, status: str, job_id: str | None = None) -> None:

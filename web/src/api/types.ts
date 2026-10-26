@@ -94,10 +94,18 @@ export interface CleanPlan {
   source: "user" | "after_upload";
   job_id: string | null;
   items: CleanPlanItem[];
+  scope: PlanScope | null; // the rows it was opened for (new-rows toast, chat); null is the whole dataset
   created_at: string;
   updated_at: string;
   notes?: string[];   // what a merge onto a newer version changed
   summary?: string;   // what a PATCH changed, written by code
+}
+
+export interface PlanScope {
+  kind: "selection" | "new_rows";
+  selection_id: string | null;
+  row_ids: number[] | null;
+  rows: number | null;
 }
 
 export type PlanOp =

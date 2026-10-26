@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { request } from "./client";
 import { keys } from "./queries";
-import type { Column, Dataset, Job } from "./types";
+import type { Column, Dataset } from "./types";
 
 export interface RowsPage {
   version: number;
@@ -113,19 +113,6 @@ export function useUndo(datasetId: string) {
       request<UndoAnswer>("POST", `/api/v1/datasets/${datasetId}/steps/${stepId}/undo`, { base_version: base, confirm }),
     onSuccess: (r) => {
       if ("step" in r) after();
-    },
-  });
-}
-
-export function useCleanScoped(datasetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (scope: { kind: "all" | "selection" | "new_rows"; selection_id?: string; row_ids?: number[] }) =>
-      request<Job>("POST", `/api/v1/datasets/${datasetId}/clean`, { mode: "auto", scope, include_user_edited: false }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
-      qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
-      qc.invalidateQueries({ queryKey: keys.allJobs });
     },
   });
 }

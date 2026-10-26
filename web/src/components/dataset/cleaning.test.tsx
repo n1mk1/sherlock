@@ -1,8 +1,12 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CleanPlan, CleanPlanItem, Dataset, JobLogEntry } from "@/api/types";
+import { SaveActions } from "@/components/csv/SaveActions";
 import { CsvSidePanel } from "@/components/shell/AppShell";
+import { ProposalView } from "@/components/shell/ChatBar";
+import { useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel } from "./CleanPlanPanel";
@@ -124,7 +128,7 @@ const item = (over: Partial<CleanPlanItem>): CleanPlanItem => ({
   ...over,
 });
 const PLAN: CleanPlan = {
-  id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, created_at: "", updated_at: "",
+  id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null, created_at: "", updated_at: "",
   items: [
     item({ id: "pit_amount", key: "numbers_as_text|amount", detector: "numbers_as_text", column: "amount", count: 99, module: "types",
            examples: ["$980", "$2,000"] }),
@@ -229,6 +233,62 @@ describe("the cleaning plan", () => {
     });
     renderAt(<CsvSidePanel datasetId="ds_1" />);
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
+  });
+});
+
+describe("cleans opened for some rows go through the plan (PRD CLEAN-1)", () => {
+  const NEW_ROWS: CleanPlan = { ...PLAN, scope: { kind: "new_rows", selection_id: null, row_ids: [121, 122], rows: 2 } };
+  const CHOSEN: CleanPlan = { ...PLAN, scope: { kind: "selection", selection_id: "sel_9", row_ids: null, rows: 3 } };
+
+  it("the new-rows toast's Clean them opens the plan for those rows and cleans nothing", async () => {
+    useEdits.setState({ buffers: { ds_1: { base: 2, edits: {}, newRows: [{ temp_id: "n1", cells: { age: "3" } }, { temp_id: "n2", cells: { age: "4" } }], deleted: [], restored: [] } } });
+    const calls = mockApi({
+      "POST /api/v1/datasets/ds_1/edits": { step: { id: "stp_3", no: 3 }, version: 3, new_row_ids: { n1: 121, n2: 122 } },
+      "POST /api/v1/datasets/ds_1/clean/plan": NEW_ROWS,
+    });
+    renderAt(<><SaveActions dataset={{ ...DS, status: "ready" }} /><Toaster /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes (2)" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clean them" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean/plan"))).toBe(true));
+    expect(sent(calls).find((c) => c.path.endsWith("/clean/plan"))?.body).toEqual({ scope: { kind: "new_rows", row_ids: [121, 122] } });
+    expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(false);
+    expect(useUi.getState().rightOpen).toBe(true);
+  });
+
+  it("approving chat's clean opens the plan, not a job", async () => {
+    const calls = mockApi({ "POST /api/v1/proposals/prp_1/approve": CHOSEN });
+    const proposal = { id: "prp_1", kind: "clean_selection", base_version: 2, status: "pending", summary: "Clean with AI on the 3 selected rows",
+                       scope: { kind: "selection", selection_id: "sel_9" }, impact: { cells_changed: 0, rows_affected: 3 } } as const;
+    renderAt(<><ProposalView proposal={proposal} dataset={{ ...DS, status: "ready" }} /><Toaster /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByText("The cleaning plan is open for those rows. Look it over, then press Start cleaning.")).toBeInTheDocument();
+    expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(false);
+  });
+
+  it("starts on the plan's rows in the side panel, and Start sends them", async () => {
+    const calls = mockApi({
+      "GET /api/v1/datasets/ds_1": { ...DS, status: "ready", clean_plan_id: "pln_1" },
+      "GET /api/v1/clean-plans/pln_1": NEW_ROWS,
+      "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
+    });
+    renderAt(<CsvSidePanel datasetId="ds_1" />);
+    expect(await screen.findByRole("radio", { name: "The 2 rows you just added" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Whole dataset" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Start cleaning (4)" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(true));
+    expect(sent(calls).find((c) => c.path.endsWith("/clean"))?.body.scope).toEqual({ kind: "new_rows", row_ids: [121, 122] });
+  });
+
+  it("says which rows in the centre, and Start sends the chat's selection", async () => {
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": CHOSEN,
+      "POST /api/v1/datasets/ds_1/clean": { id: "job_1", kind: "clean", status: "queued" },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(await screen.findByText("Only the 3 rows you asked to clean.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start cleaning (4)" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(true));
+    expect(sent(calls).find((c) => c.path.endsWith("/clean"))?.body.scope).toEqual({ kind: "selection", selection_id: "sel_9" });
   });
 });
 

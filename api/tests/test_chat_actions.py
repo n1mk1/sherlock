@@ -68,7 +68,7 @@ def test_cell_edits_arrive_as_a_proposal_and_apply_only_when_approved(client, re
     assert gone.status_code == 409 and client.get(f"{API}/proposals/{stale['proposal']['id']}").json()["status"] == "expired"
 
 
-def test_a_clean_proposal_starts_clean_with_ai_on_the_selected_rows(client, ready):
+def test_a_clean_proposal_opens_the_cleaning_plan_on_the_selected_rows(client, ready):
     ds = ready["id"]
     _, msg = send(client, ds, "clean these rows", **csv(selected_cells={"row_ids": [1, 2, 3], "columns": ["age"]}))
     p = msg["proposal"]
@@ -77,8 +77,18 @@ def test_a_clean_proposal_starts_clean_with_ai_on_the_selected_rows(client, read
     rejected = client.post(f"{API}/proposals/{p['id']}/reject")
     assert rejected.status_code == 204 and client.get(f"{API}/proposals/{p['id']}").json()["status"] == "rejected"
     _, msg = send(client, ds, "clean these rows", **csv(selected_cells={"row_ids": [1, 2, 3], "columns": ["age"]}))
-    job = client.post(f"{API}/proposals/{msg['proposal']['id']}/approve", json={}).json()
-    assert job["kind"] == "clean"
+    jobs_before = len(client.get(f"{API}/jobs", params={"dataset_id": ds}).json())
+    plan = client.post(f"{API}/proposals/{msg['proposal']['id']}/approve", json={}).json()
+    # PRD CLEAN-1: approving opens the plan with those rows as its scope; nothing runs until Start.
+    assert plan["status"] == "draft" and plan["scope"]["kind"] == "selection" and plan["scope"]["rows"] == 3
+    assert plan["scope"]["selection_id"] == msg["proposal"]["scope"]["selection_id"]
+    assert len(client.get(f"{API}/jobs", params={"dataset_id": ds}).json()) == jobs_before
+    assert client.get(f"{API}/datasets/{ds}").json()["clean_plan_id"] == plan["id"]
+    assert client.get(f"{API}/proposals/{msg['proposal']['id']}").json()["status"] == "approved"
+    job = client.post(f"{API}/datasets/{ds}/clean", json={"plan_id": plan["id"], "scope": plan["scope"] | {"rows": None}})
+    assert job.status_code == 422  # the scope is CleanScope's shape: kind, selection_id, row_ids
+    scope = {k: plan["scope"][k] for k in ("kind", "selection_id")}
+    job = client.post(f"{API}/datasets/{ds}/clean", json={"plan_id": plan["id"], "scope": scope}).json()
     params = db_rows("SELECT params_json FROM jobs WHERE id = ?", job["id"])[0]["params_json"]
     assert '"kind": "selection"' in params
 

@@ -200,17 +200,22 @@ export function useCleanPlan(planId: string | null | undefined) {
 }
 
 /** Clean with AI: the dataset's draft plan, made from the current version's diagnosis (or the one
- * already open). Its pending state is the "Diagnosing…" screen (`mutationKey`). */
+ * already open). With a scope (the new-rows toast's "Clean them"), the plan is for those rows. Its
+ * pending state is the "Diagnosing…" screen (`mutationKey`). */
 export function useCreatePlan(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationKey: ["create-plan", datasetId],
-    mutationFn: () => request<CleanPlan>("POST", `/api/v1/datasets/${datasetId}/clean/plan`),
-    onSuccess: (plan) => {
-      qc.setQueryData(keys.plan(plan.id), plan);
-      setDatasetPlan(qc, datasetId, plan.id);
-    },
+    mutationFn: (scope?: CleanScope) =>
+      request<CleanPlan>("POST", `/api/v1/datasets/${datasetId}/clean/plan`, scope ? { scope } : undefined),
+    onSuccess: (plan) => showPlan(qc, datasetId, plan),
   });
+}
+
+/** Put a plan the server answered with on screen: the CSV tab's right panel shows a dataset's draft. */
+export function showPlan(qc: QueryClient, datasetId: string, plan: CleanPlan) {
+  qc.setQueryData(keys.plan(plan.id), plan);
+  setDatasetPlan(qc, datasetId, plan.id);
 }
 
 /** Ticks and unticks, shown at once and replaced by the server's plan. */

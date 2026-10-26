@@ -427,3 +427,13 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
   - Sentences that only told what used to be true were dropped from the specs: "before the Day N review…", "not yet at D4.2, built since", and the popover the plan replaced. The history stays in this log and in git. No requirement, ID or priority changed.
   - `BACKLOG.md`: the sandbox temp test line is removed (fixed in `15dcccc`). Five lines now point at the cleaning plan's code. New lines: two cleans that skip the plan (an owner decision), small icon-button targets, a Discard edits that doesn't confirm, and two unused packages.
 - **Kept:** all the docs. Each one is read by CLAUDE.md, the README, the image (`help/`) or the submission (`examples/`, the screenshots, the rules and rubric, `Sherlock UI examples-png/` per UI/UX §1).
+
+### 2026-10-25 (late night): every clean goes through the plan
+
+- **Done** (owner's decision, PRD CLEAN-1: nothing is cleaned without Start cleaning):
+  - The new-rows toast's **Clean them** now opens the cleaning plan in the CSV tab's right panel, scoped to the saved rows ("The 2 rows you just added"), instead of starting a clean (`POST …/clean/plan` with `scope`). `useCleanScoped` is gone.
+  - Approving chat's **"clean these rows"** (`clean_selection`) opens the plan with the proposal's selection ("The 3 rows you asked to clean") and answers the `CleanPlan`, not a `Job`. The toast says to look it over, then press Start.
+  - The plan stores its scope (`clean_plans.scope_json`, migration 003), so a reload can't widen it to the whole file. The panel adds a first, picked radio for those rows, and in the centre layout a line "Only the n rows …". A whole-dataset scope clears it.
+  - Docs: PRD CLEAN-8a, App Flow §8, §10, UI/UX §5.3a, TRD §4.4 and §8.2, Schema §2.15 and §2.21, and the help pages. The BACKLOG decision line is removed, and `clean_selection` no longer counts as a job started without the rate limit.
+- **Checked:** `uv run pytest`, `pnpm test` (four new plan tests: the toast, the approval, the side panel's preset, the centre line), the type checks and `pnpm e2e`.
+- **Not done:** a live run against Nemotron; neither path calls the model before Start.

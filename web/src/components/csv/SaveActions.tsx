@@ -2,23 +2,26 @@
 // changes (n). Save sends the buffer as one batch; a newer version makes it "Rebase and save": the
 // edits go again on the current version, and cells the newer version also changed are listed to
 // keep mine or keep theirs. The toast after a save offers Undo (the step) and, for new rows,
-// cleaning them.
+// cleaning them: "Clean them" opens the cleaning plan for those rows (PRD CLEAN-1, CLEAN-8a).
 import { useState } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@/api/client";
-import { useCleanScoped, useSaveEdits, useUndo, type Conflict } from "@/api/csv";
+import { useSaveEdits, useUndo, type Conflict } from "@/api/csv";
+import { useCreatePlan } from "@/api/queries";
 import type { Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { displayValue } from "@/lib/cells";
 import { editKey, pendingCount, toBatch, useEdits } from "@/state/edits";
+import { useUi } from "@/state/ui";
 
 export function SaveActions({ dataset }: { dataset: Dataset }) {
   const buffer = useEdits((s) => s.buffers[dataset.id]);
   const { discard, rebase } = useEdits();
   const save = useSaveEdits(dataset.id);
   const undo = useUndo(dataset.id);
-  const cleanNew = useCleanScoped(dataset.id);
+  const plan = useCreatePlan(dataset.id);
+  const setRightOpen = useUi((s) => s.setRightOpen);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [conflicts, setConflicts] = useState<{ list: Conflict[]; current: number } | null>(null);
   const n = pendingCount(buffer);
@@ -45,9 +48,10 @@ export function SaveActions({ dataset }: { dataset: Dataset }) {
       if (added.length) {
         toast(`Run cleaning on the ${added.length} new ${added.length === 1 ? "row" : "rows"}?`, {
           duration: 15_000,
-          action: { label: "Clean them", onClick: () => cleanNew.mutate({ kind: "new_rows", row_ids: added }, {
-            onError: (e) => toast.error((e as Error).message),
-          }) },
+          action: { label: "Clean them", onClick: () => {
+            setRightOpen(true); // on a narrow window the right panel is a slide-over
+            plan.mutate({ kind: "new_rows", row_ids: added }, { onError: (e) => toast.error((e as Error).message) });
+          } },
         });
       }
     } catch (e) {
