@@ -141,7 +141,10 @@ function StepCard({ step, dataset, latest }: { step: Step; dataset: Dataset; lat
     });
 
   return (
-    <div className={cn("rounded-[14px] border bg-card p-3", latest ? "border-border-strong" : "border-border", !step.active && "opacity-60")}>
+    // An undone step reads as set aside by its dashed border, the page background and muted text, not by
+    // opacity, which took its text under 4.5:1 (UI brief §5.7, §8).
+    <div className={cn("rounded-[14px] border p-3", latest ? "border-border-strong" : "border-border",
+      step.active ? "bg-card" : "border-dashed bg-background")}>
       <div className="flex items-start gap-2">
         <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={open ? "Collapse step" : "Expand step"}
           className="mt-0.5 text-muted-foreground hover:text-foreground">
@@ -149,7 +152,7 @@ function StepCard({ step, dataset, latest }: { step: Step; dataset: Dataset; lat
         </button>
         <span className="mt-px font-mono text-[12px] text-muted-foreground">{step.no}</span>
         <div className="min-w-0 flex-1">
-          <p className={cn("text-[13.5px] font-medium leading-snug", !step.active && step.kind !== "undo" && "line-through")}>{step.summary}</p>
+          <p className={cn("text-[13.5px] font-medium leading-snug", !step.active && "text-muted-foreground", !step.active && step.kind !== "undo" && "line-through")}>{step.summary}</p>
           <p className="mt-0.5 text-[12px] text-muted-foreground">{detailLine(step)}{!step.active && step.kind !== "undo" ? " · undone" : ""}</p>
         </div>
         {canUndo && (

@@ -28,13 +28,31 @@ interface Envelope {
 }
 
 export function toApiError(status: number, body: unknown): ApiError {
-  const err = (body as Envelope | undefined)?.error;
+  const err = typeof body === "object" && body !== null ? (body as Envelope).error : undefined;
   if (err && typeof err.message === "string") {
     const { code, message, ...extra } = err;
     return new ApiError(status, code ?? "internal", message, extra);
   }
+  return withoutEnvelope(status);
+}
+
+/** A response without the JSON envelope came from something in front of Sherlock: the host's firewall
+ * answers some requests with an HTML 403 page, and its proxy a 502 while a deploy restarts the server.
+ * The page is never shown; the status says what happened (UI brief §7: what happened, then what to do). */
+function withoutEnvelope(status: number): ApiError {
+  if (status === 403) {
+    return new ApiError(status, "blocked", "The host's firewall blocked that request before it reached Sherlock. Reword it and try again.");
+  }
+  if (status === 413) return new ApiError(status, "too_large", "That's too large to send. Try a smaller file or a shorter message.");
+  if (status === 429) return new ApiError(status, "rate_limited", "Too many requests at once. Wait a minute and try again.");
+  if (status === 502 || status === 503 || status === 504) {
+    return new ApiError(status, "unavailable", "Sherlock isn't answering right now, perhaps while it restarts. Try again in a minute.");
+  }
   return new ApiError(status, "internal", "Something went wrong on our side.");
 }
+
+/** A successful status whose body isn't the JSON the route sends (an HTML page from a proxy). */
+export const unreadable = () => new ApiError(502, "unavailable", "Sherlock's answer couldn't be read. Try again in a minute.");
 
 /** A request that couldn't reach the server shows the offline banner (it clears itself). */
 function signalOffline() {
@@ -46,7 +64,8 @@ export async function unwrap<T>(p: Promise<{ data?: T; error?: unknown; response
   let result;
   try {
     result = await p;
-  } catch {
+  } catch (e) {
+    if (e instanceof SyntaxError) throw unreadable(); // openapi-fetch parses a 200's body as JSON
     signalOffline();
     throw new ApiError(0, "offline", "Couldn't reach Sherlock. Check your connection and try again.");
   }
@@ -70,7 +89,13 @@ export async function request<T>(method: string, path: string, body?: unknown): 
     throw new ApiError(0, "offline", "Couldn't reach Sherlock. Check your connection and try again.");
   }
   if (response.status === 204) return undefined as T;
-  const data = await response.json().catch(() => undefined);
+  const text = await response.text().catch(() => "");
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : undefined;
+  } catch {
+    if (response.ok) throw unreadable();
+  }
   if (!response.ok) throw toApiError(response.status, data);
   return data as T;
 }

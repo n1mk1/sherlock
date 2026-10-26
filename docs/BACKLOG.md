@@ -67,7 +67,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - Slide-over panels below 1024 px stay in the tab order, don't trap focus, and don't close on Esc (D2 M8).
 - Shared hover between two charts isn't built. It's one of the Bklit spike's pass rules (D1 #3, D4 F18, D6 F13).
 - The card editor's `/` picker has `role="listbox"` with no options or arrow keys, and `/` is always swallowed, so "and/or" can't be typed (D6 F12).
-- The drag handle has no role, and the resize separators have no `aria-valuenow` (D4 F17).
+- The widget drag handle works with a mouse only: it's a named `role="img"` now (live test 2026-10-26, F17), but react-grid-layout gives the layout no keyboard move (D4 F17).
 
 ## 5. Bugs and gaps by area
 

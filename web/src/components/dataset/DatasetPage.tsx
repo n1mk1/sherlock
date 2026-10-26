@@ -196,7 +196,7 @@ function TabContent({ dataset, tab }: { dataset: Dataset; tab: Tab }) {
   }
   if (tab === "dashboard") {
     return (
-      <Suspense fallback={<div className="m-6 h-[300px] animate-pulse rounded-[16px] border border-border bg-card" aria-label="Loading the dashboard" />}>
+      <Suspense fallback={<div role="status" className="m-6 h-[300px] animate-pulse rounded-[16px] border border-border bg-card" aria-label="Loading the dashboard" />}>
         <Dashboard dataset={dataset} />
       </Suspense>
     );

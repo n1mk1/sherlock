@@ -14,7 +14,7 @@ const STEPS = ["preparing data", "checking for leakage", "setting baselines", "t
 
 export function MlResult({ widget, run, asTable }: { widget: Widget; run: Run | undefined; asTable?: boolean }) {
   const actions = useRunActions(widget.dataset_id);
-  if (!run) return <div className="h-full w-full animate-pulse rounded-lg bg-muted" aria-label="Loading" />;
+  if (!run) return <div role="status" className="h-full w-full animate-pulse rounded-lg bg-muted" aria-label="Loading" />;
   if (RUNNING.includes(run.status)) {
     return <Progress run={run} onCancel={() => actions.cancel.mutate(run.id)} />;
   }

@@ -200,7 +200,7 @@ function toGrid(layout: Layout | undefined, collapsed: Set<string>, editing: boo
 
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-2 gap-5 p-6" aria-label="Loading the dashboard">
+    <div role="status" className="grid grid-cols-2 gap-5 p-6" aria-label="Loading the dashboard">
       {[0, 1, 2, 3].map((i) => <div key={i} className="h-[300px] animate-pulse rounded-[16px] border border-border bg-card" />)}
     </div>
   );

@@ -97,6 +97,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   }, [chatDraft, setChatDraft, setOpen]);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false); // from send until the stream ends, which can be after the answer shows
+  const [queued, setQueued] = useState<string[]>([]); // sent while busy: they go one by one once it ends
   const focused =widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
   const selectedCards = useFlow((s) => s.selectedCardIds);
   const csvSelection = useUi((s) => s.csvSelection);
@@ -163,19 +164,32 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     }
   };
 
-  // A message another part of the page asked to send (the Flow header's "Make sense of this").
+  // A message another part of the page asked to send (the Flow header's "Make sense of this"), then the
+  // ones typed while an answer was being written, in order. One effect, so two never start together.
   const { chatOutbox, sendChat: queueChat } = useUi();
   useEffect(() => {
-    if (chatOutbox === null || busy) return;
-    queueChat(null);
-    void send(chatOutbox);
-  }, [chatOutbox, busy]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
+    if (busy) return;
+    if (chatOutbox !== null) {
+      queueChat(null);
+      void send(chatOutbox);
+    } else if (queued.length) {
+      setQueued(queued.slice(1));
+      void send(queued[0]);
+    }
+  }, [chatOutbox, busy, queued]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
 
   const submit = () => {
     const message = text.trim();
-    if (!message || busy) return;
+    if (!message) return;
     setText("");
-    void send(message);
+    if (busy) {
+      setQueued((q) => [...q, message]); // shown in the thread as queued until its turn (UI brief §4.8)
+      setOpen(true);
+    } else void send(message);
+  };
+  const unqueue = (i: number) => {
+    if (!text) setText(queued[i]); // back in the bar, so a cancelled question isn't lost
+    setQueued((q) => q.filter((_, j) => j !== i));
   };
 
   const csvChip = tab === "csv" && csvSelection
@@ -196,6 +210,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
           dataset={dataset}
           messages={thread.data ?? []}
           pending={pending}
+          queued={queued}
+          onUnqueue={unqueue}
           onClose={() => setOpen(false)}
           onChoice={(m, choice) => void send(choice, { clarification_of: m.id, choice })}
         />
@@ -235,7 +251,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         <button
           type="button"
           aria-label="Send"
-          disabled={!text.trim() || busy}
+          title={busy ? "Sends when this answer finishes" : undefined}
+          disabled={!text.trim()}
           onClick={submit}
           className="inline-flex size-10 items-center justify-center rounded-[10px] bg-primary text-primary-foreground disabled:opacity-40"
         >
@@ -246,14 +263,14 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   );
 }
 
-function Thread({ dataset, messages, pending, onClose, onChoice }: {
-  dataset: Dataset; messages: Message[]; pending: Pending | null; onClose: () => void;
-  onChoice: (m: Message, choice: string) => void;
+function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoice }: {
+  dataset: Dataset; messages: Message[]; pending: Pending | null; queued: string[]; onUnqueue: (i: number) => void;
+  onClose: () => void; onChoice: (m: Message, choice: string) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" }); // braces: newer browsers return a promise here
-  }, [messages.length, pending?.blocks.length, pending?.status]);
+  }, [messages.length, pending?.blocks.length, pending?.status, queued.length]);
   const lastId = messages[messages.length - 1]?.id;
   return (
     <div
@@ -286,6 +303,15 @@ function Thread({ dataset, messages, pending, onClose, onChoice }: {
             </div>
           </>
         )}
+        {queued.map((q, i) => (
+          <div key={i} className="flex max-w-[80%] flex-col items-end gap-1 self-end">
+            <div className="rounded-[12px] border border-dashed border-border-strong px-3 py-2 text-[14px]">{q}</div>
+            <p className="text-[12px] text-muted-foreground">
+              Queued: sends when this answer finishes ·{" "}
+              <button type="button" onClick={() => onUnqueue(i)} className="underline hover:text-foreground">Cancel</button>
+            </p>
+          </div>
+        ))}
         <div ref={end} />
       </div>
     </div>

@@ -164,7 +164,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
 
 function Legend() {
   return (
-    <div className="ml-auto hidden items-center gap-3 text-[12px] text-muted-foreground md:flex" aria-label="Legend">
+    <div role="group" className="ml-auto hidden items-center gap-3 text-[12px] text-muted-foreground md:flex" aria-label="Legend">
       <span className="inline-flex items-center gap-1.5">
         <span className="inline-block size-3 bg-changed shadow-[inset_0_2px_0_var(--info)]" /> changed
       </span>

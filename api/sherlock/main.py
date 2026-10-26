@@ -7,6 +7,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from sherlock import __version__
 from sherlock.config import Settings, get_settings
@@ -53,6 +55,55 @@ def _app_logging(level: str) -> None:
     root.setLevel(level.upper())
 
 
+# The built web app loads everything from its own origin (TRD §15): its scripts, CSS and fonts are files
+# in dist, small assets are inlined as data: URIs, and chat streams over same-origin fetch. Styles allow
+# 'unsafe-inline' because sonner and the grid inject <style> tags and index.html has a style attribute.
+CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+SECURITY_HEADERS = {
+    "content-security-policy": CSP,
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",  # ignored over plain http
+    "referrer-policy": "no-referrer",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+class SecurityHeadersMiddleware:
+    """Adds `SECURITY_HEADERS` to every response, the API's and the web app's (TRD §15)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_HEADERS.items():
+                    if name not in headers:
+                        headers.append(name, value)
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     _app_logging(settings.log_level)
@@ -81,9 +132,11 @@ def create_app() -> FastAPI:
     app.state.jobs = JobRunner(settings, app.state.bus, app.state.duckdb)
     install_error_handlers(app)
 
-    # Added inner to outer: identity runs inside the request-ID scope; CORS is outermost.
+    # Added inner to outer: identity runs inside the request-ID scope; the security headers cover every
+    # response the app makes, a 429 from identity included; CORS is outermost.
     app.add_middleware(IdentityMiddleware, settings=settings)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -134,7 +187,7 @@ def _serve_web(app: FastAPI, dist: Path) -> None:
     root = dist.resolve()
     index = root / "index.html"
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)  # HEAD for link checkers
     def web(path: str):
         if path.startswith("api/"):
             raise not_found()  # unknown API routes stay JSON, never the web app

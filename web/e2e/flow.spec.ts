@@ -1,8 +1,10 @@
 // The flow a judge follows (Implementation Plan D8.6 and D9 exit), end to end in a real browser against
 // one server with recorded model replies: sample → dashboard with stories → ask a question → change a
 // cell from chat (a proposal, approved) → its stories update → Flow: place two cards, make sense of
-// them → Export notebook → the .ipynb downloads → change a chart from chat, and undo it.
+// them → Export notebook → the .ipynb downloads → change a chart from chat, and undo it → undo the cell
+// edit. axe checks each screen on the way, and the app runs under its production CSP with no refusal.
 import { expect, test, type Page } from "@playwright/test";
+import { expectNoAxeViolations, watchCsp } from "./axe";
 
 async function ask(page: Page, text: string) {
   const bar = page.getByLabel("Ask Sherlock");
@@ -11,7 +13,12 @@ async function ask(page: Page, text: string) {
 }
 
 test("from the sample to a downloaded notebook", async ({ page }) => {
-  await page.goto("/");
+  const cspRefusals = watchCsp(page);
+  const home = await page.goto("/");
+  expect(home!.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(home!.headers()["x-content-type-options"]).toBe("nosniff");
+  await expect(page.getByRole("button", { name: "Try with sample (Titanic)" })).toBeVisible();
+  await expectNoAxeViolations(page, "the empty library");
   await page.getByRole("button", { name: "Try with sample (Titanic)" }).click();
   // Clean it myself: the dashboard builds on the data as it is while the CSV tab opens (read-only until then).
   await page.getByRole("button", { name: "Clean it myself" }).click();
@@ -23,6 +30,11 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   // The dashboard builds itself, then its story cards are written.
   await expect(page.getByRole("heading", { name: "Stories" })).toBeVisible();
   await expect(page.getByRole("article").first()).toBeVisible({ timeout: 120_000 });
+  await expectNoAxeViolations(page, "the dashboard with stories");
+  // At 1440px every widget title reads in full: it wraps to a second line rather than being cut (UI brief §5.5).
+  const clipped = await page.locator("article[data-widget-id] h3").evaluateAll((hs) =>
+    hs.filter((h) => h.scrollHeight > h.clientHeight + 1 || h.scrollWidth > h.clientWidth + 1).map((h) => h.textContent));
+  expect(clipped).toEqual([]);
   const datasetId = page.url().match(/\/d\/([^/]+)\//)![1];
 
   // Ask a question: a sourced answer.
@@ -38,6 +50,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   await expect(page.getByText(/Saved as v\d+/)).toBeVisible();
   // The cascade re-queries the widgets that read fare and tells their stories again.
   await expect(page.getByText(/stor(y|ies) updated/)).toBeVisible({ timeout: 90_000 });
+  await expectNoAxeViolations(page, "the CSV tab with the thread open");
 
   // Flow: two cards on the canvas, made sense of. The chat thread is closed first, as it covers the canvas.
   await page.getByRole("button", { name: "Close the thread" }).click();
@@ -64,6 +77,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   await page.getByRole("button", { name: "Make sense of this", exact: true }).click();
   await expect(page.locator(".react-flow__node-card")).toHaveCount(3, { timeout: 60_000 });
   await expect(page.getByText("summarized in").first()).toBeVisible();
+  await expectNoAxeViolations(page, "the Flow canvas");
 
   // Export the notebook: it downloads.
   await page.getByRole("button", { name: "Dataset menu" }).click();
@@ -91,4 +105,13 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   await expect(page.getByText("The widget is back as it was.")).toBeVisible();
   await expect(widget("Average fare paid")).toBeVisible();
   await expect(widget("Average fare paid").getByText("female", { exact: true })).toHaveCount(0);
+
+  // Undo the cell edit from the Changes panel: the undone step stays listed, set aside but readable.
+  await page.getByRole("tab", { name: "CSV" }).click();
+  const changes = page.getByRole("complementary").filter({ hasText: "Changes" });
+  await changes.getByRole("button", { name: "Undo", exact: true }).first().click();
+  await expect(changes.getByText("· undone").first()).toBeVisible({ timeout: 30_000 });
+  await expectNoAxeViolations(page, "the Changes panel with an undone step");
+
+  expect(cspRefusals).toEqual([]);
 });

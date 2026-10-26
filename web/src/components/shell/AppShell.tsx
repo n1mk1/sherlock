@@ -13,7 +13,7 @@ import { DropOverlay } from "@/components/library/DropOverlay";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
 import { cn } from "@/lib/utils";
-import { useUi } from "@/state/ui";
+import { LEFT, RIGHT, useUi } from "@/state/ui";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineBanner } from "./OfflineBanner";
 import { SettingsDialog } from "./SettingsDialog";
@@ -88,13 +88,19 @@ function SidePanel({ side, open, onClose, width, onResize, children }: {
   );
 }
 
-/** A 1px divider with a wider invisible grip; dragging it resizes the panel (lg and up). */
+/** A 1px divider with a wider invisible grip; dragging it resizes the panel (lg and up). A focusable
+ * separator is a widget, so it carries the panel's width as its value (WAI-ARIA window splitter). */
 function Divider({ side, width, onResize }: { side: "left" | "right"; width: number; onResize: (w: number) => void }) {
+  const bounds = side === "left" ? LEFT : RIGHT;
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={side === "left" ? "Resize the library panel" : "Resize the stories panel"}
+      aria-valuenow={width}
+      aria-valuemin={bounds.min}
+      aria-valuemax={bounds.max}
+      aria-valuetext={`${width} pixels wide`}
       tabIndex={0}
       onKeyDown={(e) => {
         const step = e.key === "ArrowLeft" ? -16 : e.key === "ArrowRight" ? 16 : 0;

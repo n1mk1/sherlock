@@ -427,7 +427,7 @@ The answerers behind the bar:
 
 As built:
 - The thread opens on focus or typing, and `/` (when nothing editable has focus) focuses the bar. Esc closes it.
-- Step 2's status lines come from the stream ("Thinking…", "Running a query", "Writing the answer"). The first table appears as soon as its query has run, and the final message replaces what streamed the moment it arrives, so the answer shows once; Send stays disabled until the stream ends (the thread summary runs after the answer).
+- Step 2's status lines come from the stream ("Thinking…", "Running a query", "Writing the answer"). The first table appears as soon as its query has run, and the final message replaces what streamed the moment it arrives, so the answer shows once. The next question waits until the stream ends (the thread summary runs after the answer): one sent meanwhile is queued in the thread ("Queued: sends when this answer finishes · Cancel") and goes when it ends, one at a time (UI/UX §4.8).
 - A clarification shows its options as buttons, which work on the latest message only.
   - Besides the router's, Sherlock asks when it can't place a name: "Which column do you mean by “fair”?" with `fare` and the next closest, then answers with the one picked. "What does this column mean?" asks which column, a test asks which two columns, and "make this a line chart" with no widget clicked asks which widget, each with 2–3 buttons (TRD §8.1). A dashboard with one widget uses it without asking.
 - Row answers link to the CSV tab with `?rows=<selection>`. The interim table there shows a "n rows selected" chip and "Show all rows".

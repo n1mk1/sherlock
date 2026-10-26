@@ -1,7 +1,7 @@
 // TanStack Query hooks over the API, and the user-level event stream that keeps the library live.
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { canvasKey, ownEtags } from "./canvas";
-import { api, ApiError, request, toApiError, unwrap } from "./client";
+import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
   Card, CleaningReport, CleanPlan, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
@@ -521,6 +521,8 @@ export async function sendChat(datasetId: string, body: Record<string, unknown>,
   if (!response.ok || !response.body) {
     throw toApiError(response.status, await response.json().catch(() => undefined));
   }
+  // A 200 that isn't the event stream (an HTML page from a proxy) would otherwise end with no answer.
+  if (!(response.headers.get("Content-Type") ?? "").includes("text/event-stream")) throw unreadable();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

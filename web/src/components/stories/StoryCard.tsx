@@ -34,7 +34,7 @@ export function Chip({ run, facts, onOpen }: { run: Extract<Run, { type: "chip" 
       onClick={onOpen}
       title={run.unverified ? "Typed by you, not computed" : run.key ? facts[run.key]?.label : undefined}
       className={cn(
-        "mx-px inline rounded-[6px] border px-[5px] font-mono text-[12.5px] leading-[1.6] hover:underline",
+        "mx-px inline rounded-[6px] border px-[5px] py-[1.5px] font-mono text-[12.5px] leading-[1.6] hover:underline", // 25px tall: WCAG 2.5.8's 24px
         run.unverified
           ? "border-dashed border-border-strong text-muted-foreground"
           : "border-[color-mix(in_srgb,var(--info)_35%,transparent)] bg-info-soft text-foreground",

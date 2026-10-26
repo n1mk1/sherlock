@@ -106,10 +106,11 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
       aria-label={widget.title}
     >
       <header className={cn("widget-header flex h-10 shrink-0 items-center gap-1.5 px-2", editLayout && "cursor-grab")}>
-        <span className="widget-handle inline-flex cursor-grab text-muted-foreground" aria-label="Drag to move" title="Drag to move">
+        {/* A mouse grip, so an image with a name rather than a control: the layout has no keyboard move yet. */}
+        <span role="img" className="widget-handle inline-flex cursor-grab text-muted-foreground" aria-label="Drag to move" title="Drag to move">
           <GripVertical className="size-4" strokeWidth={1.75} />
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold">{widget.title}</h3>
+        <h3 className="line-clamp-2 min-w-0 flex-1 break-words text-[13px] font-semibold leading-4" title={widget.title}>{widget.title}</h3>
         <ScopeChip widget={widget} filter={isMl ? null : applied} /> {/* the filter it actually applies */}
         <AnalysisMenu widget={widget} onChoose={(recipe) => setSetup(recipe)} />
         <MenuRoot>
@@ -157,7 +158,7 @@ export function WidgetShell({ widget, version, columns, collapsed, onToggleColla
             ) : isMl ? (
               <MlResult widget={widget} run={run} asTable={asTable || widget.spec.view.type === "table"} />
             ) : query.isLoading ? (
-              <div className="h-full w-full animate-pulse rounded-lg bg-muted" aria-label="Loading" />
+              <div role="status" className="h-full w-full animate-pulse rounded-lg bg-muted" aria-label="Loading" />
             ) : query.error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                 <p className="max-w-[90%] text-[13px] text-muted-foreground">{(query.error as Error).message}</p>

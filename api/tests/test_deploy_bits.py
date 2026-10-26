@@ -53,6 +53,27 @@ def test_serves_the_web_app_with_spa_fallback(monkeypatch, tmp_path):
         assert api_404.status_code == 404
         assert api_404.json()["error"]["code"] == "not_found"
         assert client.get("/healthz").json()["ok"] is True
+        head = client.head("/")  # link checkers and uptime monitors send HEAD
+        assert head.status_code == 200
+        assert head.content == b""
+        assert client.head("/datasets/ds_123").status_code == 200
+
+
+def test_every_response_carries_the_security_headers(monkeypatch, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>Sherlock</title>")
+    monkeypatch.setenv("WEB_DIST_DIR", str(dist))
+    get_settings.cache_clear()
+
+    with TestClient(create_app()) as client:
+        for response in (client.get("/"), client.get("/api/v1/me"), client.get("/api/v1/nope"), client.get("/healthz")):
+            assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+            assert "script-src 'self'" in response.headers["content-security-policy"]
+            assert response.headers["x-frame-options"] == "DENY"
+            assert response.headers["x-content-type-options"] == "nosniff"
+            assert response.headers["strict-transport-security"].startswith("max-age=")
+            assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_no_web_dir_means_no_catch_all(client):

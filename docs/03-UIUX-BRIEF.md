@@ -168,6 +168,7 @@ lucide-react, 16px in controls, 14px in chips, 1.75px stroke. Icon-only buttons 
 
 - Panels are shadcn Resizable groups; the user can drag the dividers (left 200–320, right 300–480). Sizes persist per browser.
   - As built: the dividers are Sherlock's own (`AppShell.tsx`), a 1px line with a 6px grip, not shadcn Resizable (§5.15).
+  - Each divider is a focusable `role="separator"` (WAI-ARIA window splitter): its value is the panel's width in pixels (`aria-valuenow`, with `aria-valuemin` and `aria-valuemax` at the bounds above, and "240 pixels wide" as its text), and ← and → move it 16px.
 - Below 1024px, both side panels become Sheets (slide-overs) opened from header icons; the centre takes the full width.
   - As built: each slide-over is up to 320px wide (85% of a narrow screen) over a dimmed backdrop. They don't trap focus or close on Esc yet (docs/BACKLOG.md §4).
 - The centre scrolls; the side panels scroll independently; headers are sticky.
@@ -244,6 +245,7 @@ Minimum target 32 × 32 for icon buttons, 36px tall for text buttons; compact te
 - Error: body shows the message in `--muted-foreground`, Retry and Show query buttons.
 - Collapsed: header only, 40px.
 - Drag handle (⠿) is `--muted-foreground`, visible always, cursor grab; in Edit layout mode the whole header is the handle and a resize corner appears.
+  - As built: the handle is a mouse grip, `role="img"` named "Drag to move", since the layout has no keyboard move (docs/BACKLOG.md §4).
 
 ### 4.4 Charts (Bklit)
 
@@ -286,7 +288,7 @@ As built: the overline is the widget's title (11px, uppercase, muted); the headl
 
 ### 4.6 Number chip
 
-Inline, mono 12.5px, `--info-soft` fill, 1px `--info` border at 35%, radius 6, padding 0 5px, `--foreground` text. Hover: underline, cursor pointer; click opens the evidence drawer. Unverified: dashed border, `--muted-foreground` text, tooltip "Typed by you, not computed". Updating: a 400ms highlight pulse to `--accent-soft` when the value changes.
+Inline, mono 12.5px, `--info-soft` fill, 1px `--info` border at 35%, radius 6, padding 1.5px 5px (25px tall, over WCAG 2.5.8's 24px minimum target), `--foreground` text. Hover: underline, cursor pointer; click opens the evidence drawer. Unverified: dashed border, `--muted-foreground` text, tooltip "Typed by you, not computed". Updating: a 400ms highlight pulse to `--accent-soft` when the value changes.
 
 As built: chips render from the card's latest fact-sheet value (`Card.facts`), and pulse to `--accent-soft` for 400 ms when it changes. The title tooltip is the fact's label. The evidence drawer ("How do you know?") reads "<value> is the <label>, computed on version n". Under it is the SQL in a `--muted` mono block with Copy, or the formula and the test. A hand-typed number says it has no evidence.
 
@@ -326,6 +328,7 @@ Column notes (PRD LOAD-7): a column with a note starts its type line with ⓘ (t
     - On the CSV tab the chip names the selected rows ("n rows selected"). On the Flow tab it names the selected cards ("n cards selected") or reads "Whole canvas". It is in `--accent` while something is selected.
     - The thread opens 84px above the bar's bottom edge, with a 36px title row ("Ask about <name>", a collapse chevron).
     - While an answer streams, the thread shows the user's bubble, the blocks as they arrive, and the status line.
+    - **Sending while an answer is written.** Enter or the send button still takes the message: the bar empties and the message waits in the thread under the answer, in a dashed `--border-strong` bubble with "Queued: sends when this answer finishes · Cancel" under it in 12px `--muted-foreground`. Queued messages go one at a time once the answer's stream ends, so two answers never run at once. Cancel removes it and puts its text back in the bar when the bar is empty. While an answer is written the send button's tooltip reads "Sends when this answer finishes".
     - Answers render as follows:
       - numbers at 26px mono with the label under them
       - tables of up to 20 rows in a bordered box, with "Open these rows in CSV" or "Open all n rows in CSV" for row answers
@@ -461,7 +464,7 @@ As built:
   - The KPI tile shows its value in mono at 28px, with "of n rows" under it. The widget title is the label.
   - Updating is a pulsing 2px `--accent` line under the header, with the body at 60%.
   - The scope chip shows "All rows", or "All rows · col = value" while a filter applies, and hides when the widget is narrower than 360px. A widget whose own scope is narrower says "Some rows" or "Selection" instead of "All rows".
-  - The title is 13px, weight 600.
+  - The title is 13px, weight 600, with a 16px line. A long title wraps to a second line and is cut with an ellipsis only after that, with the whole title as its tooltip, so a KPI tile's label ("Average customer age") reads in full at desktop widths.
   - The footer shows "first 2,000 rows" when a result was capped. Not built yet (docs/BACKLOG.md): the footer's "updated 2s ago" time (§4.3).
   - A card click, or `?widget=` in the URL, scrolls to the widget and flashes it: an `--accent` border and a 3px `--spotlight` ring for 1.2 s.
 - **Charts.** Bars are drawn with radius 4.
@@ -491,7 +494,7 @@ As built (cut 5): the toolbar holds Add row, Delete row, Restore (when it applie
 
 Title "Changes" with the version pill. "Unsaved (yours)" card with accent border when non-empty. "Steps" overline, then step cards: number (mono, muted) · summary (title-sm) · detail line (label, muted) · Undo (secondary, 28px). The latest step has a `--border-strong` outline. Expanding a step reveals a code block (mono, `--muted` fill, Shiki-highlighted) or the edit list, then the impact lines. Footer links: Full cleaning report · Export notebook · Export pipeline (P1).
 
-As built: the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. While a cleaning plan is open, the right panel shows the plan (§5.3a, side layout) instead; Start or Discard gives it back to Changes. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step is at 60%, with its summary struck through and "· undone" on its detail line. Full cleaning report opens a drawer with the report summary; its View full report opens the full report (Your steps first) in a 720px dialog.
+As built: the "Unsaved (yours)" card has the `--accent` border and a mono line per pending edit with ×; a running clean shows a card with its label, a 2px `--accent` progress bar and Stop. While a cleaning plan is open, the right panel shows the plan (§5.3a, side layout) instead; Start or Discard gives it back to Changes. Code shows in a plain `--muted` mono block (no Shiki). Undo opens a confirmation dialog when the server asks for one. An undone step has a dashed border on `--background` instead of `--card`, its summary in `--muted-foreground` and struck through, and "· undone" on its detail line. It isn't faded with opacity, which took its text under 4.5:1. Full cleaning report opens a drawer with the report summary; its View full report opens the full report (Your steps first) in a 720px dialog.
 
 ### 5.8 ML setup (inside a widget)
 
@@ -635,7 +638,10 @@ A ghost icon button at the right end of the context row on all tabs. Menu items:
 - Text contrast ≥ 4.5:1 against its surface in both themes (checked for every pair above; `--muted-foreground` is tuned to pass on `--background` and `--card`).
 - Chart marks and other non-text graphics ≥ 3:1 against `--card` (WCAG 1.4.11); the chart tokens above are tuned to pass.
 - Semantic colors always paired with an icon or text.
-- All interactive elements are real buttons, links or inputs; icon-only buttons have `aria-label`. Not built yet (docs/BACKLOG.md §4): the widget drag handle has no role.
+- All interactive elements are real buttons, links or inputs; icon-only buttons have `aria-label`. The widget drag handle is a named `role="img"`, not a control, as it works with a mouse only (§4.3).
+- Targets are at least 24 × 24 px (WCAG 2.5.8), inline number chips included (§4.6).
+- Nothing is dimmed with opacity when its text must stay readable: a faded state uses a muted color or a dashed border instead (§5.7).
+- The end-to-end flow (`web/e2e/axe.ts`) runs axe-core 4.10 with the WCAG 2.0, 2.1 and 2.2 A and AA tags on the empty library, the dashboard with stories, the CSV tab with the thread open, the Flow canvas and the Changes panel with an undone step, and fails on any violation.
 - Charts have an accessible table alternative: "Show as table" in the widget menu, and `aria-label` summarizing the chart from its fact sheet. Not built yet for the Bklit charts (docs/BACKLOG.md §4): only the custom charts carry a summary label.
 - Grid cells and canvas nodes are keyboard reachable; cell provenance is available via a keyboard shortcut (Ctrl+I) as well as hover. Cell provenance is removed by cut 5 (Implementation Plan §2.0). Canvas nodes are focusable (React Flow's default; `FlowTab.tsx` doesn't turn it off) but have no accessible name (docs/BACKLOG.md §4).
 - Drawers and dialogs trap focus and restore it; Esc closes.

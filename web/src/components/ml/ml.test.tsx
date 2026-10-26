@@ -90,8 +90,8 @@ describe("analysis widgets", () => {
       "GET /api/v1/datasets/ds_1/cards": [],
     });
     const view = renderAt(shell(DRIVER));
-    expect(await screen.findByRole("status")).toBeTruthy();
-    expect(screen.getByText(/testing models…/)).toBeTruthy();
+    expect(await screen.findByText(/testing models…/)).toBeTruthy(); // past the loading skeleton, also a status
+    expect(screen.getByRole("status")).toBeTruthy();
     view.unmount();
     status = "outdated";
     renderAt(shell({ ...DRIVER, status: "outdated" }));

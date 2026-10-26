@@ -28,7 +28,7 @@ describe("the chat stream's hand-over", () => {
   it("shows a saved answer once while the stream stays open for the summary", async () => {
     let close = () => {};
     const enc = new TextEncoder();
-    mockApi({
+    const fetchMock = mockApi({
       "GET /api/v1/me": ME,
       "GET /api/v1/datasets/ds_1/chat": [],
       "GET /api/v1/datasets/ds_1/widgets": { widgets: [], layout: {} },
@@ -48,12 +48,39 @@ describe("the chat stream's hand-over", () => {
     await screen.findByText("How do you know?"); // the saved message is on screen
     expect(screen.getAllByText(SAID)).toHaveLength(1);
     expect(screen.getAllByText("which group is highest?")).toHaveLength(1);
-    // The next question waits for the stream to end, so two answers never run at once.
+    // The next question waits for the stream to end, so two answers never run at once: Enter queues it,
+    // and the thread says so (finding 21 of the live test: Enter used to do nothing).
+    const posts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").length;
     fireEvent.change(input, { target: { value: "and the lowest?" } });
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("and the lowest?")).toBeInTheDocument();
+    expect(screen.getByText(/Queued: sends when this answer finishes/)).toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(posts()).toBe(1);
 
     await act(async () => close());
-    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    await waitFor(() => expect(posts()).toBe(2)); // sent once the first stream ended
+    expect(screen.queryByText(/Queued:/)).not.toBeInTheDocument();
+  });
+
+  it("gives a cancelled queued question back to the bar", async () => {
+    mockApi({
+      "GET /api/v1/me": ME,
+      "GET /api/v1/datasets/ds_1/chat": [],
+      "GET /api/v1/datasets/ds_1/widgets": { widgets: [], layout: {} },
+      "POST /api/v1/datasets/ds_1/chat": () => new Response(new ReadableStream({ start() {} }), {
+        status: 200, headers: { "Content-Type": "text/event-stream" },
+      }), // never ends
+    });
+    renderAt(<ChatBar dataset={DS} tab="dashboard" placeholder="Ask" />);
+    const input = await screen.findByLabelText("Ask Sherlock");
+    fireEvent.change(input, { target: { value: "first" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "second" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(input).toHaveValue("second");
+    expect(screen.queryByText(/Queued:/)).not.toBeInTheDocument();
   });
 
   it("puts the question before its answer until the refetch brings the saved one", () => {
