@@ -32,7 +32,7 @@ Reference mockups of every screen in both modes, with an accent comparison board
   6. Export notebook dialog (§5.13)
 
   Plus the accent options board (§2.1).
-- **PNG exports** of every board are in `docs/Sherlock UI examples-png/`.
+- **PNG exports** of the boards were removed from the repo once the app was built; the canvas link above is the reference, and the PNGs are in git history (`git show 4dfc8ef:"docs/Sherlock UI examples-png/2 · Dashboard.png"`).
 - **Theme helper.** Each board computes its colors from one theme helper that matches §2.1 exactly: the base tokens per mode, the five accents with a hover shade each, and `--info` switching to brass under Aether.
 
 ---
