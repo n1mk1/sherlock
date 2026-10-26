@@ -29,7 +29,7 @@ from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
 from sherlock.routers import canvas, cards, chat, proposals, cleaning, datasets, exports, jobs, me, rows, runs, steps, streams, widgets
-from sherlock.storage import VersionConnections
+from sherlock.storage import VersionConnections, clear_spill
 from sherlock.storage_check import check_storage
 
 
@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
     async def lifespan(_: FastAPI):
         validate_model_roles(settings)  # startup fails on a non-NVIDIA role (TRD §3.5)
         app.state.storage = check_storage(settings)
+        clear_spill(settings)
         conn = connect(settings)
         try:
             migrate(conn)

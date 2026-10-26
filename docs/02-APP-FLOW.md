@@ -112,7 +112,13 @@ Centre: a spinner with "Reading titanic3.csv…" then "Profiling 14 columns…".
 
 As built, the spinner's line follows the profile job: "Reading titanic3.csv…", then "Typing 14 columns…" (the typing step), then "Profiling 14 columns…". The chat bar shows that placeholder but is disabled while profiling (and on a failed dataset), so questions don't queue. Not built yet (docs/BACKLOG.md).
 
-Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed". As built: the screen shows the heading "Profiling failed" and "<reason>. You can delete this CSV and try again." but has no Delete button of its own; Delete is in the dataset menu (⋯) and the library row's menu. Not built yet (docs/BACKLOG.md).
+Failure: "Profiling failed: <reason>. You can delete this CSV and try again." with a Delete button. The dataset stays in the library marked "failed". As built: the screen has the heading "Profiling failed" but no Delete button of its own; Delete is in the dataset menu (⋯) and the library row's menu. Not built yet (docs/BACKLOG.md).
+
+The reason must be in plain words, and the advice must be something that can help (UI/UX brief §7: what happened, then what to do; no codes or stack traces). The profile job runs after the file was read and checked (§3.2), so its failures are Sherlock's, not the file's, and uploading the same file again fails the same way. The live test of 2026-10-26 showed `IO Error: Failed to create directory ".tmp": Permission denied. You can delete this CSV and try again.` (finding 14). As built (`StatusScreens.tsx` `FailedScreen`):
+- Under the heading: "Sherlock ran into a problem of its own while profiling this CSV, so uploading it again won't help. Try again, and if it fails again, this file can't be loaded yet."
+- A cancelled profile says "Profiling was stopped before it finished. Try again to profile this CSV."
+- **Try again** retries the failed or cancelled profile job (TRD §4.10), which moves the dataset back to profiling. It shows once the dataset's jobs have loaded and include that job.
+- The raw error stays behind a closed "Technical details" toggle (none for a cancel), and the server log has the exception with its traceback. The jobs tray still shows the raw error under a failed job (docs/BACKLOG.md).
 
 Once the dataset leaves profiling, the CSV tab shows the grid of the current version (§8), with the changed, flagged and invalid marks and quarantined rows struck through.
 

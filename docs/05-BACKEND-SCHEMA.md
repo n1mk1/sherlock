@@ -690,6 +690,7 @@ As built (`sherlock/storage.py` `VersionConnections`): at most four connections 
 As built:
 - **More files.**
   - `/data/.boots` and `/data/.lockcheck.db` belong to the startup storage check (TRD §11).
+  - `/data/.duckdb/<hex>/` is one DuckDB connection's spill folder (TRD §3.2). DuckDB creates it when a query passes the connection's memory cap and removes it when the connection closes; startup removes `/data/.duckdb/` whole.
   - `/data/.clean/<job_id>/` is a clean job's working folder (sample, candidate and commit Parquet files). It is removed when the run reaches its report (`cleaning/loop.py`); a run that is stopped or fails before that leaves it, and the purge doesn't clear it yet.
   - Each dataset folder has `.lock`, the commit lock (§7).
   - A replay works in `versions/.replay_<hex>/` and removes it when it ends (`steps/replay.py`).

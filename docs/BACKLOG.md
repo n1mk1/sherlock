@@ -98,6 +98,8 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - LLM client: `embed` isn't in the client's `ROLES` (D2).
 - The import preview's delimiter list has no free-text "Other"; it shows "Other (…)" only when the detected delimiter isn't one of the four (App Flow §3.2).
 - While profiling, the chat bar is disabled, so questions don't queue as App Flow §3.3 says (`ChatBar.tsx`).
+- DuckDB connections opened with `duckdb.connect(":memory:")` rather than `storage.new_duckdb` have no memory cap and spill to `./.tmp`, which the `app` user can't write in the image (TRD §3.2): `steps/diff.py` (`diff_versions`, run on every commit), `rows/edits.py` (`conflicts`, the edit batch's `_row_id` table), `cleaning/loop.py` (`_read`, the selection scope) and the `DESCRIBE`-only helpers. Pass `settings` and use `new_duckdb`. The sandbox worker's own connections run outside `/data` and stay as they are.
+- The jobs tray prints a failed job's raw error (`JobTray.tsx`), the DuckDB text the failed-profile screen now keeps behind "Technical details" (App Flow §3.3, §15).
 - The "Profiling failed" screen has no Delete button of its own; Delete is only in the dataset and library menus (App Flow §3.3; `StatusScreens.tsx`). Reuse `ConfirmDelete`.
 - `Dataset.cleaning_progress` is never filled, so after a reload the library shows "cleaning 0%" until the next `job.progress` (TRD §4.2; `routers/datasets.py`, `LibraryPanel.tsx`). Fill it from the running clean job's progress.
 

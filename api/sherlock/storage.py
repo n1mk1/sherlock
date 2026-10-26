@@ -9,6 +9,7 @@ import os
 import shutil
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,6 +20,7 @@ import duckdb
 from sherlock.config import Settings
 
 MAX_CACHED_CONNECTIONS = 4
+SPILL_DIR = ".duckdb"  # under DATA_DIR: one folder per connection for DuckDB's spill files
 
 
 def sql_path(path: Path) -> str:
@@ -102,13 +104,30 @@ def _os_unlock(fh) -> None:
         fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
+def spill_root(settings: Settings) -> Path:
+    return settings.data_dir / SPILL_DIR
+
+
+def clear_spill(settings: Settings) -> None:
+    """Remove spill folders left by a process that died with connections open (at startup, before any
+    connection exists)."""
+    remove_folder(spill_root(settings))
+
+
 def new_duckdb(settings: Settings, temp_dir: Path | None = None) -> duckdb.DuckDBPyConnection:
-    """An in-memory DuckDB connection inside the memory budget (`DUCKDB_MEMORY_MB`)."""
+    """An in-memory DuckDB connection inside the memory budget (`DUCKDB_MEMORY_MB`).
+
+    It spills to `temp_dir`, or else to a folder of its own under `DATA_DIR/.duckdb/`. Left to itself
+    DuckDB spills to `./.tmp` in the working directory, which the app user can't write in the image
+    (live test 2026-10-26). Each connection needs its own folder: DuckDB names its spill files the same
+    way in every connection, and removes the folder when the connection closes."""
+    if temp_dir is None:
+        spill_root(settings).mkdir(parents=True, exist_ok=True)
+        temp_dir = spill_root(settings) / uuid.uuid4().hex
     conn = duckdb.connect(":memory:")
     conn.execute(f"SET memory_limit='{settings.duckdb_memory_mb}MB'")
     conn.execute("SET threads=2")
-    if temp_dir is not None:
-        conn.execute(f"SET temp_directory={sql_path(temp_dir)}")
+    conn.execute(f"SET temp_directory={sql_path(temp_dir)}")
     return conn
 
 

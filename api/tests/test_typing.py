@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import duckdb
 import pandas as pd
 import pytest
@@ -126,3 +128,78 @@ def test_dataset_reports_issue_and_step_counts(client):
     done = wait_status(client, ds["id"], "offer")
     assert done["step_count"] == 1 and done["issue_count"] >= 1  # the typing step; the missing age
     assert client.get(f"{API}/datasets").json()[0]["issue_count"] == done["issue_count"]
+
+
+WIDE_ROWS, WIDE_COLUMNS = 100, 300
+
+
+def wide_columns() -> dict[str, list]:
+    """300 columns of small integers held as text; three values in two rows don't cast."""
+    columns = {f"c{j:03d}": [str((i * (j + 1)) % 97) for i in range(WIDE_ROWS)] for j in range(WIDE_COLUMNS)}
+    columns["c010"][4] = "x"  # row 5 fails in two columns: the first one names the reason
+    columns["c200"][4] = "y"
+    columns["c299"][6] = "z"  # row 7 fails in the last column
+    return columns
+
+
+def test_wide_file_types_within_the_memory_limit(tmp_path, monkeypatch):
+    """Live test 2026-10-26 finding 1: every cast sat inside one CASE, so 40 text-number columns ran out
+    of 512 MB and 300 overflowed the stack. MAX_COLUMNS is 1000."""
+    from sherlock.config import get_settings
+
+    monkeypatch.setenv("DUCKDB_MEMORY_MB", "512")
+    get_settings.cache_clear()
+    conn = frame_conn(wide_columns())
+    casts = typing_step.plan(conn)
+    assert len(casts) == WIDE_COLUMNS
+    v1, v2 = tmp_path / "v1.parquet", tmp_path / "v2.parquet"
+    conn.execute(f"COPY t TO '{v1.as_posix()}' (FORMAT PARQUET)")
+    sql = typing_step.statement(list(casts), casts)
+    checks: dict[str, str] = {}
+    typing_step.produce(sql, get_settings(), casts, checks)(v1, v2)
+    assert checks == {"row_ledger": "pass", "lossless": "pass"}
+
+    out = duckdb.connect()
+    reasons = dict(out.execute(f"SELECT _row_id, _quarantine_reason FROM read_parquet('{v2.as_posix()}') "
+                               "WHERE _quarantine_reason IS NOT NULL ORDER BY _row_id").fetchall())
+    assert reasons == {5: "type: c010", 7: "type: c299"}
+    types = {r[0]: r[1] for r in out.execute(f"DESCRIBE SELECT * FROM read_parquet('{v2.as_posix()}')").fetchall()}
+    assert {types[c] for c in casts} == {"BIGINT"}
+    row5 = out.execute(f"SELECT c010, c200, c011 FROM read_parquet('{v2.as_posix()}') WHERE _row_id = 5").fetchone()
+    assert row5 == (None, None, (4 * 12) % 97)
+
+
+def test_wide_upload_profiles_and_spills_under_data_dir(tmp_path, monkeypatch):
+    """The whole profile job on a 300-column upload, with DuckDB's spill kept out of the working directory
+    (on Render that's /app/api, which the app user can't write)."""
+    from fastapi.testclient import TestClient
+
+    from sherlock.config import get_settings
+    from sherlock.main import create_app
+    from sherlock.storage import new_duckdb
+    from tests.test_jobs import wait_for
+
+    monkeypatch.setenv("DUCKDB_MEMORY_MB", "512")
+    get_settings.cache_clear()
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    conn = new_duckdb(get_settings())
+    spill = conn.execute("SELECT current_setting('temp_directory')").fetchone()[0]
+    conn.close()
+    assert spill and Path(spill).resolve().is_relative_to(get_settings().data_dir.resolve())
+
+    columns = wide_columns()
+    names = list(columns)
+    csv = ",".join(names) + "\n" + "".join(
+        ",".join(columns[c][i] for c in names) + "\n" for i in range(WIDE_ROWS))
+    with TestClient(create_app()) as client:
+        ds = upload(client, csv.encode())
+        done = wait_for(lambda: (d := client.get(f"{API}/datasets/{ds['id']}").json())["status"]
+                        in ("offer", "failed") and d, timeout=120)
+        assert done["status"] == "offer", done.get("error")
+        assert done["current_version"] == 2
+        [step] = client.get(f"{API}/datasets/{ds['id']}/steps").json()
+        assert step["summary"].startswith(f"Typed {WIDE_COLUMNS} columns from text")
+        assert step["impact"]["quarantined"] == 2
+    assert not (cwd / ".tmp").exists()

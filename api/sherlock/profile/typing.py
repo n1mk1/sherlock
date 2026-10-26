@@ -11,7 +11,10 @@ before it commits, and its results are the step's verifiers.
 
 The step's `code` is one DuckDB statement over the frame `df` (`result = duckdb.sql(...).df()`),
 so the app (over the version's Parquet, exposed as `df`) and the exported notebook (over the
-DataFrame `df`) cast identically.
+DataFrame `df`) cast identically. The statement cleans each value once, casts it once, and only then
+builds the quarantine reason from the cast columns: a reason that held every column's cast in one
+`CASE` grew faster than the column count (a 40-column file ran out of 512 MB, a 300-column one
+overflowed the stack; live test 2026-10-26).
 """
 
 import duckdb
@@ -38,18 +41,21 @@ def _lit(text: str) -> str:
 
 
 def _words(words) -> str:
-    return ", ".join(_lit(w) for w in sorted(words))
+    """A list literal, for `list_contains`: one function call instead of an `IN` list's comparison per
+    word, whose working vectors DuckDB counts against its memory limit in every column."""
+    return "[" + ", ".join(_lit(w) for w in sorted(words)) + "]"
 
 
 def _value(col: str) -> str:
     """The cell as trimmed text, with sentinels as NULL."""
     c = _q(col)
-    return f"CASE WHEN lower(trim({c})) IN ({_words(SENTINEL_STRINGS)}) THEN NULL ELSE trim({c}) END"
+    return f"CASE WHEN list_contains({_words(SENTINEL_STRINGS)}, lower(trim({c}))) THEN NULL ELSE trim({c}) END"
 
 
 def _cast(col: str, kind: str, fmt: str | None) -> str:
-    """The lossless cast of the cleaned value: NULL when the value doesn't cast without loss."""
-    v = _value(col)
+    """The lossless cast of the column's cleaned value (`col` already holds `_value(col)`): NULL when the
+    value doesn't cast without loss."""
+    v = _q(col)
     if kind == "int":
         return (f"CASE WHEN CAST(TRY_CAST({v} AS BIGINT) AS VARCHAR) = regexp_replace({v}, '^[+]', '') "
                 f"THEN TRY_CAST({v} AS BIGINT) END")
@@ -59,8 +65,8 @@ def _cast(col: str, kind: str, fmt: str | None) -> str:
         return (f"CASE WHEN NOT regexp_matches({v}, '^[+-]?0[0-9]') AND {digits} <= {FLOAT_DIGITS} "
                 f"THEN TRY_CAST({v} AS DOUBLE) END")
     if kind == "bool":
-        return (f"CASE WHEN lower({v}) IN ({_words(TRUE_WORDS)}) THEN TRUE "
-                f"WHEN lower({v}) IN ({_words(FALSE_WORDS)}) THEN FALSE END")
+        return (f"CASE WHEN list_contains({_words(TRUE_WORDS)}, lower({v})) THEN TRUE "
+                f"WHEN list_contains({_words(FALSE_WORDS)}, lower({v})) THEN FALSE END")
     target = "DATE" if kind == "date" else "TIMESTAMP"
     cast = (f"TRY_CAST({v} AS {target})" if not fmt or fmt == "ISO8601"
             else f"CAST(TRY_STRPTIME({v}, {_lit(fmt)}) AS {target})")
@@ -70,8 +76,9 @@ def _cast(col: str, kind: str, fmt: str | None) -> str:
 
 
 def plan(conn: duckdb.DuckDBPyConnection) -> dict[str, str]:
-    """column → cast expression, for the columns that should be typed (conn holds the version as `t`;
-    the expressions only name columns, so they run the same over `df`)."""
+    """column → cast expression, for the columns that should be typed (conn holds the version as `t`).
+    An expression reads the column after `_value` has cleaned it, and only names columns, so it runs
+    the same over `df`."""
     df, types, _ = load_frame(conn)
     frame = build_frame(df, types)
     chosen: dict[str, str] = {}
@@ -80,22 +87,38 @@ def plan(conn: duckdb.DuckDBPyConnection) -> dict[str, str]:
             continue
         expr = _cast(name, col.type, col.date_format)
         present, ok = conn.execute(
-            f"SELECT count({_value(name)}), count({expr}) FROM t WHERE _quarantine_reason IS NULL"
+            f"SELECT count({_q(name)}), count({expr}) "
+            f"FROM (SELECT {_value(name)} AS {_q(name)} FROM t WHERE _quarantine_reason IS NULL)"
         ).fetchone()
         if present and ok / present >= THRESHOLD:
             chosen[name] = expr
     return chosen
 
 
+def _prefix(columns: list[str], base: str) -> str:
+    """A prefix for helper columns that no user column starts with."""
+    while any(c.startswith(base) for c in columns):
+        base = "_" + base
+    return base
+
+
 def statement(columns: list[str], casts: dict[str, str]) -> str:
-    """The SELECT over `df` that types the chosen columns and quarantines rows that didn't cast."""
-    fails = " ".join(
-        f"WHEN {_value(c)} IS NOT NULL AND {casts[c]} IS NULL THEN {_lit('type: ' + c)}" for c in casts
-    )
+    """The SELECT over `df` that types the chosen columns and quarantines rows that didn't cast.
+
+    Three levels, so each cast runs once and the statement grows linearly with the columns: `cleaned`
+    trims the cast columns and turns sentinels into NULL, `typed` casts them and keeps whether each
+    had a value, and the outer SELECT names the first column whose value didn't cast."""
+    had = _prefix(columns, "_had_")
+    flags = {c: _q(f"{had}{i}") for i, c in enumerate(casts)}
+    cleaned = ", ".join(f"{_value(c)} AS {_q(c)}" if c in casts else _q(c) for c in columns)
+    typed = ", ".join([f"{casts[c]} AS {_q(c)}" if c in casts else _q(c) for c in columns]
+                      + [f"{_q(c)} IS NOT NULL AS {flags[c]}" for c in casts])
+    fails = " ".join(f"WHEN {flags[c]} AND {_q(c)} IS NULL THEN {_lit('type: ' + c)}" for c in casts)
     select = ["_row_id", f"coalesce(_quarantine_reason, CASE {fails} END) AS _quarantine_reason"]
-    for c in columns:
-        select.append(f"{casts[c]} AS {_q(c)}" if c in casts else _q(c))
-    return "SELECT\n  " + ",\n  ".join(select) + "\nFROM df\nORDER BY _row_id"
+    select += [_q(c) for c in columns]
+    return ("SELECT\n  " + ",\n  ".join(select)
+            + "\nFROM (\n  SELECT _row_id, _quarantine_reason, " + typed
+            + "\n  FROM (SELECT _row_id, _quarantine_reason, " + cleaned + " FROM df)\n)\nORDER BY _row_id")
 
 
 def verify(conn: duckdb.DuckDBPyConnection, typed: str, casts: dict[str, str]) -> dict[str, str]:
