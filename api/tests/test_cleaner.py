@@ -300,3 +300,56 @@ def test_a_step_the_critic_rejects_is_skipped(monkeypatch, tmp_path):
     assert [s["summary"] for s in report["steps"]] == ["Parse money as numbers (amount)"]
     skipped = {(s["detector"], s["column"]): s["reason"] for s in report["skipped"]}
     assert skipped[("whitespace_case", "region")] == "Skipped: the review found it changed values it shouldn't have"
+
+
+def test_a_users_step_runs_first_and_records_what_they_asked(client):
+    # PRD CLEAN-8b: a step added to the plan in plain words runs before Sherlock's fixes, and its step
+    # records the instruction.
+    ds = offered(client)
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    asked = "Make every region title case without stray spaces"
+    r = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "add", "column": "region", "instruction": asked}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["summary"] == "Added 1 step on region."
+    mine = r.json()["items"][0]
+    assert (mine["module"], mine["source"], mine["column"], mine["ticked"]) == ("yours", "you", "region", True)
+    bad = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "add", "column": "ghost", "instruction": "x"}]})
+    assert bad.status_code == 422 and "isn't a column" in bad.json()["error"]["message"]
+
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).json()
+    assert finished(client, job["id"])["status"] == "done"
+    wait_status(client, ds["id"], "ready", "failed")
+    logs = [d for t, d in events_of(ds["id"]) if t == "job.log" and d["job_id"] == job["id"] and d.get("icon") == "running"]
+    assert logs[0]["text"] == f"Your step: {asked}"  # before every issue
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert report["steps"][0]["summary"] == "Title case without stray spaces (region)"
+    decision = report["decisions"][0]
+    assert decision["asked"] == asked and decision["question"] == "How to do what you asked in region?"
+    [yours] = report["your_steps"]
+    assert yours["item_id"] == mine["id"] and yours["outcome"] in ("fixed", "flagged") and yours["step_no"] == report["steps"][0]["no"]
+    regions = {v["value"] for v in next(c for c in client.get(f"{API}/datasets/{ds['id']}/datacard").json()["columns"]
+                                       if c["name"] == "region")["top_values"]}
+    assert regions == {"North", "South", "East"}
+
+
+CITIES = ("id,city,score\n" + "\n".join(f"{i},{'' if i % 5 == 0 else ['Paris', 'Lyon', 'Nice'][i % 3]},{i % 7}"
+                                        for i in range(1, 41)) + "\n").encode()
+
+
+def test_a_rewritten_fix_asking_for_a_placeholder_is_still_skipped(client):
+    # The hard checks bind the user's instructions too: "fill with Unknown" fails placeholder_fill.
+    ds = offered(client, CITIES)
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    city = item(plan, "missing|city")
+    r = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [
+        {"op": "set_instruction", "item_id": city["id"], "instruction": "Fill the missing cities with the word Unknown"}]})
+    assert r.json()["summary"] == "Rewrote missing values in city."
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).json()
+    assert finished(client, job["id"])["status"] == "done"
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert report["steps"] == []
+    [yours] = report["your_steps"]
+    assert yours["outcome"] == "skipped" and yours["instruction"] == "Fill the missing cities with the word Unknown"
+    assert "placeholder_fill" in yours["reason"] and "'Unknown'" in yours["reason"]
+    # The diagnosis said "leave as is", but the user asked: candidates were still tried.
+    assert not yours["reason"].startswith("Left as is")

@@ -209,7 +209,10 @@ function StepDetailView({ datasetId, stepId }: { datasetId: string; stepId: stri
       </p>
       {s.flag_reason && <p className="text-warning">Flag: {s.flag_reason}</p>}
       {s.decisions.map((d, i) => (
-        <p key={i}><span className="font-medium">{d.question}</span> {d.chosen}{d.reason ? `. ${d.reason}` : ""}</p>
+        <p key={i}>
+          {d.asked && <span className="block text-muted-foreground">You asked: “{d.asked}”</span>}
+          <span className="font-medium">{d.question}</span> {d.chosen}{d.reason ? `. ${d.reason}` : ""}
+        </p>
       ))}
       {s.impact.before_after.length > 0 && s.kind !== "edit" && (
         <ul className="flex flex-col gap-0.5 font-mono text-muted-foreground">

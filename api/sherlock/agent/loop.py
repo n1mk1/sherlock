@@ -4,7 +4,8 @@ Per message: context → route (`small`, schema `Route`, reasoning off) → clar
 resolve names → run up to two intents → compose → verify → save the message with its focus. The
 intents are `ask_data`, `find_rows`, `explain_widget`, `ask_history` and `create_widget` (D4.3), and
 `ask_stats`, `ask_why`, `ask_model`, `ask_meaning` and `app_help` (D7.3, `insight.py`); each tab
-exposes its own set (TRD §8.2). Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
+exposes its own set (TRD §8.2), plus `edit_plan` while a cleaning plan is open (`context.plan_id`, PRD CLEAN-8b).
+Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
 the message is saved even if nobody is listening any more.
 
 Budgets per message: 8 answerer and action calls, `MESSAGE_TOKEN_BUDGET` tokens, 90 s.
@@ -42,18 +43,20 @@ TOOLS = {
     "csv": ANSWERERS + ("edit_cells", "clean_selection"),
     "flow": ANSWERERS + ("ask_story",),
 }
+PLAN_TOOLS = ("edit_plan",)  # added to the tab's tools while a cleaning plan is open (`context.plan_id`)
 ELSEWHERE = {
     "create_widget": "Adding a widget works from the Dashboard tab; ask there, or use Add widget.",
     "update_widget": "Changing a widget works from the Dashboard tab.",
     "ask_story": "Questions about the story cards work from the Flow tab.",
     "edit_cells": "Changing cells from chat works from the CSV tab, where you can see them.",
     "clean_selection": "Cleaning from chat works from the CSV tab; select rows there, or use Clean with AI.",
+    "edit_plan": "Changing a cleaning plan from chat works while the plan is open; press Clean with AI to open one.",
 }
 STEP_LABELS = {"ask_data": "Query the data", "find_rows": "Find the rows", "explain_widget": "Explain the widget",
                "ask_history": "Look at the history", "ask_why": "Find what drives it", "ask_stats": "Run a test",
                "ask_model": "Read the model card", "ask_meaning": "Look at the column", "app_help": "Look in the help",
                "create_widget": "Add a widget", "update_widget": "Change the widget", "ask_story": "Read the cards",
-               "edit_cells": "Propose the edits", "clean_selection": "Propose a clean"}
+               "edit_cells": "Propose the edits", "clean_selection": "Propose a clean", "edit_plan": "Change the plan"}
 SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at a time (TRD §8.1 step 1)
 DATA_INTENTS = ("ask_data", "find_rows")
 INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help")
@@ -210,13 +213,14 @@ class Agent:
         base_context = self._context(card, rows_scope, history, focus, None, context)
 
         tab = context.get("tab") if context.get("tab") in TOOLS else "dashboard"
+        tools = TOOLS[tab] + (PLAN_TOOLS if context.get("plan_id") else ())
         if acts.EXPORT.search(question):
             return self._export(mid, question, context, scope)
         if tab == "flow" and flow.MAKE_SENSE.search(question):
             # "Make sense of this" on the canvas is the synthesis action; no routing call is needed.
             route = Route(intents=["ask_story"], ambiguous=False, clarification=None, multi_step=False, entities=[])
         else:
-            route = self._route(question, base_context, scope, TOOLS[tab])
+            route = self._route(question, base_context, scope, tools)
         if route.ambiguous and route.clarification and not clarified:
             clar = route.clarification.model_dump()
             self.emit("clarification", clar)
@@ -240,7 +244,7 @@ class Agent:
             intents = list(dict.fromkeys("ask_data" if i == "ask_stats" else i for i in intents))
         steps = [(i, question) for i in intents]
         if route.multi_step:
-            steps = self._plan(question, ctx_text, scope, TOOLS[tab]) or steps
+            steps = self._plan(question, ctx_text, scope, tools) or steps
         plan = [{"text": f"{STEP_LABELS.get(i, i)}: {q}" if q != question else STEP_LABELS.get(i, i), "status": "pending"}
                 for i, q in steps] if len(steps) > 1 else None
         if plan:
@@ -256,7 +260,7 @@ class Agent:
                 self.emit("plan.step", {"index": n - 1, "status": "running"})
             before = (len(blocks), len(results), len(notes))
             try:
-                if intent not in TOOLS[tab]:
+                if intent not in tools:
                     raise CantAnswer(ELSEWHERE.get(intent, "I can't do that here."))
                 if intent in INSIGHT:
                     rid = f"r{len(results) + len(computed) + 1}"
@@ -356,6 +360,10 @@ class Agent:
                                     "label": w["title"] + (f", reading {kit.reading}" if kit.reading else "")})
                     actions += [{"kind": "open_widget", "widget_id": w["id"]}, {"kind": "undo_widget", "widget_id": w["id"]}]
                     focus_out["widget_id"] = w["id"]
+                elif intent == "edit_plan":
+                    self.emit("status", {"text": "Changing the plan"})
+                    summary = acts.edit_plan(kit, q, context)
+                    blocks.append(text_block([{"type": "text", "text": summary}]))  # the panel follows plan.updated
                 elif intent in ("edit_cells", "clean_selection"):
                     if proposal is not None:
                         raise CantAnswer("One change at a time: approve or reject the proposal above first.")

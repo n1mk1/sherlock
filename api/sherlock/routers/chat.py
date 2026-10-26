@@ -36,6 +36,7 @@ class ChatContext(BaseModel):
     focused_widget_id: str | None = None
     selected_cells: dict | None = None
     selected_card_ids: list[str] | None = None
+    plan_id: str | None = None  # the open cleaning plan: the chat can change it (`edit_plan`)
 
 
 class ChatRequest(BaseModel):

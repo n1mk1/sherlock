@@ -72,7 +72,7 @@ class Entity(Strict):
 INTENTS = Literal[
     "ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats",
     "ask_model", "ask_meaning", "app_help", "create_widget", "update_widget", "ask_story",
-    "edit_cells", "clean_selection",
+    "edit_cells", "clean_selection", "edit_plan",
 ]
 
 
@@ -181,6 +181,21 @@ class CellDraft(Strict):
 class EditsDraft(Strict):
     reading: str = Field(description="which rows and columns the request means, and the new values, in a few words")
     edits: list[CellDraft] = Field(min_length=1, max_length=200)
+
+
+class PlanEdit(Strict):
+    op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove"]
+    item: str | None = Field(description="the plan item's ref (f1, f2, …) for tick, untick, set_instruction and remove; else null")
+    module: str | None = Field(description="the module for tick_module and untick_module; else null")
+    column: str | None = Field(description="for add: the column the step is about, exactly as named, or null for the rows")
+    instruction: str | None = Field(description="for add and set_instruction: what to do, in plain words; null on "
+                                                "set_instruction puts Sherlock's wording back")
+
+
+class PlanEdits(Strict):
+    """`edit_plan` (TRD §8.2, PRD CLEAN-8b): the changes a chat message asks of the open cleaning plan."""
+    reading: str = Field(description="which fixes or columns the message means, in a few words")
+    ops: list[PlanEdit] = Field(min_length=1, max_length=20)
 
 
 class PlanStep(Strict):

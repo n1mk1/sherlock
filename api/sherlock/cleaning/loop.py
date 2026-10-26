@@ -9,6 +9,9 @@ For each issue, most severe first, while the budget lasts (`CLEAN_MAX_STEPS` iss
 Leakage and ID-like columns are never changed: they are logged as skipped without a model call.
 A run started from a cleaning plan (`params.plan`, PRD CLEAN-8a) skips the fixes the plan leaves
 unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted.
+The user's own steps (CLEAN-8b) run first, then the issues; a step the user asked for, or a fix they
+rewrote, carries their instruction into the prompts, isn't ended by the diagnosis' "leave as is", and
+at low confidence commits with a flag instead of being skipped. Hard checks still skip it.
 Hand-edited cells keep their values unless the request includes them. A scope (a selection or the
 rows added since the last clean) limits which rows a step may change. The run's state (`ended_by`,
 time spent waiting for the model, skipped issues) is checkpointed in `jobs.state_json`, and the
@@ -29,7 +32,7 @@ import duckdb
 import pandas as pd
 
 from sherlock.cleaning import gate, prompts, verifiers
-from sherlock.cleaning.plan import SKIP_TEXT, key, never_change, skip_keys
+from sherlock.cleaning.plan import SKIP_TEXT, USER_DETECTOR, key, never_change, run_params
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
@@ -45,6 +48,8 @@ from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
 NOT_IN_PLAN = "You left this out of the plan"
+USER_SEVERITY = 2.0  # above any detector's (at most 1.0): the user's steps go first
+USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data block"
 VOTE_DETECTORS = ("ambiguous_dates",)
 VOTES = 3
 
@@ -63,6 +68,7 @@ class RunState:
     hand_edited_skipped: list[dict] = field(default_factory=list)
     step_ids: list[str] = field(default_factory=list)
     plan_id: str | None = None                                  # the cleaning plan this run started from
+    plan_outcomes: dict[str, dict] = field(default_factory=dict)  # plan item id → {outcome, reason?, step_id?, step_no?}
 
     def json(self) -> dict:
         return {
@@ -71,10 +77,18 @@ class RunState:
             "waited_for_model_s": round(self.waited_for_model_s, 1), "attempted": self.attempted,
             "handled": self.handled, "skipped": self.skipped,
             "hand_edited_skipped": self.hand_edited_skipped[:500], "step_ids": self.step_ids,
+            "plan_outcomes": self.plan_outcomes,
         }
 
 
+def run_key(issue: dict) -> str:
+    """What `handled` records: the issue key, or the plan item for a step the user added."""
+    return f"user|{issue['plan_item_id']}" if issue.get("user") else key(issue)
+
+
 def issue_line(issue: dict) -> str:
+    if issue.get("user"):  # the instruction is the user's text: it goes inside the data block
+        return USER_ISSUE_LINE
     what = issue["detector"].replace("_", " ")
     where = f" in {issue['column']}" if issue["column"] else ""
     return f"{issue['count']:,} rows with {what}{where}: {issue.get('proposal') or ''}".strip()
@@ -90,13 +104,21 @@ ISSUE_WORDS = {
 
 
 def short_line(issue: dict) -> str:
-    """The log's one-line name for an issue: "263 missing values"."""
+    """The log's one-line name for an issue: "263 missing values", "Your step: trim spaces in name"."""
+    if issue.get("user"):
+        text = issue["instruction"]
+        return f"Your step: {text if len(text) <= 80 else text[:79] + '…'}"
     return f"{issue['count']:,} {ISSUE_WORDS.get(issue['detector'], issue['detector'].replace('_', ' '))}"
 
 
 def _json(value, limit: int = 1500) -> str:
     text = json.dumps(value, default=str, ensure_ascii=False)
     return _safe(text if len(text) <= limit else text[: limit - 1] + "…")
+
+
+def _instruction(issue: dict) -> str:
+    """The user's instruction for the prompts' data block, or "none"."""
+    return _safe(issue.get("instruction") or "none")
 
 
 def _safe(text) -> str:
@@ -117,7 +139,11 @@ class Cleaner:
                               max_seconds=self.settings.clean_max_seconds)
         plan = self.params.get("plan") or {}
         self.state.plan_id = plan.get("id")
-        self.skip_keys = skip_keys(plan.get("items") or [])
+        run = run_params(plan.get("items") or [])
+        self.skip_keys = set(run["skip_keys"])
+        self.instructions: dict[str, str] = run["instructions"]  # rewritten fixes, by issue key
+        self.user_steps: list[dict] = run["user_steps"]           # in the plan's order
+        self.item_ids = {i["key"]: i["id"] for i in plan.get("items") or [] if i["key"]}
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
         self.work = self.settings.data_dir / ".clean" / ctx.id
@@ -250,6 +276,11 @@ class Cleaner:
                          gate="commit", step_id=row["id"], step_no=row["no"])
 
     def _next_issue(self) -> dict | None:
+        for step in self.user_steps:  # the user's own steps first, in the plan's order
+            if f"user|{step['id']}" not in self.state.handled:
+                return {"id": step["id"], "detector": USER_DETECTOR, "column": step["column"], "count": 0,
+                        "severity": USER_SEVERITY, "proposal": step["instruction"], "examples": [], "details": {},
+                        "user": True, "requested": True, "instruction": step["instruction"], "plan_item_id": step["id"]}
         card = self._card()
         for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
             if key(issue) in self.state.handled:
@@ -264,22 +295,40 @@ class Cleaner:
                 self.state.handled.append(key(issue))
                 self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
                 continue
+            if key(issue) in self.instructions:  # a fix the user rewrote
+                return {**issue, "requested": True, "instruction": self.instructions[key(issue)],
+                        "plan_item_id": self.item_ids.get(key(issue))}
             return issue
         return None
+
+    def _outcome(self, issue: dict, outcome: str, reason: str | None = None, step: dict | None = None) -> None:
+        """The outcome of a plan item, for the report's "Your steps"."""
+        item_id = issue.get("plan_item_id") or self.item_ids.get(key(issue))
+        if item_id is None:
+            return
+        out = {"outcome": outcome}
+        if reason:
+            out["reason"] = reason
+        if step:
+            out.update(step_id=step["id"], step_no=step["no"])
+        self.state.plan_outcomes[item_id] = out
 
     def _skip(self, issue: dict, reason: str, candidates=None, log_text: str | None = None, checks=None) -> None:
         self.state.skipped.append({"issue_id": issue["id"], "column": issue["column"], "detector": issue["detector"],
                                    "reason": reason})
         self.db.execute("UPDATE issues SET outcome = 'skipped', skip_reason = ? WHERE id = ?", (reason, issue["id"]))
+        self._outcome(issue, "skipped", reason)
         self.ctx.log(reason, icon="skip", column=issue["column"], gate="skip", candidates=candidates,
                      detail=log_text or "skipped", issue_id=issue["id"], checks=checks)
 
     # --- one issue ------------------------------------------------------------------------------
 
     def _handle(self, issue: dict) -> None:
-        self.state.handled.append(key(issue))
+        self.state.handled.append(run_key(issue))
         self.state.attempted += 1
         column = issue["column"]
+        requested = bool(issue.get("requested"))
+        detector = None if issue.get("user") else issue["detector"]  # a user step has no detector to re-run
         cap = min(self.settings.clean_max_steps, self.state.attempted + 5)
         self.ctx.progress(self.state.attempted, cap, f"Step {self.state.attempted} · {column or 'rows'}")
         self.ctx.log(short_line(issue), icon="running", column=column, detail="checking candidates", issue_id=issue["id"])
@@ -290,7 +339,7 @@ class Cleaner:
             diagnosis = self._diagnose(issue, card, before)
         except StructuredOutputError:
             return self._skip(issue, "model output invalid")
-        if diagnosis.leave_as_is:
+        if diagnosis.leave_as_is and not requested:  # the user asked for it: the diagnosis doesn't end it
             return self._skip(issue, f"Left as is: {diagnosis.cause}")
         try:
             proposed = self._propose(issue, diagnosis, before)
@@ -316,7 +365,7 @@ class Cleaner:
             except ScopeError as exc:
                 scored.append((cand, 0.0, None, str(exc)))
                 continue
-            report = verifiers.verify(sample, after, issue["detector"], column)
+            report = verifiers.verify(sample, after, detector, column)
             scored.append((cand, report.score, report, None if report.passed else _first_failure(report)))
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         best_i = max(range(len(scored)), key=lambda i: scored[i][1]) if scored else None
@@ -340,7 +389,7 @@ class Cleaner:
             after_full = self._restrict(before, self._read(full_out))
         except ScopeError as exc:
             return self._skip(issue, f"Not applied: {exc}", candidates=chips)
-        full_report = verifiers.verify(before, after_full, issue["detector"], column)
+        full_report = verifiers.verify(before, after_full, detector, column)
         if not full_report.passed:
             return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", candidates=chips,
                               checks=full_report.hard)
@@ -359,7 +408,7 @@ class Cleaner:
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
         total_cells = len(before) * max(len(user_cols), 1)
         affected = gate.cells_affected(full_report.cells_changed, full_report.quarantined, len(user_cols), total_cells)
-        decision = gate.decide([s for _, s, *_ in scored], review_ok, affected, total_cells)
+        decision = gate.decide([s for _, s, *_ in scored], review_ok, affected, total_cells, requested=requested)
         if decision.gate == "skip":
             return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
         restricted = full_out
@@ -374,9 +423,11 @@ class Cleaner:
             notebook_code=self._notebook_code(best.code), code=best.code, column_targets=[column] if column else [],
             helpers_used=[h for h in HELPER_NAMES if h + "(" in self._notebook_code(best.code)], confidence=decision.confidence,
             gate=decision.gate, flag_reason=flag_reason, parse_failures=full_report.quarantined,
-            decisions=[{"question": f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?",
+            decisions=[{"question": (f"How to do what you asked in {column or 'the rows'}?" if issue.get("user") else
+                                     f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?"),
                         "chosen": best.label, "alternatives": [c.label for c, *_ in scored if c is not best],
-                        "reason": diagnosis.cause, "review": critique.concerns if critique else []}],
+                        "reason": diagnosis.cause, "review": critique.concerns if critique else [],
+                        **({"asked": issue["instruction"]} if requested else {})}],
             verifiers=full_report.as_json(), job_id=self.ctx.id,
         )
         try:
@@ -390,6 +441,7 @@ class Cleaner:
         outcome = "fixed" if decision.gate == "commit" else "flagged"
         self.db.execute("UPDATE issues SET outcome = ?, handled_by_step_id = ? WHERE id = ?",
                         (outcome, step["id"], issue["id"]))
+        self._outcome(issue, outcome, flag_reason, step)
         text = (f"committed · step {step['no']}" if decision.gate == "commit"
                 else f"committed with a flag · step {step['no']} · confidence {decision.confidence:.2f}")
         self.ctx.log(best.expected_effect, icon="check" if decision.gate == "commit" else "flag", column=column,
@@ -431,7 +483,7 @@ class Cleaner:
             issue_line=issue_line(issue), detector=issue["detector"], column=_safe(issue["column"] or "(rows)"),
             rows=card["row_count"], columns=_safe(columns), column_card=_json(cc["entry"]), samples=_json(cc["samples"]),
             examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
-            decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet",
+            decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet", instruction=_instruction(issue),
         )
         if issue["detector"] in VOTE_DETECTORS:
             votes = []
@@ -460,6 +512,7 @@ class Cleaner:
             issue_line=issue_line(issue), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
             approaches=_safe("; ".join(approaches)), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
             samples=_json(samples), examples=_json(cap_values(issue["examples"], 10)), helpers=prompts.HELPERS,
+            instruction=_instruction(issue),
         )
         out = self.llm.structured("large", self._messages(user), Candidates, purpose="propose", scope=self.scope,
                                   max_tokens=6000)
@@ -475,9 +528,12 @@ class Cleaner:
             for rid in list(b.index[diff])[:12]:
                 changes.append(f"{b[rid]!r} → {a[rid]!r}")
         effect = (f"{report.cells_changed} cells changed, {report.unrelated_changed} outside {column}, "
-                  f"{report.quarantined} rows quarantined; the issue went from {report.issue_before} to {report.issue_after}")
+                  f"{report.quarantined} rows quarantined")
+        if not issue.get("user"):  # a user's step has no detector, so no count to compare
+            effect += f"; the issue went from {report.issue_before} to {report.issue_after}"
         user = prompts.CRITIC.format(issue_line=issue_line(issue), column=_safe(column or "(rows)"), label=_safe(best.label),
-                                     code=_safe(best.code), effect=_safe(effect), changes=_json(changes), checks=_json(report.hard))
+                                     code=_safe(best.code), effect=_safe(effect), changes=_json(changes), checks=_json(report.hard),
+                                     instruction=_instruction(issue))
         out = self.llm.structured("medium", self._messages(user), Critique, purpose="critic", scope=self.scope)
         self._track(out.completion)
         return out.value

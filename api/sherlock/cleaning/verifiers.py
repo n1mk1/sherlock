@@ -10,10 +10,12 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
 - `parse_quarantine`: in a column that changed type, every value that didn't convert is quarantined.
 - `placeholder_fill`: missing values weren't filled with a placeholder word ("Unknown", "N/A",
   "Missing", …): an empty cell stays empty unless a rule recovers its value.
-- `quarantine_scope`: the step quarantined at most 2 × the issue's count + 10 rows.
+- `quarantine_scope`: the step quarantined at most 2 × the issue's count + 10 rows. A step the user
+  added to the cleaning plan has no detector and no count, so it may quarantine at most a fifth of
+  the rows (`QUARANTINE_USER_SHARE`).
 
 The soft score is the mean of: parse success rate, the share of the issue resolved (the detector
-re-run on the result), 1 − the share of cells changed outside the issue's column, and distribution
+re-run on the result; none for a user's step, `detector=None`), 1 − the share of cells changed outside the issue's column, and distribution
 conservation for a numeric column that stays numeric (how little its median and spread moved).
 """
 
@@ -173,7 +175,8 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
             counted = True
         except Exception:  # a detector that can't run on the result counts as unresolved
             r.soft["resolved"] = 0.0
-    r.hard["quarantine_scope"] = _quarantine_scope(r.quarantined, r.issue_before if counted else None)
+    r.hard["quarantine_scope"] = _quarantine_scope(r.quarantined, r.issue_before if counted else None,
+                                                   rows=len(b) if detector is None else None)
     total_cells = max(len(b) * max(len(user_cols), 1), 1)
     r.soft["unrelated"] = 1.0 - min(1.0, unrelated / max(changed_total, 1)) if changed_total else 1.0
     if column in b and pd.api.types.is_numeric_dtype(b[column]) and pd.api.types.is_numeric_dtype(a[column]):
@@ -184,12 +187,16 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
 
 QUARANTINE_FACTOR = 2
 QUARANTINE_MARGIN = 10
+QUARANTINE_USER_SHARE = 0.2
 
 
-def _quarantine_scope(quarantined: int, issue_count: int | None) -> str:
+def _quarantine_scope(quarantined: int, issue_count: int | None, rows: int | None = None) -> str:
     """A step may quarantine at most twice as many rows as its issue has, plus a small margin
     (owner's decision, 2026-10-25). Live, a NaN comparison in a model's mask quarantined 1,020 of
-    1,309 rows for a 4-row issue and still committed with a flag (Day 3 review H1)."""
+    1,309 rows for a 4-row issue and still committed with a flag (Day 3 review H1). A user's step
+    (`rows` given, no issue to count) may quarantine at most a fifth of the rows."""
+    if rows is not None:
+        return "pass" if quarantined <= QUARANTINE_USER_SHARE * rows else "fail: quarantines more than a fifth of the rows"
     if issue_count is None or quarantined <= QUARANTINE_FACTOR * issue_count + QUARANTINE_MARGIN:
         return "pass"
     return f"fail: {quarantined:,} rows quarantined for an issue in {issue_count:,}"

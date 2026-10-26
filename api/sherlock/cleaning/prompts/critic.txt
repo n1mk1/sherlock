@@ -10,6 +10,9 @@ Code:
 Effect on a sample: {effect}
 Changed cells (before → after): {changes}
 Checks: {checks}
+The user's instruction: {instruction}
 </data>
+
+When the user gave an instruction, judge "changed something it should not have" against it: a change the instruction asks for is not one.
 
 Concerns worth raising: values that were right and got changed, a fill that invents information without a basis, rows quarantined without need, a change outside the issue's column. Do not raise style or performance points.

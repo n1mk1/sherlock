@@ -88,6 +88,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   const focused = widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
   const selectedCards = useFlow((s) => s.selectedCardIds);
   const csvSelection = useUi((s) => s.csvSelection);
+  const planId = useUi((s) => s.planId); // a cleaning plan is open: the chat can change it (App Flow §10)
   const openExport = useUi((s) => s.openExport);
 
   // `/` focuses the bar when nothing editable has focus (PRD §7.11).
@@ -114,6 +115,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         ...(tab === "dashboard" && focused ? { focused_widget_id: focused.id } : {}),
         ...(tab === "flow" ? { selected_card_ids: selectedCards } : {}),
         ...(tab === "csv" && csvSelection ? { selected_cells: { ...csvSelection, row_ids: csvSelection.row_ids.slice(0, 500) } } : {}),
+        ...(planId ? { plan_id: planId } : {}),
       },
       ...extra,
     };
@@ -205,7 +207,7 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
           id="chat-input"
           ref={input}
           value={text}
-          placeholder={placeholder}
+          placeholder={planId ? "Ask Sherlock to change the plan…" : placeholder}
           onChange={(e) => { setText(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {

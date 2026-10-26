@@ -8,6 +8,9 @@ decision, 2026-10-25). The critic's list of concerns is recorded on the step but
 their own can't keep a step from committing (owner's decision, 2026-10-24).
 blast = cells changed / cells in the dataset, where a newly quarantined row counts as all of its
 cells (`cells_affected`): it leaves every widget, model and story, so it isn't one cell's change.
+A step the user asked for in the cleaning plan (`requested`, PRD CLEAN-8b) that would be skipped for
+low confidence commits with a flag instead, so it can be undone; with no candidate passing the hard
+checks it is still skipped.
 """
 
 from dataclasses import dataclass
@@ -39,7 +42,7 @@ def cells_affected(cells_changed: int, rows_quarantined: int, columns: int, tota
     return min(cells_changed + rows_quarantined * max(columns, 1), total_cells)
 
 
-def decide(scores: list[float], review_ok: bool, cells_changed: int, total_cells: int) -> Decision:
+def decide(scores: list[float], review_ok: bool, cells_changed: int, total_cells: int, requested: bool = False) -> Decision:
     best = max(scores) if scores else 0.0
     agree = agreement(scores)
     confidence = round(0.6 * best + 0.2 * agree + 0.2 * (1.0 if review_ok else 0.0), 4)
@@ -51,4 +54,6 @@ def decide(scores: list[float], review_ok: bool, cells_changed: int, total_cells
     if confidence >= FLAG_CONFIDENCE:
         reason = "changes more than a fifth of the data" if blast >= COMMIT_MAX_BLAST else f"medium confidence ({confidence:.2f})"
         return Decision("flag", confidence, agree, blast, reason)
+    if requested:
+        return Decision("flag", confidence, agree, blast, f"low confidence ({confidence:.2f}); kept because you asked for it")
     return Decision("skip", confidence, agree, blast, f"low confidence ({confidence:.2f})")

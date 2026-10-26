@@ -1,7 +1,8 @@
 """Chat actions that change things (TRD §8.2, PRD ASK-10), Implementation Plan D8.5.
 
 Data changes asked for in chat never apply on their own: `edit_cells` and `clean_selection` store a
-proposal (Schema §2.15) that the chat shows with Approve and Reject. Approving re-checks that the
+proposal (Schema §2.15) that the chat shows with Approve and Reject. `edit_plan` (PRD CLEAN-8b)
+changes the open cleaning plan at once, since nothing touches the data until Start. Approving re-checks that the
 data is still the version the proposal was computed on (else the proposal expires), then commits an
 edit step or starts the Clean with AI job, the same code the CSV tab uses. "Export a notebook" needs
 no model call: the options come from the wording and the answer opens the export dialog.
@@ -13,10 +14,13 @@ import sqlite3
 
 from sherlock.agent import prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
+from sherlock.cleaning import plan as plans
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import data_block
-from sherlock.llm.schemas import EditsDraft
+from sherlock.jobs.events import emit
+from sherlock.llm.client import StructuredOutputError, data_block
+from sherlock.llm.schemas import EditsDraft, PlanEdits
+from sherlock.profile import service as profile_service
 from sherlock.rows.query import ident
 from sherlock.widgets import service as ws
 
@@ -145,6 +149,59 @@ def propose_clean(db: sqlite3.Connection, dataset: sqlite3.Row, context: dict, m
         payload = {"summary": "Clean with AI on the whole file", "scope": {"kind": "all", "selection_id": None}}
     payload["impact"] = {"cells_changed": 0, "rows_affected": n}
     return _store(db, dataset, message_id, "clean_selection", payload)
+
+
+# --- the cleaning plan from chat (PRD CLEAN-8b) -------------------------------------------------------
+
+
+def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
+    """`edit_plan`: `medium` (schema `PlanEdits`) reads the open plan's items, by ref, and the message,
+    and returns ops that `plan.apply_ops` checks (a failure gets the client's one repair). The ops
+    apply at once and the reply is apply_ops' code-written summary; `plan.updated` tells the panel."""
+    db, dataset = kit.env.db, kit.dataset
+    row = plans.get(db, context.get("plan_id") or "")
+    if row is None or row["dataset_id"] != dataset["id"] or row["status"] != "draft":
+        raise CantAnswer("That cleaning plan isn't open any more. Press Clean with AI to open one.")
+    row, _ = plans.current(db, row, dataset, lambda d: profile_service.get_or_build(kit.env.settings, db, kit.env.cache, d))
+    items = json.loads(row["items_json"])
+    columns = [c for c in ws.user_types(kit.env, dataset, dataset["current_version"])]
+    refs = {f"f{n}": i for n, i in enumerate(items, 1)}
+    lines = [" · ".join([ref, i["module"], i["column"] or "rows", plans.LABELS.get(i["detector"], i["detector"].replace("_", " ")),
+                         ("ticked" if i["ticked"] else "unticked") if i["change"] else "kept",
+                         f"source {i['source']}", i["instruction"] or i["action"]]) for ref, i in refs.items()]
+
+    def to_ops(d: PlanEdits) -> list[dict]:
+        ops = []
+        for e in d.ops:
+            op: dict = {"op": e.op}
+            if e.op in ("tick", "untick", "set_instruction", "remove"):
+                if e.item not in refs:
+                    raise ValueError(f"{e.item!r} isn't a ref of the plan; use one of f1 to f{len(refs)}")
+                op["item_id"] = refs[e.item]["id"]
+            if e.op in ("tick_module", "untick_module"):
+                op["module"] = e.module
+            if e.op in ("set_instruction", "add"):
+                op["instruction"] = e.instruction
+            if e.op == "add":
+                op["column"] = e.column
+            ops.append(op)
+        plans.apply_ops(items, ops, columns, source="chat")  # raises PlanError, a ValueError: the repair sees it
+        return ops
+
+    messages = [{"role": "system", "content": prompts.SYSTEM},
+                {"role": "user", "content": prompts.PLAN_EDITS.format(columns=data_block(", ".join(columns)),
+                                                                      plan=data_block("\n".join(lines)), message=data_block(question))}]
+    def check(d: PlanEdits) -> None:
+        to_ops(d)
+
+    try:
+        draft = kit.llm.structured("medium", messages, PlanEdits, purpose="plan_edits", scope=kit.scope, validate=check).value
+    except StructuredOutputError as exc:
+        raise CantAnswer(f"I couldn't change the plan: {str(exc).split(': ', 1)[-1][:200]}") from None
+    new_items, summary = plans.apply_ops(items, to_ops(draft), columns, source="chat")
+    plans.save(db, row["id"], new_items)
+    emit(db, kit.env.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]})
+    return summary
 
 
 def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:

@@ -54,5 +54,37 @@
   "match": ["average fare by class, and what does pclass mean?"],
   "content": {"prose": [{"text": "First class paid the most on average, "}, {"chip": "r1:0:1"}, {"text": "."}],
               "shape": "text", "number": null, "label": null, "chart": null}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\ndon't touch cabin\n</data>"],
+  "content": {"intents": ["edit_plan"], "ambiguous": false, "clarification": null, "multi_step": false,
+              "entities": [{"text": "cabin", "kind": "column"}]}
+ },
+ {
+  "purpose": "plan_edits",
+  "match": ["<data>\ndon't touch cabin\n</data>"],
+  "content": {"reading": "cabin's missing values", "ops": [{"op": "untick", "item": "f1", "module": null, "column": null, "instruction": null}]}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\nalso trim spaces in name\n</data>"],
+  "content": {"intents": ["edit_plan"], "ambiguous": false, "clarification": null, "multi_step": false,
+              "entities": [{"text": "name", "kind": "column"}]}
+ },
+ {
+  "purpose": "plan_edits",
+  "match": ["<data>\nalso trim spaces in name\n</data>"],
+  "content": {"reading": "a new step on name", "ops": [{"op": "add", "item": null, "module": null, "column": "name", "instruction": "Trim spaces in name"}]}
+ },
+ {
+  "purpose": "route",
+  "match": ["<data>\nleave the twelfth fix out\n</data>"],
+  "content": {"intents": ["edit_plan"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}
+ },
+ {
+  "purpose": "plan_edits",
+  "match": ["<data>\nleave the twelfth fix out\n</data>"],
+  "content": {"reading": "the twelfth fix", "ops": [{"op": "untick", "item": "f99", "module": null, "column": null, "instruction": null}]}
  }
 ]

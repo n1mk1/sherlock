@@ -17,6 +17,7 @@ from sherlock.jobs.runner import to_job
 from sherlock.ownership import Owned, owned, owned_dataset
 from sherlock.profile import service as profile_service
 from sherlock.ratelimit import llm_rate_limit
+from sherlock.widgets import service as ws
 
 router = APIRouter(tags=["cleaning"])
 STARTABLE = ("offer", "ready")
@@ -40,9 +41,11 @@ class CleanRequest(BaseModel):
 
 class PlanOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    op: Literal["tick", "untick", "tick_module", "untick_module"]
+    op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove"]
     item_id: str | None = None
     module: str | None = None
+    column: str | None = None  # add: a column of the file, or null for the rows
+    instruction: str | None = Field(default=None, max_length=plans.MAX_INSTRUCTION)  # null on set_instruction resets
 
 
 class PlanPatch(BaseModel):
@@ -159,8 +162,10 @@ def patch_plan(
     if row["status"] != "draft":
         raise ApiError(409, "conflict", f"This plan was already {row['status']}.")
     row, notes = plans.current(db, row, dataset, lambda d: _card(request, db, d))
+    env = ws.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
+    columns = list(ws.user_types(env, dataset, dataset["current_version"]))
     try:
-        items, summary = plans.apply_ops(json.loads(row["items_json"]), [o.model_dump() for o in body.ops])
+        items, summary = plans.apply_ops(json.loads(row["items_json"]), [o.model_dump() for o in body.ops], columns)
     except plans.PlanError as exc:
         raise ApiError(422, "invalid", str(exc)) from None
     row = plans.save(db, row["id"], items)

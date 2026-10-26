@@ -9,7 +9,7 @@ import pytest
 
 from sherlock.config import get_settings
 from tests.test_chat import send
-from tests.test_jobs import db_rows, wait_status
+from tests.test_jobs import db_rows, events_of, wait_status
 
 API = "/api/v1"
 LLM = Path(__file__).parent / "fixtures" / "llm"
@@ -124,3 +124,38 @@ def test_export_a_notebook_from_chat_opens_the_dialog_with_options(client, ready
     assert action["options"] == {"include_data": False, "include_notes": True}
     assert "without the data and with the canvas notes" in msg["text"]
     assert not db_rows("SELECT 1 FROM llm_calls WHERE purpose = 'route' AND dataset_id = ?", ready["id"])
+
+
+def test_chat_changes_the_open_cleaning_plan_at_once(client, ready):
+    # PRD CLEAN-8b: with a plan open, chat edits it straight away (nothing touches the data until Start)
+    # and the reply is the code-written summary.
+    ds = ready["id"]
+    plan = client.post(f"{API}/datasets/{ds}/clean/plan").json()
+    cabin = next(i for i in plan["items"] if i["key"] == "missing|cabin")
+    assert plan["items"][0]["id"] == cabin["id"]  # f1 in the prompt: module order, most severe first
+
+    events, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
+    assert msg["text"] == "Unticked 1 fix: missing values in cabin." and "proposal" not in msg
+    after = client.get(f"{API}/clean-plans/{plan['id']}").json()
+    assert not next(i for i in after["items"] if i["id"] == cabin["id"])["ticked"]
+    _, msg = send(client, ds, "also trim spaces in name", **csv(plan_id=plan["id"]))
+    assert msg["text"] == "Added 1 step on name."
+    mine = client.get(f"{API}/clean-plans/{plan['id']}").json()["items"][0]
+    assert (mine["module"], mine["source"], mine["column"], mine["instruction"]) == ("yours", "chat", "name", "Trim spaces in name")
+    assert sum(1 for t, d in events_of(ds) if t == "plan.updated" and d["plan_id"] == plan["id"]) >= 3
+    assert client.get(f"{API}/datasets/{ds}").json()["current_version"] == ready["current_version"]
+
+    # A reply naming an item the plan doesn't have gets the one repair, then a plain answer.
+    _, msg = send(client, ds, "leave the twelfth fix out", context={"tab": "dashboard", "plan_id": plan["id"]})
+    assert msg["text"].startswith("I couldn't change the plan:") and "f99" in msg["text"]
+
+
+def test_without_an_open_plan_chat_doesnt_edit_one(client, ready):
+    ds = ready["id"]
+    plan = client.post(f"{API}/datasets/{ds}/clean/plan").json()
+    _, msg = send(client, ds, "don't touch cabin")  # no plan_id: edit_plan isn't one of the tab's tools
+    assert "press Clean with AI to open one" in msg["text"]
+    assert all(i["ticked"] for i in client.get(f"{API}/clean-plans/{plan['id']}").json()["items"] if i["change"])
+    client.delete(f"{API}/clean-plans/{plan['id']}")
+    _, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
+    assert "isn't open any more" in msg["text"]  # a discarded plan

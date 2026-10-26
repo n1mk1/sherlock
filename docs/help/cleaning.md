@@ -6,6 +6,9 @@ The cleaner works through the issues it found (spacing and case, typos in catego
 ## The cleaning plan
 Clean with AI first shows the plan: what Sherlock found in the current version, in groups such as types and parsing, missing values, and spelling, each with how many rows it affects, a few example values and the fix it would try. Every fix starts ticked. Untick one to leave it out, or untick a whole group with the box on its header; the run skips those, and the report lists them as left out of the plan. Columns that look like IDs or record the outcome are listed under Marked, not changed, and are never changed. Nothing changes until you press Start cleaning; Discard closes the plan.
 
+## Edit the plan
+Press the pencil on a fix to say in your own words what to do instead; Reset puts Sherlock's wording back. Add a step adds one of your own: pick a column (or Rows) and write what to do. Your steps run first. You can also ask in the chat while the plan is open, for example "don't touch outliers" or "also trim spaces in name"; the plan changes at once and the reply says what changed. The cleaner writes code that follows your words, but every check still applies: a step that would fill gaps with a word like Unknown, or hide more than a fifth of the rows, is skipped with the reason. A step you asked for that Sherlock isn't sure about is kept with a flag, so you can undo it in Changes. The report lists your steps and what happened to each.
+
 ## Quarantined rows
 Rows the cleaner can't trust are quarantined, not deleted. They stay in the CSV tab, dimmed with their row number struck through, and are left out of charts, answers and models. To bring one back, select a cell in it, press Restore in the CSV toolbar, then Save changes.
 

@@ -567,6 +567,7 @@ CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE statu
 
 - A dataset has at most one `draft` (the partial unique index). `POST /datasets/{id}/clean/plan` returns it or makes it; Discard sets `discarded`; Start sets `started` and `job_id`, and the job's `params_json` keeps a frozen copy of the items (§2.14). Started and discarded plans are kept as history.
 - `version` moves when a draft is merged onto a newer version (`cleaning/plan.py` `merge`): ticks and instructions are kept by issue key, the user's steps while their column exists.
+- `items_json` holds Sherlock's fixes and the user's own steps (PRD CLEAN-8b: `detector: "user_request"`, `key: null`, `source: "you"|"chat"`), and each fix's rewritten `instruction`. The clean job's `state_json` adds `plan_outcomes` (item ID → outcome), which the report's `your_steps` reads (TRD §7.2).
 - `source` is `after_upload` when the profile job made the draft because After upload is "Open the cleaning plan"; the plan screen then says why it opened.
 - Deleted with the dataset: the foreign key cascades on hard delete (§6).
 

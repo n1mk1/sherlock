@@ -171,15 +171,21 @@ function setDatasetPlan(qc: QueryClient, datasetId: string, planId: string | nul
   qc.setQueryData<Dataset[]>(keys.datasets, (list) => list?.map(patch));
 }
 
-/** Tick ops applied locally as the server applies them (`cleaning/plan.py` `apply_ops`). */
+/** Ops applied locally as the server applies them (`cleaning/plan.py` `apply_ops`), shown until its
+ * answer arrives. An added step waits for the server, which gives it its ID. */
 export function applyPlanOps(plan: CleanPlan, ops: PlanOp[]): CleanPlan {
-  const items = plan.items.map((i) => ({ ...i }));
+  let items = plan.items.map((i) => ({ ...i }));
   for (const op of ops) {
-    if ("item_id" in op) {
-      const i = items.find((x) => x.id === op.item_id);
-      if (i?.change) i.ticked = op.op === "tick";
-    } else {
+    if ("module" in op) {
       for (const i of items) if (i.module === op.module && i.change) i.ticked = op.op === "tick_module";
+    } else if ("item_id" in op) {
+      const i = items.find((x) => x.id === op.item_id);
+      if (!i?.change) continue;
+      if ("instruction" in op) {
+        i.instruction = op.instruction;
+        if (i.key === null && op.instruction) i.action = op.instruction;
+      } else if (op.op === "remove" && i.key === null) items = items.filter((x) => x.id !== i.id);
+      else i.ticked = op.op === "tick";
     }
   }
   return { ...plan, items };

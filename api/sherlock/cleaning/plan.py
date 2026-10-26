@@ -6,9 +6,8 @@ per issue key (`detector|column`); when two findings share a key (exact and near
 `duplicates|None`), the item is the most severe one, the one the Cleaner attempts. Every fix that can
 change data starts ticked. Leakage and ID-like columns are info rows under "Marked, not changed".
 
-The user can untick fixes, one at a time or a whole module; `apply_ops` is the one place a plan
-changes. (`source` and `instruction` are for the user's own steps and rewritten fixes, CLEAN-8b; until
-then every item is Sherlock's, with no instruction.)
+The user can untick fixes, rewrite a fix in plain words (`instruction`), and add steps of their own
+(`detector: user_request`), from the panel or from chat; `apply_ops` is the one place a plan changes.
 A plan made on an older version is merged onto the current one (`merge`) before it's shown or started.
 Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset.
 """
@@ -49,12 +48,14 @@ LABELS = {
 NEVER_CHANGE = {"leakage": "Records the outcome, so it is marked as leakage and not changed",
                 "id_candidates": "Looks like an ID column, so it is left as is"}
 SKIP_TEXT = {"leakage": "excluded from models", "id_candidates": "left as is"}
+USER_DETECTOR = "user_request"
+MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
-OPS = ("tick", "untick", "tick_module", "untick_module")
+OPS = ("tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove")
 
 
 class PlanError(ValueError):
-    """An op that can't apply: an unknown item or module, or an item that can't be ticked."""
+    """An op that can't apply: an unknown item or module, a column the file doesn't have, …"""
 
 
 def key(issue: dict) -> str:
@@ -76,7 +77,9 @@ def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
 
 
 def fix_name(item: dict) -> str:
-    """"outliers in fare", "duplicate rows"."""
+    """"outliers in fare", "duplicate rows", "your step on name"."""
+    if item["detector"] == USER_DETECTOR:
+        return f"your step on {item['column']}" if item["column"] else "your step on the rows"
     what = LABELS.get(item["detector"], item["detector"].replace("_", " "))
     return f"{what} in {item['column']}" if item["column"] else what
 
@@ -96,19 +99,29 @@ def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
 
 
 def diagnose(card: dict) -> list[dict]:
-    """The plan's items for a DataCard, most severe first, every changeable fix ticked."""
+    """The plan's items for a DataCard in module order, most severe first within a module, every
+    changeable fix ticked."""
     items: dict[str, dict] = {}
     for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
         if key(issue) not in items:  # a shared key: the most severe finding is the one attempted
             items[key(issue)] = _item(issue, card)
-    return list(items.values())
+    return _ordered(list(items.values()))
 
 
 def merge(old: list[dict], card: dict) -> tuple[list[dict], list[str]]:
-    """A plan carried onto a newer version: ticks kept by key, keys that went away dropped, new keys
-    ticked. Returns the items and what changed, in code-written sentences."""
+    """A plan carried onto a newer version: ticks and instructions kept by key, keys that went away
+    dropped, new keys ticked; the user's steps kept while their column exists. Returns the items and
+    what changed, in code-written sentences."""
+    columns = {c["name"] for c in card["columns"]}
     by_key = {i["key"]: i for i in old if i["key"]}
     items, notes = [], []
+    for i in old:
+        if i["key"] is not None:
+            continue
+        if i["column"] is None or i["column"] in columns:
+            items.append(i)
+        else:
+            notes.append(f"Dropped your step on {i['column']}: the column is no longer in the file.")
     fresh = diagnose(card)
     added = 0
     for item in fresh:
@@ -120,6 +133,7 @@ def merge(old: list[dict], card: dict) -> tuple[list[dict], list[str]]:
         item["id"] = before["id"]
         if item["change"] and before["change"]:
             item["ticked"] = before["ticked"]
+            item["instruction"] = before["instruction"]
         items.append(item)
     gone = [i for k, i in by_key.items() if k not in {f["key"] for f in fresh}]
     if gone:
@@ -139,12 +153,28 @@ def _count(n: int, one: str, many: str) -> str:
     return f"{n} {one if n == 1 else many}"
 
 
-def apply_ops(items: list[dict], ops: list[dict]) -> tuple[list[dict], str]:
-    """Apply ops to a copy of the items, all or nothing (a bad op raises PlanError). Returns the items
+def _instruction(text) -> str:
+    if not isinstance(text, str) or not text.strip():
+        raise PlanError("The instruction can't be empty.")
+    text = " ".join(text.split())
+    if len(text) > MAX_INSTRUCTION:
+        raise PlanError(f"The instruction is {len(text)} characters; keep it under {MAX_INSTRUCTION}.")
+    return text
+
+
+def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you") -> tuple[list[dict], str]:
+    """Apply ops to a copy of the items, all or nothing (a bad op raises PlanError). `columns` are the
+    file's user columns; `source` marks added steps ("you" from the panel, "chat"). Returns the items
     and a code-written summary of what changed."""
     items = [dict(i) for i in items]
     by_id = {i["id"]: i for i in items}
-    done: dict[str, list[str]] = {"ticked": [], "unticked": []}
+    done: dict[str, list[str]] = {"ticked": [], "unticked": [], "rewrote": [], "reset": [], "added": [], "removed": []}
+
+    def item(op: dict) -> dict:
+        found = by_id.get(op.get("item_id"))
+        if found is None:
+            raise PlanError(f"There's no item {op.get('item_id')!r} in this plan.")
+        return found
 
     def tick(i: dict, on: bool) -> None:
         if not i["change"]:
@@ -156,10 +186,7 @@ def apply_ops(items: list[dict], ops: list[dict]) -> tuple[list[dict], str]:
     for op in ops:
         kind = op.get("op")
         if kind in ("tick", "untick"):
-            found = by_id.get(op.get("item_id"))
-            if found is None:
-                raise PlanError(f"There's no item {op.get('item_id')!r} in this plan.")
-            tick(found, kind == "tick")
+            tick(item(op), kind == "tick")
         elif kind in ("tick_module", "untick_module"):
             module = op.get("module")
             if module not in MODULES or module == "kept":
@@ -167,9 +194,46 @@ def apply_ops(items: list[dict], ops: list[dict]) -> tuple[list[dict], str]:
             for i in items:
                 if i["module"] == module and i["change"]:
                     tick(i, kind == "tick_module")
+        elif kind == "set_instruction":
+            i = item(op)
+            if not i["change"]:
+                raise PlanError(f"{i['column']} is marked, not changed, so its fix can't be rewritten.")
+            text = op.get("instruction")
+            if text is None:
+                if i["key"] is None:
+                    raise PlanError("A step you added needs an instruction; remove it instead.")
+                if i["instruction"] is not None:
+                    i["instruction"] = None
+                    done["reset"].append(fix_name(i))
+                continue
+            text = _instruction(text)
+            if text != i["instruction"]:
+                i["instruction"] = text
+                if i["key"] is None:
+                    i["action"] = text
+                done["rewrote"].append(fix_name(i))
+        elif kind == "add":
+            column = op.get("column")
+            if column is not None and column not in columns:
+                raise PlanError(f"{column!r} isn't a column of this file.")
+            text = _instruction(op.get("instruction"))
+            new = {"id": new_id("pit"), "source": source, "key": None, "detector": USER_DETECTOR, "column": column,
+                   "count": None, "severity": None, "action": text, "instruction": text, "examples": [],
+                   "ticked": True, "change": True, "module": "yours"}
+            items.append(new)
+            by_id[new["id"]] = new
+            done["added"].append(column or "the rows")
+        elif kind == "remove":
+            i = item(op)
+            if i["key"] is None:
+                items.remove(i)
+                del by_id[i["id"]]
+                done["removed"].append(i["column"] or "the rows")
+            else:
+                tick(i, False)  # Sherlock's fixes stay listed; removing one unticks it
         else:
             raise PlanError(f"Unknown op {kind!r}; use one of {', '.join(OPS)}.")
-    return items, summary(done)
+    return _ordered(items), summary(done)
 
 
 def summary(done: dict[str, list[str]]) -> str:
@@ -177,6 +241,14 @@ def summary(done: dict[str, list[str]]) -> str:
     for word, names in (("Ticked", done["ticked"]), ("Unticked", done["unticked"])):
         if names:
             parts.append(f"{word} {_count(len(names), 'fix', 'fixes')}: {', '.join(names)}.")
+    if done["rewrote"]:
+        parts.append(f"Rewrote {', '.join(done['rewrote'])}.")
+    if done["reset"]:
+        parts.append(f"Put Sherlock's wording back on {', '.join(done['reset'])}.")
+    if done["added"]:
+        parts.append(f"Added {_count(len(done['added']), 'step', 'steps')} on {', '.join(done['added'])}.")
+    if done["removed"]:
+        parts.append(f"Removed your {_count(len(done['removed']), 'step', 'steps')} on {', '.join(done['removed'])}.")
     return " ".join(parts) or "The plan already said that, so nothing changed."
 
 
@@ -184,9 +256,15 @@ def ticked(items: list[dict]) -> list[dict]:
     return [i for i in items if i["change"] and i["ticked"]]
 
 
-def skip_keys(items: list[dict]) -> set[str]:
-    """The issue keys a started plan leaves out: its unticked fixes."""
-    return {i["key"] for i in items if i["key"] and i["change"] and not i["ticked"]}
+def run_params(items: list[dict]) -> dict:
+    """What the Cleaner reads from a started plan's frozen items: unticked Sherlock fixes to skip,
+    rewritten fixes' instructions by key, and the ticked user steps in order."""
+    return {
+        "skip_keys": [i["key"] for i in items if i["key"] and i["change"] and not i["ticked"]],
+        "instructions": {i["key"]: i["instruction"] for i in items if i["key"] and i["change"] and i["ticked"] and i["instruction"]},
+        "user_steps": [{"id": i["id"], "column": i["column"], "instruction": i["instruction"]}
+                       for i in items if i["key"] is None and i["ticked"]],
+    }
 
 
 # --- storage (Schema §2.21) -----------------------------------------------------------------------

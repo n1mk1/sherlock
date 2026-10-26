@@ -141,6 +141,17 @@
       ],
       "title": "Global Filter"
      },
+     "plan_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Plan Id"
+     },
      "selected_card_ids": {
       "anyOf": [
        {
@@ -774,6 +785,29 @@
    "PlanOp": {
     "additionalProperties": false,
     "properties": {
+     "column": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Column"
+     },
+     "instruction": {
+      "anyOf": [
+       {
+        "maxLength": 500,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Instruction"
+     },
      "item_id": {
       "anyOf": [
        {
@@ -801,7 +835,10 @@
        "tick",
        "untick",
        "tick_module",
-       "untick_module"
+       "untick_module",
+       "set_instruction",
+       "add",
+       "remove"
       ],
       "title": "Op",
       "type": "string"

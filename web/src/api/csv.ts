@@ -62,7 +62,7 @@ export interface StepDetail {
   confidence: number | null;
   gate: string | null;
   flag_reason: string | null;
-  decisions: { question: string; chosen: string; alternatives?: string[]; reason?: string }[];
+  decisions: { question: string; chosen: string; alternatives?: string[]; reason?: string; asked?: string }[];
   undone_step_id: string | null;
   replayed_step_ids: string[] | null;
   created_by: string;

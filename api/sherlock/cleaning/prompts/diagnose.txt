@@ -12,6 +12,8 @@ Sample of the column's values: {samples}
 Examples of the issue: {examples}
 Detector details: {details}
 Earlier decisions on this dataset: {decisions}
+The user's instruction: {instruction}
 </data>
 
+When the user gave an instruction, the approaches are ways to do what it asks, within the rules.
 Give the likely cause in one sentence, two or three approach options (short phrases a person would recognise, most conservative first is fine), the index of the option you prefer, the risk of changing values that are actually right (low, medium or high), and whether the values should be left as they are.

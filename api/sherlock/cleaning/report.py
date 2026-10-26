@@ -1,5 +1,6 @@
 """The cleaning report (TRD §6.8, PRD CLEAN-6), assembled for one clean job from its checkpointed
-state (`jobs.state_json`), the steps it committed, and the issues it handled."""
+state (`jobs.state_json`), the steps it committed, and the issues it handled. A run from a cleaning
+plan adds `your_steps`: each step the user added or fix they rewrote, with its outcome (PRD CLEAN-8b)."""
 
 import json
 import sqlite3
@@ -56,5 +57,21 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
         "skipped": state.get("skipped", []),
         "hand_edited_skipped": state.get("hand_edited_skipped", []),
         "decisions": [{"step_id": s["id"], **d} for s in steps for d in json.loads(s["decisions_json"])],
+        "your_steps": _your_steps(job, state),
         "error": job["error"],
     }
+
+
+def _your_steps(job: sqlite3.Row, state: dict) -> list[dict]:
+    """The plan's requested items (steps the user added, fixes they rewrote) with what became of each:
+    fixed, flagged or skipped with the reason, or `not_reached` when the run ended before them."""
+    plan = json.loads(job["params_json"] or "{}").get("plan") or {}
+    outcomes = state.get("plan_outcomes") or {}
+    out = []
+    for item in plan.get("items") or []:
+        if not (item.get("ticked") and item.get("change") and item.get("instruction")):
+            continue
+        got = outcomes.get(item["id"], {"outcome": "not_reached"})
+        out.append({"item_id": item["id"], "column": item["column"], "instruction": item["instruction"],
+                    "source": item["source"], "detector": item["detector"], **got})
+    return out

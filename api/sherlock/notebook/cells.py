@@ -153,6 +153,8 @@ def step(s: dict) -> list:
     if s.get("flag_reason"):
         lines += ["", f"Flag: {s['flag_reason']}"]
     for d in s.get("decisions") or []:
+        if d.get("asked"):  # a step the user asked for in the cleaning plan, in their words
+            lines += ["", f"You asked: {d['asked']}"]
         lines += ["", f"- **{d.get('question', '')}** {d.get('chosen', '')}" + (f". {d['reason']}" if d.get("reason") else "")]
     md = new_markdown_cell("\n".join(lines))
     typing = TYPING_SQL.match(s.get("code") or "") if s["kind"] == "clean" and s["created_by"] == "system" else None

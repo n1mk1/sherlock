@@ -74,9 +74,31 @@ function StepLine({ step }: { step: CleaningReport["steps"][number] }) {
   );
 }
 
+const YOURS: Record<string, string> = { fixed: "done", flagged: "done with a flag", skipped: "skipped", not_reached: "not reached" };
+
 export function FullReport({ report }: { report: CleaningReport }) {
   return (
     <div className="flex flex-col gap-5">
+      {!!report.your_steps?.length && (
+        <section>
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Your steps</h4>
+          <ul className="mt-2 flex flex-col gap-2">
+            {report.your_steps.map((s) => (
+              <li key={s.item_id} className="flex items-start gap-2">
+                {s.outcome === "fixed" ? <Check className="mt-1 size-4 text-success" aria-hidden />
+                  : s.outcome === "flagged" ? <Flag className="mt-1 size-4 text-warning" aria-hidden />
+                  : <Redo2 className="mt-1 size-4 text-muted-foreground" aria-hidden />}
+                <span>
+                  <span className="font-mono text-[13px]">{s.column ?? "rows"}</span> · “{s.instruction}” ·{" "}
+                  <span className="font-medium">{YOURS[s.outcome] ?? s.outcome}</span>
+                  {s.step_no ? <span className="text-muted-foreground"> (step {s.step_no})</span> : null}
+                  {s.reason && <span className="block text-[13px] text-muted-foreground">{s.reason}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section>
         <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Steps</h4>
         <ul className="mt-2 flex flex-col gap-2">
@@ -106,6 +128,7 @@ export function FullReport({ report }: { report: CleaningReport }) {
         <ul className="mt-2 flex flex-col gap-2">
           {report.decisions.map((d, i) => (
             <li key={i}>
+              {d.asked && <span className="block text-[13px] text-muted-foreground">You asked: “{d.asked}”</span>}
               <span className="font-medium">{d.question}</span> {d.chosen}.{" "}
               <span className="text-muted-foreground">{d.reason}</span>
             </li>

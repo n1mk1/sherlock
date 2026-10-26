@@ -428,7 +428,7 @@ The live rules ask for *less than* three minutes (Day 10 item 1), so the timings
 The hero moments the PRD's video metric refers to, in recording order. Every moment that uses a model carries a small on-screen caption naming the NVIDIA model and the Nebius service behind it (for example "Nemotron 3 Ultra on Nebius Token Factory plans each fix"), so the integration is shown throughout and not only at the end.
 
 1. 0:00 to 0:15. The problem and who has it in one line (PRD §3.1), then Try with sample: the dashboard and its stories appear in seconds.
-2. 0:15 to 0:40. Upload a messy CSV: import preview, the headless cleaning log, the report with "rows deleted: 0".
+2. 0:15 to 0:40. Upload a messy CSV: import preview, the cleaning plan (untick one fix, ask the chat to add a step), the headless cleaning log, the report with "rows deleted: 0".
 3. 0:40 to 1:00. Hover a widget to light up its story card, then click a number chip: "How do you know?" shows the SQL.
 4. 1:00 to 1:25. Ask a question in chat and get a sourced answer; pin it to the dashboard. "Pin to dashboard" shows only under a chart block (`agent/loop.py` offers Pin for charts only), so use a question whose answer has a chart.
 5. 1:25 to 1:45. Edit a cell in the CSV tab and save: only the dependent cards update. Undo the step.

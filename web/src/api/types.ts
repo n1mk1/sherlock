@@ -101,8 +101,10 @@ export interface CleanPlan {
 }
 
 export type PlanOp =
-  | { op: "tick" | "untick"; item_id: string }
-  | { op: "tick_module" | "untick_module"; module: PlanModule };
+  | { op: "tick" | "untick" | "remove"; item_id: string }
+  | { op: "tick_module" | "untick_module"; module: PlanModule }
+  | { op: "set_instruction"; item_id: string; instruction: string | null } // null puts Sherlock's wording back
+  | { op: "add"; column: string | null; instruction: string };
 
 export interface JobLogEntry {
   job_id: string;
@@ -157,7 +159,12 @@ export interface CleaningReport {
   }[];
   skipped: { issue_id: string; column: string | null; detector: string; reason: string }[];
   hand_edited_skipped: { row_id: number; column: string }[];
-  decisions: { step_id: string; question: string; chosen: string; reason: string }[];
+  decisions: { step_id: string; question: string; chosen: string; reason: string; asked?: string }[];
+  // A run from a cleaning plan: each step the user added or fix they rewrote, and what became of it.
+  your_steps?: {
+    item_id: string; column: string | null; instruction: string; source: string; detector: string;
+    outcome: "fixed" | "flagged" | "skipped" | "not_reached"; reason?: string; step_id?: string; step_no?: number;
+  }[];
 }
 
 // Widgets (TRD §4.5, §6.3).

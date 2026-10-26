@@ -406,3 +406,12 @@ Three lines per day: done, not done, and the decision for tomorrow (Implementati
 - **Not done:** part 2: rewriting a fix in plain words, adding steps, and editing the plan from chat (CLEAN-8b).
 - **Decision:** the plan's numbers come from the detectors only (Rule 2); the model's per-issue diagnosis still runs during cleaning.
 
+### 2026-10-25 (night): the cleaning plan, part 2 (editing, your steps and chat)
+
+- **Done** (PRD CLEAN-8b, owner's decisions of 2026-10-25):
+  - **Rewrite a fix** (✎ in the plan, Reset back to Sherlock's wording) and **add steps of your own** (a column or the rows, and an instruction; × removes them). They run first, under every hard check; the diagnosis can't end them as "leave as is", and at low confidence they commit with a flag ("kept because you asked for it") instead of being skipped. A user's step may quarantine at most a fifth of the rows, since it has no issue count to cap it.
+  - **The prompts** carry the instruction inside their one data block; a user's step's issue line is a fixed phrase, so none of the user's text sits outside it. The step's decision records `asked`, which Changes, the report's new "Your steps" and the exported notebook show.
+  - **Chat edits the plan** (`edit_plan`, schema `PlanEdits`): with a plan open, "don't touch cabin" or "also trim spaces in name" changes it at once, and the reply is written by code. Items are named to the model by ref (`f1`, `f2`, …), so the model never handles IDs.
+- **Checked:** the Cleaner without a plan is unchanged: `sherlock eval corruption` against Nemotron recovered 92.1% (titanic_clean), 95.9% (sales) and 98.1% (hr) of damaged cells with 0% harm and 0% row loss, in line with D3.3's 92–97%.
+- **Not done:** live runs of user steps against Nemotron (the tests use recorded replies); "Ask me before each fix" stays P1 (CLEAN-10).
+

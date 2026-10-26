@@ -15,7 +15,7 @@ First visit ──► Empty library ──► (drop / upload / sample) ──►
                                                          Clean with AI                 Clean it myself
                                                                │                              │
                                                                ▼                              │
-                                                        Cleaning plan (§4.1)                  │
+                                                        Cleaning plan (§4.1) ◄── chat edits it│
                                                   Mode: Run on its own ·                      │
                                                   Ask me before each fix (P1)                 │
                                                        │ Start cleaning      │                │
@@ -143,16 +143,20 @@ What Clean with AI will try, shown before anything runs. Sherlock's code detecto
 Where it lives: not a modal, so the chat bar stays usable. From the offer the centre becomes the plan screen; from the CSV tab the plan opens in the right panel in place of Changes, so the grid stays visible (§8.4).
 
 Contents:
-- Header: "Cleaning plan · v2" and "Sherlock checked v2. Untick what you don't want cleaned, then start." While it's being made: "Diagnosing v2 of titanic3.csv…".
+- Header: "Cleaning plan · v2" and "Sherlock checked v2. Untick, edit or add steps, or ask in chat." While it's being made: "Diagnosing v2 of titanic3.csv…".
 - The fixes in modules, in this order: Your steps · Types and parsing · Missing and placeholder values · Spelling and formatting · Duplicates and broken records · Outliers · Other checks · Marked, not changed. A module with nothing in it isn't shown. Each module header has a tri-state checkbox and "n of m" ticked.
 - One row per fix, **every fix ticked**: checkbox, the column, the issue ("missing", "spacing or case variants"), the count, and Sherlock's planned action in one muted line. ▸ shows up to 5 example values as chips. When two findings would be the same fix (exact and near duplicates), the row is the more severe one, the one the Cleaner attempts.
 - **Marked, not changed**: leakage and ID-like columns, and any issue on such a column, with the flag icon and the reason ("ticket looks like an ID column, so it is left as is") and no checkbox. They are never changed.
+- **✎ on a fix** (PRD CLEAN-8b) turns its planned action into an instruction the user rewrites, in a textarea with Save, Cancel and Reset (Reset puts Sherlock's wording back). A rewritten fix shows the instruction marked "edited", with Sherlock's wording struck through and muted beneath.
+- **"+ Add a step"**: a column select (the file's columns, plus "Rows") and "What to do", then Add. The step goes under **Your steps** (first), ticked, with ✎ to reword it and × to remove it. A step added from chat says "· from chat".
+- **Chat** stays usable: while the plan is open, the chat bar's placeholder reads "Ask Sherlock to change the plan…", and a message like "don't touch outliers", "leave cabin alone" or "also trim spaces in name" changes the plan at once. The reply, written by code, says what changed ("Unticked 1 fix: missing values in cabin."; "Added 1 step on name."), and the plan updates live (§10.3).
 - Mode: "Run on its own" (selected) and "Ask me before each fix", disabled with "comes later" (PRD CLEAN-10).
-- Footer: "n of m ticked" (and, past 20, "Sherlock tries up to 20 per run, the most severe first"), "Cells you edited by hand are left alone and listed in the report.", **Discard** and **Start cleaning (n)**, disabled with nothing ticked.
+- Footer: "n of m ticked" (and, past 20, "Sherlock tries up to 20 per run; your steps first, then the most severe"), "Cells you edited by hand are left alone and listed in the report.", **Discard** and **Start cleaning (n)**, disabled with nothing ticked, or while a ✎ editor or the Add a step form holds text that isn't saved.
 
 Transitions:
 - Ticking or unticking saves at once (nothing touches the data until Start).
-- **Start cleaning** → §5 Headless cleaning with the plan: unticked fixes are skipped without a model call and logged "not in your plan"; the report lists them with "You left this out of the plan". Issues a fix exposes mid-run, which the plan didn't list, are attempted as before.
+- **Start cleaning** → §5 Headless cleaning with the plan: unticked fixes are skipped without a model call and logged "not in your plan"; the report lists them with "You left this out of the plan". Issues a fix exposes mid-run, which the plan didn't list, are attempted as before. The user's steps run first; they and rewritten fixes follow the user's instruction, still under every hard check.
+- A plan made on an older version keeps the user's steps while their column exists; a step on a column that's gone is dropped, and the toast says so.
 - **Discard** → the offer again (from the CSV tab, the Changes panel).
 
 ---
@@ -182,6 +186,7 @@ Transitions:
 - **As built (2026-10-24, D3.6).**
   - The log is the dataset's event stream replayed from the start, keeping this job's `job.log` lines. An issue's "running" line ("263 missing values", "checking candidates") is replaced by its outcome when it arrives: the effect or the skip reason, the candidate chips with the chosen one filled, and the gate line in the gate's color.
   - A run from a cleaning plan (§4.1, 2026-10-25) logs each fix the plan left unticked as a skip line, "You left this out of the plan" with the detail "not in your plan", with no "checking candidates" line before it: no model is called for it and it doesn't count against the 20-issue budget.
+  - The user's own steps come first, each as "Your step: trim spaces in name" (running), then its outcome like any issue. One that would be skipped for low confidence commits with a flag instead: "low confidence (0.42); kept because you asked for it". The report's "Your steps" lists each step the user added or fix they rewrote with "done", "done with a flag", "skipped" (with the reason) or "not reached", and the decisions show "You asked: …".
   - "So far" and the budget line read the run's report, refreshed on every log line.
   - "Checks on the latest step" lists the hard verifiers of the last committed step.
   - During `building`, the centre shows "Building your dashboard…" above the report summary: counts, the first three steps, and "View full report", a dialog with every step, skipped issue, hand-edited cell and decision.
@@ -442,6 +447,7 @@ Quality of life as built (2026-10-25, Implementation Plan D8.3; the `?` sheet is
 | CSV | selected cells/rows/columns | questions about cells, "clean this", "standardize these", (P1) computed columns |
 | Flow | selected nodes or whole canvas | "make sense of this", "take it toward X", "rewrite this card", "what's missing?" (P1) |
 | Any | — | "export a notebook" / "give me this as a Jupyter notebook" opens the Export notebook dialog (§17) with the options pre-filled from the request ("without the stories" unticks Include story cards) |
+| Any, while a cleaning plan is open (2026-10-25, PRD CLEAN-8b) | the open plan (`plan_id`) | "don't touch outliers", "leave cabin alone", "also trim spaces in name", "fill age by class instead": the plan changes at once (§4.1), and the reply says what changed. Without an open plan the same words answer "Changing a cleaning plan from chat works while the plan is open; press Clean with AI to open one." |
 
 ---
 

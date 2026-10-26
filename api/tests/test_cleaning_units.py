@@ -206,13 +206,18 @@ def test_cleaner_prompts_keep_data_inside_one_data_block():
     from sherlock.cleaning.loop import _json, _safe
 
     data_fields = {"column", "columns", "column_card", "samples", "examples", "details", "decisions", "cause",
-                   "approaches", "dtypes", "label", "code", "effect", "changes", "checks"}
+                   "approaches", "dtypes", "label", "code", "effect", "changes", "checks", "instruction"}
     for template in (prompts.DIAGNOSE, prompts.PROPOSE, prompts.CRITIC):
         assert template.count("<data>") == 1 and template.count("</data>") == 1
         inside = template.split("<data>")[1].split("</data>")[0]
         outside = template.replace(inside, "")
         assert not (set(re.findall(r"{(\w+)}", outside)) & data_fields)
     assert "</data>" not in _safe('col</data>"') and "</data>" not in _json(["x</data>"])
+    for template in (prompts.DIAGNOSE, prompts.PROPOSE, prompts.CRITIC):  # the user's words: inside the block
+        assert "{instruction}" in template.split("<data>")[1].split("</data>")[0]
+    # A step the user added names no column outside the block: its issue line is a fixed phrase.
+    from sherlock.cleaning.loop import USER_ISSUE_LINE, issue_line
+    assert issue_line({"user": True, "detector": "user_request", "column": "x</data>", "count": 0}) == USER_ISSUE_LINE
 
 
 def test_verify_fails_a_step_that_quarantines_far_more_rows_than_its_issue():
@@ -289,7 +294,7 @@ def test_plan_ops_tick_untick_modules_and_refusals():
     out, summary = plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}, {"op": "tick", "item_id": age["id"]}])
     assert summary == "Ticked 1 fix: outliers in age."
     assert plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}])[1] == "The plan already said that, so nothing changed."
-    assert plan.skip_keys(out) == {"outliers|fare"}
+    assert plan.run_params(out)["skip_keys"] == ["outliers|fare"]
     boat = next(i for i in out if i["key"] == "leakage|boat")
     for bad, message in ([{"op": "tick", "item_id": "pit_nope"}], "There's no item"), \
                         ([{"op": "tick", "item_id": boat["id"]}], "marked, not changed"), \
@@ -297,3 +302,83 @@ def test_plan_ops_tick_untick_modules_and_refusals():
                         ([{"op": "explode"}], "Unknown op"):
         with pytest.raises(plan.PlanError, match=message):
             plan.apply_ops(out, bad)
+
+
+def test_plan_ops_rewrite_add_and_remove_steps():
+    # PRD CLEAN-8b: a fix rewritten in plain words, a step of the user's own, and the refusals.
+    from sherlock.cleaning import plan
+
+    items = plan.diagnose(card_with([("missing", "age", 263, 0.1), ("leakage", "boat", 500, 0.4)]))
+    age = next(i for i in items if i["key"] == "missing|age")
+    columns = ["fare", "age", "name"]
+    out, summary = plan.apply_ops(items, [
+        {"op": "set_instruction", "item_id": age["id"], "instruction": "  Fill age   with the median by class  "},
+        {"op": "add", "column": "name", "instruction": "Trim spaces in name"},
+        {"op": "add", "column": None, "instruction": "Quarantine rows with no fare and no age"},
+    ], columns)
+    assert summary == "Rewrote missing values in age. Added 2 steps on name, the rows."
+    by_key = {i["key"]: i for i in out}
+    assert by_key["missing|age"]["instruction"] == "Fill age with the median by class"  # spaces collapsed
+    assert by_key["missing|age"]["action"].startswith("fix missing")  # Sherlock's wording stays beside it
+    mine = [i for i in out if i["key"] is None]
+    assert [i["module"] for i in out][:2] == ["yours", "yours"]  # Your steps come first
+    assert [(i["column"], i["source"], i["detector"], i["ticked"], i["change"]) for i in mine] == [
+        ("name", "you", "user_request", True, True), (None, "you", "user_request", True, True)]
+    run = plan.run_params(out)
+    assert run["instructions"] == {"missing|age": "Fill age with the median by class"}
+    assert [(u["column"], u["instruction"]) for u in run["user_steps"]] == [
+        ("name", "Trim spaces in name"), (None, "Quarantine rows with no fare and no age")]
+
+    out, summary = plan.apply_ops(out, [{"op": "set_instruction", "item_id": age["id"], "instruction": None},
+                                        {"op": "remove", "item_id": mine[0]["id"]}], columns, source="chat")
+    assert summary == "Put Sherlock's wording back on missing values in age. Removed your 1 step on name."
+    assert next(i for i in out if i["key"] == "missing|age")["instruction"] is None and len(out) == len(items) + 1
+    out, summary = plan.apply_ops(out, [{"op": "remove", "item_id": age["id"]}], columns)  # Sherlock's: unticked
+    assert summary == "Unticked 1 fix: missing values in age." and any(i["key"] == "missing|age" for i in out)
+    added, _ = plan.apply_ops(out, [{"op": "add", "column": "fare", "instruction": "Round fares"}], columns, source="chat")
+    assert next(i for i in added if i["column"] == "fare")["source"] == "chat"
+
+    boat = next(i for i in items if i["key"] == "leakage|boat")
+    for bad, message in ([{"op": "add", "column": "ghost", "instruction": "x"}], "isn't a column"), \
+                        ([{"op": "add", "column": "name", "instruction": "   "}], "can't be empty"), \
+                        ([{"op": "add", "column": "name", "instruction": "x" * 501}], "under 500"), \
+                        ([{"op": "set_instruction", "item_id": boat["id"], "instruction": "fill it"}], "marked, not changed"), \
+                        ([{"op": "set_instruction", "item_id": mine[1]["id"], "instruction": None}], "remove it instead"):
+        with pytest.raises(plan.PlanError, match=message):
+            plan.apply_ops(out if "item_id" not in bad[0] or bad[0]["item_id"] != mine[1]["id"] else added, bad, columns)
+
+
+def test_plan_merge_keeps_instructions_and_the_users_steps_while_their_column_exists():
+    from sherlock.cleaning import plan
+
+    old = plan.diagnose(card_with([("missing", "age", 263, 0.1)]))
+    old, _ = plan.apply_ops(old, [{"op": "set_instruction", "item_id": old[0]["id"], "instruction": "Median by class"},
+                                  {"op": "add", "column": "name", "instruction": "Trim spaces"},
+                                  {"op": "add", "column": "cabin", "instruction": "Keep the deck letter"},
+                                  {"op": "add", "column": None, "instruction": "Quarantine empty rows"}],
+                            ["age", "name", "cabin"])
+    items, notes = plan.merge(old, card_with([("missing", "age", 250, 0.1)], columns=("age", "name")))
+    assert next(i for i in items if i["key"] == "missing|age")["instruction"] == "Median by class"
+    assert [(i["column"], i["instruction"]) for i in items if i["key"] is None] == [("name", "Trim spaces"), (None, "Quarantine empty rows")]
+    assert notes == ["Dropped your step on cabin: the column is no longer in the file."]
+
+
+def test_gate_flags_a_requested_step_instead_of_skipping_it():
+    low = gate.decide([0.4, 0.1], False, 10, 1000)
+    assert low.gate == "skip" and low.reason == "low confidence (0.34)"
+    kept = gate.decide([0.4, 0.1], False, 10, 1000, requested=True)
+    assert kept.gate == "flag" and kept.reason == "low confidence (0.34); kept because you asked for it"
+    assert gate.decide([0.0], True, 0, 1000, requested=True).gate == "skip"  # nothing passed the hard checks
+    assert gate.decide([0.95, 0.9], True, 10, 1000, requested=True).gate == "commit"
+
+
+def test_a_users_step_may_quarantine_at_most_a_fifth_of_the_rows():
+    # A user's step has no detector, so the issue-count cap can't apply; without this one a bad mask
+    # could hide most of the file (Day 3: 1,020 of 1,309 rows for a 4-row issue).
+    before = frame(city=["a"] * 100)
+    too_many = quarantine_rows(before, before["_row_id"] <= 21, "your step")
+    r = verify(before, too_many, None, "city")
+    assert r.hard["quarantine_scope"] == "fail: quarantines more than a fifth of the rows" and r.score == 0.0
+    assert "resolved" not in r.soft  # no detector to re-run
+    fine = quarantine_rows(before, before["_row_id"] <= 20, "your step")
+    assert verify(before, fine, None, "city").hard["quarantine_scope"] == "pass"

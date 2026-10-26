@@ -23,6 +23,7 @@ INTENT_LINES = {
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I export a notebook?\")",
     "edit_cells": "edit_cells: change values in particular cells or rows (\"set the fare of row 12 to 30\", \"make these empty\", \"fix the typo in Smith's name\")",
     "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file (\"clean these rows\", \"clean up the selection\")",
+    "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave cabin alone\", \"also trim spaces in name\", \"fill age by class instead\")",
     "ask_story": "ask_story: questions about the story cards themselves: what the selected cards or the canvas say, how they connect, summing them up (\"what do these cards say about class?\", \"make sense of this\")",
 }
 
@@ -128,6 +129,24 @@ Rules:
 {context}
 {cells}
 Request:
+{message}"""
+
+PLAN_EDITS = """Turn the message into changes to the cleaning plan below. Nothing is cleaned until the user presses Start; your changes apply to the plan at once.
+
+Ops:
+- untick or tick an item (by its ref) to leave a fix out of the plan or put it back; untick_module or tick_module for a whole module.
+- set_instruction rewrites an item's fix in plain words, from the message; null puts Sherlock's wording back.
+- add makes a new step: a column of the file (or null for the rows) and what to do with it, in plain words.
+- remove deletes a step the user added (source you or chat).
+Rules:
+- Items marked "kept" are never changed and can't be ticked.
+- Use only refs, modules and columns from the plan. Columns of the file: {columns}
+- Write instructions in the user's own terms. Don't add numbers the user didn't give.
+
+The plan (ref · module · column · issue · ticked or not · the planned fix):
+{plan}
+
+Message:
 {message}"""
 
 UPDATE_WIDGET = """Change this dashboard widget as the user asks, and return the whole new widget.

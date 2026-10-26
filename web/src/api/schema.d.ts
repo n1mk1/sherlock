@@ -1381,6 +1381,8 @@ export interface components {
             global_filter?: {
                 [key: string]: unknown;
             } | null;
+            /** Plan Id */
+            plan_id?: string | null;
             /** Selected Card Ids */
             selected_card_ids?: string[] | null;
             /** Selected Cells */
@@ -1589,6 +1591,10 @@ export interface components {
         };
         /** PlanOp */
         PlanOp: {
+            /** Column */
+            column?: string | null;
+            /** Instruction */
+            instruction?: string | null;
             /** Item Id */
             item_id?: string | null;
             /** Module */
@@ -1597,7 +1603,7 @@ export interface components {
              * Op
              * @enum {string}
              */
-            op: "tick" | "untick" | "tick_module" | "untick_module";
+            op: "tick" | "untick" | "tick_module" | "untick_module" | "set_instruction" | "add" | "remove";
         };
         /** PlanPatch */
         PlanPatch: {

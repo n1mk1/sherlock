@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CleanPlan, CleanPlanItem, Dataset, JobLogEntry } from "@/api/types";
 import { CsvSidePanel } from "@/components/shell/AppShell";
+import { useUi } from "@/state/ui";
 import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel } from "./CleanPlanPanel";
 import { collapse, mmss } from "./CleaningProgress";
@@ -228,5 +229,79 @@ describe("the cleaning plan", () => {
     });
     renderAt(<CsvSidePanel datasetId="ds_1" />);
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
+  });
+});
+
+describe("editing the cleaning plan (PRD CLEAN-8b)", () => {
+  const patched = (calls: ReturnType<typeof mockApi>) => sent(calls).filter((c) => c.method === "PATCH").map((c) => c.body);
+
+  it("rewrites a fix in plain words, and Reset puts Sherlock's wording back", async () => {
+    const edited = { ...PLAN, items: PLAN.items.map((i) => (i.id === "pit_age" ? { ...i, instruction: "Median age by class" } : i)) };
+    let current: CleanPlan = PLAN;
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": () => current,
+      "PATCH /api/v1/clean-plans/pln_1": (_: URL, init?: RequestInit) => {
+        const op = JSON.parse(String(init?.body)).ops[0];
+        current = op.instruction ? edited : PLAN;
+        return current;
+      },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Rewrite the fix for age: missing" }));
+    const box = screen.getByRole("textbox", { name: "The fix, in plain words" });
+    expect(box).toHaveValue("Fill from a rule over related columns");
+    fireEvent.change(box, { target: { value: "Median age by class" } });
+    expect(screen.getByRole("button", { name: "Start cleaning (4)" })).toBeDisabled(); // an unsaved edit
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("edited")).toBeInTheDocument();
+    expect(screen.getByText("Median age by class")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start cleaning (4)" })).toBeEnabled();
+    expect(patched(calls)[0]).toEqual({ ops: [{ op: "set_instruction", item_id: "pit_age", instruction: "Median age by class" }] });
+
+    fireEvent.click(screen.getByRole("button", { name: "Rewrite the fix for age: missing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(screen.queryByText("edited")).toBeNull());
+    expect(patched(calls)[1]).toEqual({ ops: [{ op: "set_instruction", item_id: "pit_age", instruction: null }] });
+  });
+
+  it("adds a step of the user's own, under Your steps, and × removes it", async () => {
+    const step = item({ id: "pit_mine", source: "you", key: null, detector: "user_request", column: "region", count: null,
+                        severity: null, action: "Trim spaces", instruction: "Trim spaces", module: "yours" });
+    let current: CleanPlan = PLAN;
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": () => current,
+      "GET /api/v1/datasets/ds_1/datacard": { version: 2, row_count: 120, column_count: 2, quarantined: 0, issues: [],
+        target_candidates: [], leakage_candidates: [],
+        columns: [{ name: "region", type: "text", role: "dimension", missing: 0, missing_pct: 0, distinct: 6 },
+                  { name: "amount", type: "text", role: "dimension", missing: 0, missing_pct: 0, distinct: 9 }] },
+      "PATCH /api/v1/clean-plans/pln_1": (_: URL, init?: RequestInit) => {
+        const op = JSON.parse(String(init?.body)).ops[0];
+        current = op.op === "add" ? { ...PLAN, items: [step, ...PLAN.items] } : PLAN;
+        return current;
+      },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a step" }));
+    const form = screen.getByRole("group", { name: "Add a step" });
+    await waitFor(() => expect(within(form).getByRole("option", { name: "region" })).toBeInTheDocument());
+    fireEvent.change(within(form).getByRole("combobox", { name: "Column" }), { target: { value: "region" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: "What to do" }), { target: { value: "Trim spaces" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Add" }));
+    expect(await screen.findByRole("heading", { name: "Your steps" })).toBeInTheDocument();
+    expect(patched(calls)[0]).toEqual({ ops: [{ op: "add", column: "region", instruction: "Trim spaces" }] });
+    expect(screen.getByRole("checkbox", { name: "region: your step" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Start cleaning (5)" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Remove your step on region" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Your steps" })).toBeNull());
+    expect(patched(calls)[1]).toEqual({ ops: [{ op: "remove", item_id: "pit_mine" }] });
+  });
+
+  it("tells the chat bar which plan is open", async () => {
+    mockApi({ "GET /api/v1/clean-plans/pln_1": PLAN });
+    const { unmount } = renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="side" />);
+    await screen.findByRole("heading", { name: "Cleaning plan · v2" });
+    expect(useUi.getState().planId).toBe("pln_1");
+    unmount();
+    expect(useUi.getState().planId).toBeNull();
   });
 });

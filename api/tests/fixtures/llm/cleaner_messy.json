@@ -15,5 +15,15 @@
   {"purpose": "diagnose",
    "content": {"cause": "These values look legitimate.", "approach_options": ["Leave as is", "Fill from a rule"], "preferred_option": 0, "risk": "medium", "leave_as_is": true}},
   {"purpose": "critic",
-   "content": {"changed_something_it_shouldnt": false, "concerns": []}}
+   "content": {"changed_something_it_shouldnt": false, "concerns": []}},
+  {"purpose": "diagnose", "match": ["Column: region", "title case without stray spaces"],
+   "content": {"cause": "The user wants one spelling per region.", "approach_options": ["Trim spaces and use title case", "Keep the most frequent spelling"], "preferred_option": 0, "risk": "low", "leave_as_is": false}},
+  {"purpose": "propose", "match": ["Column: region", "title case without stray spaces"],
+   "content": {"candidates": [
+     {"label": "Title case without stray spaces", "code": "result = df.copy()\nresult['region'] = normalize_whitespace_case(df['region'], mode='title')\n", "expected_effect": "Every region in title case with no stray spaces."}]}},
+  {"purpose": "diagnose", "match": ["Column: city", "the word Unknown"],
+   "content": {"cause": "Some rows have no city.", "approach_options": ["Fill with the word Unknown", "Leave them missing"], "preferred_option": 0, "risk": "high", "leave_as_is": true}},
+  {"purpose": "propose", "match": ["Column: city", "the word Unknown"],
+   "content": {"candidates": [
+     {"label": "Fill with Unknown", "code": "result = df.copy()\nresult['city'] = df['city'].fillna('Unknown')\n", "expected_effect": "Missing cities read Unknown."}]}}
 ]
