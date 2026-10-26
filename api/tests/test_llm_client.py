@@ -6,7 +6,8 @@ from sherlock.config import get_settings
 from sherlock.db.connection import connect
 from sherlock.db.util import now_iso
 from sherlock.llm.client import (
-    BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, TransientError, Transport,
+    BudgetExceeded, CallScope, DeadlineExceeded, LLMClient, LLMRequestError, LLMUnavailable, RequestRejected,
+    StructuredOutputError, TransientError, Transport,
 )
 from sherlock.llm.fixtures import FixtureMiss, FixtureTransport, RecordingTransport
 from sherlock.llm.schemas import Critique, Diagnosis, Story
@@ -28,7 +29,7 @@ def db(client):
 
 def llm(entries, **kw):
     transport = FixtureTransport(entries)
-    return LLMClient(get_settings(), transport=transport, sleep=lambda s: None, **kw), transport
+    return LLMClient(get_settings(), transport=transport, sleep=lambda s: None, jitter=lambda: 0.5, **kw), transport
 
 
 def calls(db):
@@ -88,24 +89,28 @@ def test_story_prose_may_not_contain_digits(db):
 
 
 class Flaky(Transport):
-    def __init__(self, failures: int) -> None:
+    def __init__(self, failures: int, retry_after: float | None = None) -> None:
         self.failures = failures
+        self.retry_after = retry_after
 
     def create(self, **kw):
         if self.failures:
             self.failures -= 1
-            raise TransientError("429: slow down")
+            raise TransientError("429: slow down", self.retry_after)
         return {"content": "pong", "tool_calls": [], "prompt_tokens": 1, "completion_tokens": 1}
 
 
 def test_transient_errors_are_retried_with_backoff(db):
     slept, waits = [], []
-    client = LLMClient(get_settings(), transport=Flaky(2), sleep=slept.append)
+    client = LLMClient(get_settings(), transport=Flaky(2), sleep=slept.append, jitter=lambda: 0.5)  # no jitter
     c = client.complete("small", [], purpose="plain", scope=CallScope(on_wait=waits.append))
     assert c.text == "pong" and slept == [2.0, 4.0] and c.waited_s == 6.0
     assert waits == ["Waiting for the model…"] * 2
     assert [r["ok"] for r in calls(db)] == [0, 0, 1]
 
+    slept.clear()  # jittered: each wait is 80–120% of its base, so retries from many calls spread out
+    LLMClient(get_settings(), transport=Flaky(3), sleep=slept.append).complete("small", [], purpose="plain")
+    assert len(slept) == 3 and all(0.8 * b <= s <= 1.2 * b for s, b in zip(slept, (2.0, 4.0, 8.0), strict=True))
     client = LLMClient(get_settings(), transport=Flaky(10), sleep=slept.append)
     with pytest.raises(LLMUnavailable) as err:
         client.complete("small", [], purpose="plain")
@@ -128,7 +133,7 @@ def test_retries_stop_at_the_two_minute_cap(db):
 
     for role, expected in (("large", [60.0, 58.0]), ("small", [30.0, 30.0, 30.0, 16.0])):
         now[0], timeouts[:] = 0.0, []
-        client = LLMClient(get_settings(), transport=TimesOut(), sleep=sleep, clock=lambda: now[0])
+        client = LLMClient(get_settings(), transport=TimesOut(), sleep=sleep, clock=lambda: now[0], jitter=lambda: 0.5)
         with pytest.raises(LLMUnavailable):
             client.complete(role, [], purpose="plain")
         assert timeouts == expected and now[0] <= 120.0, (role, timeouts, now[0])
@@ -253,3 +258,131 @@ def test_an_unterminated_think_is_stripped():
     assert strip_reasoning("The answer. <THINK>trailing") == "The answer."
     assert strip_reasoning("<think>done</think>{\"a\": 1}") == '{"a": 1}'
     assert strip_reasoning("reasoning without its opening tag</think> the reply") == "the reply"
+
+
+class Slow(Transport):
+    """Takes a moment per call and counts the calls in flight, per model."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+        self.now: dict[str, int] = {}
+        self.most: dict[str, int] = {}
+
+    def create(self, *, model, **kw):
+        import time
+
+        with self.lock:
+            self.now[model] = self.now.get(model, 0) + 1
+            self.most[model] = max(self.most.get(model, 0), self.now[model])
+        time.sleep(0.05)
+        with self.lock:
+            self.now[model] -= 1
+        return {"content": "ok", "tool_calls": [], "prompt_tokens": 1, "completion_tokens": 1}
+
+
+def test_one_gate_per_role_across_every_client(db):
+    # Plan 0.3 (B17): each request made its own client, so nothing capped the calls in flight.
+    import threading
+
+    transport = Slow()
+    settings = get_settings()
+
+    def call(role: str) -> None:  # a client per call, like a request or a job
+        LLMClient(settings, transport=transport).complete(role, [], purpose="plain")
+
+    threads = [threading.Thread(target=call, args=(role,)) for role in ("large", "medium") for _ in range(20)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert transport.most["nvidia/nemotron-test-ultra"] == settings.llm_concurrency_large == 2
+    assert transport.most["nvidia/nemotron-test-super"] == settings.llm_concurrency_medium == 6
+    assert db.execute("SELECT count(*) FROM llm_calls WHERE ok = 1").fetchone()[0] == 40
+
+
+def test_retry_after_is_honoured(db):
+    slept = []
+    client = LLMClient(get_settings(), transport=Flaky(1, retry_after=3.0), sleep=slept.append, jitter=lambda: 0.5)
+    assert client.complete("small", [], purpose="plain").text == "pong" and slept == [3.0]  # not the 2 s backoff
+    slept.clear()
+    with pytest.raises(LLMUnavailable):  # asked to wait past the two-minute cap: give up at once
+        LLMClient(get_settings(), transport=Flaky(1, retry_after=600.0), sleep=slept.append).complete("small", [], purpose="plain")
+    assert slept == []
+
+
+def test_a_refused_request_fails_at_once(db):
+    class Refuses(Transport):
+        calls = 0
+
+        def create(self, **kw):
+            Refuses.calls += 1
+            raise RequestRejected("400: context length exceeded")
+
+    slept = []
+    with pytest.raises(LLMRequestError) as err:
+        LLMClient(get_settings(), transport=Refuses(), sleep=slept.append).complete("small", [], purpose="plain")
+    assert Refuses.calls == 1 and slept == []
+    assert (err.value.status, err.value.code) == (502, "llm_request_failed") and isinstance(err.value, LLMUnavailable)
+    assert "trying again won't help" in err.value.message
+    [row] = calls(db)
+    assert row["ok"] == 0 and row["error"].startswith("400")
+
+
+def test_openai_errors_map_to_retry_or_refusal():
+    import httpx2 as httpx  # the HTTP client this openai version uses
+    import openai
+
+    from sherlock.llm.client import OpenAITransport
+
+    request = httpx.Request("POST", "https://example.invalid/v1/chat/completions")
+    transport = OpenAITransport(get_settings())
+
+    class Raises:
+        def __init__(self, exc):
+            self.chat = type("Chat", (), {"completions": type("C", (), {"create": staticmethod(self._raise)})()})()
+            self.exc = exc
+
+        def _raise(self, **kw):
+            raise self.exc
+
+    limited = openai.RateLimitError("slow down", response=httpx.Response(429, headers={"retry-after": "3"}, request=request),
+                                    body=None)
+    transport._client = Raises(limited)
+    with pytest.raises(TransientError) as err:
+        transport.create(model="m", messages=[], timeout=1, purpose="p")
+    assert err.value.retry_after == 3.0
+    transport._client = Raises(openai.BadRequestError("bad", response=httpx.Response(400, request=request), body=None))
+    with pytest.raises(RequestRejected):
+        transport.create(model="m", messages=[], timeout=1, purpose="p")
+    transport._client = Raises(openai.InternalServerError("oops", response=httpx.Response(503, request=request), body=None))
+    with pytest.raises(TransientError) as err:
+        transport.create(model="m", messages=[], timeout=1, purpose="p")
+    assert err.value.retry_after is None
+
+
+def test_the_deadline_bounds_attempts_and_waits(db):
+    """A chat message's 90 s budget is its scope's deadline: no call, timeout or retry passes it."""
+    now = [0.0]
+    timeouts = []
+
+    class TimesOut(Transport):
+        def create(self, *, timeout, **kw):
+            timeouts.append(timeout)
+            now[0] += timeout
+            raise TransientError("timeout")
+
+    def sleep(s):
+        now[0] += s
+
+    client = LLMClient(get_settings(), transport=TimesOut(), sleep=sleep, clock=lambda: now[0], jitter=lambda: 0.5)
+    with pytest.raises(DeadlineExceeded) as err:
+        client.complete("small", [], purpose="plain", scope=CallScope(deadline=40.0))
+    # 30 s (the role's timeout), then 2 s of backoff, then the 8 s left: never past 40.
+    assert timeouts == [30.0, 8.0] and now[0] == 40.0 and isinstance(err.value, LLMUnavailable)
+    assert err.value.message == "This answer ran out of time."
+    timeouts.clear()
+    with pytest.raises(DeadlineExceeded):  # already past it: no call at all
+        client.complete("small", [], purpose="plain", scope=CallScope(deadline=now[0] - 1))
+    assert timeouts == []

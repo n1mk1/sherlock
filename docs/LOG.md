@@ -472,3 +472,13 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - `strip_reasoning` drops an unterminated `<think>` and everything after it, as its docstring already claimed.
   - Tests (`test_llm_client.py`): `length` then `stop` makes two calls with caps 1,000 and 2,000 and no repair message; the cap stops at 8,192 and a reply still cut off isn't repaired; `complete` without a schema does the same; an unterminated `<think>` is stripped.
   - Docs: TRD §3.5 (traces, `Completion`, cut-off replies) and §8.1 step 1. BACKLOG: the `strip_reasoning` half of the D2 LLM client line is gone; the `embed` half stays.
+
+### Slice 3 (plan 0.3): one shared model gate, the deadline, and refused requests
+
+- **Done:**
+  - **One gate per role**, process-wide (`llm/client.py::gate`, a `BoundedSemaphore` per role): `LLM_CONCURRENCY_LARGE`/`MEDIUM`/`SMALL`, 2/6/4. The per-request clients of chat, jobs and the stories pool share it; a slot is held only for the request, not during backoff.
+  - **Retries:** the 2/4/8 s backoff is jittered to 80–120%, and a 429's `Retry-After` is honoured when longer (one past the 120 s cap gives up at once).
+  - **A refused request** (a 4xx other than 429) fails at once as `LLMRequestError` (`502 llm_request_failed`, "…trying again won't help"), a subclass of `LLMUnavailable`, so every fallback still applies. New error code in `errors.py` and TRD §4.
+  - **The deadline:** `CallScope.deadline` bounds attempts, the HTTP timeout and retry waits (`DeadlineExceeded`, "This answer ran out of time."). A chat message's scope gets `started + 90 s`; a step that hits it ends the plan with the usual "I stopped early" note and compose still runs on what was found.
+  - Tests: 20 threads per role through per-call clients never pass 2 (large) or 6 (medium) in flight; `Retry-After: 3` waits 3 s; a 400 makes one call and raises `LLMRequestError`; `OpenAITransport` maps a 429 (with its header), a 400 and a 503; the deadline stops at 40 s of a 40 s budget and a passed deadline makes no call; a chat message with no time left makes no model call. The two exact-backoff tests inject the jitter.
+  - Docs: TRD §3.5, §4 (error codes), §8.1 (budgets as built), §10 (the three settings) and `.env.example`. BACKLOG §6's Day 2 list no longer names the 4xx and `OpenAITransport` cases.

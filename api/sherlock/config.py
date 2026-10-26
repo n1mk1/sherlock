@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     llm_mock: str = ""
     # Append every live model reply to this fixture file (to record fixtures from a real run).
     llm_record: str = ""
+    # Calls of each role in flight at once, across every client in the process (TRD §3.5): one shared gate
+    # per role, so per-request clients can't flood Token Factory's rate limit.
+    llm_concurrency_large: int = 2
+    llm_concurrency_medium: int = 6
+    llm_concurrency_small: int = 4
 
     job_backend: Literal["local", "nebius"] = "local"
     job_workers: int = 4

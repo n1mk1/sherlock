@@ -217,3 +217,15 @@ def test_eval_checks():
                           {"source": "help", "text_any": ["undo"]})[0]
     assert not ask_eval.check({"text": "x", "sources": [{"kind": "sql"}], "blocks": []}, {"source": "run"})[0]
     assert not ask_eval.unsourced({"blocks": [{"type": "table", "rows": []}], "sources": [{"kind": "run", "run_id": "r"}]})
+
+
+def test_a_message_past_its_time_budget_makes_no_model_call(client, ready, monkeypatch):
+    # Plan 0.3: the 90 s budget is the calls' deadline, so no call starts (or retries) past it.
+    from sherlock.agent import loop
+
+    monkeypatch.setattr(loop, "WALL_S", 0.0)
+    before = len(db_rows("SELECT id FROM llm_calls WHERE dataset_id = ?", ready["id"]))
+    events, msg = send(client, ready["id"], "average fare by class")
+    assert msg["text"] == "This answer ran out of time."
+    assert ("error", {"code": "llm_unavailable", "message": "This answer ran out of time."}) in events
+    assert len(db_rows("SELECT id FROM llm_calls WHERE dataset_id = ?", ready["id"])) == before

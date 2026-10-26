@@ -24,7 +24,9 @@ from sherlock.agent.compose import compose, runs_text, table_block, text_block
 from sherlock.agent.resolve import resolve
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
-from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
+from sherlock.llm.client import (
+    BudgetExceeded, CallScope, DeadlineExceeded, LLMClient, LLMUnavailable, StructuredOutputError, fence,
+)
 from sherlock.llm.schemas import Plan, Route
 from sherlock.profile import service as profile_service
 from sherlock.widgets import compile as wc
@@ -195,8 +197,9 @@ class Agent:
         history, focus = self._history()
         user = self._save(new_id("msg"), "user", choice or text, context=context, clarification_of=clarification_of)
         mid = new_id("msg")
+        # The 90 s budget is the scope's deadline, so a model call can't run past it (TRD §3.5, §13).
         scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], message_id=mid,
-                          on_wait=lambda t: self.emit("status", {"text": t}))
+                          on_wait=lambda t: self.emit("status", {"text": t}), deadline=self.started + WALL_S)
         question = text
         if clarification_of:
             asked = self.db.execute("SELECT * FROM messages WHERE id = ? AND dataset_id = ?", (clarification_of, dataset["id"])).fetchone()
@@ -210,7 +213,8 @@ class Agent:
             return self._answer(mid, question, context, scope, history, focus, clarified=bool(clarification_of))
         except (LLMUnavailable, BudgetExceeded) as exc:
             self.emit("error", {"code": exc.code, "message": exc.message})
-            msg = "The model service is unavailable. Your data is safe; try again in a minute." if isinstance(exc, LLMUnavailable) else exc.message
+            generic = type(exc) is LLMUnavailable  # a refused request or a deadline says so in its own words
+            msg = "The model service is unavailable. Your data is safe; try again in a minute." if generic else exc.message
             block = text_block([{"type": "text", "text": msg}])
             out = self._save(mid, "assistant", msg, blocks=[block], tokens=scope.message_tokens[0])
             self.emit("message", out)
@@ -395,6 +399,9 @@ class Agent:
             except StructuredOutputError:
                 notes.append("I couldn't turn that into a query. Try naming the columns" +
                              (f", e.g. “{kit.example}”." if kit.example else "."))
+            except DeadlineExceeded:
+                notes.append("I stopped early to stay within this answer's budget.")
+                break  # what the earlier steps found is still composed
             except ApiError as exc:
                 if exc.code in ("llm_unavailable", "budget_exceeded"):
                     raise

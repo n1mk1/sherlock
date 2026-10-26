@@ -4,10 +4,16 @@ structured output with one repair call, and an `llm_calls` row for every call.
 `role` ∈ large | medium | small maps to the configured Nemotron IDs. Reasoning stays on; a call may
 turn it off only for a purpose listed in `REASONING_OFF_OK` (its schema passed the Day 1 smoke test
 that way). With `LLM_MOCK` set, calls are answered from recorded fixtures instead of the network.
+
+Every client in the process shares one gate per role (`LLM_CONCURRENCY_*`), so per-request clients
+can't send more than that many calls at once to Token Factory's shared rate limit. A call's
+`CallScope.deadline` (a chat message's 90 s) bounds its attempts, its waits and its HTTP timeout.
 """
 
 import json
 import logging
+import random
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -39,9 +45,26 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LLMUnavailable(ApiError):
-    def __init__(self, detail: str = "") -> None:
-        super().__init__(503, "llm_unavailable", "The model service is unavailable. Try again in a minute.")
+    def __init__(self, detail: str = "", *, status: int = 503, code: str = "llm_unavailable",
+                 message: str = "The model service is unavailable. Try again in a minute.") -> None:
+        super().__init__(status, code, message)
         self.detail = detail
+
+
+class LLMRequestError(LLMUnavailable):
+    """Token Factory refused the request (a 4xx other than 429): trying again won't help, so it fails at
+    once. A subclass of LLMUnavailable, so every caller's fallback still applies."""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(detail, status=502, code="llm_request_failed",
+                         message="The model service refused this request, so trying again won't help.")
+
+
+class DeadlineExceeded(LLMUnavailable):
+    """The call's deadline (`CallScope.deadline`) came before an answer: no attempt or wait passes it."""
+
+    def __init__(self, detail: str = "") -> None:
+        super().__init__(detail, message="This answer ran out of time.")
 
 
 class BudgetExceeded(ApiError):
@@ -62,6 +85,7 @@ class CallScope:
     message_id: str | None = None
     message_tokens: list[int] = field(default_factory=lambda: [0])  # running total for one chat message
     on_wait: Callable[[str], None] | None = None  # "Waiting for the model…" while retrying
+    deadline: float | None = None  # in the client's clock (monotonic): no attempt or wait passes it
 
 
 @dataclass
@@ -92,7 +116,38 @@ class Structured[M]:
 
 
 class TransientError(Exception):
-    """A 429, 5xx, timeout or connection error: worth retrying."""
+    """A 429, 5xx, timeout or connection error: worth retrying, after `retry_after` seconds when the
+    server said so (a 429's `Retry-After`)."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class RequestRejected(Exception):
+    """A 4xx other than 429: the request itself is wrong, so it isn't retried."""
+
+
+def _retry_after(exc) -> float | None:
+    """The seconds a 429's `Retry-After` header asks for (the delta-seconds form), or None."""
+    try:
+        value = exc.response.headers.get("retry-after")
+        return max(0.0, float(value)) if value is not None else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+_GATES: dict[tuple[str, int], threading.BoundedSemaphore] = {}
+_GATES_LOCK = threading.Lock()
+
+
+def gate(role: str, size: int) -> threading.BoundedSemaphore:
+    """The process-wide gate for a role: at most `size` calls of that role in flight, across every client."""
+    with _GATES_LOCK:
+        key = (role, max(1, size))
+        if key not in _GATES:
+            _GATES[key] = threading.BoundedSemaphore(key[1])
+        return _GATES[key]
 
 
 class Transport:
@@ -115,11 +170,11 @@ class OpenAITransport(Transport):
         try:
             resp = self._client.chat.completions.create(model=model, messages=messages, timeout=timeout, **kwargs)
         except (openai.APITimeoutError, openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as exc:
-            raise TransientError(f"{type(exc).__name__}: {exc}") from exc
+            raise TransientError(f"{type(exc).__name__}: {exc}", _retry_after(exc)) from exc
         except openai.APIStatusError as exc:
             if exc.status_code >= 500 or exc.status_code == 429:
-                raise TransientError(f"{exc.status_code}: {exc}") from exc
-            raise
+                raise TransientError(f"{exc.status_code}: {exc}", _retry_after(exc)) from exc
+            raise RequestRejected(f"{exc.status_code}: {exc}") from exc
         choice = resp.choices[0]
         msg = choice.message
         calls = [
@@ -156,8 +211,10 @@ class LLMClient:
         transport: Transport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        jitter: Callable[[], float] = random.random,
     ) -> None:
         self.settings = settings
+        self.jitter = jitter  # backoff waits are 80–120% of their base, so retries from many calls spread out
         if transport is None:
             if settings.llm_mock:
                 from sherlock.llm.fixtures import FixtureTransport
@@ -294,9 +351,22 @@ class LLMClient:
         started = self.clock()
         waited = 0.0
         attempt = 0
+        door = gate(role, self._concurrency(role))
         while True:
+            left = self._left(scope)
+            if left <= 0:
+                raise DeadlineExceeded(f"{purpose}: the deadline came before the call")
+            if not door.acquire(blocking=False):  # every slot of this role is in use, in this process
+                if scope.on_wait:
+                    scope.on_wait("Waiting for the model…")
+                limit = min(TOTAL_CAP_S - (self.clock() - started), left)
+                if not door.acquire(timeout=max(0.0, limit)):
+                    if limit >= left:
+                        raise DeadlineExceeded(f"{purpose}: waited for a free slot until the deadline")
+                    raise LLMUnavailable(f"{purpose}: every {role} slot stayed busy")
             t0 = self.clock()
-            timeout = min(TIMEOUT_S[role], TOTAL_CAP_S - (t0 - started))  # the cap counts attempts, not just waits
+            # The cap counts attempts, not just waits; the deadline bounds the HTTP timeout too.
+            timeout = min(TIMEOUT_S[role], TOTAL_CAP_S - (t0 - started), self._left(scope))
             try:
                 raw = self.transport.create(model=model, messages=messages, timeout=timeout,
                                             purpose=purpose, **kwargs)
@@ -316,18 +386,38 @@ class LLMClient:
             except TransientError as exc:
                 latency = int((self.clock() - t0) * 1000)
                 self._record(scope, role, model, purpose, None, latency, False, str(exc), repaired)
-                if attempt >= len(BACKOFF_S) or self.clock() - started + BACKOFF_S[attempt] >= TOTAL_CAP_S:
+                if attempt >= len(BACKOFF_S):
                     raise LLMUnavailable(str(exc)) from exc
+                # Jittered backoff, or the server's Retry-After when it asks for longer.
+                wait = max(BACKOFF_S[attempt] * (0.8 + 0.4 * self.jitter()), exc.retry_after or 0.0)
+                if self.clock() - started + wait >= TOTAL_CAP_S:
+                    raise LLMUnavailable(str(exc)) from exc
+                if wait >= self._left(scope):
+                    raise DeadlineExceeded(f"{purpose}: the next retry would pass the deadline") from exc
                 if scope.on_wait:
                     scope.on_wait("Waiting for the model…")
-                log.warning("llm %s/%s transient error, retry %d: %s", role, purpose, attempt + 1, exc)
-                self.sleep(BACKOFF_S[attempt])
-                waited += BACKOFF_S[attempt]
+                log.warning("llm %s/%s transient error, retry %d in %.1f s: %s", role, purpose, attempt + 1, wait, exc)
+                self.sleep(wait)
+                waited += wait
                 attempt += 1
+            except RequestRejected as exc:
+                latency = int((self.clock() - t0) * 1000)
+                self._record(scope, role, model, purpose, None, latency, False, str(exc), repaired)
+                raise LLMRequestError(str(exc)) from exc
             except Exception as exc:
                 latency = int((self.clock() - t0) * 1000)
                 self._record(scope, role, model, purpose, None, latency, False, f"{type(exc).__name__}: {exc}", repaired)
                 raise LLMUnavailable(str(exc)) from exc
+            finally:
+                door.release()
+
+    def _concurrency(self, role: str) -> int:
+        s = self.settings
+        return {"large": s.llm_concurrency_large, "medium": s.llm_concurrency_medium, "small": s.llm_concurrency_small}[role]
+
+    def _left(self, scope: CallScope) -> float:
+        """Seconds to the scope's deadline (infinite without one)."""
+        return float("inf") if scope.deadline is None else scope.deadline - self.clock()
 
     def structured(
         self,

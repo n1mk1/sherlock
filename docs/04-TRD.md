@@ -333,7 +333,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
 - Tool calling: used by the chat loop when the model supports it; otherwise emulated with a JSON schema `{ "tool": ..., "arguments": ... }`. Chosen per model (`LLM_TOOLS_MODE=native|json`).
   - As built: no call passes `tools`. The chat loop routes with the strict `Route` schema (`small`, purpose `route`) and plans with the `Plan` schema (`medium`, purpose `plan`), and its answerers use their own schemas (§8.1), so the loop, not the model, picks what runs. `LLM_TOOLS_MODE` (`native` in `render.yaml` and `.env.example`; the config default is `json`, §10) only affects the client's `tools` path, which `tests/test_llm_client.py` covers.
 - Fallbacks after `StructuredOutputError`: Cleaner diagnose and propose calls skip the issue as "model output invalid"; a critic call that fails doesn't skip on its own, it counts as a review that didn't pass, so the confidence's review term is 0 (`cleaning/loop.py`, §7.2); dashboard curation uses the top 8 by score with templated titles; narration uses the fact-sheet bullets; the chat router treats the message as a single `ask_data` question; the planner runs one step; compose returns the raw results table with sources (App Flow §18).
-- Retries: per-call timeout 60 s (large) / 30 s (others); 3 retries with exponential backoff (2, 4, 8 s) on 429/5xx/timeouts, capped at 2 minutes per call in total; jobs show "Waiting for the model…" while retrying, and once retries run out the call fails with `llm_unavailable` and the user sees "The model service is unavailable" (App Flow §18). Time spent waiting counts against the cleaning budget, and the report names it.
+- Retries: per-call timeout 60 s (large) / 30 s (others); 3 retries with exponential backoff (2, 4, 8 s, each jittered to 80–120%, or a 429's `Retry-After` when it asks for longer) on 429/5xx/timeouts, capped at 2 minutes per call in total, and never past the call's deadline (below); jobs show "Waiting for the model…" while retrying, and once retries run out the call fails with `llm_unavailable` and the user sees "The model service is unavailable" (App Flow §18). Time spent waiting counts against the cleaning budget, and the report names it.
 - Budgets: tokens per user per day (`USER_TOKEN_BUDGET`, default 2M), per job (`JOB_TOKEN_BUDGET`, default 300k), per chat message (`MESSAGE_TOKEN_BUDGET`, default 40k). Exceeding fails the call with a user-facing message.
   - **App-wide ceiling** (owner's decision). `APP_TOKEN_BUDGET` (default 10M) caps every user's calls together per UTC day. It's summed from `llm_calls` since midnight UTC before each call, and past it the call fails with `budget_exceeded` ("Sherlock has used today's model budget for everyone…"). A per-user budget resets whenever a client drops its cookie; this one doesn't. 0 turns it off.
 - Logging: every call → `llm_calls` table (role, model, purpose, prompt tokens, completion tokens, latency, ok/error, job or message id).
@@ -351,8 +351,11 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
     - **Transport.** The `openai` SDK with `max_retries=0`, so the client's own retry rule is the only one.
       - The SDK client is made on the first call, so a process without a key still starts.
       - With no `LLM_BASE_URL` and no `LLM_MOCK` (tests, a bare local run), a call fails at once with `llm_unavailable`, with no retries and no `llm_calls` row, and callers apply their fallbacks.
-      - Retryable: timeouts, connection errors, `429` and `5xx`.
+      - Retryable: timeouts, connection errors, `429` and `5xx`. A `429`'s `Retry-After` (in seconds) is the wait when it's longer than the backoff; one that would pass the 120 s cap ends the call at once.
+      - **A refused request** (a `4xx` other than `429`, for example a prompt over the context length) fails at once with `LLMRequestError`: HTTP `502`, code `llm_request_failed`, "The model service refused this request, so trying again won't help." It is a subclass of `LLMUnavailable`, so every caller's fallback still applies.
       - Any other error fails at once with `llm_unavailable`, which is HTTP `503`.
+    - **One gate per role** (`gate(role, size)`): a process-wide `threading.BoundedSemaphore` per role, sized by `LLM_CONCURRENCY_LARGE`/`MEDIUM`/`SMALL` (2/6/4, §10). Every `LLMClient` shares it, so the per-request clients of chat, jobs and the stories pool can't have more than that many calls of a role in flight at once against Token Factory's rate limit. A call waits for a slot ("Waiting for the model…"), no longer than its deadline or the 120 s cap; the slot is held only for the request, not during backoff.
+    - **Deadline.** `CallScope.deadline` (in the client's monotonic clock) bounds a call: no attempt starts past it, an attempt's HTTP timeout is at most the time left, a retry whose wait would pass it isn't made, and the call raises `DeadlineExceeded` (a subclass of `LLMUnavailable`, "This answer ran out of time."). A chat message's scope has the deadline `started + 90 s`, so one slow call can't overrun the message budget (§8.1, §13); a step that hits it ends the plan with "I stopped early to stay within this answer's budget." and what the earlier steps found is still composed.
     - **Retries.** Waits of 2, 4 and 8 s, with no retry that would pass 120 s in total. The 120 s counts the attempts as well as the waits: each attempt's timeout is the role's timeout or the time left, whichever is shorter, so a call that keeps timing out ends at 120 s. Each retry calls `on_wait("Waiting for the model…")`, and the waits add up in `waited_s`.
     - **Budgets.** They're checked before each call:
       - the user's tokens today (`users.tokens_used_today`, reset when `tokens_day` isn't today in UTC)
@@ -377,7 +380,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
 
 ## 4. API contract
 
-Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }` (some carry extra fields inside `error`, e.g. a `409`'s `current_version`) with codes `not_found`, `invalid`, `too_large`, `budget_exceeded`, `conflict`, `llm_unavailable`, `rate_limited`, `internal`.
+Base path `/api/v1`. JSON unless noted. Errors: `{ "error": { "code": "...", "message": "...", "request_id": "..." } }` (some carry extra fields inside `error`, e.g. a `409`'s `current_version`) with codes `not_found`, `invalid`, `too_large`, `budget_exceeded`, `conflict`, `llm_unavailable`, `llm_request_failed` (a request the model service refused, `502`, §3.5), `rate_limited`, `internal`.
 
 ### 4.1 Identity and settings
 
@@ -1808,6 +1811,7 @@ Implemented in `sherlock/steps/lineage.py`:
 8. **Focus**: save `{ intents, scope, columns, result_ids, filters, selection_id }` on the message.
 
 Budgets: 8 answerer and action calls, 40k tokens, 90 s wall-clock per message; on exceeding, compose what exists with a note.
+- As built: the 90 s is checked between steps and is also every model call's deadline (`CallScope.deadline`, §3.5), so a call that would run past it stops: the step ends with the note and compose falls back to the results it has. A message whose route call already can't start in time answers "This answer ran out of time."
 
 As implemented (version 1 of the loop):
 - **Context.** The DataCard summary lists each column's name, type, role, missing share, range and up to five example values, inside a data block. Past about 16,000 characters (~4k tokens) the remaining columns are listed by name and type only, in file order rather than by the builder's column ranking.
@@ -1984,6 +1988,7 @@ The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas
 | `LLM_TOOLS_MODE` | `json` | `native` once verified. `.env.example` and `render.yaml` set `native` |
 | `LLM_MOCK` | empty | a fixture file or a directory of them (§3.5): every model call is answered from recorded responses, with no network. For local work on the UI and pipelines without credits |
 | `LLM_RECORD` | empty | a fixture file that every live model reply is appended to |
+| `LLM_CONCURRENCY_LARGE` / `LLM_CONCURRENCY_MEDIUM` / `LLM_CONCURRENCY_SMALL` | `2` / `6` / `4` | model calls of each role in flight at once, across every client in the process (one shared gate per role, §3.5) |
 | `JOB_BACKEND` | `local` | `nebius` to dispatch. Not built yet: only `local` exists (jobs run in the API process), and nothing reads the setting (§11, Nebius Serverless Jobs) |
 | `JOB_WORKERS` | `4` | worker tasks of the in-process job runner; `0` runs no jobs and queues no purge (the tests' default) |
 | `PURGE_INTERVAL_S` | `600` | the purge job's period (Schema §6); `0` turns it off |

@@ -225,7 +225,7 @@ Each of these carries a "Not built yet" marker in the brief's section.
 - No test asserts the `run.updated` event (D7 F17).
 - The ask eval has no unanswerable questions (50 questions: 28, 17 and 5 across three files), so PRD §4's "≥ 95% of unanswerable questions answered with an honest can't" isn't measured. Add some to `ask_questions.yaml`.
 - No component tests for Save, conflicts and Undo: `SaveActions` (with its conflict dialog), `ChangesPanel`, and the CSV tab's save path. `csvtab.test.tsx` covers only the read-only lock (D5 O4).
-- Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; a non-retryable 4xx failing at once; `OpenAITransport`'s error classes; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
+- Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
 
 ## 7. Docs (Rule 1)
 

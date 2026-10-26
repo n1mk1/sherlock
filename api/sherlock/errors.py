@@ -15,7 +15,7 @@ from sherlock.db.util import new_id
 
 ERROR_CODES = (
     "not_found", "invalid", "too_large", "budget_exceeded", "conflict",
-    "llm_unavailable", "rate_limited", "internal",
+    "llm_unavailable", "llm_request_failed", "rate_limited", "internal",
 )
 _STATUS_CODES = {404: "not_found", 409: "conflict", 413: "too_large", 429: "rate_limited"}
 
