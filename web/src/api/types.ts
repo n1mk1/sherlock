@@ -84,6 +84,11 @@ export interface CleanPlanItem {
   change: boolean; // false for leakage and ID columns: marked, never changed
   reason?: string;
   module: PlanModule;
+  // An ambiguous-dates item (plan 2b.9): the order the user picked, up to three values read both ways,
+  // and whether every date reads both ways, so it's cleaned only with an order.
+  date_order?: "dmy" | "mdy" | null;
+  both_ways?: { value: string; day_first: string; month_first: string }[];
+  needs_order?: boolean;
 }
 
 export interface CleanPlan {
@@ -112,6 +117,7 @@ export type PlanOp =
   | { op: "tick" | "untick" | "remove"; item_id: string }
   | { op: "tick_module" | "untick_module"; module: PlanModule }
   | { op: "set_instruction"; item_id: string; instruction: string | null } // null puts Sherlock's wording back
+  | { op: "set_date_order"; item_id: string; order: "dmy" | "mdy" | null } // null clears the order
   | { op: "add"; column: string | null; instruction: string };
 
 export interface JobLogEntry {

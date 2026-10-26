@@ -35,5 +35,74 @@
         }
       ]
     }
+  },
+  {
+    "purpose": "diagnose",
+    "match": [
+      "Column: visit_date",
+      "Read every date in"
+    ],
+    "content": {
+      "cause": "The user picked the order these dates are written in.",
+      "approach_options": [
+        "Parse with the order the user picked",
+        "Leave as text"
+      ],
+      "preferred_option": 0,
+      "risk": "low",
+      "leave_as_is": false
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: visit_date",
+      "day-first (dd/mm/yyyy)"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Parse day-first",
+          "code": "result = df.copy()\nparsed = parse_dates_smart(df['visit_date'], order_hint='dmy')\nresult['visit_date'] = parsed\nresult = quarantine_rows(result, parse_failures(df['visit_date'], parsed), 'parse: visit_date')\n",
+          "expected_effect": "Reads every date day-first, as the user picked."
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: visit_date",
+      "month-first (mm/dd/yyyy)"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Parse month-first",
+          "code": "result = df.copy()\nparsed = parse_dates_smart(df['visit_date'], order_hint='mdy')\nresult['visit_date'] = parsed\nresult = quarantine_rows(result, parse_failures(df['visit_date'], parsed), 'parse: visit_date')\n",
+          "expected_effect": "Reads every date month-first, as the user picked."
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "diagnose",
+    "content": {
+      "cause": "These values look legitimate.",
+      "approach_options": [
+        "Leave as is",
+        "Change them"
+      ],
+      "preferred_option": 0,
+      "risk": "high",
+      "leave_as_is": true
+    }
+  },
+  {
+    "purpose": "critic",
+    "content": {
+      "changed_something_it_shouldnt": false,
+      "concerns": []
+    }
   }
 ]

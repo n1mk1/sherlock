@@ -33,7 +33,9 @@ import duckdb
 import pandas as pd
 
 from sherlock.cleaning import gate, prompts, verifiers
-from sherlock.cleaning.plan import SKIP_TEXT, USER_DETECTOR, both_ways, key, needs_order, never_change, run_params
+from sherlock.cleaning.plan import (
+    SKIP_TEXT, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
+)
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
@@ -118,7 +120,7 @@ def order_needed(issue: dict) -> str:
     """The skip reason for dates that read both ways: no model call and no guess (plan 2.6)."""
     shown = "; ".join(f"{v} is {d} or {m}" for v, d, m in both_ways(issue.get("examples") or [])[:2])
     return ("Left as text: every date reads both ways" + (f" ({shown})" if shown else "")
-            + ", so the order is yours to choose: rewrite this fix in the cleaning plan to say which")
+            + ", so the order is yours to choose: pick it in the cleaning plan")
 
 
 def issue_words(issue: dict) -> str | None:
@@ -169,6 +171,7 @@ class Cleaner:
         run = run_params(plan.get("items") or [])
         self.skip_keys = set(run["skip_keys"])
         self.instructions: dict[str, str] = run["instructions"]  # rewritten fixes, by issue key
+        self.date_orders: dict[str, str] = run["date_orders"]     # the order picked for ambiguous dates, by key
         self.user_steps: list[dict] = run["user_steps"]           # in the plan's order
         self.item_ids = {i["key"]: i["id"] for i in plan.get("items") or [] if i["key"]}
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
@@ -323,6 +326,11 @@ class Cleaner:
                 self.state.handled.append(key(issue))
                 self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
                 continue
+            if key(issue) in self.date_orders:  # the user picked the order (plan 2b.9): no vote
+                order = self.date_orders[key(issue)]
+                text = " ".join(t for t in (self.instructions.get(key(issue)), order_instruction(issue["column"], order)) if t)
+                return {**issue, "requested": True, "instruction": text, "date_order": order,
+                        "plan_item_id": self.item_ids.get(key(issue))}
             if needs_order(issue) and key(issue) not in self.instructions:  # every date reads both ways
                 self.state.handled.append(key(issue))
                 self._skip(issue, order_needed(issue), log_text="needs your choice of order")
@@ -551,7 +559,7 @@ class Cleaner:
             examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
             decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet", instruction=_instruction(issue),
         )
-        if issue["detector"] in VOTE_DETECTORS:
+        if issue["detector"] in VOTE_DETECTORS and not issue.get("date_order"):  # a picked order needs no vote
             votes = []
             for _ in range(VOTES):
                 out = self.llm.structured("large", self._messages(user), Diagnosis, purpose="diagnose",

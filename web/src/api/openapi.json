@@ -1090,11 +1090,27 @@
        "tick_module",
        "untick_module",
        "set_instruction",
+       "set_date_order",
        "add",
        "remove"
       ],
       "title": "Op",
       "type": "string"
+     },
+     "order": {
+      "anyOf": [
+       {
+        "enum": [
+         "dmy",
+         "mdy"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Order"
      }
     },
     "required": [

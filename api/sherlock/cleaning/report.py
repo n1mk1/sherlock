@@ -1,10 +1,12 @@
 """The cleaning report (TRD §6.8, PRD CLEAN-6), assembled for one clean job from its checkpointed
 state (`jobs.state_json`), the steps it committed, and the issues it handled. A run from a cleaning
-plan adds `your_steps`: each step the user added or fix they rewrote, with its outcome (PRD CLEAN-8b)."""
+plan adds `your_steps`: each step the user added, fix they rewrote or date order they picked, with
+its outcome (PRD CLEAN-8b)."""
 
 import json
 import sqlite3
 
+from sherlock.cleaning.plan import order_instruction
 from sherlock.errors import not_found
 
 
@@ -69,9 +71,11 @@ def _your_steps(job: sqlite3.Row, state: dict) -> list[dict]:
     outcomes = state.get("plan_outcomes") or {}
     out = []
     for item in plan.get("items") or []:
-        if not (item.get("ticked") and item.get("change") and item.get("instruction")):
+        order = item.get("date_order")
+        if not (item.get("ticked") and item.get("change") and (item.get("instruction") or order)):
             continue
+        asked = " ".join(t for t in (item.get("instruction"), order and order_instruction(item["column"], order)) if t)
         got = outcomes.get(item["id"], {"outcome": "not_reached"})
-        out.append({"item_id": item["id"], "column": item["column"], "instruction": item["instruction"],
+        out.append({"item_id": item["id"], "column": item["column"], "instruction": asked,
                     "source": item["source"], "detector": item["detector"], **got})
     return out

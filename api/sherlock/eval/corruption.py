@@ -18,7 +18,8 @@ Three sets test what the Cleaner must not do (plan 2.6): `dates_dmy` and `dates_
 kind of column, dates whose every day is 12 or less, written day-first in one and month-first in
 the other, so nothing in the data tells them apart and any fixed guess is wrong on one of them; and
 `lookalikes` holds categories that look alike but are different ("Plan A"/"Plan B", "Region 1"/
-"Region 2", "Austria"/"Australia"), so a merge is harm.
+"Region 2", "Austria"/"Australia"), so a merge is harm. `dates_dmy_picked` and `dates_mdy_picked` are
+the two date sets cleaned through a plan in which the user picked the right order (plan 2b.9).
 """
 
 import io
@@ -55,6 +56,7 @@ class Case:
     clean: pd.DataFrame
     dirty: pd.DataFrame
     damage: list[Damage] = field(default_factory=list)
+    date_order: str | None = None  # clean through a plan with this order picked for its ambiguous dates
 
 
 def _cells(df: pd.DataFrame, column: str, share: float, rng: random.Random, taken: set) -> list[int]:
@@ -135,7 +137,14 @@ def cases() -> list[Case]:
         corrupt("dates_mdy", visits, [("visit_date", "mdy_text", 1.0)], 5),
         corrupt("lookalikes", synthetic.lookalikes(rows=600), [("plan", "case", 0.1), ("region", "case", 0.1),
                                                                 ("country", "case", 0.08), ("monthly_fee", "money", 0.2)], 6),
+        picked(corrupt("dates_dmy_picked", visits, [("visit_date", "dmy_text", 1.0)], 4), "dmy"),
+        picked(corrupt("dates_mdy_picked", visits, [("visit_date", "mdy_text", 1.0)], 5), "mdy"),
     ]
+
+
+def picked(case: Case, order: str) -> Case:
+    case.date_order = order
+    return case
 
 
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T].*)?$")
@@ -256,7 +265,14 @@ def run_case(client, case: Case, timeout_s: float = 900) -> Score:
     ds_id = r.json()["id"]
     started = time.monotonic()
     _wait(lambda: client.get(f"{api}/datasets/{ds_id}").json()["status"] in ("offer", "failed"), timeout_s)
-    job = client.post(f"{api}/datasets/{ds_id}/clean", json={}).json()
+    body = {}
+    if case.date_order:  # the user picks the order of the ambiguous dates in the plan, then starts it
+        plan = client.post(f"{api}/datasets/{ds_id}/clean/plan", json={}).json()
+        ops = [{"op": "set_date_order", "item_id": i["id"], "order": case.date_order}
+               for i in plan["items"] if "date_order" in i]
+        client.patch(f"{api}/clean-plans/{plan['id']}", json={"ops": ops}).raise_for_status()
+        body = {"plan_id": plan["id"]}
+    job = client.post(f"{api}/datasets/{ds_id}/clean", json=body).json()
     _wait(lambda: client.get(f"{api}/jobs/{job['id']}").json()["status"] in ("done", "failed", "cancelled"), timeout_s)
     report = client.get(f"{api}/datasets/{ds_id}/report").json()
     final = _final(client, ds_id)

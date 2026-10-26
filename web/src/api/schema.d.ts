@@ -1768,7 +1768,9 @@ export interface components {
              * Op
              * @enum {string}
              */
-            op: "tick" | "untick" | "tick_module" | "untick_module" | "set_instruction" | "add" | "remove";
+            op: "tick" | "untick" | "tick_module" | "untick_module" | "set_instruction" | "set_date_order" | "add" | "remove";
+            /** Order */
+            order?: ("dmy" | "mdy") | null;
         };
         /** PlanPatch */
         PlanPatch: {

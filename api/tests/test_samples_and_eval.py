@@ -72,4 +72,7 @@ def test_lookalike_set_holds_common_categories_that_differ_on_purpose():
     shares = {c: df[c].value_counts(normalize=True) for c in ("plan", "region", "country")}
     assert set(shares["region"].index) == {"Region 1", "Region 2", "Region 3", "Region 4"}
     assert shares["country"]["Austria"] >= 0.05 and shares["country"]["Australia"] >= 0.05
-    assert [c.name for c in corruption.cases()][-3:] == ["dates_dmy", "dates_mdy", "lookalikes"]
+    cases = {c.name: c for c in corruption.cases()}
+    assert {"dates_dmy", "dates_mdy", "lookalikes"} <= set(cases)
+    assert (cases["dates_dmy_picked"].date_order, cases["dates_mdy_picked"].date_order) == ("dmy", "mdy")
+    assert cases["dates_dmy"].date_order is None

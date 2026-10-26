@@ -9,7 +9,7 @@ import { ProposalView } from "@/components/shell/ChatBar";
 import { useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { ME, mockApi, renderAt } from "@/test/render";
-import { CleanPlanPanel } from "./CleanPlanPanel";
+import { CleanPlanPanel, DateOrder } from "./CleanPlanPanel";
 import { callsLine, collapse, LogEntry, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
 import { OfferActions } from "./OfferActions";
@@ -169,6 +169,43 @@ function sent(calls: ReturnType<typeof mockApi>) {
 }
 
 describe("the cleaning plan", () => {
+  it("asks which order ambiguous dates are in, with values read both ways", () => {
+    const dates = item({ id: "pit_d", key: "ambiguous_dates|visit_date", detector: "ambiguous_dates", column: "visit_date",
+      count: 36, module: "types", date_order: null, needs_order: true, both_ways: [
+        { value: "03/04/2021", day_first: "3 Apr 2021", month_first: "4 Mar 2021" },
+        { value: "05/06/2021", day_first: "5 Jun 2021", month_first: "6 May 2021" },
+        { value: "11/12/2021", day_first: "11 Dec 2021", month_first: "12 Nov 2021" }] });
+    const onPick = vi.fn();
+    const { rerender } = renderAt(<DateOrder item={dates} busy={false} onPick={onPick} />);
+    expect(screen.getByText("4 Mar 2021")).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(4); // the header and three values
+    expect(screen.getByText(/Sherlock won't guess/)).toBeInTheDocument();
+    const group = screen.getByRole("radiogroup", { name: "Which order are these dates in?" });
+    fireEvent.click(within(group).getByRole("radio", { name: "Day first" }));
+    expect(onPick).toHaveBeenCalledWith("dmy");
+    rerender(<DateOrder item={{ ...dates, date_order: "dmy" }} busy={false} onPick={onPick} />);
+    expect(screen.getByRole("radio", { name: "Day first" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByText(/Sherlock won't guess/)).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Day first" }));
+    expect(onPick).toHaveBeenLastCalledWith(null); // a second click clears it
+  });
+
+  it("sends the order picked in the panel as a plan op", async () => {
+    const dates = item({ id: "pit_d", key: "ambiguous_dates|visit_date", detector: "ambiguous_dates", column: "visit_date",
+      count: 36, module: "types", date_order: null, needs_order: true,
+      both_ways: [{ value: "03/04/2021", day_first: "3 Apr 2021", month_first: "4 Mar 2021" }] });
+    const withDates = { ...PLAN, items: [dates, ...PLAN.items] };
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": withDates,
+      "PATCH /api/v1/clean-plans/pln_1": { ...withDates, items: [{ ...dates, date_order: "mdy" }, ...PLAN.items],
+                                           summary: "Set the date order of visit_date to month-first." },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("radio", { name: "Month first" }));
+    await waitFor(() => expect(sent(calls).some((c) => c.method === "PATCH")).toBe(true));
+    expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{ op: "set_date_order", item_id: "pit_d", order: "mdy" }] });
+  });
+
   it("says it's diagnosing until the plan arrives, then shows every fix ticked", async () => {
     let answer: (v: unknown) => void = () => {};
     mockApi({ "GET /api/v1/clean-plans/pln_1": () => new Promise((r) => { answer = r; }) });

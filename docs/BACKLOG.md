@@ -220,6 +220,7 @@ Each of these carries a "Not built yet" marker in the brief's section.
 - The ask eval has no unanswerable questions (50 questions: 28, 17 and 5 across three files), so PRD §4's "≥ 95% of unanswerable questions answered with an honest can't" isn't measured. Add some to `ask_questions.yaml`.
 - No component tests for Save, conflicts and Undo: `SaveActions` (with its conflict dialog), `ChangesPanel`, and the CSV tab's save path. `csvtab.test.tsx` covers only the read-only lock (D5 O4).
 - Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
+- **The e2e flow can see the chat answer twice** (2026-10-26). `expect(page.getByText("First class paid the most on average")).toBeVisible()` (`web/e2e/flow.spec.ts:30`) failed with a strict-mode violation, two `<p class="leading-relaxed">` with that text, in 2 of 6 runs on `f8741ed` and its children; both ran while another session's pytest loaded the machine, and every run alone passed. The failure snapshot shows one answer, so for a moment the streamed blocks and the saved message are probably both on screen (`ChatBar.tsx`, `chat/Blocks.tsx`). Show one copy during the hand-over, or have the test wait for the saved message.
 
 ## 7. Docs (Rule 1)
 

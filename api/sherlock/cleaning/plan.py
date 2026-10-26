@@ -8,6 +8,9 @@ change data starts ticked. Leakage and ID-like columns are info rows under "Mark
 
 The user can untick fixes, rewrite a fix in plain words (`instruction`), and add steps of their own
 (`detector: user_request`), from the panel or from chat; `apply_ops` is the one place a plan changes.
+An ambiguous-dates item carries up to three of its values read both ways (`both_ways`) and the order
+the user picks (`date_order`: "dmy", "mdy" or null, plan 2b.9); a column every date of which reads
+both ways is cleaned only with an order (`needs_order`).
 A plan made on an older version is merged onto the current one (`merge`) before it's shown or started.
 Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset.
 """
@@ -51,7 +54,8 @@ SKIP_TEXT = {"leakage": "excluded from models", "id_candidates": "left as is"}
 USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
-OPS = ("tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove")
+OPS = ("tick", "untick", "tick_module", "untick_module", "set_instruction", "set_date_order", "add", "remove")
+DATE_ORDERS = {"dmy": "day-first (dd/mm/yyyy)", "mdy": "month-first (mm/dd/yyyy)"}
 
 
 class PlanError(ValueError):
@@ -120,6 +124,10 @@ def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
     }
     if kept:
         item["reason"] = kept[0]
+    if issue["detector"] == "ambiguous_dates" and not kept:
+        item["date_order"] = None
+        item["both_ways"] = [{"value": v, "day_first": d, "month_first": m} for v, d, m in both_ways(item["examples"])]
+        item["needs_order"] = needs_order(issue)
     return item
 
 
@@ -159,6 +167,8 @@ def merge(old: list[dict], card: dict) -> tuple[list[dict], list[str]]:
         if item["change"] and before["change"]:
             item["ticked"] = before["ticked"]
             item["instruction"] = before["instruction"]
+            if "date_order" in item:
+                item["date_order"] = before.get("date_order")
         items.append(item)
     gone = [i for k, i in by_key.items() if k not in {f["key"] for f in fresh}]
     if gone:
@@ -193,7 +203,8 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
     and a code-written summary of what changed."""
     items = [dict(i) for i in items]
     by_id = {i["id"]: i for i in items}
-    done: dict[str, list[str]] = {"ticked": [], "unticked": [], "rewrote": [], "reset": [], "added": [], "removed": []}
+    done: dict[str, list[str]] = {"ticked": [], "unticked": [], "rewrote": [], "reset": [], "added": [], "removed": [],
+                                  "ordered": [], "unordered": []}
 
     def item(op: dict) -> dict:
         found = by_id.get(op.get("item_id"))
@@ -237,6 +248,19 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
                 if i["key"] is None:
                     i["action"] = text
                 done["rewrote"].append(fix_name(i))
+        elif kind == "set_date_order":
+            i = item(op)
+            if "date_order" not in i:
+                raise PlanError(f"{fix_name(i)} has no date order to choose; only ambiguous dates do.")
+            order = op.get("order")
+            if order is not None and order not in DATE_ORDERS:
+                raise PlanError(f"The date order is 'dmy' (day-first) or 'mdy' (month-first), not {order!r}.")
+            if order != i["date_order"]:
+                i["date_order"] = order
+                if order:
+                    done["ordered"].append(f"{i['column']} to {DATE_ORDERS[order].split(' ')[0]}")
+                else:
+                    done["unordered"].append(i["column"])
         elif kind == "add":
             column = op.get("column")
             if column is not None and column not in columns:
@@ -274,6 +298,10 @@ def summary(done: dict[str, list[str]]) -> str:
         parts.append(f"Added {_count(len(done['added']), 'step', 'steps')} on {', '.join(done['added'])}.")
     if done["removed"]:
         parts.append(f"Removed your {_count(len(done['removed']), 'step', 'steps')} on {', '.join(done['removed'])}.")
+    if done["ordered"]:
+        parts.append(f"Set the date order of {', '.join(done['ordered'])}.")
+    if done["unordered"]:
+        parts.append(f"Cleared the date order of {', '.join(done['unordered'])}.")
     return " ".join(parts) or "The plan already said that, so nothing changed."
 
 
@@ -281,10 +309,18 @@ def ticked(items: list[dict]) -> list[dict]:
     return [i for i in items if i["change"] and i["ticked"]]
 
 
+def order_instruction(column: str, order: str) -> str:
+    """The instruction a chosen date order becomes, as the prompts and the step's decision show it."""
+    return f"Read every date in {column} {DATE_ORDERS[order]}: parse it with order_hint \"{order}\"."
+
+
 def run_params(items: list[dict]) -> dict:
     """What the Cleaner reads from a started plan's frozen items: unticked Sherlock fixes to skip,
-    rewritten fixes' instructions by key, and the ticked user steps in order."""
+    rewritten fixes' instructions by key, the date orders the user picked by key, and the ticked
+    user steps in order."""
     return {
+        "date_orders": {i["key"]: i["date_order"] for i in items
+                        if i["key"] and i["change"] and i["ticked"] and i.get("date_order")},
         "skip_keys": [i["key"] for i in items if i["key"] and i["change"] and not i["ticked"]],
         "instructions": {i["key"]: i["instruction"] for i in items if i["key"] and i["change"] and i["ticked"] and i["instruction"]},
         "user_steps": [{"id": i["id"], "column": i["column"], "instruction": i["instruction"]}

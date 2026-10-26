@@ -686,6 +686,23 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
 
 - `Grid.tsx`'s `onItemHovered` (slice 15, T-3) read `args.bounds` on any `GridMouseEventArgs`, but only a header event has `bounds`, so `tsc -b` failed and with it `pnpm build`, the Docker image's web step (`api/Dockerfile`). vite alone doesn't type-check, so vitest and the e2e passed. The handler now returns early for anything but a header; behaviour is the same (a non-header event already cleared the note). Checked: `tsc -b`, `pnpm build`, the CSV and column-note vitest files. Found by the `web-state` session while rebasing 2b.5.
 
+### Tier 2 row 2b.9: the user picks the date order
+
+- **Done:**
+  - An ambiguous-dates item in the cleaning plan has `date_order` (null, "dmy" or "mdy"), `both_ways` (up to three of its values read each way, "03/04/2021 · 3 Apr 2021 · 4 Mar 2021") and `needs_order` (every date reads both ways). A new plan op, `set_date_order`, sets or clears it ("Set the date order of visit_date to day-first."); `merge` keeps it by key.
+  - The plan panel asks "Which order are these dates in?" under the fix: the three values in a small table and two toggle buttons, Day first and Month first (`DateOrder` in `CleanPlanPanel.tsx`). Without an order it says why it matters: dates that every one reads both ways stay text.
+  - The Cleaner runs a picked order as the user's instruction ("Read every date in visit_date day-first (dd/mm/yyyy): parse it with order_hint "dmy"."), `requested` like a rewritten fix, with **one** diagnose call instead of the three-way vote. The report lists it under "Your steps" and the step's decision says "You asked: …". The skip for dates with no order now ends "…, so the order is yours to choose: pick it in the cleaning plan".
+  - The benchmark gains `dates_dmy_picked` and `dates_mdy_picked`: the two date sets cleaned through a plan with the right order picked (`run_case` makes the plan, sends `set_date_order` and starts it).
+  - Tests: `test_cleaner_checks.py` (the plan item's three values both ways; `set_date_order` refuses another value and another item; a picked order runs diagnose once, then propose and critic, parses 03/04/2021 as 3 April and lists the order under "Your steps"; the benchmark's two picked sets, 60 rows each, end 100% recovered and 0 wrong through `run_case`, on recorded replies), `cleaning.test.tsx` (the picker shows the values both ways, picks, marks and clears; the panel sends the op).
+  - Docs: PRD CLEAN-8b (acceptance); TRD §4.4 (`PlanItem` and `set_date_order`), §7.2 (a picked order; the skip's wording), §14 (the picked sets); App Flow §4.1, §5; UI/UX §5.3a; Plan §6. `openapi.json` and `schema.d.ts` regenerated (`PlanOp.order`).
+- **Decisions:**
+  - **The picked sets weren't run live:** the brief allowed only the slice 11 before and after runs, so the proof is the recorded-reply run above. `uv run sherlock eval corruption --sets dates_dmy_picked,dates_mdy_picked` runs them live.
+  - **Chat doesn't set the order** (its `edit_plan` schema is the chat stream's file): it can still rewrite the fix in words ("read the dates day-first"), which lets the run go ahead the same way.
+  - The order is offered on every ambiguous-dates item, `mixed` too, where it replaces the vote; only an `ambiguous` one needs it to run.
+  - A picked order is the user's request, so a low-confidence result commits with a flag rather than being skipped, and disagreeing candidates are still skipped (slice 11).
+- **Gate:** `uv run pytest` 431 passed, 3 skipped (the one failure of the first run was this row's own test still expecting `lookalikes` last in the case list; fixed and rerun); `pnpm test` 95 passed; e2e passed. Slice 11's gate: pytest 428 passed, 3 skipped, its one failure a sandbox timeout while another pytest ran (`test_sandbox.py` 42 passed alone); vitest 93 passed; e2e passed on a rerun.
+- **BACKLOG:** added "The e2e flow can see the chat answer twice": two of six e2e runs tonight failed at `flow.spec.ts:30` under load, `origin/main` itself among them, and every run alone passed.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

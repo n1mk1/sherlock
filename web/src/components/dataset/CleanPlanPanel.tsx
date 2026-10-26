@@ -6,6 +6,8 @@
 // From the offer it fills the centre (`layout="centre"`); from the CSV tab it replaces Changes in the right
 // panel (`layout="side"`), with the scope radios, so the grid stays visible. A plan opened for some rows
 // (the new-rows toast's "Clean them", chat's "clean these rows") starts on those rows (PRD CLEAN-1).
+// An ambiguous-dates fix asks which order its dates are written in, with three values read both ways
+// (plan 2b.9); dates that every one reads both ways are cleaned only once the order is picked.
 import { useIsMutating } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -257,6 +259,53 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
 
 type Send = (ops: PlanOp[], onDone?: () => void) => void;
 
+const ORDERS = [["dmy", "Day first"], ["mdy", "Month first"]] as const;
+
+/** "Which order are these dates in?": three values read both ways, and Day first · Month first. */
+export function DateOrder({ item, busy, onPick }: {
+  item: CleanPlanItem; busy: boolean; onPick: (order: "dmy" | "mdy" | null) => void;
+}) {
+  const ways = (item.both_ways ?? []).slice(0, 3);
+  const chosen = item.date_order ?? null;
+  const groupId = `date-order-${item.id}`;
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5 pl-6 text-[12.5px]">
+      <p id={groupId} className="font-medium">Which order are these dates in?</p>
+      <table className="w-fit font-mono text-[12px]">
+        <thead className="text-muted-foreground">
+          <tr><th className="pr-3 text-left font-normal">Value</th><th className="pr-3 text-left font-normal">Day first</th>
+            <th className="text-left font-normal">Month first</th></tr>
+        </thead>
+        <tbody>
+          {ways.map((w) => (
+            <tr key={w.value}>
+              <td className="pr-3">{w.value}</td>
+              <td className={cn("pr-3", chosen === "dmy" && "text-accent")}>{w.day_first}</td>
+              <td className={cn(chosen === "mdy" && "text-accent")}>{w.month_first}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div role="radiogroup" aria-labelledby={groupId} className="flex gap-1.5">
+        {ORDERS.map(([order, label]) => (
+          <button key={order} type="button" role="radio" aria-checked={chosen === order} disabled={busy}
+            onClick={() => onPick(chosen === order ? null : order)}
+            className={cn("h-7 rounded-md border px-2.5 text-[12.5px]",
+              chosen === order ? "border-primary bg-primary text-primary-foreground" : "border-border-strong hover:bg-secondary")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {!chosen && (
+        <p className="text-muted-foreground">
+          {item.needs_order ? "Every date here reads both ways, so Sherlock won't guess: without an order they stay text."
+            : "Sherlock reads the dates that show their order; pick one to decide the rest."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ModuleGroup({ module, title, items, side, busy, send, onDirty, onTickModule }: {
   module: PlanModule; title: string; items: CleanPlanItem[]; side: boolean; busy: boolean;
   send: Send; onDirty: (id: string, on: boolean) => void; onTickModule: (on: boolean) => void;
@@ -342,6 +391,9 @@ function ItemRow({ item, side, busy, send, onDirty }: {
           </button>
         )}
       </div>
+      {item.change && item.both_ways && item.both_ways.length > 0 && (
+        <DateOrder item={item} busy={busy} onPick={(order) => send([{ op: "set_date_order", item_id: item.id, order }])} />
+      )}
       {editing && (
         <InstructionEditor item={item} busy={busy} onDirty={onDirty}
           onCancel={() => { onDirty(false); setEditing(false); }}

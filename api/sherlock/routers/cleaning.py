@@ -46,11 +46,12 @@ class PlanRequest(BaseModel):
 
 class PlanOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove"]
+    op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "set_date_order", "add", "remove"]
     item_id: str | None = None
     module: str | None = None
     column: str | None = None  # add: a column of the file, or null for the rows
     instruction: str | None = Field(default=None, max_length=plans.MAX_INSTRUCTION)  # null on set_instruction resets
+    order: Literal["dmy", "mdy"] | None = None  # set_date_order: day-first or month-first; null clears it
 
 
 class PlanPatch(BaseModel):

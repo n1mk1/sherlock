@@ -71,3 +71,43 @@ def test_the_benchmark_leaves_dates_that_read_both_ways_and_says_why(client):
     assert (score.recovered, score.wrong, score.harmed, score.rows_out) == (0, 0, 0, 40)
     assert any(d == "ambiguous_dates" and why.startswith("Left as text: every date reads both ways")
                for _, d, why in score.skipped)
+
+
+def test_the_user_picks_the_date_order_in_the_plan_and_no_vote_runs(client):
+    ds = wait_status(client, upload(client, DATES_CSV, "visits.csv")["id"], "offer", "failed")
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={}).json()
+    item = next(i for i in plan["items"] if i["detector"] == "ambiguous_dates")
+    assert item["needs_order"] is True and item["date_order"] is None
+    assert item["both_ways"] == [
+        {"value": "03/04/2021", "day_first": "3 Apr 2021", "month_first": "4 Mar 2021"},
+        {"value": "05/06/2021", "day_first": "5 Jun 2021", "month_first": "6 May 2021"},
+        {"value": "11/12/2021", "day_first": "11 Dec 2021", "month_first": "12 Nov 2021"}]
+    bad = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "set_date_order", "item_id": item["id"], "order": "ymd"}]})
+    assert bad.status_code == 422
+    other = next(i for i in plan["items"] if i["detector"] != "ambiguous_dates")
+    refused = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "set_date_order", "item_id": other["id"], "order": "dmy"}]})
+    assert refused.status_code == 422 and "only ambiguous dates" in refused.json()["error"]["message"]
+    r = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "set_date_order", "item_id": item["id"], "order": "dmy"}]})
+    assert r.status_code == 200 and r.json()["summary"] == "Set the date order of visit_date to day-first."
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).json()
+    wait_for(lambda: client.get(f"{API}/jobs/{job['id']}").json()["status"] in ("done", "failed", "cancelled"))
+    calls = [c["purpose"] for c in db_rows("SELECT purpose FROM llm_calls WHERE job_id = ? ORDER BY id", job["id"])]
+    assert calls.count("diagnose") == 1 and calls[:3] == ["diagnose", "propose", "critic"]  # one diagnosis, no vote of three
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert [s["summary"] for s in report["steps"]] == ["Parse day-first (visit_date)"]
+    (mine,) = report["your_steps"]
+    assert mine["outcome"] in ("fixed", "flagged") and mine["instruction"].startswith("Read every date in visit_date day-first")
+    assert report["decisions"][0]["asked"] == mine["instruction"]
+    card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
+    assert next(c for c in card["columns"] if c["name"] == "visit_date")["type"] in ("date", "datetime")
+    first = client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 1}).json()["rows"][0]
+    assert str(first["cells"]["visit_date"]).startswith("2021-04-03")  # 03/04/2021, day-first
+
+
+def test_the_benchmark_set_with_a_picked_order_is_recovered(client):
+    from sherlock.eval import corruption, synthetic
+
+    for order, kind in (("dmy", "dmy_text"), ("mdy", "mdy_text")):
+        case = corruption.picked(corruption.corrupt(f"dates_{order}_picked", synthetic.visits(rows=60), [("visit_date", kind, 1.0)], 4), order)
+        score = corruption.run_case(client, case, timeout_s=120)
+        assert (score.recovered, score.wrong, score.harmed, score.rows_out) == (60, 0, 0, 60), score
