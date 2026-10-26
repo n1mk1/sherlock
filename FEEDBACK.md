@@ -201,6 +201,42 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - It never chose `create_widget`.
   - It isn't used.
 
+## The model-call log (`sherlock llm stats`, 2026-10-26)
+
+Every Nemotron call is a row in `llm_calls` (TRD §3.5). `uv run sherlock llm stats` (in `api/`, TRD §14) opens the database read-only and sums it per purpose and per role: p50 and p95 latency and tokens over the calls that answered, and the repair, fail and fallback rates over every attempt. This is the committed source for the README's median latencies and tokens per message.
+
+Run on 2026-10-26 against the local `.env` database (`DATABASE_URL=sqlite:///./data/sherlock.db` in `api/`), which holds the Day 3–7 live runs of 2026-10-25: 10 jobs and 3 chat answers over 7 datasets. The command was `uv run sherlock llm stats`; `--json` gives the same figures as JSON.
+
+Model calls over the whole log: 111 (2026-10-25T01:24:51.745Z to 2026-10-25T13:16:38.242Z). Latency and tokens are over the calls that answered; the rates over every attempt.
+
+| purpose | roles | calls | p50 s | p95 s | tokens per call | tokens | repair | fail | fallback |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| diagnose | large | 33 | 2.8 | 5.0 | 1,786 | 58,927 | 0% | 0% | 0% |
+| propose | large | 23 | 6.0 | 10.1 | 3,621 | 83,273 | 0% | 0% | 0% |
+| critic | medium | 20 | 3.8 | 6.3 | 1,037 | 20,748 | 0% | 0% | 0% |
+| narrate | medium | 16 | 9.8 | 15.9 | 1,835 | 23,853 | 7% | 19% | 0% |
+| compose | medium | 4 | 6.6 | 9.4 | 1,456 | 5,825 | 100% | 0% | 0% |
+| overview | medium | 4 | 9.4 | 12.0 | 2,458 | 9,831 | 100% | 0% | 0% |
+| curate | medium | 3 | 9.3 | 11.5 | 2,383 | 7,150 | 0% | 0% | 0% |
+| route | small | 3 | 1.4 | 1.6 | 1,232 | 3,696 | 0% | 0% | 0% |
+| sql | medium | 3 | 4.1 | 4.3 | 1,441 | 4,323 | 0% | 0% | 0% |
+| widget | medium | 2 | 3.5 | 3.8 | 1,469 | 2,938 | 0% | 0% | 0% |
+
+| role | models | calls | p50 s | p95 s | tokens per call | tokens | repair | fail | fallback |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| large | nvidia/Nemotron-3-Ultra-550b-a55b | 56 | 4.1 | 9.7 | 2,539 | 142,200 | 0% | 0% | 0% |
+| medium | nvidia/nemotron-3-super-120b-a12b | 52 | 6.1 | 14.2 | 1,524 | 74,668 | 11% | 6% | 0% |
+| small | nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B | 3 | 1.4 | 1.6 | 1,232 | 3,696 | 0% | 0% | 0% |
+
+Chat messages with model calls: 3; tokens per message p50 6,717, p95 7,288.
+
+**What it shows:**
+- **Latency.** Ultra's diagnose had a median of 2.8 s, faster than Super's critic (3.8 s); propose, which writes up to three pandas fixes, took 6.0 s. Super's writing calls took longest: a story card 9.8 s (p95 15.9 s), the overview 9.4 s, curation 9.3 s. Nano's routing took 1.4 s.
+- **Tokens per chat message.** Each call was 1,000–3,600 tokens, most of it the prompt. A whole chat answer (route, the SQL draft, compose and its repair) came to 2,700–7,400 tokens in the three logged, with a median of 6,717. Nano's share is its one route call, about 1,200 tokens. The README's "about 1,500 tokens per chat message" for Nano was close to a single call's size, not an answer's; it now says both.
+- **Repairs.** Both chat answers that reached compose needed its one repair (chip markup inside a text run), and so did both overviews; narration needed one repair in 16 attempts. Strict `json_schema` decoding enforces the shape, so a repair is always about a rule beyond the schema (no digits in prose, no markup in a text run).
+- **Failures.** The only failed attempts were three narrate calls that got HTTP 529 (`server_error`, overloaded) from Token Factory, each after about 3.4 s, and were retried. That is 19% of narrate's attempts and 6% of Super's. A 529 is retried like a 5xx (TRD §3.5).
+- **Suggestion:** a `Retry-After` on the 529 would let clients wait exactly as long as needed instead of backing off blind; and a documented per-model rate limit would let us size the per-role gates (`LLM_CONCURRENCY_*`) from the numbers instead of from trial.
+
 ## Nebius hosting (Serverless Endpoint / AI Cloud VM)
 
 **What we used it for:** the planned host was one CPU-only Serverless Endpoint with a shared filesystem at `/data` (`scripts/deploy.sh`). We moved hosting to Render on 2026-10-24 because of the problems below. Inference stays on Token Factory.

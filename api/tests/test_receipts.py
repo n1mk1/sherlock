@@ -1,12 +1,15 @@
-"""Receipts (TRD §4.9, §4.10): "How I worked it out" reads back the `llm_calls` of a chat message or a job."""
+"""Receipts (TRD §4.9, §4.10): "How I worked it out" reads back the `llm_calls` of a chat message or a job;
+and `sherlock llm stats` sums the log per purpose and role (TRD §14)."""
 
+import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from sherlock.config import get_settings
-from sherlock.db.connection import connect
+from sherlock.db.connection import connect, sqlite_path
+from sherlock.db.migrate import migrate
 from sherlock.db.util import now_iso
 from sherlock.llm import calls
 from sherlock.main import create_app
@@ -115,3 +118,72 @@ def test_a_long_job_lists_the_first_calls_and_totals_them_all(client, monkeypatc
         db.close()
     assert len(receipt.calls) == 3 and receipt.total.calls == 5 and receipt.total.tokens == 75
     assert {"llm_calls_message", "llm_calls_job", "llm_calls_created"} <= indexes
+
+
+# --- `sherlock llm stats` ---------------------------------------------------------------------------
+
+
+def seeded_db(rows):
+    """A migrated database with these calls and no app running, so nothing else writes to it."""
+    db = connect(get_settings())
+    migrate(db)
+    seed(db, rows)
+    return db
+
+
+def seed(db, rows):
+    for r in rows:
+        db.execute("INSERT INTO llm_calls (message_id, job_id, role, model, purpose, prompt_tokens, completion_tokens, latency_ms, "
+                   "ok, repaired, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", r)
+
+
+SEEDED = [
+    # message, job, role, model, purpose, prompt, completion, latency, ok, repaired, created_at
+    ("msg_a", None, "small", "nvidia/nano", "route", 300, 20, 1000, 1, 0, "2026-10-20T10:00:00.000Z"),
+    ("msg_a", None, "medium", "nvidia/super", "sql", 1000, 200, 4000, 1, 0, "2026-10-20T10:00:01.000Z"),
+    ("msg_a", None, "medium", "nvidia/super", "compose", 800, 100, 6000, 1, 0, "2026-10-20T10:00:05.000Z"),
+    ("msg_b", None, "small", "nvidia/nano", "route", 300, 30, 3000, 1, 0, "2026-10-25T10:00:00.000Z"),
+    ("msg_b", None, "medium", "nvidia/super", "sql", None, None, 30000, 0, 0, "2026-10-25T10:00:03.000Z"),
+    ("msg_b", None, "medium", "nvidia/super", "sql", 1000, 100, 2000, 1, 0, "2026-10-25T10:00:40.000Z"),
+    ("msg_b", None, "medium", "nvidia/super", "sql", 1100, 100, 3000, 1, 1, "2026-10-25T10:00:42.000Z"),
+    (None, "job_c", "large", "nvidia/ultra", "diagnose", 2000, 1000, 2800, 1, 0, "2026-10-25T11:00:00.000Z"),
+]
+
+
+def test_llm_stats_per_purpose_and_role():
+    db = seeded_db(SEEDED)
+    try:
+        everything = calls.stats(db)
+        recent = calls.stats(db, days=3, now="2026-10-26T00:00:00.000Z")
+    finally:
+        db.close()
+    assert everything["calls"] == 8 and recent["calls"] == 5
+    sql = next(p for p in everything["purposes"] if p["purpose"] == "sql")
+    # Latency over the three that answered (4000, 2000, 3000); the rates over all four attempts.
+    assert sql["calls"] == 4 and sql["roles"] == ["medium"]
+    assert sql["p50_latency_ms"] == 3000 and sql["p95_latency_ms"] == pytest.approx(3900)
+    assert sql["tokens"] == 1200 + 1100 + 1200 and sql["mean_tokens"] == 1167
+    assert sql["fail_rate"] == 0.25 and sql["repair_rate"] == pytest.approx(1 / 3) and sql["fallback_rate"] == 0
+    assert [p["purpose"] for p in everything["purposes"]] == ["sql", "route", "compose", "diagnose"]  # most calls first
+    small = next(r for r in everything["roles"] if r["role"] == "small")
+    assert small["models"] == ["nvidia/nano"] and small["p50_latency_ms"] == 2000
+    # Tokens per chat message: msg_a 2,420 and msg_b 2,630.
+    assert everything["chat_messages"] == {"messages": 2, "p50_tokens": 2525, "p95_tokens": pytest.approx(2619.5)}
+    assert recent["chat_messages"]["messages"] == 1
+    table = calls.stats_table(everything)
+    assert "| sql | medium | 4 | 3.0 | 3.9 | 1,167 | 3,500 | 33% | 25% | 0% |" in table
+    assert "tokens per message p50 2,525" in table
+
+
+def test_llm_stats_cli_reads_without_writing(capsys):
+    from sherlock import cli
+
+    seeded_db(SEEDED).close()
+    path = sqlite_path(get_settings().database_url)
+    before = path.stat().st_mtime_ns
+    assert cli.main(["llm", "stats", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["calls"] == 8 and {r["role"] for r in out["roles"]} == {"small", "medium", "large"}
+    assert cli.main(["llm", "stats", "--days", "3"]) == 0
+    assert "Model calls over the last 3 days" in capsys.readouterr().out
+    assert path.stat().st_mtime_ns == before

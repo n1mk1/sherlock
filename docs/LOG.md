@@ -537,6 +537,22 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - The total's time is the calls' latencies summed ("waiting on them"), not the answer's wall time, which a parallel stories pool would make smaller.
 - **BACKLOG:** the `llm_calls` line keeps only what's open: the table is never purged (the daily budget's scan has its index now).
 
+### Slice 9 (plan 2.2): `sherlock llm stats`
+
+- **Done:**
+  - `uv run sherlock llm stats [--days N] [--json]` (`cli.py`, `llm/calls.py::stats`): the model-call log per purpose and per role, with p50 and p95 latency and tokens per call over the calls that answered, the tokens in all, and the repair rate (repairs ÷ first tries), fail rate (failed attempts ÷ attempts) and fallback rate (calls with `fallback_from` ÷ attempts; 0 until 2b.8's column exists); plus the tokens per chat message, p50 and p95. Markdown tables, or JSON. The database is opened read-only (`mode=ro`), so it can run against a live app's file.
+  - Run against the main checkout's `.env` database (`api/data/sherlock.db`, read-only, its modified time unchanged): 111 calls of 2026-10-25. The output and what it shows are in `FEEDBACK.md` ("The model-call log"), and TRD §14 says how the figures are computed.
+  - README: the median-latency column now cites it, with the numbers it prints (curate 9.3 s, story 9.8 s, overview 9.4 s, chat SQL 4.1 s, compose 6.6 s, route 1.4 s; Ultra's 2.8 s and 6.0 s and Super's critic 3.8 s were already its numbers). Two new bullets: where Token Factory sped up the build, and every purpose by name with "How I worked it out" and `llm stats`.
+  - `uv run sherlock eval notebook --sets all` (offline, no model): 5 of 5 rebuild their version, 107–198 s each on a laptop busy with other sessions' suites. The table is in TRD §14, the README's notebook row cites it.
+  - Tests (`tests/test_receipts.py`): seeded calls give the expected p50/p95, tokens, repair, fail and fallback rates per purpose and per role, the tokens per message, `--days`, and the markdown row; the CLI prints JSON and markdown and leaves the database file unmodified.
+  - Docs: TRD §14 (model-call stats; the notebook run), plan §4 (the command), `FEEDBACK.md`, README.
+  - Gate: `uv run pytest` 419 passed, 3 skipped (16 min); `pnpm test` 92 passed; `pnpm e2e` passed.
+- **Decisions:**
+  - **"About 1,500 tokens per chat message" was a call's size, not an answer's.** Each logged call was 1,000–3,600 tokens; the three logged chat answers came to 2,700–7,400 tokens (median 6,717), and Nano's share is its one route call, about 1,200. The README's `small` row now says "about 1,200 tokens per chat message (its one route call)", and the Cost bullet gives the whole answer's tokens.
+  - Latency and tokens are over the calls that answered, so a 30 s timeout doesn't count as a slow answer; the fail rate counts it.
+  - The local log is small (111 calls, before tonight's changes). It is the committed source the BACKLOG line asked for; the refresh from the deployed app's database is left as a BACKLOG step, since this session doesn't deploy or read the Render disk.
+- **BACKLOG:** the README line now lists only what's left: Ultra's cost from the console, the refresh from the deployed database, and a read-over of the Token Factory sentence for the Devpost text.
+
 ### Slice 10 (plan 2.3): the cleaning log's line is built in code
 
 - **Done:**

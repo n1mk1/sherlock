@@ -17,10 +17,10 @@ The owner's, unless a line says otherwise.
 - **The Devpost text** in plan §7's order, with the track set to Best Apps and Agents (D9 C6, C10).
 - **Finalize `FEEDBACK.md`** for the feedback prize (D9 C11).
 - **The user tests**: the three cold-start sessions and the by-hand half of the baseline. The tables in `docs/USER-TESTS.md` are still empty, and Potential Impact leans on them (D9 C6).
-- **The README** (D9 F6, F7, C8):
-  - one sentence on where Token Factory accelerated the work, which the live rules ask for in so many words (for example, one OpenAI-compatible endpoint for all three sizes, and strict JSON schema with one repair round);
-  - a committed source for three numbers: the per-role median latencies (put the `llm_calls` query and its output in `FEEDBACK.md` or TRD §14), "78–116 s" per notebook, and "about 1,500 tokens per chat message";
-  - plan D9.3's cost per role (Ultra's says "on the account's console") and the `llm_calls` purposes by name.
+- **The README** (D9 F6, F7, C8). Slice 9 (2026-10-26) wrote the Token Factory sentence ("Where Token Factory sped up the build"), named the `llm_calls` purposes, and gave the per-role medians, the tokens per chat message and the time per notebook a committed source (`sherlock llm stats` in `FEEDBACK.md`, the notebook eval in TRD §14). What's left:
+  - Ultra's cost per sample run, from the account's console (the README still says "on the account's console"), so plan D9.3's cost per role is complete;
+  - the medians come from the local database's 111 calls of 2026-10-25, before the overnight changes. Before submitting, run `uv run sherlock llm stats` against the deployed app's database (a Render shell in `/app/api`) and refresh the README's medians and tokens per message from it;
+  - read the Token Factory sentence over for the Devpost text, which says the same in its own words.
 - **Keep it running through judging** (D9 C5): Render's paid plan and the Token Factory credit until Dec 15, 2026 (PRD §9).
 
 ## 2. Decisions only the owner can make

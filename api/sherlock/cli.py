@@ -7,12 +7,16 @@
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
     uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts, labels and wording (markdown table)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
+    uv run sherlock llm stats [--days N] [--json]    per purpose and role: p50/p95 latency, tokens, repair, fail and fallback rates
 
 Commands run the app in-process against the configured `DATA_DIR` and `DATABASE_URL` (the `.env`),
-with the real model unless `LLM_MOCK` is set. A CLI run is its own anonymous user.
+with the real model unless `LLM_MOCK` is set. A CLI run is its own anonymous user. `llm stats` only
+reads the database (opened read-only) and starts no app.
 """
 
 import argparse
+import json
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -97,6 +101,27 @@ def export_notebook(dataset_id: str, out: Path) -> int:
         db.close()
 
 
+def llm_stats(days: float | None, as_json: bool) -> int:
+    """`sherlock llm stats`: the model-call log summed per purpose and per role (TRD §14). The database
+    is opened read-only, so it can run against a live app's file."""
+    from sherlock.config import get_settings
+    from sherlock.db.connection import sqlite_path
+    from sherlock.llm.calls import stats, stats_table
+
+    path = sqlite_path(get_settings().database_url).resolve()
+    if not path.exists():
+        _print(f"No database at {path}.")
+        return 1
+    db = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
+    try:
+        out = stats(db, days)
+    finally:
+        db.close()
+    _print(json.dumps(out, indent=1) if as_json else stats_table(out))
+    return 0
+
+
 def _wait(fn, timeout_s: float):
     end = time.monotonic() + timeout_s
     while time.monotonic() < end:
@@ -120,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
     p_export.add_argument("what", choices=["notebook"])
     p_export.add_argument("dataset_id")
     p_export.add_argument("--out", required=True)
+    p_llm = sub.add_parser("llm", help="the model-call log")
+    p_llm.add_argument("what", choices=["stats"])
+    p_llm.add_argument("--days", type=float, default=None, help="only the last N days (default: the whole log)")
+    p_llm.add_argument("--json", action="store_true", help="print JSON instead of markdown tables")
     args = parser.parse_args(argv)
 
     if args.command == "clean":
@@ -156,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "export":
         return export_notebook(args.dataset_id, Path(args.out))
+    if args.command == "llm":
+        return llm_stats(args.days, args.json)
     return 2
 
 
