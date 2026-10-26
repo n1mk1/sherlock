@@ -132,6 +132,8 @@ def _cascade(ctx: JobContext) -> dict:
     cards = [c["id"] for c in ctx.db.execute(
         f"SELECT id FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND widget_id IN ({','.join('?' * len(affected))})",
         (dataset["id"], *[r["id"] for r in affected])).fetchall()] if affected else []
+    # An export cached from before the cascade, or made during it, isn't reused after (plan 1.4).
+    ctx.db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset["id"],))
     ctx.emit("cascade.started", {"version": version, "widget_ids": [r["id"] for r in affected], "card_ids": cards,
                                  "run_ids": sorted(outdated_runs), "columns": sorted(changed), "all": everything})
     errors = 0
@@ -190,6 +192,7 @@ def _cascade(ctx: JobContext) -> dict:
 
     fresh = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (dataset["id"],)).fetchone()
     audited = trust.audit(ctx.db, ctx.bus, fresh, ctx.id) if fresh["current_version"] == version else 0
+    ctx.db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset["id"],))
     ctx.emit("cascade.done", {"version": version, "counts": counts})
     return {"version": version, **counts, "audited": audited}
 

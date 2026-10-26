@@ -263,3 +263,83 @@ def test_a_ragged_file_rebuilds_in_the_notebook(client, tmp_path):
     expected = _version_frame(folder / parquet)
     pd.testing.assert_frame_equal(df.sort_values("_row_id").reset_index(drop=True), expected, check_dtype=True)
     assert expected["_quarantine_reason"].notna().sum() == 1
+
+
+@pytest.mark.usefixtures("run_jobs")
+def test_one_broken_widget_or_an_update_never_spoils_an_export(client, monkeypatch):
+    """Plan 1.4: a widget whose query fails on the version gets a Markdown cell saying why and the export
+    still succeeds; deleting a card gives the export a new cache key; an export while the cards are being
+    updated waits for them, or says so in its first cell."""
+    import threading
+    import time
+
+    from sherlock.db.connection import connect
+    from sherlock.db.util import new_id, now_iso
+    from sherlock.jobs import export as export_job
+
+    ds = client.post(f"{API}/datasets/sample").json()["id"]
+    wait_status(client, ds, "offer")
+    client.post(f"{API}/datasets/{ds}/use-as-is")
+    wait_status(client, ds, "ready")
+    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled")
+                         for j in client.get(f"{API}/jobs?dataset_id={ds}").json()), timeout=120)
+    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
+    sql_widgets = [w for w in widgets if w["spec"]["op"]["type"] == "sql"]
+    broken = sql_widgets[0]
+    db = connect(client.app.state.settings)
+    try:
+        spec = {**broken["spec"], "op": {"type": "sql", "sql": 'SELECT "no_such_column" FROM t WHERE {{rows}}'}}
+        db.execute("UPDATE widgets SET spec_json = ? WHERE id = ?", (json.dumps(spec), broken["id"]))
+        user_id = db.execute("SELECT user_id FROM datasets WHERE id = ?", (ds,)).fetchone()[0]
+    finally:
+        db.close()
+    out = _export(client, ds)
+    nb = nbformat.reads(client.get(out["download_url"]).text, as_version=4)
+    md = [c.source for c in nb.cells if c.cell_type == "markdown"]
+    assert any(m.startswith(f"## {broken['title']}") and "This widget fails on version" in m for m in md)
+    assert "1 widget failed on version" in nb.cells[0].source
+    assert out["counts"]["widgets"] == len(sql_widgets) - 1
+
+    # A deleted card changes the dataset's state, so the next export isn't the cached one.
+    same = client.post(f"{API}/datasets/{ds}/exports/notebook", json={}).json()
+    assert same["cached"] and same["export_id"] == out["export_id"]
+    card = client.get(f"{API}/datasets/{ds}/cards").json()[0]
+    assert client.delete(f"{API}/cards/{card['id']}").status_code == 204
+    fresh = _export(client, ds)
+    assert not fresh["cached"] and fresh["export_id"] != out["export_id"]
+
+    def updating_job(status="running"):
+        db = connect(client.app.state.settings)
+        try:
+            jid = new_id("job")
+            db.execute("INSERT INTO jobs (id, dataset_id, user_id, kind, status, params_json, owner_pid, created_at) "
+                       "VALUES (?, ?, ?, 'cascade', ?, '{}', 'elsewhere:1:x', ?)", (jid, ds, user_id, status, now_iso()))
+            db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (ds,))  # as a cascade's start does
+            return jid
+        finally:
+            db.close()
+
+    def finish(jid):
+        db = connect(client.app.state.settings)
+        try:
+            db.execute("UPDATE jobs SET status = 'done', finished_at = ? WHERE id = ?", (now_iso(), jid))
+        finally:
+            db.close()
+
+    # A cascade still running after the wait: the notebook says the cards were being updated.
+    monkeypatch.setattr(export_job, "WAIT_S", 0.5)
+    stuck = updating_job()
+    out = _export(client, ds)
+    first = nbformat.reads(client.get(out["download_url"]).text, as_version=4).cells[0].source
+    assert "Story cards were still being updated when this was exported" in first
+    finish(stuck)
+
+    # One that ends within the wait: the export waits for it and needs no note.
+    monkeypatch.setattr(export_job, "WAIT_S", 20.0)
+    soon = updating_job()
+    threading.Thread(target=lambda: (time.sleep(1.0), finish(soon))).start()
+    started = time.monotonic()
+    out = _export(client, ds)
+    assert time.monotonic() - started >= 0.9
+    first = nbformat.reads(client.get(out["download_url"]).text, as_version=4).cells[0].source
+    assert "still being updated" not in first

@@ -616,6 +616,8 @@ The notes box also shows the preview's own notes (TRD §4.2), for example "There
 2. On completion the browser downloads `titanic3-v7.ipynb` and, if ticked, `titanic3-raw.csv` (two downloads; on browsers that block the second, the toast offers a link). The toast becomes "Notebook ready" with **Download again** for 1 minute.
 3. A repeat export with nothing changed (same version, same dataset state, same options) downloads instantly from the cache.
 
+While the dashboard or its stories are being updated, the export waits for them for up to 20 seconds (the tray's log says "Waiting for the story cards to finish updating…"); if they're still updating, the notebook's first cell says so and each card that isn't current carries a note. A widget whose query fails on this version becomes a cell saying why, and the rest of the notebook is still written.
+
 As built, the toast is a loading toast that becomes "Notebook ready" with Download again for 1 minute. The notebook downloads from `/exports/{id}/download`; with Include data the raw CSV follows 0.4 s later from `raw.csv`. The dialog's unsaved-edits note doesn't have the Save and export button yet: it asks the user to save first.
 
 ### 17.4 What's in the file, in order

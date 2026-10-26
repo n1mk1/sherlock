@@ -738,7 +738,7 @@ Story cards API as implemented (`sherlock/routers/cards.py`):
       - A chip with no `key`, an unknown key, or `unverified: true` is stored with `key: null` and `unverified: true`, keeping the value shown.
       - A label is kept only when the card already had that `ref` and `text` (in its headline, body or suggestion), or it is `column:<name>` for a column of the file with the name as its text. Any other label becomes a text run, so a number in it becomes an unverified chip.
       - Runs of another type are dropped; a block type other than `paragraph` or `bullets` becomes `paragraph`.
-    - It bumps `state_rev` and emits `card.updated`, as do the suggestion, badge and restore routes. `DELETE` emits `card.updated` without bumping `state_rev`.
+    - It bumps `state_rev` and emits `card.updated`, as do the suggestion, badge and restore routes. `DELETE` emits `card.updated`, bumps `state_rev` too (so a cached notebook with the card isn't reused, plan 1.4) and re-runs `synthesis.check_sources` (§7.4.2).
   - **`DELETE`** sets `deleted_at`; `POST /cards/{cid}/restore` clears it. Deleted cards are purged after 10 minutes by the purge job (§3.3).
   - **Evidence.**
     - The chip is looked up in the headline, the body and the suggestion. An unknown chip, or a key no longer on the card's sheet, is `404`.
@@ -1781,7 +1781,8 @@ Cascade with cards (cut 6 applied; `sherlock/jobs/cascade.py`):
 - **Affected widgets** are stale widgets whose dependencies (§6.4 `depends_on`) meet the changed columns, or every stale widget when everything changed; a widget whose query no longer compiles counts as affected. Only they re-run their query and emit `widget.updated`; the others keep their status and error (an erroring widget isn't reset to `ready`) and just record the new `version_built`, after the cards are told. `cascade.started` lists the affected widgets and their cards, the changed `columns` and `all`.
 - **Cards.** The affected widgets' cards go through `tell` with reason `cascade`: a new sheet and a new narration, the `changed` badge set, an edited card given a `suggestion` instead, and the overview rewritten. With the user's "Story updates: Ask first", those cards become `outdated` (no narration) until Refresh.
 - **Counts.** `cascade.done` carries `{ widgets, errors, cards, outdated, runs }`.
-- **The audit (plan 1.3).** After the cards, the cascade runs `trust.audit` on its version (§7.4.2) and returns `{ version, …counts, audited }`; `cascade.done` keeps its counts. A cascade a newer version overtook leaves the audit to that version's cascade. With "Ask first" the overview and the syntheses citing the outdated cards are marked `outdated` too.
+- **The audit (plan 1.3).** After the cards, the cascade runs `trust.audit` on its version (§7.4.2) and returns `{ version, …counts, audited }`; `cascade.done` keeps its counts.
+- **The export key (plan 1.4).** The cascade bumps `state_rev` when it starts (with `cascade.started`) and when it ends (before `cascade.done`), so no notebook cached from before it, or built during it, is served after it (§7.7). A cascade a newer version overtook leaves the audit to that version's cascade. With "Ask first" the overview and the syntheses citing the outdated cards are marked `outdated` too.
 - **Widgets added, changed or deleted** queue a `stories` job for that widget (deleted: the overview only), once the dataset has cards.
 - **Restoring a deleted widget** brings its card back and queues the overview, so the overview counts the widget again.
 - **Runs.**
@@ -1801,6 +1802,11 @@ One writer per dataset, write guards and failure hooks (`jobs/runner.py`, `jobs/
 ### 7.7 Notebook exporter
 
 Job kind `export_notebook`, input `(dataset, version = current, NotebookOptions)`. Cache key `sha1(kind, version, datasets.state_rev, options)` → `exports` row; a hit returns the existing file unless it has been purged, in which case the export runs again.
+
+Export consistency (plan 1.4; `jobs/export.py`, `notebook/exporter.py`):
+- **The cache key follows the cards.** `state_rev` is bumped at a cascade's start and at its end (§7.6) and when a card is deleted, so an export cached before a cascade, or made during one, isn't reused after it.
+- **An export waits for the cards.** While a `cascade`, `stories` or `build_dashboard` job is queued or running for the dataset, the export job waits up to 20 s (`export.WAIT_S`, polling every 0.5 s, with the log line "Waiting for the story cards to finish updating…"), then reads the dataset again and builds. If one is still busy and the notebook includes cards, its first cell adds: "Story cards were still being updated when this was exported, so some may show an earlier version's words; each card that isn't current says so. Export again once the update finishes." Each card that isn't usable carries its own note (§7.4.2).
+- **One widget never fails the export.** A widget whose query fails on the version, or an analysis whose cells can't be built, becomes a Markdown cell under its title: "*This widget fails on version N: <reason> It's left out of the notebook; fix it in Sherlock and export again.*" Its card still follows. The first cell adds "1 widget failed on version N and is left out; its cell says why.", and `counts.widgets` counts only the widgets emitted.
 
 ```
 nb = nbformat.v4.new_notebook(metadata={kernelspec: python3, sherlock: {version, dataset_name, exported_at, app_version}})
@@ -2115,7 +2121,7 @@ As built (`sherlock/agent/prompts.py`, `llm/client.py`): every call sends two me
 | Runs | sha1(version, scope, recipe, method, params) | `runs` + files | new version touching used columns → `outdated` |
 | Embeddings | (dataset, column, value) | `value_index` | rebuilt per version only for changed columns. As built, no embeddings are stored while `MODEL_EMBED` is empty (§3.5), and the profile rewrites the whole value index for each new current version (Schema §2.17) |
 | Sample dataset artifacts | fixed | copied on `POST /datasets/sample` | never; rebuilt by `scripts/seed_sample.py` (the seed in `api/samples/seed/titanic3/`, cloned with fresh IDs) |
-| Notebook exports | sha1(kind, version, state_rev, options) | `exports` + `exports/*.ipynb` | new version or any widget, card, run, layout or canvas change (`state_rev`); files purged after 24 h |
+| Notebook exports | sha1(kind, version, state_rev, options) | `exports` + `exports/*.ipynb` | new version or any widget, card, run, layout or canvas change (`state_rev`), a deleted card, and a cascade's start and end; files purged after 24 h |
 
 The sample's full pipeline output (versions, steps, widgets, cards, runs, canvas) is built once by the seed script and cloned per user so "Try with sample" is instant. Cloning remaps every ID: new IDs are generated for every cloned row, and old IDs are rewritten in all JSON columns, the canvas JSON and file paths, in one transaction.
 

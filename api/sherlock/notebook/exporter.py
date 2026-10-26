@@ -3,11 +3,14 @@ runnable Jupyter notebook that rebuilds it from the raw file.
 
 `build()` assembles the cells; the `export_notebook` job writes the file and the `exports` row. An
 export is cached by sha1(kind, version, state_rev, options): a new version or any widget, card,
-run, layout or canvas change bumps `state_rev`, so a repeat export of the same state is instant.
+run, layout or canvas change bumps `state_rev`, so a repeat export of the same state is instant. A
+cascade bumps it when it starts and when it ends, and so does a deleted card (plan 1.4). A widget that
+fails on the version becomes a Markdown cell saying why, so one widget never fails the export.
 """
 
 import hashlib
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +27,8 @@ from sherlock.notebook.scan import scan
 from sherlock.notebook.vendored_helpers import helpers_cell
 from sherlock.steps.commit import load_step
 from sherlock.storage import VersionConnections, dataset_dir
+
+log = logging.getLogger("sherlock.notebook")
 
 
 class NotebookOptions(BaseModel):
@@ -104,10 +109,12 @@ def _widgets(db, dataset_id: str) -> list[sqlite3.Row]:
 
 
 def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections, dataset: sqlite3.Row,
-          options: NotebookOptions, progress=lambda *_: None) -> Built:
+          options: NotebookOptions, progress=lambda *_: None, extra_notes: list[str] | None = None) -> Built:
+    """`extra_notes` go into the first cell with the others (the export job's "cards were updating")."""
     from sherlock.widgets import service as widgets
 
     chain, target, notes = _chain(db, dataset, options)
+    notes += extra_notes or []
     version = target["version"]
     v1 = _version(db, dataset["id"], 1)
     v1_columns = json.loads(v1["columns_json"])
@@ -154,6 +161,7 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
         intro = "## The dashboard\n\nEach widget's query runs on the rebuilt data; each analysis runs its reproduction code."
         nb.cells.append(nbformat.v4.new_markdown_cell(intro))
         nb.cells.append(nbformat.v4.new_code_cell(cells.PLOT_HELPERS))
+    failed = 0
     for w in rows:
         spec = json.loads(w["spec_json"])
         if spec["op"]["type"] != "sql":
@@ -162,18 +170,34 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
                 nb.cells.append(nbformat.v4.new_markdown_cell(
                     f"## {w['title']}\n\n*This analysis hadn't finished when the notebook was exported, so it's left out.*"))
                 continue
-            nb.cells += _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
+            try:
+                made = _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
+            except Exception as exc:  # noqa: BLE001 - one widget never fails the export (plan 1.4)
+                nb.cells += _failed(w, version, exc)
+                failed += 1
+                continue
+            nb.cells += made
             emitted_runs.append(run["id"])
             if w["id"] in cards:
                 nb.cells += _card(cards[w["id"]])
             continue
-        sql = widgets.compiled(env, dataset, spec, version, [])
-        data = widgets.data(env, dataset, w, [], version)
-        point = json.loads(w["point_json"])["key"] if w["point_json"] else None
-        nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], data["row_count"]), point)
-        emitted += 1
+        try:
+            sql = widgets.compiled(env, dataset, spec, version, [])
+            data = widgets.data(env, dataset, w, [], version)
+        except Exception as exc:  # noqa: BLE001 - one widget never fails the export (plan 1.4)
+            nb.cells += _failed(w, version, exc)
+            failed += 1
+        else:
+            point = json.loads(w["point_json"])["key"] if w["point_json"] else None
+            nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], data["row_count"]),
+                                     point)
+            emitted += 1
         if w["id"] in cards:
             nb.cells += _card(cards[w["id"]])
+    if failed:  # the first cell says so too
+        notes.append(f"{failed} widget{'s' if failed != 1 else ''} failed on version {version} and "
+                     f"{'are' if failed != 1 else 'is'} left out; {'their cells say' if failed != 1 else 'its cell says'} why.")
+        nb.cells[0] = cells.title(dataset["name"], version, exported, __version__, len(chain), len(rows), notes)[0]
     for run in extra:  # include_runs: finished runs no widget shows
         nb.cells += _run_cells(settings, dataset, run, f"What drives {run['target']}?")
         emitted_runs.append(run["id"])
@@ -231,6 +255,16 @@ def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title
     return cells.run(title, card, code, run["status"] == "outdated", metrics,
                      new_output("display_data", data=base["data"]),
                      outputs.table(imp["columns"], imp["rows"], imp["row_count"]))
+
+
+def _failed(widget: sqlite3.Row, version: int, exc: Exception) -> list:
+    """A widget whose query or run can't be emitted on this version: a Markdown cell with the reason."""
+    from sherlock.errors import ApiError
+
+    reason = exc.message if isinstance(exc, ApiError) else (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+    log.warning("export: widget %s fails on v%s: %s", widget["id"], version, reason)
+    return [nbformat.v4.new_markdown_cell(f"## {widget['title']}\n\n*This widget fails on version {version}: {reason[:300]} "
+                                          "It's left out of the notebook; fix it in Sherlock and export again.*")]
 
 
 def _card(entry: tuple[dict, dict, str | None], level: str = "###") -> list:

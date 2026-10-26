@@ -124,6 +124,7 @@ def dismiss_badge(cid: str, request: Request, _: Owned = Depends(owned("card")),
 def delete_card(cid: str, request: Request, _: Owned = Depends(owned("card")), db: sqlite3.Connection = Depends(get_db)) -> None:
     db.execute("UPDATE cards SET deleted_at = ? WHERE id = ?", (now_iso(), cid))
     r = _card(db, cid)
+    db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (r["dataset_id"],))  # a new export key (plan 1.4)
     dataset = _dataset(db, r["dataset_id"])
     stories.emit_card(db, request.app.state.bus, dataset, cid)
     # A synthesis citing it can no longer show its numbers: `sources_changed`, with Refresh (plan 1.3).

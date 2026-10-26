@@ -530,6 +530,20 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A card whose widget was deleted isn't usable, but a synthesis citing it isn't marked for that: Restore brings the widget and its card back.
 - **Eval:** `uv run sherlock eval grounding` (live): titanic3 10 cards (10 by the model), 25 of 25 chips, 23 of 23 facts holding; sales_dated 11 cards (11), 37 of 37 chips, 35 of 35 facts; 0 text runs with numbers, 0 causal, 0 bad labels, both syntheses by the model. **Grounded 62 of 62 chips, no problems.** Stale reuse: titanic3 edited `fare` (synthesis after the delete `sources_changed`, overview `outdated`, 4 cards outdated, 6 notebook notes for 6 cards not ready, audit 0); sales_dated edited `revenue` (`sources_changed`, `outdated`, 5, 7 of 7, 0).
 
+### Slice 6 (plan 1.4): export consistency
+
+- **Done:**
+  - **The export key follows the cards.** The cascade bumps `state_rev` when it starts and when it ends, and `DELETE /cards/{cid}` bumps it, so a notebook cached before a cascade, built during one, or holding a deleted card isn't served afterwards.
+  - **An export waits for the cards.** While a cascade, stories job or build is queued or running for the dataset, the export job waits up to 20 s (`jobs/export.py::WAIT_S`), logging "Waiting for the story cards to finish updating…", then reads the dataset again. If they're still busy, the notebook's first cell says the cards were being updated, and each card that isn't current carries its slice 5 note.
+  - **One widget never fails the export.** A widget whose query fails on the version (or an analysis whose cells can't be built) becomes "*This widget fails on version N: <reason> …*" under its title, the first cell counts the failures, and `counts.widgets` counts only what was emitted.
+  - Tests (`test_notebook.py::test_one_broken_widget_or_an_update_never_spoils_an_export`): a widget with a broken query leaves the export done with its note and the count; an unchanged repeat is cached, and a deleted card makes the next export a new one; a cascade still running after the wait gives the first cell's note; one that ends within the wait is waited for (≥ 1 s) and gives none.
+  - Docs: TRD §4.6 (`DELETE` bumps `state_rev`), §7.6 (the export key), §7.7 (export consistency), §9 (the cache's invalidations); PRD NB-9 acceptance; App Flow §17.3.
+- **Decisions:**
+  - The wait covers queued jobs too: a cascade still in its 2 s debounce is about to change the cards.
+  - No new setting for the wait (the goal's "no new settings"); 20 s is the plan's number and a module constant.
+  - A failing widget's card still follows its note: it's `outdated` by then (slice 4) and says so in its own note.
+  - BACKLOG: no line closes and none is added.
+
 ### Slice 7 (plan 1.5): the widget data key carries its spec
 
 - **Done:**
