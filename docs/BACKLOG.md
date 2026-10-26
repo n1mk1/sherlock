@@ -91,7 +91,6 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 - `offset=10**20` or `version=10**20` on `GET /rows` is a 500, not a 422 (D2).
 - `ingest/sniff.py` `header_names` reads one physical line, so a quoted newline in a header splits it (D2).
 - A 3-line cp1252 file was detected as cp775 (D2). Longer files are fine, and the preview can override the encoding.
-- SSE: `jobs/events.py` `emit` inserts the row, then publishes, with no lock across both, so IDs can publish out of order (D2, from reading). A library stream that drops before its first event reopens live-only and can miss a `dataset.status` (D2).
 - `cleaning/detectors/impossible_values.py` `NON_NEGATIVE` has no word boundaries, so `average_temp`, `account_balance` and `percentage_change` count as non-negative quantities (D2).
 - `profile/infer.py` `TARGET_NAMES` includes `survived` (D3 L6, Rule 4).
 - Web: CR-only line endings with Skip rows > 0 say "no data rows"; error toasts dismiss after 4 s, though Brief §4.10 says they stay; the status badge's hover text appears only on `failed` (App Flow §14); the empty-state pitch uses `text-foreground-2`, not `--muted-foreground` (Brief §5.1) (D2).
@@ -219,7 +218,7 @@ Each of these carries a "Not built yet" marker in the brief's section.
 - No test asserts the `run.updated` event (D7 F17).
 - The ask eval has no unanswerable questions (50 questions: 28, 17 and 5 across three files), so PRD §4's "≥ 95% of unanswerable questions answered with an honest can't" isn't measured. Add some to `ask_questions.yaml`.
 - No component tests for Save, conflicts and Undo: `SaveActions` (with its conflict dialog), `ChangesPanel`, and the CSV tab's save path. `csvtab.test.tsx` covers only the read-only lock (D5 O4).
-- Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; SSE replay and event order; the path with no `LLM_BASE_URL`; `sse.ts` dedup, reopen and backoff; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
+- Day 2's list of untested cases: large integers, a DATE with a time, `nan` and booleans in edits; the same cell twice in one batch; hand-edit protection after an undo; conflicts mid-save; a huge offset or version; `state_rev` after undo; the path with no `LLM_BASE_URL`; `ImportPreviewDialog`'s options round trip; slide-over keyboard behaviour.
 - **The e2e flow can see the chat answer twice** (2026-10-26). `expect(page.getByText("First class paid the most on average")).toBeVisible()` (`web/e2e/flow.spec.ts:30`) failed with a strict-mode violation, two `<p class="leading-relaxed">` with that text, in 2 of 6 runs on `f8741ed` and its children; both ran while another session's pytest loaded the machine, and every run alone passed. The failure snapshot shows one answer, so for a moment the streamed blocks and the saved message are probably both on screen (`ChatBar.tsx`, `chat/Blocks.tsx`). Show one copy during the hand-over, or have the test wait for the saved message.
 
 ## 7. Docs (Rule 1)

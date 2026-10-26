@@ -434,6 +434,9 @@ export function useWidgetActions(datasetId: string) {
  * cascade (TRD §7.6) drives the "Updating n widgets" line and its summary toast. */
 export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "started" | "done"; data: Record<string, unknown> }) => void) {
   const qc = useQueryClient();
+  // A reopened stream may have missed any event (TRD §5.2): every query on screen is read again, the
+  // dataset's, its widgets' data, its cards and the canvas included.
+  const onReopen = () => qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "me" });
   useEventStream(`/api/v1/datasets/${datasetId}/events`, {
     "widget.updated": (data) => invalidateWidget(qc, datasetId, data as Widget),
     "layout.updated": () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
@@ -470,7 +473,7 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
       qc.invalidateQueries({ queryKey: ["widget-data"] });
     },
-  });
+  }, undefined, onReopen);
 }
 
 // --- chat (TRD §4.9, §5.3) --------------------------------------------------------------------
@@ -550,5 +553,9 @@ export function useLibraryEvents(onProgress: (e: JobProgressEvent) => void) {
   useEventStream("/api/v1/events", {
     "dataset.status": (data) => applyStatus(qc, data as DatasetStatusEvent),
     "job.progress": (data) => onProgress(data as JobProgressEvent),
+  }, undefined, () => {
+    // Reopened: a dataset.status may have been missed, so the library and its jobs are read again.
+    qc.invalidateQueries({ queryKey: keys.datasets });
+    qc.invalidateQueries({ queryKey: ["jobs"] });
   });
 }

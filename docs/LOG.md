@@ -566,6 +566,17 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A sentence with a number in words is dropped as well as one with digits ("quarantines the one value" passes, since `number_in_words` leaves out "one" on purpose, D8 F1), so the stricter half of Rule 2 holds without a new word list.
   - A model sentence with a number is dropped whole, not edited: cutting the number out leaves a sentence nobody wrote.
   - The calls line names the model IDs without the `nvidia/` prefix; receipts (slice 8) own the fuller per-call view.
+### Tier 2 row 2b.1: the event stream catches up
+
+- **Done:**
+  - **In order.** `jobs/events.py` `emit` writes the row and publishes it under one process-wide lock, so streams get events in id order. Before, two threads could write 10 and 11 and publish 11 first, and the client, which skipped any id at or below the last it saw, dropped 10.
+  - **An opening id.** Each stream reads the newest event id after it subscribes and sends it as an `id:` line alone, after any replay and before the first live event. It dispatches nothing, but the browser keeps it as its last event ID, so a stream that drops before its first event reconnects with `Last-Event-ID` and gets what it missed (before, it came back live-only).
+  - **The newest 5,000.** A replay is bounded by that newest id and keeps the newest 5,000 rows, sent oldest first (it was the oldest 5,000, so a client far behind got stale events and never the latest).
+  - **The client.** `sse.ts` keeps a set of the last 2,000 ids it handled instead of "skip at or below the last", so an event that arrives late is still handled and a replay's copy isn't. Every reopen, the browser's own or ours, calls `onReopen`: the dataset stream reads every query on screen again (all but `me`), the library stream the dataset list and the jobs, since a capped replay or a live-only reopen can still miss something.
+  - Tests: `test_jobs.py`: a stream's last frame after a replay, and its first live-only, is `id: <newest>`; with the cap at 2 the replay is the newest two; two threads emitting at once publish in id order (a bus that holds the first publish; it fails without the lock). `sse.test.ts` with the fake `EventSource`: a late event is handled and a replayed one isn't; the browser's reconnect and ours (after 1 s, `?last_event_id=9`) each call `onReopen` once, the first open doesn't; a dataset stream that reopens reads the dataset again.
+  - Docs: TRD §4 (web: `sse.ts`, reopen) and §5.2 (in id order, the opening `id:` line, the newest 5,000, the live skip after a replay).
+  - BACKLOG: removed the D2 SSE line (out-of-order ids; a library stream that drops before its first event); "SSE replay and event order" and "`sse.ts` dedup, reopen and backoff" are out of Day 2's untested list.
+- **Decision:** both fixes the plan offered, not one: the lock fixes the order at the source, and the client's id set still matters for a replay that overlaps live events after a reopen. `onReopen` reads everything on screen rather than a list of keys, because a reopen is rare and a missed event can be of any type.
 
 ### Slice 11 (plan 2.4 + 2.5 + 2.6): output agreement, merge safety, and the two new benchmark corruptions
 

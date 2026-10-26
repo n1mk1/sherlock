@@ -149,7 +149,8 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
   - **`src/api/`.**
     - `client.ts` makes absolute same-origin requests, so the identity cookie goes along. It throws the §4 error envelope as an `ApiError`, and a network failure as code `offline`.
     - `queries.ts` holds the query hooks and the user-level stream, which patches the dataset list and the open dataset on `dataset.status` and keeps `job.progress` per dataset.
-    - `sse.ts` is the stream hook. It skips events at or below the last ID it saw, and when the browser gives up on a stream it reopens with `?last_event_id=`, backing off from 1 s to 30 s.
+    - `sse.ts` is the stream hook. It skips an event whose ID it has already handled (it keeps the last 2,000 IDs, so an older event that arrives after a newer one is still handled), and when the browser gives up on a stream it reopens with `?last_event_id=` (the highest ID seen), backing off from 1 s to 30 s.
+    - **Reopen.** Every reopen, the browser's own reconnect or ours, calls the stream's `onReopen`, since a replay is capped and a stream that saw no event reopens live-only. The dataset stream then reads every query on screen again (all but `me`: the dataset, its widgets and their data, cards, steps, the plan and the canvas); the library stream reads the dataset list and the jobs again.
   - **After an upload.** The dataset is read again after the upload's response, because a short profile job can finish, and emit its `dataset.status`, before the response arrives.
   - **Charts.** Bklit's bar, line, area, pie and ring charts come from the `@bklit` shadcn registry (`components.json`) and are copied into `src/components/charts/`.
     - They bring `@visx/*` 4.0.0, `d3-array`, `d3-shape`, `motion` and `@number-flow/react`.
@@ -941,6 +942,7 @@ Events are written to `job_events` (for jobs) and published on an in-process bus
 
 Implementation (`sherlock/jobs/events.py`, `sherlock/routers/streams.py`):
 - **Every event is a row.** Each event is written to `job_events` first, then published on the bus, and the row's id is the SSE `id`. That includes events that don't come from a job (`job_id` NULL), so every event can be replayed.
+- **In id order.** `emit` writes the row and publishes it under one process-wide lock, so the streams get events in id order even when several threads emit at once. Before, two threads could insert 10 and 11 and publish 11 first, and a client that skipped IDs at or below the last one it saw dropped 10.
 - **`dataset_id` in every event.** Each event's `data` also carries `dataset_id`, so the user-level stream can say which dataset an event is about.
 - **`dataset.status` errors.** When the status is `failed`, `dataset.status` also carries `error`. As built, it carries `error` whenever the change sets one: also `offer` with "Cleaning stopped: <reason>" (§7.2 "Endings").
 - **Emitted:**
@@ -950,13 +952,14 @@ Implementation (`sherlock/jobs/events.py`, `sherlock/routers/streams.py`):
   - `widget.updated` from the widgets service and the ML runner, `card.updated` from the stories service, `run.updated` from the ML runner, `layout.updated` from `PUT /datasets/{id}/layout`, `canvas.updated` from the canvas service, and `plan.updated` from the cleaning routes, the profile job (After upload: `always`) and chat's `edit_plan`. Every type in §5.1 is emitted. The first `dataset.status` of a sample copied from the seed comes from `POST /datasets/sample`.
 - **Wire format.**
   - A stream opens with `retry: 3000`.
+  - Then, after any replay and before the first live event, an `id:` line alone with the newest event ID (`max(job_events.id)`, read after the stream subscribed). It dispatches nothing, but it sets the browser's last event ID, so a stream that drops before its first event still reconnects with `Last-Event-ID` and gets what it missed.
   - Each event is `id`, `event` and one `data` line of compact JSON.
   - The heartbeat is the comment `: ping`.
   - Responses send `Cache-Control: no-cache` and `X-Accel-Buffering: no`.
 - **Replay.**
   - The stream subscribes to the bus first.
-  - If the request has `Last-Event-ID`, it then replays the rows after that id: at most 5,000, in id order. A first connection, which can't set the header from `EventSource`, can pass `?last_event_id=` instead, and the header wins when both are sent. A header that isn't a number means no replay, even with the query parameter.
-  - Then it streams live events, skipping any whose id is at or below the last one replayed.
+  - If the request has `Last-Event-ID`, it then replays the rows after that id up to the newest one: the newest 5,000 of them, sent in id order (before, it was the oldest 5,000, so a client far behind got old events and never the latest). A first connection, which can't set the header from `EventSource`, can pass `?last_event_id=` instead, and the header wins when both are sent. A header that isn't a number means no replay, even with the query parameter.
+  - Then it streams live events. After a replay it skips any whose id is at or below the newest one read with it, since the replay sent those.
   - Without either, the stream starts with live events only.
 - **Scope.** `GET /datasets/{id}/events` needs an owned dataset (`404` otherwise) and carries all of that dataset's events. `GET /events` carries only `dataset.status` and `job.progress`, for all of the user's datasets; its replay leaves out deleted ones.
 - **Rate limit.** Opening a stream counts as one read (§15).

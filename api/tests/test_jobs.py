@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 from sherlock.config import get_settings
 from sherlock.db.connection import connect
 from sherlock.jobs import runner as runner_mod
-from sherlock.jobs.events import Event, EventBus
+from sherlock.jobs import events as events_mod
+from sherlock.jobs.events import Event, EventBus, emit
 from sherlock.jobs.runner import HANDLERS, JobKind
 from sherlock.main import create_app
 from sherlock.profile import service as profile_service
@@ -334,8 +335,9 @@ def live(app):
     thread.join(timeout=15)
 
 
-def read_events(client, path, headers=None, until=lambda evs: False, timeout=10.0, keep_comments=False):
-    """Read an SSE stream until `until(events)` holds; events are (id, type, data) or comments."""
+def read_events(client, path, headers=None, until=lambda evs: False, timeout=10.0, keep_comments=False, keep_ids=False):
+    """Read an SSE stream until `until(events)` holds; events are (id, type, data), comments, or
+    ("id", n) for a frame with an id alone (`keep_ids`)."""
     events, current = [], {}
     deadline = time.monotonic() + timeout
     with client.stream("GET", path, headers=headers or {}) as r:
@@ -352,7 +354,10 @@ def read_events(client, path, headers=None, until=lambda evs: False, timeout=10.
             elif line.startswith("data: "):
                 current["data"] = json.loads(line[6:])
             elif line == "" and current:
-                events.append((current["id"], current["type"], current["data"]))
+                if "type" in current:
+                    events.append((current["id"], current["type"], current["data"]))
+                elif keep_ids:
+                    events.append(("id", current["id"]))
                 current = {}
             if until(events) or time.monotonic() > deadline:
                 break
@@ -399,6 +404,58 @@ def test_sse_live_then_replay(live, app):
     t.join(timeout=15)
     assert _types(collected) == ["job.progress", "job.progress", "dataset.status"]  # job.done isn't on the user stream
     assert all(e[2]["dataset_id"] == second["id"] for e in collected)
+
+
+def test_a_stream_opens_with_the_newest_id_and_replays_the_newest(live, monkeypatch):
+    """Plan 2b.1 (TRD §5.2): an `id:` line alone with the newest event id comes before the first live
+    event, so a browser that reconnects before any event arrives still sends Last-Event-ID; a capped
+    replay keeps the newest events, not the oldest."""
+    ds = live.post(f"{API}/datasets", files={"file": ("a.csv", TEXT_CSV, "text/csv")}).json()
+    wait_for(lambda: live.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer")
+    path = f"{API}/datasets/{ds['id']}/events"
+    opened = lambda evs: bool(evs) and evs[-1][0] == "id"  # noqa: E731
+
+    full = read_events(live, path, {"Last-Event-ID": "0"}, keep_ids=True, until=opened)
+    ids = [e[0] for e in full[:-1]]
+    assert _types(full[:-1]) == ["job.progress", "job.progress", "dataset.status", "job.done"]
+    assert full[-1] == ("id", ids[-1])  # after the replay, the newest id
+    assert read_events(live, path, keep_ids=True, until=lambda evs: bool(evs)) == [("id", ids[-1])]  # live only: first
+
+    monkeypatch.setattr(events_mod, "REPLAY_LIMIT", 2)
+    capped = read_events(live, path, {"Last-Event-ID": "0"}, keep_ids=True, until=opened)
+    assert [e[0] for e in capped[:-1]] == ids[-2:] and _types(capped[:-1]) == ["dataset.status", "job.done"]
+
+
+def test_emit_publishes_in_id_order(client):
+    """Two threads emit at once: the row written first is published first (plan 2b.1). Without the lock
+    around insert and publish, the second thread wrote 11 and published it while the first still held 10."""
+    settings = get_settings()
+    first_written, release = threading.Event(), threading.Event()
+    published: list[int] = []
+
+    class SlowBus:
+        def publish(self, event):
+            if not first_written.is_set():  # the first event waits here, its row already written
+                first_written.set()
+                release.wait(5)
+            published.append(event.id)
+
+    bus = SlowBus()
+    a, b = connect(settings), connect(settings)
+    try:
+        ta = threading.Thread(target=emit, args=(a, bus, "ds_x", "usr_1", "job.progress", {}))
+        ta.start()
+        assert first_written.wait(5)
+        tb = threading.Thread(target=emit, args=(b, bus, "ds_x", "usr_1", "job.progress", {}))
+        tb.start()
+        time.sleep(0.3)  # time for the second thread to write and publish, were nothing holding it
+        release.set()
+        ta.join(5)
+        tb.join(5)
+    finally:
+        a.close()
+        b.close()
+    assert len(published) == 2 and published == sorted(published)
 
 
 def test_user_stream_replay_filters_types(live):
