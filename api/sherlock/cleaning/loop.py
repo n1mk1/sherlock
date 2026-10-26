@@ -33,7 +33,7 @@ import duckdb
 import pandas as pd
 
 from sherlock.cleaning import gate, prompts, verifiers
-from sherlock.cleaning.plan import SKIP_TEXT, USER_DETECTOR, key, never_change, run_params
+from sherlock.cleaning.plan import SKIP_TEXT, USER_DETECTOR, both_ways, key, needs_order, never_change, run_params
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
 from sherlock.config import Settings
@@ -112,6 +112,13 @@ def short_line(issue: dict) -> str:
         text = issue["instruction"]
         return f"Your step: {text if len(text) <= 80 else text[:79] + '…'}"
     return f"{issue['count']:,} {issue_words(issue)}"
+
+
+def order_needed(issue: dict) -> str:
+    """The skip reason for dates that read both ways: no model call and no guess (plan 2.6)."""
+    shown = "; ".join(f"{v} is {d} or {m}" for v, d, m in both_ways(issue.get("examples") or [])[:2])
+    return ("Left as text: every date reads both ways" + (f" ({shown})" if shown else "")
+            + ", so the order is yours to choose: rewrite this fix in the cleaning plan to say which")
 
 
 def issue_words(issue: dict) -> str | None:
@@ -316,6 +323,10 @@ class Cleaner:
                 self.state.handled.append(key(issue))
                 self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
                 continue
+            if needs_order(issue) and key(issue) not in self.instructions:  # every date reads both ways
+                self.state.handled.append(key(issue))
+                self._skip(issue, order_needed(issue), log_text="needs your choice of order")
+                continue
             if key(issue) in self.instructions:  # a fix the user rewrote
                 return {**issue, "requested": True, "instruction": self.instructions[key(issue)],
                         "plan_item_id": self.item_ids.get(key(issue))}
@@ -389,6 +400,7 @@ class Cleaner:
         _copy_rows(path, sample_path, self._sample_ids(before, issue))
         sample = self._read(sample_path)
         scored = []
+        results: list[pd.DataFrame | None] = []  # each candidate's result on the sample, None when it failed
         for cand in proposed.candidates:
             self.ctx.check_cancel()
             out = self.work / f"cand_{uuid.uuid4().hex}.parquet"
@@ -399,14 +411,17 @@ class Cleaner:
                 raise JobCancelled()
             if not r.ok:
                 scored.append((cand, 0.0, None, r.error or "the code failed"))
+                results.append(None)
                 continue
             try:
                 after = self._restrict(sample, self._read(out))
             except ScopeError as exc:
                 scored.append((cand, 0.0, None, str(exc)))
+                results.append(None)
                 continue
             report = verifiers.verify(sample, after, detector, column)
             scored.append((cand, report.score, report, None if report.passed else _first_failure(report)))
+            results.append(after if report.passed else None)
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         best_i = max(range(len(scored)), key=lambda i: scored[i][1]) if scored else None
         if best_i is None or scored[best_i][1] == 0.0:
@@ -414,6 +429,14 @@ class Cleaner:
             return self._skip(issue, f"No candidate passed the checks ({why})", candidates=chips)
         best, best_score, sample_report, _ = scored[best_i]
         chips[best_i]["chosen"] = True
+        # Output agreement (plan 2.4): candidates that pass but value the same cells differently leave
+        # the data's answer open, so the step is skipped before the full run, with two cells both ways.
+        compared = verifiers.compare(sample, results, best_i)
+        apart = gate.disagree(compared.disagreement)
+        if apart:
+            one, other = (scored[i][0].label for i in compared.pair)
+            shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)
+            return self._skip(issue, f"Skipped: {apart} ({one} vs {other}: {shown})", candidates=chips)
 
         # The best candidate on the full data, verified again; the gate uses the real blast.
         self.ctx.check_cancel()
@@ -448,7 +471,8 @@ class Cleaner:
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
         total_cells = len(before) * max(len(user_cols), 1)
         affected = gate.cells_affected(full_report.cells_changed, full_report.quarantined, len(user_cols), total_cells)
-        decision = gate.decide([s for _, s, *_ in scored], review_ok, affected, total_cells, requested=requested)
+        decision = gate.decide([s for _, s, *_ in scored], compared.agreement, review_ok, affected, total_cells,
+                               requested=requested)
         if decision.gate == "skip":
             return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
         restricted = full_out
@@ -554,7 +578,7 @@ class Cleaner:
             issue_line=_safe(issue_line(issue)), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
             approaches=_safe("; ".join(approaches)), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
             samples=_json(samples), examples=_json(cap_values(issue["examples"], 10)), helpers=prompts.HELPERS,
-            instruction=_instruction(issue),
+            details=_json(issue.get("details") or {}, 600), instruction=_instruction(issue),
         )
         out = self.llm.structured("large", self._messages(user), Candidates, purpose="propose", scope=self.scope,
                                   max_tokens=6000)

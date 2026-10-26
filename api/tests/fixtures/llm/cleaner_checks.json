@@ -1,0 +1,39 @@
+[
+  {
+    "purpose": "diagnose",
+    "match": [
+      "Column: name",
+      "whitespace_case"
+    ],
+    "content": {
+      "cause": "The same surname is written with different case.",
+      "approach_options": [
+        "Use title case",
+        "Keep the most frequent spelling"
+      ],
+      "preferred_option": 0,
+      "risk": "low",
+      "leave_as_is": false
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: name"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Title case",
+          "code": "result = df.copy()\nresult['name'] = normalize_whitespace_case(df['name'], mode='title')\n",
+          "expected_effect": "Every surname in title case."
+        },
+        {
+          "label": "Most frequent spelling",
+          "code": "result = df.copy()\nresult['name'] = normalize_whitespace_case(df['name'], mode='keep')\n",
+          "expected_effect": "Each surname takes its most frequent spelling."
+        }
+      ]
+    }
+  }
+]

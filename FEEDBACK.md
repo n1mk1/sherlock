@@ -77,6 +77,20 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - `sales` units placeholders: 3 of 45, 27 of 45 before.
 - Same input and temperature 0, different code. This is the reproducibility point above, measured.
 
+**Rerun after output agreement, merge safety and two new corruptions** (2026-10-26, plan 2.4–2.6): three new sets test what the Cleaner must not do, dates that read both ways (written day-first in one set and month-first in the other) and look-alike categories ("Plan A"/"Plan B", "Region 1"/"Region 2", "Austria"/"Australia"). **Wrong** counts damaged cells changed into the wrong value.
+
+| Set | Recovered | Wrong | Harm | Row loss | Steps | Time |
+|---|---|---|---|---|---|---|
+| titanic_clean | 92.1% | 5.1% | 0.00% | 0.0% | 5 | 117 s |
+| sales | 97.6% | 0.0% | 0.00% | 0.0% | 4 | 103 s |
+| hr | 98.1% | 0.0% | 0.00% | 0.0% | 3 | 75 s |
+| dates_dmy | 0.0% (was 100%, a silent guess) | 0.0% | 0.00% | 0.0% | 0 | 2 s |
+| dates_mdy | 0.0% | 0.0% (was 100%) | 0.00% | 0.0% | 0 | 6 s |
+| lookalikes | 41.7% (was 100%) | 0.0% | 0.00% | 0.0% | 1 | 90 s |
+
+- Before, the import typed both date sets day-first without saying so: right on one, wrong on every value of the other. Now neither is guessed; the user picks the order in the plan.
+- The `titanic_clean` and `lookalikes` drops are open (`docs/BACKLOG.md`): a lone imputation candidate filled 26 age placeholders, and the look-alike case fixes were skipped in this run.
+
 - **What it recovered fully:** money formatting (`$1,234.5` → numbers), case and spacing variants, mojibake (`ZÃ¼rich` → `Zürich`) and day-first dates. Typos in categories were 42 of 45.
 - **Weak spot:** placeholder values (`N/A`, `-999`, `?`) in numeric columns. Only 28 of 102 became missing; the rest were quarantined as parse failures, or `-999` stayed a number. The quarantined rows keep their text and are excluded from analysis, so nothing is silently wrong, but the cleaning is incomplete. This is our pipeline's order (the issue is diagnosed after the typing step), not a model fault.
 - **Harm 0%** after we fixed two bugs in our own scorer: yes/no columns typed as booleans counted as changed, and money damage rounded fares to cents. The first two runs reported 11–13% harm, all of it the scorer.

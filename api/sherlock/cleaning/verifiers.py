@@ -13,6 +13,14 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
 - `quarantine_scope`: the step quarantined at most 2 × the issue's count + 10 rows. A step the user
   added to the cleaning plan has no detector and no count, so it may quarantine at most a fifth of
   the rows (`QUARANTINE_USER_SHARE`).
+- `merge_safety`: no text value was rewritten into another value that was already in its column
+  when the two differ only in their numbers or are both common (`helpers._merge_refusal`, plan 2.5):
+  "Region 2" → "Region 1" and "Austria" → "Australia" fail; "male " → "Male" passes.
+
+`changed` is the per-cell rule all of this counts by. `compare` sets candidates' results side by side
+(plan 2.4): the share of the cells two candidates both change where their values differ (the gate
+skips over 1%, with two example cells shown both ways), and the output agreement, the share of
+candidates whose results match the best one's on the cells either changes.
 
 `effect_line` turns a report into the cleaning log's main line for the step (cells changed, rows
 quarantined, the issue's count before → after), so every number on that line comes from code.
@@ -28,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 from sherlock.cleaning import detectors
-from sherlock.cleaning.helpers import SENTINELS
+from sherlock.cleaning.helpers import SENTINELS, _merge_key, _merge_refusal
 from sherlock.profile.datacard import build_frame
 
 SYSTEM = ("_row_id", "_quarantine_reason")
@@ -108,6 +116,17 @@ def _mixed(s: pd.Series) -> bool:
     return "str" in kinds and len(kinds) > 1  # text next to numbers, dates or bools
 
 
+def changed(bc: pd.Series, ac: pd.Series) -> pd.Series:
+    """The cells of a column a result changed. A retype compares as text, so '22' → 22 isn't a change."""
+    try:
+        differs = ~((bc == ac) | (bc.isna() & ac.isna()))
+    except (TypeError, ValueError):
+        differs = bc.astype(str) != ac.astype(str)
+    if bc.dtype != ac.dtype:
+        differs = (bc.astype(str).str.strip() != ac.astype(str).str.replace(r"\.0$", "", regex=True)) & ~(bc.isna() & ac.isna())
+    return differs
+
+
 def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, column: str | None) -> Report:
     r = Report()
     # --- row ledger -------------------------------------------------------------------------
@@ -138,13 +157,7 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
         went_missing = bc.notna() & ac.isna()
         legit = _is_placeholder(bc) | quarantined_now
         nan_new += int((went_missing & ~legit).sum())
-        try:
-            differs = ~((bc == ac) | (bc.isna() & ac.isna()))
-        except (TypeError, ValueError):
-            differs = bc.astype(str) != ac.astype(str)
-        if bc.dtype != ac.dtype:  # a retype: compare as text, so '22' → 22 isn't a change
-            differs = (bc.astype(str).str.strip() != ac.astype(str).str.replace(r"\.0$", "", regex=True)) & ~(bc.isna() & ac.isna())
-        n = int(differs.sum())
+        n = int(changed(bc, ac).sum())
         changed_total += n
         if column is not None and c != column:
             unrelated += n
@@ -166,6 +179,7 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
     r.hard["dtype"] = dtype_problem or "pass"
     r.hard["parse_quarantine"] = "pass" if parse_failures == 0 else f"fail: {parse_failures} unparsed values not quarantined"
     r.hard["placeholder_fill"] = _placeholder_fill(b, a, user_cols)
+    r.hard["merge_safety"] = _merge_safety(b, a, user_cols)
 
     # --- soft score -------------------------------------------------------------------------------
     r.soft["parse_rate"] = r.parse_rate
@@ -208,6 +222,102 @@ def effect_line(report: Report, issue_words: str | None) -> str:
     return line
 
 
+AGREE_SHARE = 0.01  # results that differ on at most 1% of the cells they change agree
+
+
+def _as_text(s: pd.Series) -> pd.Series:
+    """Values as text for comparing two results: a whole float as an integer, a midnight as its date."""
+    if s.dtype.kind == "M":
+        return s.dt.strftime("%Y-%m-%d").where(s.dt.normalize() == s, s.astype(str))
+    return s.astype(str).str.replace(r"\.0$", "", regex=True)
+
+
+def results_differ(x: pd.Series, y: pd.Series) -> pd.Series:
+    """The cells where two candidates' results differ: numbers within a relative 1e-9, both missing
+    as equal, otherwise by value or, when the types differ, as text."""
+    both_missing = x.isna() & y.isna()
+    one_missing = x.isna() != y.isna()
+    if x.dtype.kind in "iuf" and y.dtype.kind in "iuf":
+        close = np.isclose(x.astype(float), y.astype(float), rtol=1e-9, atol=0.0)
+        return pd.Series(~close, index=x.index) & ~both_missing | one_missing
+    if x.dtype == y.dtype and x.dtype.kind in "Mb":
+        return ~((x == y) | both_missing)
+    return ((_as_text(x) != _as_text(y)) & ~both_missing) | one_missing
+
+
+def show(value) -> str:
+    """A value as the log shows it in a two-way example: a date as "3 Apr 2021", a whole number
+    without ".0", a missing one as "empty"."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return "empty"
+    if isinstance(value, pd.Timestamp):
+        day = f"{value.day} {value:%b %Y}"
+        return day if value == value.normalize() else f"{day} {value:%H:%M}"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+@dataclass
+class Comparison:
+    agreement: float                  # share of candidates whose results match the best one's
+    disagreement: float = 0.0         # the worst pair: share of the cells both change, valued apart
+    pair: tuple[int, int] | None = None
+    examples: list[tuple[str, str, str]] = field(default_factory=list)  # (before, one, other), at most two
+
+
+def compare(before: pd.DataFrame, results: list[pd.DataFrame | None], best: int) -> Comparison:
+    """Candidates' results on the same rows side by side (plan 2.4). `results[i]` is candidate i's
+    result, or None when it failed its checks. Every pair of results is compared on the cells both
+    changed: the worst pair's share of those cells with different values is the disagreement, with
+    up to two of them as examples. The agreement is the share of all candidates (failed ones count
+    as not agreeing) whose result differs from the best one's on at most 1% of the cells either
+    changed; the best agrees with itself."""
+    b = before.set_index("_row_id")
+    cols = [c for c in b.columns if c not in SYSTEM]
+    frames = {i: r.set_index("_row_id").reindex(b.index) for i, r in enumerate(results) if r is not None}
+    masks = {i: {c: changed(b[c], f[c]).to_numpy(bool) for c in cols if c in f} for i, f in frames.items()}
+    out = Comparison(agreement=0.0)
+    for i in frames:
+        for j in frames:
+            if j <= i:
+                continue
+            both = differ = 0
+            cells = []
+            for c in cols:
+                if c not in masks[i] or c not in masks[j]:
+                    continue
+                shared = masks[i][c] & masks[j][c]
+                if not shared.any():
+                    continue
+                apart = shared & results_differ(frames[i][c], frames[j][c]).to_numpy(bool)
+                both += int(shared.sum())
+                differ += int(apart.sum())
+                cells += [(rid, c) for rid in b.index[apart][: 2 - len(cells)]] if len(cells) < 2 else []
+            share = differ / both if both else 0.0
+            if share > out.disagreement:
+                out.disagreement, out.pair = share, (i, j)
+                out.examples = [(show(b.at[r, c]), show(frames[i].at[r, c]), show(frames[j].at[r, c])) for r, c in cells]
+    agree = 0
+    for k in range(len(results)):
+        if k == best:
+            agree += 1
+            continue
+        if k not in frames or best not in frames:
+            continue
+        either = differ = 0
+        for c in cols:
+            if c not in masks[k] or c not in masks[best]:
+                continue
+            union = masks[k][c] | masks[best][c]
+            either += int(union.sum())
+            differ += int((union & results_differ(frames[k][c], frames[best][c]).to_numpy(bool)).sum())
+        if either == 0 or differ / either <= AGREE_SHARE:
+            agree += 1
+    out.agreement = agree / len(results) if results else 0.0
+    return out
+
+
 QUARANTINE_FACTOR = 2
 QUARANTINE_MARGIN = 10
 QUARANTINE_USER_SHARE = 0.2
@@ -236,6 +346,25 @@ def _placeholder_fill(b: pd.DataFrame, a: pd.DataFrame, columns: list[str]) -> s
         if placeholder.any():
             example = words[placeholder].iloc[0]
             return f"fail: {int(placeholder.sum())} missing values in {c} filled with the placeholder {example!r}"
+    return "pass"
+
+
+def _merge_safety(b: pd.DataFrame, a: pd.DataFrame, columns: list[str]) -> str:
+    """Text values rewritten into another value already in the column, where the merge rule refuses
+    the pair (values that differ only in their numbers, or two common values)."""
+    for c in columns:
+        if b[c].dtype != object or a[c].dtype != object:
+            continue
+        rewritten = b[c].notna() & a[c].notna() & (b[c].astype(str) != a[c].astype(str))
+        if not rewritten.any():
+            continue
+        counts = b[c].dropna().astype(str).map(_merge_key).value_counts().to_dict()
+        for old, new in pd.DataFrame({"old": b.loc[rewritten, c], "new": a.loc[rewritten, c]}).drop_duplicates().itertuples(index=False):
+            if not (isinstance(old, str) and isinstance(new, str)) or _merge_key(new) not in counts:
+                continue  # a new spelling, or not text: not a merge of two existing values
+            why = _merge_refusal(old, new, counts, len(b))
+            if why:
+                return f"fail: merged {old!r} into {new!r}, which {why}"
     return "pass"
 
 

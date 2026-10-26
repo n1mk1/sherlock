@@ -20,6 +20,7 @@ const CHECK_LABELS: Record<string, string> = {
   parse_quarantine: "Parse failures quarantined",
   placeholder_fill: "No placeholder fills",
   quarantine_scope: "Quarantine fits the issue",
+  merge_safety: "No look-alike categories merged",
   lossless: "Lossless round-trip",
 };
 

@@ -76,6 +76,31 @@ def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
     return None
 
 
+def needs_order(issue: dict) -> bool:
+    """A date column every value of which reads both ways (`ambiguous_dates`, kind `ambiguous`): no
+    reading of the data settles the order, so the Cleaner doesn't guess one (plan 2.6)."""
+    return issue["detector"] == "ambiguous_dates" and (issue.get("details") or {}).get("kind") == "ambiguous"
+
+
+def both_ways(values: list) -> list[tuple[str, str, str]]:
+    """Up to three values with their day-first and month-first readings: ("03/04/2021", "3 Apr 2021",
+    "4 Mar 2021")."""
+    import pandas as pd
+
+    from sherlock.cleaning.helpers import parse_dates_smart
+    from sherlock.cleaning.verifiers import show
+
+    out = []
+    for v in values:
+        s = pd.Series([v], dtype=object)
+        dmy, mdy = parse_dates_smart(s, order_hint="dmy")[0], parse_dates_smart(s, order_hint="mdy")[0]
+        if pd.notna(dmy) and pd.notna(mdy) and dmy != mdy:
+            out.append((str(v), show(dmy), show(mdy)))
+        if len(out) == 3:
+            break
+    return out
+
+
 def fix_name(item: dict) -> str:
     """"outliers in fare", "duplicate rows", "your step on name"."""
     if item["detector"] == USER_DETECTOR:

@@ -52,6 +52,8 @@ def test_text_helpers():
     s = pd.Series(["  New  York", "new york", "New York", "Boston ", None], dtype=object)
     assert normalize_whitespace_case(s).tolist()[:4] == ["New York"] * 3 + ["Boston"]
     assert normalize_whitespace_case(s, mode="upper").tolist()[3] == "BOSTON"
+    named = pd.Series(["North", "north", "North", " NORTH"], dtype=object, name="region")  # as the Cleaner's code passes it
+    assert normalize_whitespace_case(named).tolist() == ["North"] * 4
     cats = pd.Series(["Southampton"] * 5 + ["Southamptn", "Cherbourg", "Cherbourg"], dtype=object)
     assert canonicalize_categories(cats).tolist().count("Southampton") == 6
     assert canonicalize_categories(cats, mapping={"Cherbourg": "C"}).tolist()[-1] == "C"
@@ -116,21 +118,20 @@ def test_verify_counts_unrelated_changes():
 # --- gate --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("scores", "clean", "changed", "expected"), [
-    ([0.95, 0.9], True, 10, "commit"),          # 0.57 + 0.2 + 0.2
-    ([0.95, 0.9], True, 300, "flag"),           # blast 0.3 ≥ 0.2
-    ([0.8, 0.2], False, 10, "skip"),            # 0.48 + 0.1 + 0 = 0.58 → flag? see below
-    ([0.0, 0.0], True, 0, "skip"),
-    ([0.7, 0.65], False, 5, "flag"),            # 0.42 + 0.2 + 0 = 0.62
-    ([0.5], False, 5, "skip"),                  # 0.30 + 0.2 = 0.50
+@pytest.mark.parametrize(("scores", "agree", "clean", "changed", "expected"), [
+    ([0.95, 0.9], 1.0, True, 10, "commit"),          # 0.57 + 0.2 + 0.2
+    ([0.95, 0.9], 1.0, True, 300, "flag"),           # blast 0.3 ≥ 0.2
+    ([0.8, 0.2], 0.5, False, 10, "flag"),            # 0.48 + 0.1 + 0 = 0.58
+    ([0.0, 0.0], 1.0, True, 0, "skip"),
+    ([0.7, 0.65], 1.0, False, 5, "flag"),            # 0.42 + 0.2 + 0 = 0.62
+    ([0.5], 1.0, False, 5, "skip"),                  # 0.30 + 0.2 = 0.50
+    ([0.95, 0.9], 0.5, True, 10, "commit"),          # 0.57 + 0.1 + 0.2 = 0.87: one other result differs
+    ([0.85, 0.85, 0.8], 1 / 3, True, 10, "flag"),    # 0.51 + 0.067 + 0.2 = 0.78: three different results
 ])
-def test_gate(scores, clean, changed, expected):
-    d = gate.decide(scores, clean, changed, 1000)
-    if scores == [0.8, 0.2]:
-        assert d.gate == "flag" and d.confidence == pytest.approx(0.58)
-    else:
-        assert d.gate == expected
-    assert d.confidence == pytest.approx(0.6 * max(scores) + 0.2 * gate.agreement(scores) + 0.2 * clean)
+def test_gate(scores, agree, clean, changed, expected):
+    d = gate.decide(scores, agree, clean, changed, 1000)
+    assert d.gate == expected and d.agreement == agree
+    assert d.confidence == pytest.approx(0.6 * max(scores) + 0.2 * agree + 0.2 * clean, abs=1e-4)
 
 
 def test_quarantined_rows_count_as_all_their_cells_in_the_blast():
@@ -139,7 +140,7 @@ def test_quarantined_rows_count_as_all_their_cells_in_the_blast():
     total = 1309 * 14
     affected = gate.cells_affected(0, 1020, 14, total)
     assert affected == 1020 * 14
-    d = gate.decide([0.95, 0.9], True, affected, total)
+    d = gate.decide([0.95, 0.9], 1.0, True, affected, total)
     assert d.gate == "flag" and d.reason == "changes more than a fifth of the data"
     assert gate.cells_affected(120, 1, 4, 480) == 124
     assert gate.cells_affected(480, 120, 4, 480) == 480  # capped
@@ -181,8 +182,8 @@ def test_verify_rejects_placeholder_fills_but_allows_real_imputation():
 
 def test_reviewer_concerns_alone_do_not_block_a_commit():
     # The loop passes review_ok = not changed_something_it_shouldnt; concerns don't enter it.
-    assert gate.decide([0.9, 0.85], True, 10, 1000).gate == "commit"
-    assert gate.decide([0.9, 0.85], False, 10, 1000).gate == "flag"  # "changed something it shouldn't"
+    assert gate.decide([0.9, 0.85], 1.0, True, 10, 1000).gate == "commit"
+    assert gate.decide([0.9, 0.85], 1.0, False, 10, 1000).gate == "flag"  # "changed something it shouldn't"
 
 
 def test_cleaner_prompts_carry_nothing_from_the_sample_dataset():
@@ -366,12 +367,12 @@ def test_plan_merge_keeps_instructions_and_the_users_steps_while_their_column_ex
 
 
 def test_gate_flags_a_requested_step_instead_of_skipping_it():
-    low = gate.decide([0.4, 0.1], False, 10, 1000)
+    low = gate.decide([0.4, 0.1], 0.5, False, 10, 1000)
     assert low.gate == "skip" and low.reason == "low confidence (0.34)"
-    kept = gate.decide([0.4, 0.1], False, 10, 1000, requested=True)
+    kept = gate.decide([0.4, 0.1], 0.5, False, 10, 1000, requested=True)
     assert kept.gate == "flag" and kept.reason == "low confidence (0.34); kept because you asked for it"
-    assert gate.decide([0.0], True, 0, 1000, requested=True).gate == "skip"  # nothing passed the hard checks
-    assert gate.decide([0.95, 0.9], True, 10, 1000, requested=True).gate == "commit"
+    assert gate.decide([0.0], 1.0, True, 0, 1000, requested=True).gate == "skip"  # nothing passed the hard checks
+    assert gate.decide([0.95, 0.9], 1.0, True, 10, 1000, requested=True).gate == "commit"
 
 
 def test_a_users_step_may_quarantine_at_most_a_fifth_of_the_rows():
@@ -416,3 +417,74 @@ def test_the_models_sentence_is_shown_only_without_digits():
     issue = {"detector": "missing", "column": "age", "count": 263}
     assert issue_words(issue) == "missing values" and short_line(issue) == "263 missing values"
     assert issue_words({"user": True, "instruction": "trim", "detector": "user_request"}) is None
+
+
+# --- merge safety (plan 2.5) -------------------------------------------------------------------
+
+
+def test_look_alike_categories_are_not_merged():
+    from sherlock.cleaning.detectors import near_duplicate_categories
+    from tests.test_detectors import frame as detector_frame
+
+    regions = ["Region 1"] * 30 + ["Region 2"] * 30 + ["Regon 1"] * 2 + ["male "] * 2 + ["Male"] * 20
+    out = canonicalize_categories(pd.Series(regions, dtype=object))
+    assert out.value_counts().to_dict() == {"Region 1": 32, "Region 2": 30, "Male": 22}  # a typo and case still merge
+    countries = pd.Series(["Austria"] * 10 + ["Australia"] * 10 + ["Austrlia"] * 1, dtype=object)
+    merged = canonicalize_categories(countries, threshold=85)
+    assert (merged == "Austria").sum() == 10  # both common: kept apart
+    mapped = canonicalize_categories(pd.Series(["Region 2", "region 1", "Region 1"] * 5, dtype=object),
+                                     mapping={"Region 2": "Region 1", "region 1": "Region 1"})
+    assert mapped.tolist()[:3] == ["Region 2", "Region 1", "Region 1"]  # the model's unsafe entry is left out
+    assert canonicalize_categories(pd.Series(["Region 01", "Region 1", "Region 1"]), mapping={"Region 01": "Region 1"}).tolist() == ["Region 1"] * 3
+
+    finding = near_duplicate_categories.detect(detector_frame(r=["region 1"] * 10 + ["region 2"] * 10 + ["region 3"] * 9))
+    assert finding == []  # "region 1"/"region 2" (87.5) no longer pair
+    (typos,) = near_duplicate_categories.detect(detector_frame(c=["Southampton"] * 30 + ["Southmpton"] * 2 + ["Cherbourg"] * 20))
+    assert typos.details["pairs"] == [["southmpton", "southampton"]]
+
+
+def test_a_merge_of_look_alike_categories_fails_the_checks():
+    before = frame(region=["Region 1"] * 10 + ["Region 2"] * 10 + [" region 1"] * 2)
+    fixed = before.assign(region=["Region 1"] * 10 + ["Region 2"] * 10 + ["Region 1"] * 2)
+    assert verify(before, fixed, "whitespace_case", "region").hard["merge_safety"] == "pass"
+    merged = before.assign(region=["Region 1"] * 22)
+    r = verify(before, merged, "near_duplicate_categories", "region")
+    assert r.hard["merge_safety"] == "fail: merged 'Region 2' into 'Region 1', which differ only in their numbers"
+    assert r.score == 0.0
+    common = frame(country=["Austria"] * 10 + ["Australia"] * 10)
+    r = verify(common, common.assign(country=["Australia"] * 20), "near_duplicate_categories", "country")
+    assert r.hard["merge_safety"] == "fail: merged 'Austria' into 'Australia', which are both common"
+    rare = frame(city=["Southampton"] * 30 + ["Southmpton"] * 1)
+    assert verify(rare, rare.assign(city=["Southampton"] * 31), "near_duplicate_categories", "city").hard["merge_safety"] == "pass"
+
+
+# --- output agreement (plan 2.4) ---------------------------------------------------------------
+
+
+def test_candidates_that_value_the_same_cells_differently_disagree():
+    from sherlock.cleaning.verifiers import compare
+
+    before = frame(d=["03/04/2021", "05/06/2021", "11/12/2021", "07/08/2021"], n=["1", "2", "3", "4"])
+    day_first = before.assign(d=parse_dates_smart(before["d"], order_hint="dmy"))
+    month_first = before.assign(d=parse_dates_smart(before["d"], order_hint="mdy"))
+    same_again = before.assign(d=pd.to_datetime(before["d"], format="%d/%m/%Y"))
+    untouched = before.copy()
+    c = compare(before, [day_first, month_first, same_again, untouched, None], best=0)
+    assert c.disagreement == 1.0 and c.pair == (0, 1)
+    assert c.examples == [("03/04/2021", "3 Apr 2021", "4 Mar 2021"), ("05/06/2021", "5 Jun 2021", "6 May 2021")]
+    assert c.agreement == pytest.approx(2 / 5)  # itself and the same reading; not the other, the no-op or the failure
+    assert gate.disagree(c.disagreement) == "the candidates disagree on 100% of the cells they both change"
+
+    # Results that change the same cells to the same values agree, whatever their types.
+    money = frame(x=["$1,200", "$5", "7", "$10"])
+    one = money.assign(x=parse_numbers(money["x"]))
+    other = money.assign(x=pd.Series([1200, 5, 7, 10], dtype="Int64"))
+    agree = compare(money, [one, other], best=0)
+    assert agree.disagreement == 0.0 and agree.agreement == 1.0 and gate.disagree(0.0) is None
+    # One cell valued apart in 200 both change: 0.5% is within the 1% that still agrees.
+    many = frame(x=[f"${i}" for i in range(200)])
+    a = many.assign(x=parse_numbers(many["x"]))
+    b = a.assign(x=a["x"].where(a["_row_id"] != 5, -1.0))
+    near = compare(many, [a, b], best=0)
+    assert near.disagreement == pytest.approx(0.005) and gate.disagree(near.disagreement) is None
+    assert near.agreement == 1.0

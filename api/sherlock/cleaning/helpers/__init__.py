@@ -6,6 +6,8 @@ Rules every helper keeps:
 - Nothing removes rows. Rows that should go are quarantined with `quarantine_rows`.
 - A parse never hides a failure: `parse_failures(original, parsed)` gives the rows that didn't
   parse, and the caller quarantines them.
+- A merge never joins categories that are different on purpose (`_merge_refusal`, plan 2.5): values
+  that differ only in their numbers ("Region 1", "Region 2"), or two values that are both common.
 """
 
 import re
@@ -23,6 +25,9 @@ _DATE_FORMATS = {
     "mdy": ("%m/%d/%Y", "%m-%d-%Y", "%m/%d/%y", "%b %d, %Y", "%B %d, %Y", "%b %d %Y"),
     "ymd": ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y%m%d"),
 }
+
+_COMMON_SHARE = 0.05  # a value on 5% of the rows or more (and more than one row) is a category of its own
+_NUMBERS = re.compile(r"\d+")
 
 __all__ = [
     "strip_sentinels", "parse_numbers", "parse_dates_smart", "normalize_whitespace_case",
@@ -137,35 +142,62 @@ def normalize_whitespace_case(s: pd.Series, mode="keep") -> pd.Series:
     present = t.dropna()
     if present.empty:
         return t
-    keys = present.str.lower()
-    counts = present.groupby([keys, present]).size().reset_index(name="n")
-    counts.columns = ["key", "value", "n"]
+    # A frame, not two Series named after the column: grouping by two same-named Series can't reset its index.
+    counts = pd.DataFrame({"key": present.str.lower(), "value": present}).groupby(["key", "value"]).size().reset_index(name="n")
     best = counts.sort_values(["key", "n", "value"], ascending=[True, False, True]).drop_duplicates("key")
     canonical = dict(zip(best["key"], best["value"]))
     return t.where(t.isna(), t.astype(str).str.lower().map(canonical))
 
 
+def _merge_key(value) -> str:
+    """A category as merges compare it: case and spacing ignored."""
+    return _SPACES.sub(" ", str(value).strip().casefold())
+
+
+def _merge_refusal(a, b, counts, rows):
+    """Why `a` must not be merged into `b` (or the reverse): "differ only in their numbers" or "are
+    both common", else None. Values equal but for case and spacing always may be. Otherwise the
+    merge is refused when they differ only in their numbers ("Region 1", "Region 2"; "Region 01" and
+    "Region 1" are the same number) or when both are common, each on at least 5% of the rows and on
+    more than one ("Austria", "Australia"): then each is a category of its own. A value seen once is
+    never common, so a typo in a small file can still merge. `counts` maps `_merge_key` values to
+    their row counts; `rows` is the column's length."""
+    ka, kb = _merge_key(a), _merge_key(b)
+    if ka == kb:
+        return None
+    if (_NUMBERS.sub("#", ka) == _NUMBERS.sub("#", kb)
+            and [int(n) for n in _NUMBERS.findall(ka)] != [int(n) for n in _NUMBERS.findall(kb)]):
+        return "differ only in their numbers"
+    if min(counts.get(ka, 0), counts.get(kb, 0)) >= max(2, _COMMON_SHARE * rows):
+        return "are both common"
+    return None
+
+
 def canonicalize_categories(s: pd.Series, mapping=None, threshold=90) -> pd.Series:
     """Merge spelling variants of a category. With `mapping` ({variant: canonical}), apply it.
-    Without, cluster values whose rapidfuzz ratio (case and spacing ignored) is ≥ `threshold` and
-    map each to its cluster's most frequent spelling."""
+    Without, take values most frequent first: each joins the most similar spelling already kept
+    whose rapidfuzz ratio (case and spacing ignored) is ≥ `threshold`, or is kept as a spelling of
+    its own. Either way a merge `_merge_refusal` refuses (values that differ only in their numbers,
+    or two common values) is left out."""
+    counts = _text(s).dropna().map(_merge_key).value_counts().to_dict()
+    rows = len(s)
     if mapping:
-        return s.map(lambda v: mapping.get(v, v) if pd.notna(v) else v)
+        safe = {k: v for k, v in mapping.items() if _merge_refusal(k, v, counts, rows) is None}
+        return s.map(lambda v: safe.get(v, v) if pd.notna(v) else v)
     from rapidfuzz import fuzz
 
-    counts = _text(s).dropna().value_counts()
-    values = list(counts.index)
     canonical: dict = {}
-    for value in values:  # most frequent first, so cluster heads are the common spellings
-        if value in canonical:
-            continue
-        canonical[value] = value
+    heads: list = []
+    for value in _text(s).dropna().value_counts().index:  # most frequent first: heads are the common spellings
         key = _SPACES.sub(" ", str(value).lower())
-        for other in values:
-            if other in canonical:
-                continue
-            if fuzz.ratio(key, _SPACES.sub(" ", str(other).lower())) >= threshold:
-                canonical[other] = value
+        scored = [(fuzz.ratio(key, _SPACES.sub(" ", str(h).lower())), h) for h in heads
+                  if _merge_refusal(value, h, counts, rows) is None]
+        best = max(scored, key=lambda x: x[0], default=(0, None))
+        if best[0] >= threshold:
+            canonical[value] = best[1]
+        else:
+            canonical[value] = value
+            heads.append(value)
     t = _text(s)
     return t.map(lambda v: canonical.get(v, v) if pd.notna(v) else v)
 

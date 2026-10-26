@@ -5,14 +5,27 @@ For each clean set, seeded injectors damage cells and remember each one's clean 
 CSV goes through the real pipeline in-process (import → profile and typing → Cleaner → the final
 version), with the real model unless `LLM_MOCK` is set. Scores per set:
 - recovery: damaged cells whose final value equals the clean value
+- wrong: damaged cells changed into a value that isn't the clean one (a guess that missed, such as
+  a date read in the wrong order); a damaged cell left as it was, or emptied with its row
+  quarantined, isn't wrong, only not recovered
 - harm: undamaged cells whose final value no longer equals the clean value
 - row loss: rows missing from the final version (must be 0); quarantined rows are counted apart
+
+The output ends with every issue the Cleaner skipped and why, so a fix that didn't happen can be
+told from one that went wrong.
+
+Three sets test what the Cleaner must not do (plan 2.6): `dates_dmy` and `dates_mdy` hold the same
+kind of column, dates whose every day is 12 or less, written day-first in one and month-first in
+the other, so nothing in the data tells them apart and any fixed guess is wrong on one of them; and
+`lookalikes` holds categories that look alike but are different ("Plan A"/"Plan B", "Region 1"/
+"Region 2", "Austria"/"Australia"), so a merge is harm.
 """
 
 import io
 import math
 import os
 import random
+import re
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -72,7 +85,8 @@ def mojibake(value: str) -> str:
 
 
 def corrupt(name: str, clean: pd.DataFrame, plan: list[tuple[str, str, float]], seed: int) -> Case:
-    """plan: [(column, kind, share)], kinds: money, sentinel, case, typo, mojibake, dmy_date."""
+    """plan: [(column, kind, share)], kinds: money, sentinel, case, typo, mojibake, dmy_date (an
+    unambiguous day-first date), dmy_text and mdy_text (any date written day-first or month-first)."""
     rng = random.Random(seed)
     dirty = clean.astype(object).copy()
     case = Case(name, clean, dirty)
@@ -97,6 +111,8 @@ def corrupt(name: str, clean: pd.DataFrame, plan: list[tuple[str, str, float]], 
                 if d.day <= 12:
                     continue  # keep it unambiguous
                 new = d.strftime("%d/%m/%Y")
+            elif kind in ("dmy_text", "mdy_text"):
+                new = pd.Timestamp(value).strftime("%d/%m/%Y" if kind == "dmy_text" else "%m/%d/%Y")
             else:
                 raise ValueError(kind)
             dirty.at[i, column] = new
@@ -108,15 +124,21 @@ def cases() -> list[Case]:
     titanic = synthetic.titanic_clean(SAMPLE)
     sales = synthetic.sales(rows=1500)
     hr = synthetic.hr(rows=800)
+    visits = synthetic.visits(rows=400)
     return [
         corrupt("titanic_clean", titanic, [("fare", "money", 0.3), ("embarked", "case", 0.15), ("age", "sentinel", 0.04)], 1),
         corrupt("sales", sales, [("unit_price", "money", 0.25), ("region", "case", 0.2), ("product", "typo", 0.03),
                                  ("units", "sentinel", 0.03)], 2),
         corrupt("hr", hr, [("department", "case", 0.15), ("city", "mojibake", 0.08), ("hire_date", "dmy_date", 0.2),
                            ("salary", "sentinel", 0.02)], 3),
+        corrupt("dates_dmy", visits, [("visit_date", "dmy_text", 1.0)], 4),
+        corrupt("dates_mdy", visits, [("visit_date", "mdy_text", 1.0)], 5),
+        corrupt("lookalikes", synthetic.lookalikes(rows=600), [("plan", "case", 0.1), ("region", "case", 0.1),
+                                                                ("country", "case", 0.08), ("monthly_fee", "money", 0.2)], 6),
     ]
 
 
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T].*)?$")
 BOOL_WORDS = {"true": True, "t": True, "yes": True, "y": True, "false": False, "f": False, "no": False, "n": False}
 
 
@@ -128,7 +150,9 @@ def _as_bool(v):
 
 def same(a, b) -> bool:
     """Equal as values: numbers within 1e-6, dates by day, yes/no text equal to booleans (the typing
-    step casts such columns), otherwise exact text."""
+    step casts such columns), otherwise exact text. Two texts are compared as dates only when both
+    are ISO (`2021-04-03`): reading "04/03/2021" as a date would pick an order for it, so a date the
+    Cleaner left as text never counts as recovered."""
     if (a is None or (isinstance(a, float) and math.isnan(a))) and (b is None or (isinstance(b, float) and math.isnan(b))):
         return True
     if a is None or b is None or (isinstance(a, float) and math.isnan(a)) or (isinstance(b, float) and math.isnan(b)):
@@ -140,6 +164,8 @@ def same(a, b) -> bool:
         return math.isclose(float(a), float(b), rel_tol=1e-6, abs_tol=1e-6)
     except (TypeError, ValueError):
         pass
+    if isinstance(a, str) and isinstance(b, str) and not (ISO_DATE.match(a) and ISO_DATE.match(b)):
+        return a == b
     try:
         return pd.Timestamp(a).normalize() == pd.Timestamp(b).normalize() and not str(a).isalpha()
     except (TypeError, ValueError):
@@ -147,11 +173,26 @@ def same(a, b) -> bool:
     return str(a) == str(b)
 
 
+def changed(got, dirty) -> bool:
+    """The final value isn't the damaged one any more. An emptied value counts as unchanged (its row
+    was quarantined or its placeholder cleared, which isn't a guess), and so does the same number
+    typed ("-999" → -999.0); a date parsed from text has changed, whichever order it was read in."""
+    if got is None or (isinstance(got, float) and math.isnan(got)):
+        return False
+    if isinstance(got, str):
+        return got != dirty
+    try:
+        return not math.isclose(float(got), float(dirty), rel_tol=1e-6, abs_tol=1e-6)
+    except (TypeError, ValueError):
+        return True
+
+
 @dataclass
 class Score:
     name: str
     damaged: int
     recovered: int
+    wrong: int
     harmed: int
     undamaged: int
     rows_in: int
@@ -160,24 +201,26 @@ class Score:
     steps: int
     seconds: float
     ended_by: str
-    by_kind: dict = field(default_factory=dict)  # "column: kind" → [recovered, damaged]
+    by_kind: dict = field(default_factory=dict)  # "column: kind" → [recovered, damaged, wrong]
+    skipped: list = field(default_factory=list)  # the report's skipped issues: (column, detector, reason)
 
     def row(self) -> str:
         rec = self.recovered / self.damaged if self.damaged else 1.0
         harm = self.harmed / self.undamaged if self.undamaged else 0.0
         loss = (self.rows_in - self.rows_out) / self.rows_in if self.rows_in else 0.0
-        return (f"| {self.name} | {self.rows_in:,} | {self.damaged:,} | {rec:.1%} | {harm:.2%} | {loss:.1%} | "
-                f"{self.quarantined} | {self.steps} | {self.seconds:.0f} s | {self.ended_by} |")
+        wrong = self.wrong / self.damaged if self.damaged else 0.0
+        return (f"| {self.name} | {self.rows_in:,} | {self.damaged:,} | {rec:.1%} | {wrong:.1%} | {harm:.2%} | "
+                f"{loss:.1%} | {self.quarantined} | {self.steps} | {self.seconds:.0f} s | {self.ended_by} |")
 
 
-HEADER = ("| Set | Rows | Damaged cells | Recovered | Harm | Row loss | Quarantined | Steps | Time | Ended by |\n"
-          "|---|---|---|---|---|---|---|---|---|---|")
+HEADER = ("| Set | Rows | Damaged cells | Recovered | Wrong | Harm | Row loss | Quarantined | Steps | Time | Ended by |\n"
+          "|---|---|---|---|---|---|---|---|---|---|---|")
 
 
 def score(case: Case, final: pd.DataFrame, steps: int, seconds: float, ended_by: str) -> Score:
     final = final.sort_values("_row_id").set_index("_row_id")
     damaged = {(d.row, d.column): d for d in case.damage}
-    recovered = harmed = undamaged = 0
+    recovered = wrong = harmed = undamaged = 0
     by_kind: dict = {}
     for i in range(len(case.clean)):
         rid = i + 1
@@ -187,17 +230,20 @@ def score(case: Case, final: pd.DataFrame, steps: int, seconds: float, ended_by:
             got = final.at[rid, col] if col in final.columns else None
             got = None if (got is not None and not isinstance(got, str) and pd.isna(got)) else got
             if (i, col) in damaged:
-                kind = by_kind.setdefault(f"{col}: {damaged[(i, col)].kind}", [0, 0])
+                kind = by_kind.setdefault(f"{col}: {damaged[(i, col)].kind}", [0, 0, 0])
                 kind[1] += 1
                 d = damaged[(i, col)]
                 if same(got, d.clean) or (d.missing_ok and got is None):
                     recovered += 1
                     kind[0] += 1
+                elif changed(got, case.dirty.at[i, col]):
+                    wrong += 1
+                    kind[2] += 1
             else:
                 undamaged += 1
                 if not same(got, case.clean.at[i, col]):
                     harmed += 1
-    return Score(case.name, len(case.damage), recovered, harmed, undamaged, len(case.clean), len(final),
+    return Score(case.name, len(case.damage), recovered, wrong, harmed, undamaged, len(case.clean), len(final),
                  int(final["_quarantine_reason"].notna().sum()), steps, seconds, ended_by, by_kind)
 
 
@@ -214,7 +260,9 @@ def run_case(client, case: Case, timeout_s: float = 900) -> Score:
     _wait(lambda: client.get(f"{api}/jobs/{job['id']}").json()["status"] in ("done", "failed", "cancelled"), timeout_s)
     report = client.get(f"{api}/datasets/{ds_id}/report").json()
     final = _final(client, ds_id)
-    return score(case, final, len(report["steps"]), time.monotonic() - started, report["ended_by"])
+    result = score(case, final, len(report["steps"]), time.monotonic() - started, report["ended_by"])
+    result.skipped = [(s["column"], s["detector"], s["reason"]) for s in report["skipped"]]
+    return result
 
 
 def _final(client, ds_id: str) -> pd.DataFrame:
@@ -259,13 +307,15 @@ def run(names: list[str] | None = None) -> str:
         os.environ.setdefault("JOB_WORKERS", "2")
         get_settings.cache_clear()
         lines = [HEADER]
-        details = ["", "| Set | Damage | Recovered |", "|---|---|---|"]
+        details = ["", "| Set | Damage | Recovered | Wrong |", "|---|---|---|---|"]
+        skips = ["", "| Set | Skipped | Reason |", "|---|---|---|"]
         with TestClient(create_app()) as client:
             for case in cases():
                 if names and case.name not in names:
                     continue
                 result = run_case(client, case)
                 lines.append(result.row())
-                details += [f"| {case.name} | {k} | {r}/{n} |" for k, (r, n) in sorted(result.by_kind.items())]
+                details += [f"| {case.name} | {k} | {r}/{n} | {w} |" for k, (r, n, w) in sorted(result.by_kind.items())]
+                skips += [f"| {case.name} | {d} in {c or 'rows'} | {why.replace('|', '/')} |" for c, d, why in result.skipped]
         get_settings.cache_clear()
-    return "\n".join(lines + details)
+    return "\n".join(lines + details + skips)

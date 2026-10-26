@@ -1,8 +1,12 @@
 """The gate (TRD §7.2, PRD CLEAN-4): commit, commit with a flag, or skip.
 
 confidence = 0.6 × best score + 0.2 × agreement + 0.2 × (1 if the review passed else 0),
-where agreement is the share of candidates scoring within 0.1 of the best, and the review passes
+where agreement is the output agreement (plan 2.4, `verifiers.compare`): the share of candidates
+whose results match the best one's on at least 99% of the cells either changes. The review passes
 unless the critic says the step changed something it shouldn't (or the review couldn't be read).
+Disagreement (`disagree`): when two candidates that pass the hard checks give different values to
+more than 1% of the cells they both change, the step is skipped, a requested one too: the data
+doesn't settle which is right. The loop applies it on the sample, before the full-data run.
 The critic's verdict that the step changed something it shouldn't skips the step in the loop (owner's
 decision, 2026-10-25). The critic's list of concerns is recorded on the step but doesn't lower confidence: concerns on
 their own can't keep a step from committing (owner's decision, 2026-10-24).
@@ -15,6 +19,7 @@ checks it is still skipped.
 
 from dataclasses import dataclass
 
+DISAGREE_SHARE = 0.01
 COMMIT_CONFIDENCE = 0.8
 COMMIT_MAX_BLAST = 0.2
 FLAG_CONFIDENCE = 0.55
@@ -29,11 +34,9 @@ class Decision:
     reason: str | None = None
 
 
-def agreement(scores: list[float]) -> float:
-    if not scores:
-        return 0.0
-    best = max(scores)
-    return sum(1 for s in scores if best - s <= 0.1) / len(scores)
+def disagree(share: float) -> str | None:
+    """The skip reason when candidates disagree on more than 1% of the cells they both change."""
+    return f"the candidates disagree on {share:.0%} of the cells they both change" if share > DISAGREE_SHARE else None
 
 
 def cells_affected(cells_changed: int, rows_quarantined: int, columns: int, total_cells: int) -> int:
@@ -42,9 +45,9 @@ def cells_affected(cells_changed: int, rows_quarantined: int, columns: int, tota
     return min(cells_changed + rows_quarantined * max(columns, 1), total_cells)
 
 
-def decide(scores: list[float], review_ok: bool, cells_changed: int, total_cells: int, requested: bool = False) -> Decision:
+def decide(scores: list[float], agree: float, review_ok: bool, cells_changed: int, total_cells: int,
+           requested: bool = False) -> Decision:
     best = max(scores) if scores else 0.0
-    agree = agreement(scores)
     confidence = round(0.6 * best + 0.2 * agree + 0.2 * (1.0 if review_ok else 0.0), 4)
     blast = cells_changed / total_cells if total_cells else 0.0
     if best == 0.0:

@@ -1,7 +1,9 @@
 """Type and role inference from values (PRD PROF-1, TRD §6.1). Code, not LLM.
 
 Types are inferred from the text of each value, because version 1 is imported all-VARCHAR.
-A type wins when at least 99% of the non-missing values parse as it.
+A type wins when at least 99% of the non-missing values parse as it. A column of dates that every
+one reads both ways (day-first and month-first, no part over 12, the readings apart) isn't a date:
+no order is guessed, and the Cleaner's plan asks for one (plan 2.6, TRD §7.1).
 """
 
 import re
@@ -20,6 +22,9 @@ DATE_FORMATS = (
     "%d/%m/%Y", "%m/%d/%Y", "%d.%m.%Y", "%Y/%m/%d", "%d-%m-%Y", "%m-%d-%Y",
     "%d %b %Y", "%d-%b-%Y", "%b %d, %Y", "%d %B %Y", "%B %d, %Y", "%d/%m/%y", "%m/%d/%y",
 )
+# A day/month format and its other reading. Dotted dates (`%d.%m.%Y`) are read day-first only.
+SWAPPED = {"%d/%m/%Y": "%m/%d/%Y", "%m/%d/%Y": "%d/%m/%Y", "%d-%m-%Y": "%m-%d-%Y", "%m-%d-%Y": "%d-%m-%Y",
+           "%d/%m/%y": "%m/%d/%y", "%m/%d/%y": "%d/%m/%y"}
 ID_NAME = re.compile(r"(^id$|_id$|^id_|uuid|guid|(^|_)key$|(^|_)code$|(^|_)number$|^no$|_no$|^num$)", re.I)
 TARGET_NAMES = frozenset({"target", "label", "outcome", "survived", "churn", "converted", "default", "y"})
 NUMERIC_TYPES = frozenset({"int", "float"})
@@ -66,7 +71,9 @@ def _to_datetime(text: pd.Series, fmt: str) -> pd.Series:
 
 
 def parse_dates(text: pd.Series) -> tuple[pd.Series, str | None, float]:
-    """Best date parse: ISO 8601 first, then the format set. Returns (parsed, format, share)."""
+    """Best date parse: ISO 8601 first, then the format set. Returns (parsed, format, share). When the
+    other reading of a day/month format parses every value too and reads some differently, no
+    value settles the order: (no dates, None, 0.0)."""
     if text.empty:
         return pd.Series(dtype="datetime64[ns]"), None, 0.0
     best = (_to_datetime(text, "ISO8601"), "ISO8601")
@@ -79,6 +86,10 @@ def parse_dates(text: pd.Series) -> tuple[pd.Series, str | None, float]:
                 best, best_share = (parsed, fmt), share
             if share >= THRESHOLD:
                 break
+    if best[1] in SWAPPED and best_share >= THRESHOLD:
+        other = _to_datetime(text, SWAPPED[best[1]])
+        if other.notna().sum() >= best[0].notna().sum() and (other.dropna() != best[0][other.notna()]).any():
+            return pd.Series(pd.NaT, index=text.index, dtype="datetime64[ns]"), None, 0.0
     return best[0], best[1], float(best_share)
 
 

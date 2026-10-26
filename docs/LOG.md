@@ -567,6 +567,81 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - A model sentence with a number is dropped whole, not edited: cutting the number out leaves a sentence nobody wrote.
   - The calls line names the model IDs without the `nvidia/` prefix; receipts (slice 8) own the fuller per-call view.
 
+### Slice 11 (plan 2.4 + 2.5 + 2.6): output agreement, merge safety, and the two new benchmark corruptions
+
+- **Done:**
+  - **2.6, the new sets** (`eval/corruption.py`, `eval/synthetic.py`). `dates_dmy` and `dates_mdy`: 400 clinic visits whose every date has a day of 12 or less (and never day = month), written day-first in one and month-first in the other, so no reading of the data tells them apart. `lookalikes`: 600 members with "Plan A"/"Plan B"/"Plan C", "Region 1" to "Region 4" and "Austria"/"Australia" (each 30%), with case variants and money damage. The scorer gained **Wrong** (damaged cells changed into a value that isn't the clean one; left as it was, emptied, or the same number typed isn't wrong), and two texts compare as dates only when both are ISO: pandas had read "13/05/2015" or "04/03/2021" left as text as a date and counted it recovered. The output now ends with every skipped issue and its reason.
+  - **2.4, output agreement** (`verifiers.compare`, `gate.disagree`, `cleaning/loop.py`). Each passing candidate's result on the sample is kept. When two of them give different values to more than 1% of the cells they both change, the issue is skipped before the full run (no full run, no critic call), with two cells both ways: "Skipped: the candidates disagree on 57% of the cells they both change (Title case vs Most frequent spelling: mcdonald → Mcdonald vs McDonald; MCDONALD → Mcdonald vs McDonald)". The gate's agreement is the share of candidates whose result matches the best one's on at least 99% of the cells either changes (a no-op or a failed candidate doesn't agree).
+  - **2.5, merge safety** (`helpers._merge_refusal`, used by the detector, `canonicalize_categories` and the new hard check `merge_safety`). A merge is refused when the values differ only in their numbers ("Region 1"/"Region 2"; "Region 01"/"Region 1" are the same number) or when both are common (each on 5% of the rows and more than one). Case and spacing variants always merge ("male " → "Male"). The detector no longer pairs "region 1"/"region 2" (87.5) or "austria"/"australia"; `canonicalize_categories` joins each value to its most similar kept spelling ("Austrlia" → "Australia", not "Austria") and drops a model's unsafe mapping entries; the propose prompt gets the detector's details (its `pairs`) inside its data block.
+  - **Dates that read both ways** (plan 2.6's case, PRD CLEAN-4b). The import's typing step had typed such a column day-first without a word (the format list tries `%d/%m/%Y` first): `profile/infer.parse_dates` now leaves a column as text when the other reading of its day/month format parses every value and reads some differently. The Cleaner then skips it with no model call and no budget used, "Left as text: every date reads both ways (03/04/2021 is 3 Apr 2021 or 4 Mar 2021; …), so the order is yours to choose", unless the user rewrote the fix. The vote stays for a `mixed` column.
+  - **A bug the tests found:** `normalize_whitespace_case(mode="keep")` raised "cannot insert <column>, already exists" for every column the Cleaner passed it (two Series of one name in a `groupby`), so every "keep the most frequent spelling" candidate failed. It counts in a frame of its own now. That is why `sales` region and `hr` department fell to 0 recovered in "before" run 2 below: that run's candidates were "keep" ones.
+  - Tests: `test_cleaning_units.py` (look-alikes not merged by the helper, a mapping or the detector; the hard check's two failures and a typo that passes; `compare` on two date readings, on numbers of different types, and on one cell in 200; the gate with output agreement; a named Series through "keep"), `test_samples_and_eval.py` (Wrong, ISO-only text dates, the new sets), new `test_cleaner_checks.py` with its own recorded replies (`fixtures/llm/cleaner_checks.json`): two candidates that disagree are skipped after only diagnose and propose with the exact reason; a visits file keeps its dates as text with no model call, and its date strings a digit apart don't pair as near-duplicates; the benchmark's month-first case ends 0 recovered, 0 wrong.
+  - Docs: PRD CLEAN-4b (new, add-only) and §7.3.1; TRD §6 (`verifiers`), §7.1 (the typing step, `near_duplicate_categories`), §7.2 (rules as built, dates that read both ways, the comparison in the loop, helpers, `merge_safety`, agreement, the propose template), §14 (the sets, Wrong, ISO dates, the skip table); Plan §6; App Flow §5; UI/UX §5.4.
+- **The benchmark** (`eval-locked.sh … corruption`, live Nemotron, three runs as the brief allowed):
+  - **Before, run 1** (02:23, before any change, with the old scorer and sets):
+
+    | Set | Rows | Damaged cells | Recovered | Harm | Row loss | Quarantined | Steps | Time | Ended by |
+    |---|---|---|---|---|---|---|---|---|---|
+    | titanic_clean | 1,043 | 509 | 97.2% | 0.00% | 0.0% | 81 | 4 | 64 s | done |
+    | sales | 1,500 | 765 | 96.1% | 0.00% | 0.0% | 18 | 4 | 80 s | done |
+    | hr | 800 | 269 | 94.1% | 0.00% | 0.0% | 5 | 5 | 94 s | done |
+
+  - **Before, run 2** (02:28, with 2.6's sets and scorer, before 2.4 and 2.5). Its Wrong column for placeholders counted "-999" typed as -999.0 as a wrong value (titanic 14, sales 18, hr 5); the rule was corrected before the "after" run, so read those three as 0 wrong. `sales` region and `hr` department are the "keep" bug above.
+
+    | Set | Rows | Damaged cells | Recovered | Wrong | Harm | Row loss | Quarantined | Steps | Time | Ended by |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | titanic_clean | 1,043 | 509 | 97.2% | 2.8% | 0.00% | 0.0% | 81 | 4 | 100 s | done |
+    | sales | 1,500 | 765 | 56.9% | 2.4% | 0.00% | 0.0% | 73 | 4 | 106 s | done |
+    | hr | 800 | 269 | 53.5% | 1.9% | 0.00% | 0.0% | 5 | 3 | 97 s | done |
+    | dates_dmy | 400 | 400 | 100.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 2 s | done |
+    | dates_mdy | 400 | 400 | 0.0% | 100.0% | 0.00% | 0.0% | 0 | 0 | 10 s | done |
+    | lookalikes | 600 | 288 | 100.0% | 0.0% | 0.00% | 0.0% | 0 | 4 | 150 s | done |
+
+  - **After** (02:51, this slice):
+
+    | Set | Rows | Damaged cells | Recovered | Wrong | Harm | Row loss | Quarantined | Steps | Time | Ended by |
+    |---|---|---|---|---|---|---|---|---|---|---|
+    | titanic_clean | 1,043 | 509 | 92.1% | 5.1% | 0.00% | 0.0% | 81 | 5 | 117 s | done |
+    | sales | 1,500 | 765 | 97.6% | 0.0% | 0.00% | 0.0% | 18 | 4 | 103 s | done |
+    | hr | 800 | 269 | 98.1% | 0.0% | 0.00% | 0.0% | 0 | 3 | 75 s | done |
+    | dates_dmy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 2 s | done |
+    | dates_mdy | 400 | 400 | 0.0% | 0.0% | 0.00% | 0.0% | 0 | 0 | 6 s | done |
+    | lookalikes | 600 | 288 | 41.7% | 0.0% | 0.00% | 0.0% | 0 | 1 | 90 s | done |
+
+    | Set | Damage | Recovered | Wrong |
+    |---|---|---|---|
+    | titanic_clean | age: sentinel | 1/41 | 26 |
+    | titanic_clean | embarked: case | 156/156 | 0 |
+    | titanic_clean | fare: money | 312/312 | 0 |
+    | sales | product: typo | 45/45 | 0 |
+    | sales | region: case | 300/300 | 0 |
+    | sales | unit_price: money | 375/375 | 0 |
+    | sales | units: sentinel | 27/45 | 0 |
+    | hr | city: mojibake | 36/36 | 0 |
+    | hr | department: case | 120/120 | 0 |
+    | hr | hire_date: dmy_date | 97/97 | 0 |
+    | hr | salary: sentinel | 11/16 | 0 |
+    | dates_dmy | visit_date: dmy_text | 0/400 | 0 |
+    | dates_mdy | visit_date: mdy_text | 0/400 | 0 |
+    | lookalikes | country: case | 0/48 | 0 |
+    | lookalikes | monthly_fee: money | 120/120 | 0 |
+    | lookalikes | plan: case | 0/60 | 0 |
+    | lookalikes | region: case | 0/60 | 0 |
+
+  - **Read together:** harm is 0.00% on every set, and Wrong is 0 on the three new ones. The silent guess is gone: before, the import typed both date sets day-first, right on one and wrong on all 400 of the other; after, both stay text for the user to order (2b.9). `sales` and `hr` recover more than either "before" run (97.6% and 98.1%; the "keep" fix and model variance). Two numbers fell, and the benchmark of this run didn't yet print its skip reasons, so their causes aren't known (both are in BACKLOG):
+    - `lookalikes` 41.7% (was 100%): its three case fixes (plan, region, country) were skipped this run. The same file through the Cleaner with scripted "keep", "title" and `canonicalize_categories` candidates commits all three, 100% recovered and 0 harm, so the code path works; what the model proposed for these look-alike values didn't pass. `sales` region and `hr` department case fixes in the same run were 300/300 and 120/120.
+    - `titanic_clean` age placeholders: 26 of 41 were filled with values (Wrong 26) where the "before" runs left them empty. One fill candidate on its own agrees with itself, so output agreement can't catch it; this is the run-to-run variance in imputation FEEDBACK already records.
+- **Decisions:**
+  - **"The cells they change" is read two ways.** Disagreement (the skip) counts the cells *both* candidates change, so a conservative candidate that leaves a cell alone doesn't veto a fix; agreement (the confidence) counts the cells *either* changes, so a no-op doesn't count as agreeing.
+  - **A disagreement skips a requested step too:** the data doesn't settle which value is right whoever asked; the reason shows both, so the user can rewrite the fix.
+  - **The check runs on the sample, before the full run,** so a disagreement costs no full run and no critic call (the plan put it in the gate; `gate.disagree` holds the rule and the loop applies it early).
+  - **"Common" needs more than one row:** at 5% of rows alone, every value in a file under 20 rows is common and nothing could merge (the existing 8-row helper test).
+  - **The typing step stops guessing an order** (outside the plan's file list, `profile/infer.py`): without it the Cleaner never saw the ambiguous column, and step 1 committed the guess as "automatic". Dotted dates stay day-first by convention.
+  - **Dates that read both ways cost no model call:** three diagnose votes, candidates and a skip would spend Ultra calls to reach the same "can't tell". The vote stays for `mixed` columns, where some values show the order.
+  - **`canonicalize_categories` joins the most similar head** rather than the first one that matches: the old order put "Austrlia" into "Austria".
+  - The propose prompt says to merge only the detector's pairs and never values that differ only in their numbers or two common ones; the code refuses those merges anyway.
+- **BACKLOG:** added the two open benchmark numbers above (lookalikes case fixes skipped live; titanic age placeholders imputed by a lone candidate).
+
 ### Slice 13, part 1 (plan T-0): the Tavily client
 
 - **Done:**

@@ -67,6 +67,44 @@ def hr(rows: int = 1200, seed: int = 23) -> pd.DataFrame:
     })
 
 
+CLINICS = ["Riverside", "Hillcrest", "Lakeview", "Old Town"]
+
+
+def visits(rows: int = 400, seed: int = 57) -> pd.DataFrame:
+    """Clinic visits whose dates all have a day of 12 or less (and never day = month), so written as
+    `dd/mm/yyyy` or `mm/dd/yyyy` every one reads both ways: the benchmark's truly ambiguous dates."""
+    rng = np.random.default_rng(seed)
+    out = []
+    while len(out) < rows:
+        d = date(2021, 1, 1) + timedelta(days=int(rng.integers(0, 365 * 3)))
+        if d.day <= 12 and d.day != d.month:
+            out.append(d)
+    clinic = rng.choice(CLINICS, rows)
+    return pd.DataFrame({
+        "visit_id": [f"V-{70000 + i}" for i in range(rows)],
+        "visit_date": [d.isoformat() for d in out],
+        "clinic": clinic,
+        "minutes": rng.integers(10, 90, rows),
+        "fee": np.round(rng.normal(80, 20, rows).clip(20), 2),
+    })
+
+
+def lookalikes(rows: int = 600, seed: int = 61) -> pd.DataFrame:
+    """Members whose categories look alike but are different on purpose: "Plan A"/"Plan B",
+    "Region 1"/"Region 2", and two common countries a typo apart ("Austria"/"Australia")."""
+    rng = np.random.default_rng(seed)
+    plan = rng.choice(["Plan A", "Plan B", "Plan C"], rows, p=[0.45, 0.35, 0.2])
+    fee = {"Plan A": 19.0, "Plan B": 29.0, "Plan C": 49.0}
+    return pd.DataFrame({
+        "member_id": [f"M{30000 + i}" for i in range(rows)],
+        "plan": plan,
+        "region": rng.choice(["Region 1", "Region 2", "Region 3", "Region 4"], rows, p=[0.3, 0.3, 0.25, 0.15]),
+        "country": rng.choice(["Austria", "Australia", "Canada", "Slovenia"], rows, p=[0.3, 0.3, 0.25, 0.15]),
+        "monthly_fee": np.array([fee[x] for x in plan]),
+        "visits": rng.integers(0, 30, rows),
+    })
+
+
 def titanic_clean(path) -> pd.DataFrame:
     """The sample's complete rows on its plain columns: a clean set with real distributions."""
     df = pd.read_csv(path)
