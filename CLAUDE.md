@@ -33,16 +33,18 @@ Read the doc for the area you're touching before you change it:
 | `docs/04-TRD.md` | Architecture, API contract, data formats, pipelines, config, deployment, testing |
 | `docs/05-BACKEND-SCHEMA.md` | SQLite tables, file layout, retention |
 | `docs/06-IMPLEMENTATION-PLAN.md` | Build order, cut order (§5), test data (§6), submission artifacts (§7), video script (§9) |
+| `docs/BACKLOG.md` | What's still open: the Day 10 submission steps, the owner's pending decisions, and every unfixed finding from the Day 1–9 reviews. Check it before fixing or building in an area, and remove a line when you fix it |
+| `docs/LOG.md`, `docs/USER-TESTS.md` | The build log (done, not done, decisions, day by day); the user-test and baseline protocols and results |
 | `docs/official_page.md`, `docs/judges_rubric.md` | Hackathon rules and judging; the live rules at https://nebiusglobalaihackathon.devpost.com/rules win any conflict |
 
 When docs disagree, the PRD decides *what* and the TRD and schema decide *how*.
 
-Verify your work (planned commands, plan §4):
+Verify your work (plan §4):
 
 ```bash
 uv run pytest            # in api/
 pnpm test                # in web/
-pnpm playwright test     # in web/, the end-to-end flow
+pnpm e2e                 # in web/: builds the app, then the Playwright end-to-end flow
 uv run sherlock eval ask # also: corruption, ml, grounding, notebook
 ```
 
