@@ -87,12 +87,27 @@ def test_an_outside_world_question_is_answered_from_the_web_with_citations(clien
     assert listing["query"] == "shipping status code meaning" and [r["url"] for r in listing["results"]] == [PAGE["url"]]
     assert "code 7" in listing["results"][0]["snippet"]  # the web's number stays inside its quote
     assert [s["kind"] for s in msg["sources"]] == ["web"] and msg["sources"][0]["url"] == PAGE["url"]
+    assert {"kind": "add_to_flow", "block_index": msg["blocks"].index(web)} in msg["actions"]
     sent = tavily.calls[0]["params"]
     assert sent["include_answer"] is False and sent["query"] == "shipping status code meaning"
     calls = client.get(f"{API}/chat/messages/{msg['id']}/calls").json()["calls"]
     assert [(c["role"], c["purpose"]) for c in calls] == [("small", "route"), ("medium", "web_query"),
                                                           ("web", "web_context"), ("medium", "web_answer")]
-    assert calls[2]["model"] == "tavily-search"
+    assert calls[2]["results"] == 2 and calls[2]["model"] == "tavily-search"
+
+
+def test_a_web_answer_goes_on_the_canvas_with_its_sources(client, ds, tavily):
+    from tests.test_chat_versions import edit
+
+    _, msg = send(client, ds["id"], "what does a shipping status code usually mean in general?")
+    index = msg["blocks"].index(web_blocks(msg)[0])
+    edit(client, ds, 1, "amount", "11")  # a newer version: a web answer has no numbers from the data, so it still goes
+    r = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": index})
+    assert r.status_code == 201, r.text
+    card = r.json()
+    runs = [r for b in card["body"]["blocks"] for r in b["runs"]]
+    assert any(r["type"] == "label" and r["ref"] == "web:1" and r["text"] == "[1]" for r in runs)
+    assert any(r["type"] == "label" and PAGE["url"] in r["text"] for r in runs)  # the sources list, with the address
 
 
 def test_without_a_key_an_outside_world_question_gets_one_line(client, ds):
@@ -122,11 +137,32 @@ def test_data_and_web_steps_sit_side_by_side_and_are_never_compared(client, ds, 
     assert {s["kind"] for s in msg["sources"]} == {"sql", "web"}
 
 
+def test_column_meaning_comes_from_the_web_and_is_kept_as_the_columns_note(client, ds, tavily, model):
+    _, msg = send(client, ds["id"], "what does status_code mean?")
+    (web,) = web_blocks(msg)
+    assert web["body"]["blocks"][0]["runs"][0]["text"].startswith("In general, from the web")
+    assert {s["kind"] for s in msg["sources"]} == {"sql", "web"} and "general" not in {s["kind"] for s in msg["sources"]}
+    assert tavily.calls[0]["params"]["query"].startswith('"status_code" meaning')  # names only, never values
+    notes = client.get(f"{API}/datasets/{ds['id']}/column-notes").json()["notes"]
+    assert [(n["column"], n["kind"]) for n in notes] == [("status_code", "web")] and "code 7" in notes[0]["excerpt"]
+    model.calls.clear()
+    send(client, ds["id"], "what is a fiscal year in general?")
+    route = next(c["prompt"] for c in model.calls if c["purpose"] == "route")
+    assert "What some columns mean (from a data dictionary or the web, not from the data):\n<data>\n- status_code:" in route
+
+
 def test_without_a_key_column_meaning_is_todays_answer(client, ds):
     _, msg = send(client, ds["id"], "what does status_code mean?")
     assert [s["kind"] for s in msg["sources"]] == ["sql", "sql", "general"]
     assert not web_blocks(msg) and not any(n in msg["text"] for n in web_client.NOTES.values())
     assert next(b for b in msg["blocks"] if b.get("labeled") == "general")
+
+
+def test_a_failed_search_keeps_the_general_meaning_with_one_line(client, ds, monkeypatch):
+    monkeypatch.setattr(web_client, "make_transport", lambda settings: FailingTransport("failed"))
+    _, msg = send(client, ds["id"], "what does status_code mean?")
+    assert web_client.NOTES["failed"] in msg["text"]
+    assert [s["kind"] for s in msg["sources"]] == ["sql", "sql", "general"]
 
 
 def test_use_the_codebook_at_a_url_reads_it_from_chat(client, ds, tavily):
@@ -137,6 +173,27 @@ def test_use_the_codebook_at_a_url_reads_it_from_chat(client, ds, tavily):
     (web,) = web_blocks(meaning)
     assert web["body"]["blocks"][0]["runs"][0]["text"].startswith("From the data dictionary you linked")
     assert len(tavily.calls) == 1  # the user's own dictionary wins over a search
+
+
+def test_a_web_card_exports_as_cited_markdown_and_never_carries_the_key(client, ds, tavily, monkeypatch):
+    import nbformat
+
+    from sherlock.notebook import cells, scan
+
+    _, msg = send(client, ds["id"], "what does a shipping status code usually mean in general?")
+    index = msg["blocks"].index(web_blocks(msg)[0])
+    card = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": index}).json()
+    md = cells.card(card, {})[0].source
+    assert "From the web (not from your data): A status code records where a parcel is in delivery.[1]" in md
+    assert f"- [1] {PAGE['title']}, {PAGE['url']}, retrieved " in md
+    assert "not computed from the data" in md
+    nb = nbformat.v4.new_notebook(cells=cells.card(card, {}))
+    scan.scan(nb)  # the export's secret scan passes on a cited web card
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-not-a-real-key-123")
+    get_settings.cache_clear()
+    assert "tvly-not-a-real-key-123" in scan._configured_secrets()  # a configured key is never exported
+    with pytest.raises(scan.ScanError):
+        scan.scan(nbformat.v4.new_notebook(cells=[nbformat.v4.new_markdown_cell("key: tvly-not-a-real-key-123")]))
 
 
 @pytest.mark.parametrize("question,query", [

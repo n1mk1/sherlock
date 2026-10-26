@@ -21,7 +21,7 @@ The owner's, unless a line says otherwise.
   - Ultra's cost per sample run, from the account's console (the README still says "on the account's console"), so plan D9.3's cost per role is complete;
   - the medians come from the local database's 111 calls of 2026-10-25, before the overnight changes. Before submitting, run `uv run sherlock llm stats` against the deployed app's database (a Render shell in `/app/api`) and refresh the README's medians and tokens per message from it;
   - read the Token Factory sentence over for the Devpost text, which says the same in its own words.
-- **The Tavily key, for Best Use of Tavily** (plan open decision 1). Get a key (the Nebius Builder Program includes Tavily credits) and set `TAVILY_API_KEY` in Render's environment (it's declared `sync: false` in `render.yaml`) and in `.env`. Until then no Tavily call runs in the deployed app, so the bonus can't be claimed (PRD §12.4).
+- **The Tavily key, for Best Use of Tavily** (plan open decision 1). Get a key (the Nebius Builder Program includes Tavily credits) and set `TAVILY_API_KEY` in Render's environment (it's declared `sync: false` in `render.yaml`) and in `.env`. Until then no Tavily call runs in the deployed app, so the bonus can't be claimed (PRD §12.4). Then run `uv run sherlock eval web --live` through `eval-locked.sh` and record the result in `FEEDBACK.md`: the offline run uses hand-made Tavily stand-ins, not real replies (TRD §14).
 - **Keep it running through judging** (D9 C5): Render's paid plan and the Token Factory credit until Dec 15, 2026 (PRD §9).
 
 ## 2. Decisions only the owner can make
@@ -118,6 +118,7 @@ The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. S
 
 ### Dashboard and chat
 
+- **Some outside-world questions can still go to the file** (the web eval's live recording, plan T-6): with reasoning off Nano doesn't always route the same question the same way. In the last recording, "what are the latest trends in retail pricing this year?" went to `ask_data` once (a monthly average of the file's unit price) and "outside this file, what return rates do online retailers usually report?" to `ask_why` once; both went to the web in the other passes. TRD §8.1's guards catch a meaning question with no meaning word and a history with no change word, not these. The answer is about the file instead, never an error and never data sent.
 - The 20-widget warning shows only from the Add widget drawer. Duplicate, Pin and chat's `create_widget` don't return or show it (D4 F4; PRD DASH-10).
 - On a wide file the 60-candidate cap cuts in generation order, so trends and tables can be dropped before they're scored (D4 F5).
 - Pinning a table pins the first result's query and drops the answer's `selection_id` (D4 F6; API only, since the UI offers Pin on charts).

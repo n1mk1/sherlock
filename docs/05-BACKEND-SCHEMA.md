@@ -521,7 +521,7 @@ CREATE TABLE sandbox_runs (
 );
 ```
 
-As built: the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); `narrate`, `overview` and `synthesis` (stories); and for web retrieval `web_query`, `web_answer` and `dictionary` on Nemotron rows and `web_context` and `dictionary` on web rows (TRD §3.6, §8.2). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
+As built: the purposes written are `route`, `plan`, `sql`, `predicate`, `widget`, `update_widget`, `compose`, `stats`, `meaning`, `edits`, `ask_story`, `plan_edits` and `summary` (chat); `diagnose`, `propose` and `critic` (the Cleaner); `curate` (the dashboard builder); `narrate`, `overview` and `synthesis` (stories); and for web retrieval `web_query`, `web_answer`, `meaning_web` and `dictionary` on Nemotron rows and `web_context`, `meaning_web` and `dictionary` on web rows (TRD §3.6, §8.2). No `embed` row is written while `MODEL_EMBED` is empty. A failed call is logged too, with `ok = 0` and its error. The app-wide daily token ceiling sums `llm_calls` from midnight UTC; a user's daily count is kept in `users.tokens_used_today` (TRD §3.5).
 
 Receipts (TRD §4.9, §4.10; migration `004_llm_calls_indexes.sql`):
 - `GET /chat/messages/{mid}/calls` reads the rows whose `message_id` is an assistant message's ID, and `GET /jobs/{jid}/calls` the rows whose `job_id` is the job's, oldest first (`ORDER BY id`), through `sherlock/llm/calls.py`. The indexes on `message_id` and `job_id` keep those reads off a full scan; the one on `created_at` serves the app-wide budget's sum since midnight UTC, which runs before every model call.
@@ -612,7 +612,7 @@ CREATE INDEX web_cache_created ON web_cache(created_at);
 
 ### 2.23 column_notes
 
-What a column means, from a data dictionary the user linked (PRD LOAD-7, TRD §7.1.1). `kind` is `dictionary`; `web`, a column meaning read from the web when chat explains a column, isn't written yet. Added by migration `008_column_notes.sql`.
+What a column means, from a data dictionary the user linked (`kind = 'dictionary'`, PRD LOAD-7, TRD §7.1.1) or read from the web when chat explains a column (`kind = 'web'`, TRD §8.2 `ask_meaning`). Added by migration `008_column_notes.sql`.
 
 ```sql
 CREATE TABLE column_notes (
@@ -631,7 +631,7 @@ CREATE TABLE column_notes (
 
 - **Metadata, not data** (CLAUDE.md Rule 3): a note describes a column and never changes a value, so it isn't a step and has no version. A note is keyed by the column's name; after a rename the old name's note no longer matches a column and isn't shown.
 - **`description`** is written by Super from the excerpt, one sentence with no digits or numbers in words (`ColumnNotes`, TRD §7.1). Codes and their numbers stay in **`excerpt`**, the chunk of the page Tavily returned, shown verbatim beside it (at most 600 characters).
-- One note per column and kind: reading a dictionary again replaces the column's `dictionary` note. Readers show a column's `dictionary` note before any other kind.
+- One note per column and kind: reading a dictionary again replaces the column's `dictionary` note, and a new web meaning replaces its `web` note. Readers show a column's `dictionary` note before its `web` note, and with a dictionary note chat doesn't search the web for the column.
 - Deleted with the dataset: the foreign key cascades on hard delete (§6).
 
 ---
@@ -714,7 +714,7 @@ As built:
 | Pending edits | client only | browser local storage (`sherlock:edits:<dataset>:<version>`) |
 | Cleaning plan (draft) | `clean_plans` | none; a draft on an older version is merged onto the current one when read |
 | Web search, extract and map results | Tavily | `web_cache` (24 h, §2.22) |
-| Column notes (a data dictionary) | the linked page, read by Tavily | `column_notes` (kept with the dataset, §2.23) |
+| Column notes (a data dictionary, the web) | the linked page or the web search, read by Tavily | `column_notes` (kept with the dataset, §2.23) |
 | UI state (tab, scroll, panel widths) | client | browser local storage; `datasets.last_tab` server-side |
 
 ---

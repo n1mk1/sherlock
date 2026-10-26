@@ -1,0 +1,53 @@
+# The web eval (TRD §14, plan T-6): run by `uv run sherlock eval web` (offline, on recorded fixtures) or
+# `--live` (real Nemotron and Tavily, with TAVILY_API_KEY). Ten outside-world questions (web_context,
+# PRD ASK-11) and ten column-meaning questions (ask_meaning with the web, TRD §8.2) over the three eval
+# files. Each is asked with web retrieval on, failing and off (sherlock/eval/web.py says what each
+# checks); the outside-world ones never ask about the file's own numbers, and none names a cell value.
+#
+# kind: outside (an outside-world question) | meaning (what a column means)
+
+titanic3.csv:
+  - q: In general, how were lifeboats allocated on passenger ships in the early twentieth century?
+    kind: outside
+  - q: Historically, what were the ports of Cherbourg and Queenstown?
+    kind: outside
+  - q: What did a first class ticket on an ocean liner usually include, in general?
+    kind: outside
+  - q: What does sibsp mean?
+    kind: meaning
+  - q: What does parch mean?
+    kind: meaning
+  - q: What does the boat column mean?
+    kind: meaning
+  - q: What does embarked mean?
+    kind: meaning
+
+sales_dated.csv:
+  - q: Outside this file, what return rates do online retailers usually report?
+    kind: outside
+  - q: What does SKU stand for in retail?
+    kind: outside
+  - q: What are the latest trends in retail pricing this year?
+    kind: outside
+  - q: What does unit_price mean?
+    kind: meaning
+  - q: What does the returned column mean?
+    kind: meaning
+  - q: What does revenue mean?
+    kind: meaning
+
+reviews_text.csv:
+  - q: What is a net promoter score?
+    kind: outside
+  - q: How do online marketplaces usually handle a delivery that arrives damaged?
+    kind: outside
+  - q: What makes an online product review trustworthy, according to consumer groups?
+    kind: outside
+  - q: What are the most common complaints about online shopping in general?
+    kind: outside
+  - q: What does the verified column mean?
+    kind: meaning
+  - q: What does rating mean?
+    kind: meaning
+  - q: What does posted mean?
+    kind: meaning

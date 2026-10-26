@@ -6,6 +6,8 @@
     uv run sherlock eval notebook [--sets a.csv,b.csv | all] export each file's notebook and run it in a fresh venv
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
     uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts, labels and wording (markdown table)
+    uv run sherlock eval web [--sets a.csv] [--live | --record] web answers: on, failing and off (markdown table);
+                                                 offline on recorded fixtures unless --live (needs TAVILY_API_KEY)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
     uv run sherlock llm stats [--days N] [--json]    per purpose and role: p50/p95 latency, tokens, repair, fail and fallback rates
 
@@ -139,8 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     p_clean.add_argument("source")
     p_clean.add_argument("--timeout", type=float, default=900)
     p_eval = sub.add_parser("eval", help="run a benchmark")
-    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "grounding", *NOT_BUILT])
+    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "grounding", "web", *NOT_BUILT])
     p_eval.add_argument("--sets", default="", help="comma-separated benchmark sets (corruption) or sample files (ask)")
+    live = p_eval.add_mutually_exclusive_group()
+    live.add_argument("--live", action="store_true", help="web: real Nemotron and real Tavily (needs TAVILY_API_KEY)")
+    live.add_argument("--record", action="store_true", help="web: real Nemotron, recorded Tavily; rewrites the Nemotron fixtures")
     p_export = sub.add_parser("export", help="export a dataset")
     p_export.add_argument("what", choices=["notebook"])
     p_export.add_argument("dataset_id")
@@ -171,6 +176,13 @@ def main(argv: list[str] | None = None) -> int:
 
             _print(run_grounding([s for s in args.sets.split(",") if s] or None))
             return 0
+        if args.which == "web":
+            from sherlock.eval.web import run as run_web
+
+            text, ok = run_web([s for s in args.sets.split(",") if s] or None,
+                               mode="live" if args.live else "record" if args.record else "offline")
+            _print(text)
+            return 0 if ok else 1
         if args.which == "ml":
             from sherlock.eval.planted import run as run_planted
 

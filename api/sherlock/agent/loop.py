@@ -498,11 +498,12 @@ class Agent:
             notes.append(aw.SIDE_BY_SIDE)  # a data step's chips beside a web step's text: never compared (TRD §8.2)
         for note in notes:
             blocks.append(text_block([{"type": "text", "text": note}]))
-        # Narrative answers with numbers can go on the canvas (PRD ASK-4); a synthesis is already there.
+        # Narrative answers with numbers can go on the canvas (PRD ASK-4), and so can a web answer with its
+        # citations (T-5); a synthesis is already there.
         if "card_id" not in focus_out:
             for i, b in enumerate(blocks):
-                if b["type"] == "text" and b.get("labeled") != "general" and any(
-                        r["type"] == "chip" and r.get("key") for p in b["body"]["blocks"] for r in p["runs"]):
+                if b["type"] == "text" and (b.get("web") == "context" or b.get("labeled") != "general" and any(
+                        r["type"] == "chip" and r.get("key") for p in b["body"]["blocks"] for r in p["runs"])):
                     actions.append({"kind": "add_to_flow", "block_index": i})
         for b in blocks:
             if b not in streamed:
@@ -624,7 +625,7 @@ class Agent:
         if intent == "ask_model":
             return insight.ask_model(kit, question, resolved, context, focus, rid)
         if intent == "ask_meaning":
-            return insight.ask_meaning(kit, question, resolved, card, rid)
+            return insight.ask_meaning(kit, question, resolved, card, rid, web=self.web)
         if intent == "web_context":
             return aw.web_context(kit, self.web, question, [c["name"] for c in card["columns"]])
         return insight.app_help(question)

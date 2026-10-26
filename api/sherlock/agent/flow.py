@@ -98,6 +98,9 @@ def add_to_flow(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqli
     blocks = json.loads(message["blocks_json"])
     if not 0 <= block_index < len(blocks):
         raise ApiError(422, "invalid", "block_index: no such block in this message")
+    if blocks[block_index]["type"] == "text" and blocks[block_index].get("web") == "context":
+        # A web answer has no numbers from the data, so a newer version doesn't make it older (unlike 2b.4's rule below).
+        return _add_web(db, bus, dataset, message, blocks[block_index], blocks)
     if message["version"] is not None and message["version"] != dataset["current_version"]:
         # Plan 2b.4: a card's numbers are on the current version, and this answer's are from an older one.
         raise ApiError(409, "conflict", f"This answer was worked out on version {message['version']}; the data is now "
@@ -143,6 +146,38 @@ def add_to_flow(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqli
         "version, verified_at, created_at, updated_at) VALUES (?, ?, 'answer', ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
         (cid, dataset["id"], json.dumps(list(dict.fromkeys(cited))) if cited else None, json.dumps(headline), json.dumps(body),
          sheet_id, dataset["current_version"], now, now, now))
+
+    def place(doc: dict) -> None:
+        x, y = canvas.beside([], doc)
+        canvas.add_card_node(doc, cid, x, y)
+
+    canvas.mutate(db, bus, dataset, place)
+    return stories.emit_card(db, bus, dataset, cid)
+
+
+def _add_web(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqlite3.Row, block: dict, blocks: list) -> dict:
+    """A web answer (TRD §8.2 `web_context`) as an `answer` card: its text with each citation as "[n]", then its
+    sources, each with its address and the day it was retrieved, so the card and the notebook keep the
+    citations. Its fact sheet is empty: nothing on it is a number from the data, and no chip is made."""
+    listing = next((b for b in blocks if b.get("type") == "web_sources"), {"results": []})
+    runs = [{"type": "label", "ref": f"web:{r['n']}", "text": f"[{r['n']}]"} if r["type"] == "cite" else r
+            for p in block["body"]["blocks"] for r in p["runs"]]
+    cites = []
+    for r in listing["results"]:
+        cites += [{"type": "label", "ref": f"web:{r['n']}", "text": f"[{r['n']}] {r['title']}, {r['url']}, retrieved {r['retrieved_at']}"},
+                  {"type": "text", "text": "\n"}]
+    body = {"blocks": [{"type": "paragraph", "runs": runs}] + ([{"type": "bullets", "runs": cites[:-1]}] if cites else [])}
+    question = db.execute("SELECT text FROM messages WHERE dataset_id = ? AND role = 'user' AND created_at <= ? "
+                          "ORDER BY created_at DESC, id DESC LIMIT 1", (dataset["id"], message["created_at"])).fetchone()
+    headline = {"blocks": [{"type": "paragraph", "runs": [
+        {"type": "label", "ref": "question", "text": (question["text"] if question else "From the web")[:160]}]}]}
+    sheet_id, cid, now = new_id("fs"), new_id("crd"), now_iso()
+    db.execute("INSERT INTO fact_sheets (id, dataset_id, widget_id, version, facts_json, depends_columns_json, material_hash, "
+               "created_at) VALUES (?, ?, NULL, ?, '{}', '[]', '', ?)", (sheet_id, dataset["id"], dataset["current_version"], now))
+    db.execute(
+        "INSERT INTO cards (id, dataset_id, kind, source_card_ids_json, headline_json, body_json, fact_sheet_id, status, "
+        "version, verified_at, created_at, updated_at) VALUES (?, ?, 'answer', NULL, ?, ?, ?, 'ready', ?, ?, ?, ?)",
+        (cid, dataset["id"], json.dumps(headline), json.dumps(body), sheet_id, dataset["current_version"], now, now, now))
 
     def place(doc: dict) -> None:
         x, y = canvas.beside([], doc)

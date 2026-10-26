@@ -299,7 +299,7 @@ As built:
 As built (cut 5):
 - **Toolbar.** Add row · Delete row (the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (CSV · Notebook (.ipynb)) · the legend. Add column, the Filter row and quick views aren't there (P1 and cut 5).
 - **Header.** "n unsaved changes", Discard and Save changes (n) sit in the context row on the right, before the job tray, when there are pending edits. Review changes is cut (cut 5); the Changes panel's "Unsaved (yours)" list removes single lines instead.
-- **Column notes (PRD LOAD-7).** A column with a note (from a data dictionary the user linked) has ⓘ before its type line. Hovering its header shows the note: Sherlock's sentence, the source's own words in quotes, and "From the data dictionary at <site>, retrieved <date>. Not computed from your data." Hover only: the canvas header has no keyboard focus, so the same meaning is also answered in chat ("what does <column> mean?").
+- **Column notes (PRD LOAD-7).** A column with a note (from a data dictionary the user linked, or from the web when chat explained the column) has ⓘ before its type line. Hovering its header shows the note: Sherlock's sentence, the source's own words in quotes, and "From the data dictionary at <site>, retrieved <date>. Not computed from your data." (or "From the web at …"). A column's dictionary note wins over its web note. Hover only: the canvas header has no keyboard focus, so the same meaning is also answered in chat ("what does <column> mean?").
 - **Grid.** A frozen first column shows `_row_id` ("new" for a pending row), struck through for quarantined rows and rows marked for deletion. New rows appear at the top until saved. A header click sorts by that column (ascending, descending, off); the status bar says the sort is a view only.
 - **Status bar.** The number of selected cells, the row count (and sort), the unsaved count, and the current cell ("Row 9 · home.dest"). Selection stats are cut (cut 5).
 - **A new view.** A new version, sort or Find clears the selected cells, since they're row positions that now hold other rows; the chat's "3 rows selected" goes with them. An open Find runs again on a new version, so its rows and "n matches in m rows" are that version's ("No cells match." closes it).
@@ -452,11 +452,12 @@ Quality of life as built (the `?` sheet is cut 9):
 - The status line says "Searching the web".
 - The answer is a dashed block that begins "From the web (not from your data):", one to three sentences with a small linked number after each ([1], [2]) naming the page it comes from. It has no number chips: any number from the web stays in the quoted page text.
 - Under it, "Searched the web for: “<the query>”" and a collapsed "3 sources" list: each page's title (a link that opens in a new tab), its site, the day it was retrieved, and the page's own words in quotes.
-- "How do you know?" lists the same pages (each a link), then the receipt, where the search is a step of its own: "Searched the web" with its time, or "cached" when the 24 h cache answered it.
+- "How do you know?" lists the same pages (each a link), then the receipt, where the search is a step of its own: "Searched the web · 5 results" with its time, or "cached" when the 24 h cache answered it.
 - When a plan has a data step and a web step, the data's chips and the web's cited text sit side by side with the line "The web part comes from the pages cited, not from your data; I didn't compare it with the numbers above."
 - No key, the hourly limit, a timeout or an error: the answer is one line instead ("Web search isn't set up on this server, so I didn't look this up on the web.", …), never an error, and the rest of the answer still comes.
-- **Column meanings** ("what does <column> mean?") keep what the data says; with a data dictionary linked, the general part comes from the dictionary ("From the data dictionary you linked (not from your data): …"), otherwise from the model as before.
+- **Column meanings** ("what does <column> mean?") keep what the data says, and the general part comes from the web when it's on: "In general, from the web (not from your data): …" with its citations and sources, instead of the model's own words; with a data dictionary linked, from the dictionary ("From the data dictionary you linked (not from your data): …"), with no search. With no key it is the same answer as before web retrieval.
 - **"Use the codebook at <url>"** reads that page as the data dictionary (PRD LOAD-7) and answers which columns it describes; the notes then show in the CSV tab's headers.
+- **Add to Flow** is offered on a web answer too: the card keeps the text with its [n] citations and lists the sources with their addresses and dates, and the notebook exports it as cited Markdown ending "From the web pages cited …; not computed from the data." (§17).
 
 ### 10.3 Chat on each tab
 
@@ -644,6 +645,7 @@ As built, the toast is a loading toast that becomes "Notebook ready" with Downlo
 9. For each ML run: Markdown (what and why, excluded columns with reasons), code (reproduction), output tables embedded; its story card.
 10. Synthesis and direction cards after their sources; canvas notes where they sit in the Flow path (when that order is chosen).
    As built, synthesis and answer cards come in a section "From the Flow canvas" after the dashboard, oldest first, each with its numbers and evidence like any card. With **Include canvas notes**, the canvas's notes follow as quoted Markdown in reading order (top to bottom, then left to right).
+   A web answer added to Flow (§10.2) comes there too, as cited Markdown: its sentences with their [n] citations, a list of the sources (title, URL, the day each was retrieved), and "From the web pages cited, retrieved on the dates shown; not computed from the data." No API key is ever written into the file.
 11. Closing cell: "How to continue" (how to add cells, where the helpers are documented, a link back to Sherlock).
 
 ### 17.5 Edge cases

@@ -401,10 +401,12 @@ def _wrong_table(kit: Toolkit, sel: dict, rid: str) -> Result:
 
 # --- ask_meaning ----------------------------------------------------------------------------------
 
-def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str) -> Reply:
+def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str, web=None) -> Reply:
     """What a column means: what the data says (counts, common values, from queries) and, labelled
-    apart, what such a column usually records: from a data dictionary the user linked (its note, PRD
-    LOAD-7), else from the model's general knowledge (no digits)."""
+    apart, what such a column usually records. That part comes from a data dictionary the user linked
+    (its note, PRD LOAD-7), else with web retrieval on from a web search on the column's name (cited,
+    no digits, TRD §8.2), else from the model's general knowledge (no digits). With web retrieval off it
+    is exactly the general-knowledge answer; when a search fails, one line says so above it."""
     cols = {c["name"]: c for c in card["columns"]}
     names = mentioned(resolved, list(cols))
     if not names:  # a bare name in the question ("what is <column>?")
@@ -440,6 +442,13 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
                   None)
     if linked:  # the user's own data dictionary wins over a search
         return Reply(blocks=[*blocks, aw.note_block(linked)], sources=[*sources, aw.note_source(linked)], focus=focus)
+    if web is not None and web.enabled:
+        got = aw.web_meaning(kit, web, col["name"], list(cols), about)
+        if isinstance(got, tuple):
+            block, listing, cited = got
+            aw.remember_meaning(kit.env.db, kit.dataset["id"], col["name"], block, listing)
+            return Reply(blocks=[*blocks, block, listing], sources=[*sources, *cited], focus=focus)
+        blocks.append(text_block([text(got)]))  # the one line: the web part didn't happen, the model's words follow
     try:
         general = kit.llm.structured("medium", kit._messages(prompts.MEANING.format(about=fence(about))), Meaning,
                                      purpose="meaning", scope=kit.scope).value.general.strip()

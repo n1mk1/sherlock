@@ -1,0 +1,1382 @@
+[
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"lifeboats\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"early twentieth century\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1483,
+  "completion_tokens": 88,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\"query\": \"lifeboat allocation on passenger ships early twentieth century\", \"recent\": false}",
+  "prompt_tokens": 284,
+  "completion_tokens": 182,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"In the early twentieth century, British passenger ships had lifeboat numbers determined by their tonnage rather than how many people were on board, with larger vessels required to carry more boats.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 438,
+  "completion_tokens": 1196,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_history\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"Cherbourg\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"Queenstown\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1622,
+  "completion_tokens": 85,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\"query\": \"What were the ports of Cherbourg and Queenstown historically?\", \"recent\": false}",
+  "prompt_tokens": 280,
+  "completion_tokens": 391,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Cherbourg, in Normandy, France, was one of the usual calling ports for liners sailing from Southampton to New York.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 404,
+  "completion_tokens": 1301,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"first class ticket\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"ocean liner\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"usually include\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1673,
+  "completion_tokens": 107,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\"query\": \"first class ticket ocean liner what included pclass\", \"recent\": false}",
+  "prompt_tokens": 282,
+  "completion_tokens": 399,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"A first class ticket usually included a private cabin, meals in the main dining saloon, and access to the lounges, libraries and promenade decks of the upper decks.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 410,
+  "completion_tokens": 596,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does sibsp mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"sibsp\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1731,
+  "completion_tokens": 68,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: sibsp"
+  ],
+  "content": "{\"prose\": [{\"text\": \"It records how many brothers, sisters, husbands or wives were traveling with the passenger.\"}, {\"cite\": 1}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 410,
+  "completion_tokens": 838,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does parch mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"parch\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1784,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: parch"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The column parch records the count of parents or children that accompanied a passenger on the voyage.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 416,
+  "completion_tokens": 1126,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the boat column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"boat\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1844,
+  "completion_tokens": 60,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: boat"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The boat column records the lifeboat identifier used by survivors.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 402,
+  "completion_tokens": 597,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does embarked mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"embarked\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1868,
+  "completion_tokens": 61,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: embarked"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The column shows where passengers got on the ship.\"}, {\"cite\": 1}, {\"text\": \"S means Southampton, C means Cherbourg, and Q means Queenstown.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 376,
+  "completion_tokens": 970,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": []\n}",
+  "prompt_tokens": 1483,
+  "completion_tokens": 45,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\"query\": \"how were lifeboats allocated on passenger ships in the early twentieth century\", \"recent\": false}",
+  "prompt_tokens": 284,
+  "completion_tokens": 198,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"Cherbourg\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"Queenstown\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1591,
+  "completion_tokens": 85,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\"query\": \"Historically, what were the ports of Cherbourg and Queenstown?\", \"recent\": false}",
+  "prompt_tokens": 280,
+  "completion_tokens": 310,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"first class ticket\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"ocean liner\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"usually include\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1621,
+  "completion_tokens": 105,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\"query\": \"first class ticket ocean liner usually include\", \"recent\": false}",
+  "prompt_tokens": 282,
+  "completion_tokens": 236,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does sibsp mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"sibsp\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1649,
+  "completion_tokens": 62,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: sibsp"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 245,
+  "completion_tokens": 200,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: sibsp"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 305,
+  "completion_tokens": 443,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does parch mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"parch\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1667,
+  "completion_tokens": 65,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: parch"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 248,
+  "completion_tokens": 258,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: parch"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 308,
+  "completion_tokens": 318,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the boat column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"boat\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1704,
+  "completion_tokens": 60,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: boat"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 250,
+  "completion_tokens": 227,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: boat"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 310,
+  "completion_tokens": 483,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does embarked mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"embarked\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1725,
+  "completion_tokens": 65,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: embarked"
+  ],
+  "content": "{\"general\": \"The embarked column likely indicates the port where each passenger boarded the Titanic, using codes S for Southampton, C for Cherbourg, and Q for Queenstown.\"}",
+  "prompt_tokens": 229,
+  "completion_tokens": 499,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nIn general, how were lifeboats allocated on passenger ships in the early twentieth century?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"lifeboats\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"early twentieth century\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1483,
+  "completion_tokens": 88,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHistorically, what were the ports of Cherbourg and Queenstown?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_history\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"Cherbourg\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"Queenstown\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1597,
+  "completion_tokens": 85,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat did a first class ticket on an ocean liner usually include, in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"first class ticket\",\n      \"kind\": \"value\"\n    },\n    {\n      \"text\": \"ocean liner\",\n      \"kind\": \"value\"\n    },\n    {\n      \"text\": \"usually include\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1635,
+  "completion_tokens": 107,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does sibsp mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"sibsp\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1669,
+  "completion_tokens": 62,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: sibsp"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 245,
+  "completion_tokens": 230,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: sibsp"
+  ],
+  "content": "{\"general\": \"It records how many siblings or spouses each passenger had on board.\"}",
+  "prompt_tokens": 305,
+  "completion_tokens": 271,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does parch mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"parch\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1690,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: parch"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 248,
+  "completion_tokens": 191,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: parch"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 308,
+  "completion_tokens": 241,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the boat column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"boat\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1704,
+  "completion_tokens": 64,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: boat"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 250,
+  "completion_tokens": 393,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: boat"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 310,
+  "completion_tokens": 438,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does embarked mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"embarked\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1706,
+  "completion_tokens": 61,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: embarked"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 229,
+  "completion_tokens": 208,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: embarked"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 289,
+  "completion_tokens": 334,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": []\n}",
+  "prompt_tokens": 1353,
+  "completion_tokens": 45,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\"query\": \"what return rates do online retailers usually report\", \"recent\": false}",
+  "prompt_tokens": 265,
+  "completion_tokens": 263,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Online retailers often report return rates that are higher than those seen in physical stores.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 393,
+  "completion_tokens": 941,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"SKU\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"retail\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1461,
+  "completion_tokens": 86,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\"query\": \"What does SKU stand for in retail?\", \"recent\": false}",
+  "prompt_tokens": 261,
+  "completion_tokens": 325,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"SKU stands for stock keeping unit.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 394,
+  "completion_tokens": 773,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"latest trends in retail pricing this year\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1490,
+  "completion_tokens": 71,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"query\": \"What are the latest trends in retail pricing this year?\", \"recent\": false}",
+  "prompt_tokens": 263,
+  "completion_tokens": 452,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Retailers are using more dynamic pricing and personalised discounts this year.\"}, {\"cite\": 1}, {\"text\": \"Several regions now require unit prices on shelf labels and online listings.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 378,
+  "completion_tokens": 800,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does unit_price mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"unit_price\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1539,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: unit_price"
+  ],
+  "content": "{\"prose\": [{\"text\": \"It records the price charged for each item before quantity is multiplied.\"}, {\"cite\": 1}, {\"text\": \"It may differ from the list price when a discount is applied.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 422,
+  "completion_tokens": 1003,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the returned column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"returned\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1648,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: returned"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The column records a yes/no flag indicating whether the customer returned the order.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 378,
+  "completion_tokens": 569,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does revenue mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"revenue\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1715,
+  "completion_tokens": 63,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: revenue"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The column records the amount paid for each order line, calculated as units multiplied by unit price.\"}, {\"cite\": 1}, {\"text\": \"It may represent gross revenue before returns and discounts or net revenue after them.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 424,
+  "completion_tokens": 907,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"return rates\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"online retailers\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1353,
+  "completion_tokens": 85,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\"query\": \"what return rates do online retailers usually report\", \"recent\": false}",
+  "prompt_tokens": 265,
+  "completion_tokens": 221,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"SKU\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"retail\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1451,
+  "completion_tokens": 86,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\"query\": \"What does SKU stand for in retail?\", \"recent\": false}",
+  "prompt_tokens": 261,
+  "completion_tokens": 273,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_stats\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"latest trends\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"retail pricing\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1476,
+  "completion_tokens": 86,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "sql",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"reading\": \"retail pricing → unit_price\\nlatest trends → order_date (time dimension)\\nthis year → order_date (year)\", \"sql\": \"WITH max_year AS (SELECT EXTRACT(YEAR FROM MAX(order_date)) AS yr FROM t),\\nfiltered AS (\\n SELECT *\\n FROM t, max_year\\n WHERE EXTRACT(YEAR FROM order_date) = max_year.yr\\n)\\nSELECT\\n DATE_TRUNC('month', order_date) AS month,\\n AVG(unit_price) AS avg_unit_price\\nFROM filtered\\nGROUP BY month\\nORDER BY month;\", \"answerable\": true, \"closest\": null}",
+  "prompt_tokens": 1074,
+  "completion_tokens": 679,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "sql",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"reading\": \"retail pricing → unit_price\\nlatest trends → order_date (time dimension)\\nthis year → order_date (year)\", \"sql\": \"SELECT DATE_TRUNC('month', order_date) AS month,\\n       AVG(unit_price) AS avg_unit_price\\nFROM t\\nWHERE {{rows}}\\n  AND EXTRACT(YEAR FROM order_date) = (SELECT EXTRACT(YEAR FROM MAX(order_date))\\n                                       FROM t\\n                                       WHERE {{rows}})\\nGROUP BY month\\nORDER BY month;\", \"answerable\": true, \"closest\": null}",
+  "prompt_tokens": 1282,
+  "completion_tokens": 629,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "compose",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"\"}, {\"label\": \"column:month\"}, {\"text\": \" vs \"}, {\"label\": \"column:avg_unit_price\"}], \"shape\": \"chart\", \"number\": null, \"label\": null, \"chart\": null}",
+  "prompt_tokens": 998,
+  "completion_tokens": 707,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "compose",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The trend shows monthly average unit price from January to December, with prices rising in February, dipping in March, peaking in April, then fluctuating through the year and ending lower in December.\"}], \"shape\": \"chart\", \"number\": null, \"label\": null, \"chart\": null}",
+  "prompt_tokens": 1106,
+  "completion_tokens": 1346,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does unit_price mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"unit_price\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1604,
+  "completion_tokens": 65,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: unit_price"
+  ],
+  "content": "{\"general\": \"The column probably holds the price charged for one item, shown as a monetary amount per unit.\"}",
+  "prompt_tokens": 271,
+  "completion_tokens": 609,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the returned column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"returned\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1590,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: returned"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 227,
+  "completion_tokens": 195,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: returned"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 287,
+  "completion_tokens": 245,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does revenue mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"revenue\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1626,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: revenue"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 277,
+  "completion_tokens": 206,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: revenue"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 337,
+  "completion_tokens": 247,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nOutside this file, what return rates do online retailers usually report?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_why\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"return rates\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"online retailers\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1353,
+  "completion_tokens": 86,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does SKU stand for in retail?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"SKU\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1501,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the latest trends in retail pricing this year?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"latest trends\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"retail pricing\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1534,
+  "completion_tokens": 86,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does unit_price mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"unit_price\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1568,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: unit_price"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 271,
+  "completion_tokens": 281,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: unit_price"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 331,
+  "completion_tokens": 247,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the returned column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"returned\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1540,
+  "completion_tokens": 61,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: returned"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 227,
+  "completion_tokens": 226,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: returned"
+  ],
+  "content": "{\"general\": \"The column 'returned' likely records whether a sale transaction resulted in the product being returned by the customer, with True indicating a return and False indicating no return. It serves as a flag for post‑purchase reversals in the sales data.\"}",
+  "prompt_tokens": 287,
+  "completion_tokens": 291,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does revenue mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"revenue\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1590,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: revenue"
+  ],
+  "content": "{\"general\": \"It likely holds the amount of money earned from each sale recorded in the file, expressed in the local currency.\"}",
+  "prompt_tokens": 277,
+  "completion_tokens": 305,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"net promoter score\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1274,
+  "completion_tokens": 68,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\"query\": \"what is a net promoter score\", \"recent\": false}",
+  "prompt_tokens": 253,
+  "completion_tokens": 197,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The Net Promoter Score asks customers how likely they are to recommend a company; it is the share of promoters minus the share of detractors.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 407,
+  "completion_tokens": 1343,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"online marketplaces\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"delivery\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"damaged\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1394,
+  "completion_tokens": 104,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\"query\": \"How do online marketplaces usually handle a delivery that arrives damaged?\", \"recent\": false}",
+  "prompt_tokens": 259,
+  "completion_tokens": 218,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Most marketplaces ask the buyer to report damage within a set window, with photos, and then offer a refund or a replacement; the seller or the carrier bears the cost.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 393,
+  "completion_tokens": 627,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\",\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"trustworthy\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"consumer groups\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1463,
+  "completion_tokens": 93,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\"query\": \"What makes an online product review trustworthy, according to consumer groups\", \"recent\": false}",
+  "prompt_tokens": 260,
+  "completion_tokens": 280,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Consumer groups say a review is more trustworthy when the writer confirms they bought the product.\"}, {\"cite\": 1}, {\"text\": \"They also value comments that give clear details and note any problems with the item.\"}, {\"cite\": 1}, {\"text\": \"A spread of ratings that includes lower scores rather than only perfect marks signals reliability.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 388,
+  "completion_tokens": 1568,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\",\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"most common complaints\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"online shopping\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1539,
+  "completion_tokens": 92,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\"query\": \"most common complaints about online shopping\", \"recent\": false}",
+  "prompt_tokens": 258,
+  "completion_tokens": 244,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_answer",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The most common complaints about online shopping are late or missing deliveries, items not as described, and difficult returns or refunds.\"}, {\"cite\": 1}], \"unanswered\": false}",
+  "prompt_tokens": 379,
+  "completion_tokens": 858,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the verified column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"verified\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1532,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: verified"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The verified column shows whether a review’s author has a confirmed purchase.\"}, {\"cite\": 1}, {\"text\": \"It matches the review to an order to indicate a verified purchase badge.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 368,
+  "completion_tokens": 1026,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does rating mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"rating\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1606,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: rating"
+  ],
+  "content": "{\"prose\": [{\"text\": \"Rating is the star score the reviewer gave the product, usually from the lowest to the highest.\"}, {\"cite\": 1}, {\"text\": \"Star ratings summarise how satisfied reviewers were with a product.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 381,
+  "completion_tokens": 754,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does posted mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\"ask_meaning\"],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"posted\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1652,
+  "completion_tokens": 63,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning_web",
+  "match": [
+   "column: posted"
+  ],
+  "content": "{\"prose\": [{\"text\": \"The posted column records the date a review was published on the site.\"}, {\"cite\": 1}, {\"text\": \"It indicates the posting date so readers can distinguish older reviews from newer ones.\"}, {\"cite\": 2}], \"unanswered\": false}",
+  "prompt_tokens": 454,
+  "completion_tokens": 641,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"net promoter score\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1274,
+  "completion_tokens": 68,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\"query\": \"net promoter score definition\", \"recent\": false}",
+  "prompt_tokens": 253,
+  "completion_tokens": 149,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"online marketplaces\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"delivery\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"damaged\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1370,
+  "completion_tokens": 104,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\"query\": \"how do online marketplaces handle a damaged delivery\", \"recent\": false}",
+  "prompt_tokens": 259,
+  "completion_tokens": 152,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"trustworthy\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"consumer groups\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1408,
+  "completion_tokens": 87,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\"query\": \"what makes an online product review trustworthy according to consumer groups\", \"recent\": false}",
+  "prompt_tokens": 260,
+  "completion_tokens": 187,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"most common complaints\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"online shopping\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1441,
+  "completion_tokens": 87,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "web_query",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\"query\": \"most common complaints about online shopping\", \"recent\": false}",
+  "prompt_tokens": 258,
+  "completion_tokens": 154,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the verified column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"verified\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1437,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: verified"
+  ],
+  "content": "{\"general\": \"The verified column likely indicates whether the review was submitted by a verified purchaser or account.\"}",
+  "prompt_tokens": 226,
+  "completion_tokens": 281,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does rating mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"rating\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1483,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: rating"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 237,
+  "completion_tokens": 233,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: rating"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 297,
+  "completion_tokens": 444,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does posted mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"posted\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1507,
+  "completion_tokens": 65,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: posted"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 318,
+  "completion_tokens": 346,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: posted"
+  ],
+  "content": "{\"general\": \"It probably indicates the date each review was submitted.\"}",
+  "prompt_tokens": 378,
+  "completion_tokens": 211,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat is a net promoter score?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"net promoter score\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1274,
+  "completion_tokens": 68,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nHow do online marketplaces usually handle a delivery that arrives damaged?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"web_context\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"online marketplaces\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"delivery\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"damaged\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1376,
+  "completion_tokens": 104,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat makes an online product review trustworthy, according to consumer groups?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"trustworthy\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"consumer groups\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1422,
+  "completion_tokens": 88,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat are the most common complaints about online shopping in general?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"most common complaints\",\n      \"kind\": \"column\"\n    },\n    {\n      \"text\": \"online shopping\",\n      \"kind\": \"value\"\n    }\n  ]\n}",
+  "prompt_tokens": 1461,
+  "completion_tokens": 87,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does the verified column mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"verified\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1459,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: verified"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 226,
+  "completion_tokens": 304,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: verified"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 286,
+  "completion_tokens": 398,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does rating mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"rating\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1456,
+  "completion_tokens": 66,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: rating"
+  ],
+  "content": "{\"general\": \"It probably stores a user‑given score, often on a scale where higher means more positive feedback.\"}",
+  "prompt_tokens": 237,
+  "completion_tokens": 242,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nWhat does posted mean?\n</data>"
+  ],
+  "content": "{\n  \"intents\": [\n    \"ask_meaning\"\n  ],\n  \"ambiguous\": false,\n  \"clarification\": null,\n  \"multi_step\": false,\n  \"entities\": [\n    {\n      \"text\": \"posted\",\n      \"kind\": \"column\"\n    }\n  ]\n}",
+  "prompt_tokens": 1489,
+  "completion_tokens": 67,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: posted"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 318,
+  "completion_tokens": 282,
+  "finish_reason": "stop"
+ },
+ {
+  "purpose": "meaning",
+  "match": [
+   "column: posted"
+  ],
+  "content": "{\"general\": \"\"}",
+  "prompt_tokens": 378,
+  "completion_tokens": 231,
+  "finish_reason": "stop"
+ }
+]

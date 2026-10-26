@@ -1,9 +1,9 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnswerBlock } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Sources } from "@/components/shell/ChatBar";
-import { renderAt } from "@/test/render";
+import { mockApi, renderAt } from "@/test/render";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -34,9 +34,18 @@ describe("answers from the web (TRD §8.2 web_context)", () => {
     expect(screen.getByText("code 7 means returned to sender")).toBeInTheDocument(); // the web's number stays in the quote
   });
 
-  it("links a web source in How do you know?", () => {
+  it("links a web source in How do you know? and counts a search's results in the receipt", async () => {
+    mockApi({ "GET /api/v1/chat/messages/msg_w/calls": {
+      calls: [{ id: 1, role: "web", model: "tavily-search", purpose: "web_context", prompt_tokens: null, completion_tokens: null,
+                tokens: 0, latency_ms: 900, ok: true, error: null, repaired: false, cached: false, results: 5, created_at: "" }],
+      total: { calls: 1, failed: 0, repaired: 0, cached: 0, prompt_tokens: 0, completion_tokens: 0, tokens: 0, latency_ms: 900 },
+    } });
     renderAt(<Sources messageId="msg_w" sources={[{ kind: "web", url: "https://glossary.example.org/status", title: "Glossary",
       label: "[1] Glossary (glossary.example.org), retrieved 2026-10-26: from the web, not from your data" }]} />);
     expect(screen.getByRole("link", { name: /Glossary \(glossary.example.org\)/ })).toHaveAttribute("href", "https://glossary.example.org/status");
+    fireEvent.click(screen.getByText("How I worked it out"));
+    const row = (await screen.findAllByRole("row"))[1];
+    expect(within(row).getAllByRole("cell")[0]).toHaveTextContent("1. Searched the web· 5 results");
+    expect(within(row).getByText("0.9 s")).toBeInTheDocument();
   });
 });

@@ -929,6 +929,17 @@
       "title": "Repaired",
       "type": "boolean"
      },
+     "results": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Results"
+     },
      "role": {
       "title": "Role",
       "type": "string"

@@ -247,6 +247,16 @@ def _runs_md(runs: list[dict], facts: dict, notes: list[str]) -> str:
     return "".join(out).strip()
 
 
+def _lines(runs: list[dict]) -> list[list[dict]]:
+    out: list[list[dict]] = [[]]
+    for r in runs:
+        if r.get("type") == "text" and r.get("text") == "\n":
+            out.append([])
+        else:
+            out[-1].append(r)
+    return out
+
+
 def card(c: dict, facts: dict, level: str = "###", stale: str | None = None) -> list:
     """A story card as Markdown (PRD NB-6): the headline as a heading, the body with every chip as
     its number from the fact sheet, related widgets, and the evidence queries in a closed details
@@ -257,10 +267,13 @@ def card(c: dict, facts: dict, level: str = "###", stale: str | None = None) -> 
     if stale:
         lines += [f"*{stale}*", ""]
     for b in c["body"]["blocks"]:
-        text = _runs_md(b["runs"], facts, notes)
-        lines.append(f"- {text}" if b.get("type") == "bullets" else text)
-        if b.get("type") != "bullets":
-            lines.append("")
+        if b.get("type") == "bullets":  # one item per line ("\n" runs split them, as the app shows them)
+            lines += [f"- {_runs_md(item, facts, notes)}" for item in _lines(b["runs"]) if item]
+            continue
+        lines += [_runs_md(b["runs"], facts, notes), ""]
+    web = any(r.get("type") == "label" and str(r.get("ref", "")).startswith("web:") for b in c["body"]["blocks"] for r in b["runs"])
+    if web:  # a web answer (TRD §8.2 web_context): cited, with its sources above, never computed from the data
+        lines += ["", "*From the web pages cited, retrieved on the dates shown; not computed from the data.*"]
     if c.get("related"):
         lines += ["", "Related: " + " · ".join(r["title"] for r in c["related"])]
     if notes:

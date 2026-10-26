@@ -336,7 +336,7 @@ A box is ticked when everything on its line is built except what a cut removed (
 | Install | `cd api && uv sync` · `cd web && pnpm install` (pnpm comes through Corepack: run `corepack enable` once, or call it as `corepack pnpm …`; `web/package.json` pins `pnpm@12.15.0`) |
 | Run locally | `docker compose up` or `uv run uvicorn sherlock.main:app --reload` + `pnpm dev` |
 | Tests | `uv run pytest` · `pnpm test` · `pnpm playwright test` (`pnpm e2e` builds the web app first; D8.6) |
-| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute). All five run; `notebook` and `grounding` take `--sets a.csv,b.csv` (`notebook` also `all`, the end-to-end set; TRD §14) |
+| Evals | `uv run sherlock eval corruption` · `… eval ml` · `… eval grounding` · `… eval ask` · `… eval notebook` (export + execute) · `… eval web` (offline on recorded fixtures; `--live` with `TAVILY_API_KEY`). All six run; `notebook` and `grounding` take `--sets a.csv,b.csv` (`notebook` also `all`, the end-to-end set; TRD §14) |
 | Clean a file headless | `uv run sherlock clean <file.csv or sample>` (in `api/`): imports it, prints the live log and the report (D3.5) |
 | Model-call stats | `uv run sherlock llm stats [--days N] [--json]` (in `api/`): per purpose and per role, p50/p95 latency, tokens, and the repair, fail and fallback rates, from `llm_calls`, read-only (TRD §14) |
 | Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |

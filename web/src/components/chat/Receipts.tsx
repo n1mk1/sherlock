@@ -20,6 +20,8 @@ const DID: Record<string, string> = {
   plan_edits: "Changed the cleaning plan", summary: "Summarized the thread",
   diagnose: "Diagnosed an issue", propose: "Proposed fixes", critic: "Reviewed a fix", curate: "Chose the widgets",
   narrate: "Wrote a story", overview: "Wrote the overview", synthesis: "Made sense of the cards",
+  web_query: "Wrote the web search", web_answer: "Wrote the answer from the web pages",
+  meaning_web: "Explained the column from the web pages", dictionary: "Matched the dictionary to the columns",
 };
 // A web request (`role: "web"`) is named by its tool.
 const WEB: Record<string, string> = { "tavily-search": "Searched the web", "tavily-extract": "Read a web page", "tavily-map": "Mapped a website" };
@@ -78,6 +80,7 @@ export function Receipts({ path, className }: { path: string; className?: string
                     <tr key={c.id} className={cn("align-top", !c.ok && "text-muted-foreground")}>
                       <td className="pr-2">
                         {i + 1}. {stepName(c)}
+                        {c.role === "web" && c.results != null && <span className="ml-1 text-muted-foreground">· {plural(c.results, "result")}</span>}
                         {c.repaired && <span className="ml-1 text-accent">(repair)</span>}
                         {c.fallback_from && <span className="ml-1 text-accent">(in place of the {c.fallback_from} model)</span>}
                         {!c.ok && <span className="ml-1 text-warning">{c.error?.includes("cut off") ? "(cut off, asked again)" : "(failed)"}</span>}

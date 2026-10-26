@@ -1712,6 +1712,8 @@ export interface components {
             purpose: string;
             /** Repaired */
             repaired: boolean;
+            /** Results */
+            results?: number | null;
             /** Role */
             role: string;
             /** Tokens */

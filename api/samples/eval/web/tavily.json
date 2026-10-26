@@ -1,0 +1,589 @@
+[
+ {
+  "kind": "_about",
+  "match": [
+   "_never"
+  ],
+  "note": "Hand-made stand-ins for Tavily search replies (no key existed when they were written): made-up pages on reserved example domains, in Tavily's response shape. Not recorded from Tavily; `sherlock eval web --live` runs against the real API."
+ },
+ {
+  "kind": "search",
+  "match": [
+   "lifeboat"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Maritime safety rules before 1914",
+     "url": "https://history.example.org/maritime/lifeboats",
+     "content": "Before 1914, the number of lifeboats a British passenger ship carried was set by its tonnage, not by the number of people aboard; ships over 10,000 tons needed 16 boats.",
+     "score": 0.88
+    },
+    {
+     "title": "How lifeboats were loaded",
+     "url": "https://sea.example.com/articles/loading",
+     "content": "Crews usually loaded lifeboats by deck and by the officers' orders, and the custom of women and children first was applied unevenly between ships and sides of the deck.",
+     "score": 0.74
+    },
+    {
+     "title": "Forum thread: lifeboats",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "cherbourg"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Transatlantic ports of call",
+     "url": "https://ports.example.org/europe/cherbourg-queenstown",
+     "content": "Cherbourg, in Normandy, France, and Queenstown, now Cobh, in County Cork, Ireland, were the usual calling ports for liners sailing from Southampton to New York.",
+     "score": 0.91
+    },
+    {
+     "title": "Cobh heritage notes",
+     "url": "https://heritage.example.com/cobh",
+     "content": "Queenstown was renamed Cobh in 1920; its harbour was a main emigration port.",
+     "score": 0.67
+    },
+    {
+     "title": "Forum thread: ports",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "first class"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Life aboard an ocean liner",
+     "url": "https://liners.example.org/classes",
+     "content": "A first class ticket usually included a private cabin, meals in the main dining saloon, and access to the lounges, libraries and promenade decks of the upper decks.",
+     "score": 0.85
+    },
+    {
+     "title": "Classes of travel on early liners",
+     "url": "https://travel.example.com/history/classes",
+     "content": "Second and third class passengers had their own dining rooms and decks, and fares differed many times over between the classes.",
+     "score": 0.69
+    },
+    {
+     "title": "Forum thread: tickets",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "return rate"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Online retail returns explained",
+     "url": "https://retail.example.org/returns",
+     "content": "Online retailers often report return rates between 20% and 30% of orders, higher than in physical stores.",
+     "score": 0.86
+    },
+    {
+     "title": "What counts as a return",
+     "url": "https://commerce.example.com/metrics/returns",
+     "content": "A return rate is usually the share of units or orders sent back in a period, and retailers differ in whether exchanges count.",
+     "score": 0.72
+    },
+    {
+     "title": "Forum thread: returns",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "sku"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Retail glossary: SKU",
+     "url": "https://glossary.example.org/sku",
+     "content": "SKU stands for stock keeping unit: a code a retailer gives each distinct product and variant it sells, such as one size and colour of a shirt.",
+     "score": 0.93
+    },
+    {
+     "title": "SKUs and barcodes",
+     "url": "https://inventory.example.com/sku-vs-upc",
+     "content": "Unlike a UPC barcode, a SKU is internal to one retailer, which defines its own format.",
+     "score": 0.71
+    },
+    {
+     "title": "Forum thread: SKU",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "pricing"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Retail pricing this year",
+     "url": "https://news.example.org/2026/pricing",
+     "content": "Retailers are using more dynamic pricing and personalised discounts this year, according to an industry survey of 400 firms.",
+     "score": 0.79
+    },
+    {
+     "title": "Price transparency rules",
+     "url": "https://policy.example.com/pricing-rules",
+     "content": "Several regions now require unit prices on shelf labels and online listings.",
+     "score": 0.62
+    },
+    {
+     "title": "Forum thread: prices",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "net promoter"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Net Promoter Score basics",
+     "url": "https://cx.example.org/nps",
+     "content": "The Net Promoter Score asks customers how likely they are to recommend a company on a 0 to 10 scale; it is the share of promoters (9-10) minus the share of detractors (0-6).",
+     "score": 0.94
+    },
+    {
+     "title": "Criticism of NPS",
+     "url": "https://research.example.com/nps-critique",
+     "content": "Researchers note that the score compresses answers into three groups and can hide changes in the middle.",
+     "score": 0.66
+    },
+    {
+     "title": "Forum thread: NPS",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "damaged"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Damaged deliveries: buyer protection",
+     "url": "https://marketplace.example.org/help/damaged",
+     "content": "Most marketplaces ask the buyer to report damage within a set window, with photos, and then offer a refund or a replacement; the seller or the carrier bears the cost.",
+     "score": 0.87
+    },
+    {
+     "title": "Carrier claims",
+     "url": "https://shipping.example.com/claims",
+     "content": "Sellers can file a claim with the carrier for parcels damaged in transit.",
+     "score": 0.64
+    },
+    {
+     "title": "Forum thread: damage",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "trustworth"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Spotting fake reviews",
+     "url": "https://consumer.example.org/reviews/trust",
+     "content": "Consumer groups advise looking for verified purchases, detailed reviews that mention drawbacks, and a natural spread of ratings rather than only five stars.",
+     "score": 0.84
+    },
+    {
+     "title": "Review platform rules",
+     "url": "https://rules.example.com/reviews",
+     "content": "Some regulators now ban fake or incentivised reviews and require platforms to say how they check them.",
+     "score": 0.68
+    },
+    {
+     "title": "Forum thread: reviews",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "complaint"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Top online shopping complaints",
+     "url": "https://consumer.example.org/complaints",
+     "content": "The most common complaints about online shopping are late or missing deliveries, items not as described, and difficult returns or refunds.",
+     "score": 0.86
+    },
+    {
+     "title": "Customer service survey",
+     "url": "https://survey.example.com/online",
+     "content": "Slow customer service and hidden fees also rank high in consumer surveys.",
+     "score": 0.65
+    },
+    {
+     "title": "Forum thread: complaints",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"sibsp\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Passenger list data dictionary",
+     "url": "https://data.example.org/passengers/dictionary",
+     "content": "sibsp: number of siblings or spouses aboard (sibling = brother, sister, stepbrother, stepsister; spouse = husband, wife).",
+     "score": 0.92
+    },
+    {
+     "title": "Variables in passenger datasets",
+     "url": "https://learn.example.com/variables",
+     "content": "SibSp counts the passenger's siblings and spouses travelling with them, and Parch their parents and children.",
+     "score": 0.77
+    },
+    {
+     "title": "Forum thread: sibsp",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"parch\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Passenger list data dictionary",
+     "url": "https://data.example.org/passengers/dictionary",
+     "content": "parch: number of parents or children aboard (parent = mother, father; child = daughter, son, stepdaughter, stepson). Some children travelled only with a nanny, so parch is 0 for them.",
+     "score": 0.92
+    },
+    {
+     "title": "Variables in passenger datasets",
+     "url": "https://learn.example.com/variables",
+     "content": "Parch counts the parents and children a passenger travelled with.",
+     "score": 0.75
+    },
+    {
+     "title": "Forum thread: parch",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"boat\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Passenger list data dictionary",
+     "url": "https://data.example.org/passengers/dictionary",
+     "content": "boat: the lifeboat a survivor left the ship in, if known (a number or a letter).",
+     "score": 0.88
+    },
+    {
+     "title": "Lifeboat records",
+     "url": "https://history.example.org/boats",
+     "content": "Lifeboats were numbered on one side and lettered for the collapsible boats.",
+     "score": 0.63
+    },
+    {
+     "title": "Forum thread: boat",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"embarked\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Passenger list data dictionary",
+     "url": "https://data.example.org/passengers/dictionary",
+     "content": "embarked: port of embarkation (C = Cherbourg, Q = Queenstown, S = Southampton).",
+     "score": 0.93
+    },
+    {
+     "title": "Ports of call",
+     "url": "https://ports.example.org/europe/cherbourg-queenstown",
+     "content": "Passengers boarded at Southampton, then at Cherbourg and Queenstown.",
+     "score": 0.7
+    },
+    {
+     "title": "Forum thread: embarked",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"unit_price\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Sales data fields",
+     "url": "https://analytics.example.org/fields/unit-price",
+     "content": "unit_price is the price charged for one unit of a product on an order line, before multiplying by the quantity.",
+     "score": 0.86
+    },
+    {
+     "title": "Unit price vs list price",
+     "url": "https://pricing.example.com/unit-price",
+     "content": "A unit price can differ from the list price when a discount applies to the order.",
+     "score": 0.68
+    },
+    {
+     "title": "Forum thread: unit price",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"returned\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Sales data fields",
+     "url": "https://analytics.example.org/fields/returned",
+     "content": "returned is a yes/no flag saying whether the customer sent the order back.",
+     "score": 0.82
+    },
+    {
+     "title": "Recording returns",
+     "url": "https://retail.example.org/returns-data",
+     "content": "Retail order tables often mark a returned order with a flag rather than deleting it, so revenue can be reported before and after returns.",
+     "score": 0.66
+    },
+    {
+     "title": "Forum thread: returned",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"revenue\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Sales data fields",
+     "url": "https://analytics.example.org/fields/revenue",
+     "content": "revenue on an order line is usually units times the unit price: what the customer paid for that line.",
+     "score": 0.87
+    },
+    {
+     "title": "Revenue in retail reports",
+     "url": "https://finance.example.com/revenue",
+     "content": "Gross revenue is reported before returns and discounts; net revenue after them.",
+     "score": 0.7
+    },
+    {
+     "title": "Forum thread: revenue",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"verified\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Review data fields",
+     "url": "https://reviews.example.org/fields/verified",
+     "content": "verified marks a review whose author is confirmed to have bought the product on the site.",
+     "score": 0.89
+    },
+    {
+     "title": "Verified purchase badges",
+     "url": "https://consumer.example.org/reviews/verified",
+     "content": "A verified purchase badge means the platform matched the review to an order.",
+     "score": 0.73
+    },
+    {
+     "title": "Forum thread: verified",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"rating\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Review data fields",
+     "url": "https://reviews.example.org/fields/rating",
+     "content": "rating is the star score the reviewer gave the product, usually from 1 (worst) to 5 (best).",
+     "score": 0.9
+    },
+    {
+     "title": "Star ratings",
+     "url": "https://cx.example.org/stars",
+     "content": "Star ratings summarise how satisfied reviewers were with a product.",
+     "score": 0.64
+    },
+    {
+     "title": "Forum thread: rating",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ },
+ {
+  "kind": "search",
+  "match": [
+   "\"posted\" meaning"
+  ],
+  "response": {
+   "query": "",
+   "results": [
+    {
+     "title": "Review data fields",
+     "url": "https://reviews.example.org/fields/posted",
+     "content": "posted is the date the review was published on the site.",
+     "score": 0.85
+    },
+    {
+     "title": "Review timestamps",
+     "url": "https://reviews.example.org/timestamps",
+     "content": "Platforms show the posting date so readers can tell old reviews from new ones.",
+     "score": 0.61
+    },
+    {
+     "title": "Forum thread: posted",
+     "url": "https://forum.example.net/t/1",
+     "content": "Has anyone seen this? Bump.",
+     "score": 0.21
+    }
+   ]
+  }
+ }
+]

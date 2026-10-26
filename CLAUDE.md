@@ -45,7 +45,7 @@ Verify your work (plan §4):
 uv run pytest            # in api/
 pnpm test                # in web/
 pnpm e2e                 # in web/: builds the app, then the Playwright end-to-end flow
-uv run sherlock eval ask # also: corruption, ml, grounding, notebook
+uv run sherlock eval ask # also: corruption, ml, grounding, notebook, web (offline; --live with TAVILY_API_KEY)
 ```
 
 ## Rules
