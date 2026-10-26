@@ -1,6 +1,7 @@
 // "How I worked it out" (App Flow §10.2, §5; UI/UX §4.8): the receipt of an answer or a clean, read from
 // `llm_calls` (TRD §4.9, §4.10). Each step shows the model that ran it, how long it took, its tokens and
-// whether it was a repair, then the total. Collapsed at first; the calls are fetched when it opens.
+// whether it was a repair or Ultra standing in for Super (TRD §3.5), then the total. Collapsed at first;
+// the calls are fetched when it opens.
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { request } from "@/api/client";
@@ -77,6 +78,7 @@ export function Receipts({ path, className }: { path: string; className?: string
                       <td className="pr-2">
                         {i + 1}. {stepName(c)}
                         {c.repaired && <span className="ml-1 text-accent">(repair)</span>}
+                        {c.fallback_from && <span className="ml-1 text-accent">(in place of the {c.fallback_from} model)</span>}
                         {!c.ok && <span className="ml-1 text-warning">{c.error?.includes("cut off") ? "(cut off, asked again)" : "(failed)"}</span>}
                       </td>
                       <td className="break-all pr-2 font-mono">{c.model}</td>

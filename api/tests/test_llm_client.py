@@ -402,3 +402,124 @@ def test_the_deadline_bounds_attempts_and_waits(db):
     with pytest.raises(DeadlineExceeded):  # already past it: no call at all
         client.complete("small", [], purpose="plain", scope=CallScope(deadline=now[0] - 1))
     assert timeouts == []
+
+
+# --- the Nemotron fallback (plan 2b.8, TRD §3.5) ----------------------------------------------------
+
+
+class SuperDown(Transport):
+    """Super fails with a transient error (taking `takes` seconds of the fake clock); Ultra answers."""
+
+    def __init__(self, now: list[float], takes: float = 0.0) -> None:
+        self.now, self.takes, self.models = now, takes, []
+
+    def create(self, *, model, **kw):
+        self.models.append(model)
+        if model == "nvidia/nemotron-test-super":
+            self.now[0] += self.takes
+            raise TransientError("529: overloaded")
+        return {"content": "from ultra", "tool_calls": [], "prompt_tokens": 5, "completion_tokens": 5}
+
+
+def test_a_breaker_opens_after_three_failures_in_a_minute_and_closes_after_thirty_seconds():
+    from sherlock.llm.client import Breaker
+
+    b = Breaker()
+    b.failure(0.0)
+    b.failure(10.0)
+    assert not b.is_open(10.0)
+    b.failure(61.0)  # the first is more than 60 s old: two in the window
+    assert not b.is_open(61.0)
+    b.failure(62.0)  # three within 60 s (10, 61, 62)
+    assert b.is_open(62.0) and b.is_open(91.9) and not b.is_open(92.0)  # open for 30 s, then closed and cleared
+    b.failure(93.0)
+    b.failure(94.0)
+    b.success()  # an answer clears the count
+    b.failure(95.0)
+    assert not b.is_open(95.0)
+
+
+def test_super_falls_back_to_ultra_once_its_breaker_opens(db):
+    from sherlock.llm.client import breaker
+
+    now, slept = [0.0], []
+
+    def sleep(s):
+        slept.append(s)
+        now[0] += s
+
+    transport = SuperDown(now)
+    client = LLMClient(get_settings(), transport=transport, sleep=sleep, clock=lambda: now[0], jitter=lambda: 0.5)
+    c = client.complete("medium", [], purpose="sql")
+    # Three failures on Super open its breaker: the call goes to Ultra at once, without the third wait.
+    assert c.text == "from ultra" and c.fallback_from == "medium" and slept == [2.0, 4.0] and c.waited_s == 6.0
+    rows = calls(db)
+    assert [(r["role"], r["ok"], r["fallback_from"]) for r in rows] == [
+        ("medium", 0, None), ("medium", 0, None), ("medium", 0, None), ("large", 1, "medium")]
+    assert rows[-1]["model"] == "nvidia/nemotron-test-ultra" and rows[-1]["purpose"] == "sql"
+
+    # While it's open, a Super call goes straight to Ultra; 30 s later Super is asked again.
+    transport.models.clear()
+    assert client.complete("medium", [], purpose="compose").fallback_from == "medium"
+    assert transport.models == ["nvidia/nemotron-test-ultra"]
+    now[0] += 30.0
+    assert not breaker("medium").is_open(now[0])
+    transport.models.clear()
+    client.complete("medium", [], purpose="compose")
+    assert transport.models[0] == "nvidia/nemotron-test-super"
+
+    # Ultra's own calls have no fallback and record none.
+    assert client.complete("large", [], purpose="diagnose").fallback_from is None
+
+
+def test_a_deadline_starved_super_call_goes_to_ultra(db):
+    now = [0.0]
+    transport = SuperDown(now, takes=7.0)
+    client = LLMClient(get_settings(), transport=transport, sleep=lambda s: now.__setitem__(0, now[0] + s),
+                       clock=lambda: now[0], jitter=lambda: 0.5)
+    # Super takes 7 of the 12 s and fails; its retry would start 2 s later with 3 s left, so Ultra gets the 5 s now.
+    c = client.complete("medium", [], purpose="sql", scope=CallScope(deadline=12.0))
+    assert c.fallback_from == "medium" and transport.models == ["nvidia/nemotron-test-super", "nvidia/nemotron-test-ultra"]
+    assert now[0] == 7.0  # no backoff wait before Ultra
+    assert [(r["role"], r["fallback_from"]) for r in calls(db)] == [("medium", None), ("large", "medium")]
+
+
+def test_no_fallback_when_ultra_is_down_too_or_time_is_short(db):
+    from sherlock.llm.client import breaker
+
+    now = [0.0]
+    transport = SuperDown(now, takes=7.0)
+    client = LLMClient(get_settings(), transport=transport, sleep=lambda s: now.__setitem__(0, now[0] + s),
+                       clock=lambda: now[0], jitter=lambda: 0.5)
+    with pytest.raises(DeadlineExceeded):  # 7 s of 10 gone: under 5 s left, so Ultra isn't worth asking
+        client.complete("medium", [], purpose="sql", scope=CallScope(deadline=10.0))
+    assert transport.models == ["nvidia/nemotron-test-super"] * 2
+
+    for t in (0.0, 1.0, 2.0):
+        breaker("large").failure(now[0] + t)
+    now[0] += 2.0
+    transport.models.clear()
+    with pytest.raises(DeadlineExceeded):  # Ultra's own breaker is open: Super keeps its retries until the deadline
+        client.complete("medium", [], purpose="sql", scope=CallScope(deadline=now[0] + 12.0))
+    assert set(transport.models) == {"nvidia/nemotron-test-super"}
+
+
+def test_the_fallback_keeps_ultras_gate(db):
+    """With Super open-circuited, twenty Super calls all go to Ultra, at most two at a time (its gate)."""
+    import threading
+    import time
+
+    from sherlock.llm.client import breaker
+
+    for _ in range(3):
+        breaker("medium").failure(time.monotonic())
+    transport = Slow()
+    settings = get_settings()
+    threads = [threading.Thread(target=lambda: LLMClient(settings, transport=transport).complete("medium", [], purpose="sql"))
+               for _ in range(20)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert transport.most == {"nvidia/nemotron-test-ultra": settings.llm_concurrency_large}
+    assert db.execute("SELECT count(*) FROM llm_calls WHERE role = 'large' AND fallback_from = 'medium' AND ok = 1").fetchone()[0] == 20

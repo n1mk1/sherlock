@@ -703,6 +703,25 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
 - **Gate:** `uv run pytest` 431 passed, 3 skipped (the one failure of the first run was this row's own test still expecting `lookalikes` last in the case list; fixed and rerun); `pnpm test` 95 passed; e2e passed. Slice 11's gate: pytest 428 passed, 3 skipped, its one failure a sandbox timeout while another pytest ran (`test_sandbox.py` 42 passed alone); vitest 93 passed; e2e passed on a rerun.
 - **BACKLOG:** added "The e2e flow can see the chat answer twice": two of six e2e runs tonight failed at `flow.spec.ts:30` under load, `origin/main` itself among them, and every run alone passed.
 
+### Tier 2 row 2b.8: the Nemotron fallback (Super → Ultra)
+
+- **Done:**
+  - **A circuit breaker per role**, process-wide like the gate (`llm/client.py::Breaker`, `breaker(role)`): it opens after 3 transient failures (429, 5xx, timeouts, connection errors) within 60 s and closes 30 s later; an answer clears the count. A refused request and a cut-off reply don't count.
+  - **The fallback** (`FALLBACK = {"medium": "large"}`): a Super call goes to Ultra when Super's breaker is open as it starts, or at once (no backoff wait) when a failed attempt opens it or the next retry would start with under 5 s before the deadline. Only while Ultra's own breaker is closed and the deadline and the 120 s cap leave it 5 s. `_complete` now prepares the request once and `_send` runs one role's attempts, so Ultra's call goes through Ultra's gate, under the same deadline, with the 120 s cap counted over the whole call and Super's waits kept in `waited_s`.
+  - Migration `007_llm_fallback.sql`: `llm_calls.fallback_from`. Ultra's row says `role = 'large'`, `fallback_from = 'medium'`; receipts carry it (`ModelCall.fallback_from`, "(in place of the medium model)" in "How I worked it out"), and `sherlock llm stats` now reads a real fallback rate.
+  - `tests/conftest.py` closes every breaker before and after each test, so one test's failures can't send the next test's Super calls to Ultra.
+  - Tests (`test_llm_client.py`): the breaker opens on 3 in 60 s, not on 3 spread wider, closes after 30 s, and an answer clears it; three Super failures go to Ultra without the third wait, the rows say so, the next call goes straight to Ultra, and Super is asked again 30 s later; a deadline-starved Super call goes to Ultra with the time left; no fallback with under 5 s left or with Ultra's breaker open; twenty Super calls with Super open-circuited all reach Ultra, at most two at a time. `test_receipts.py`: the receipt and the fallback rate. `receipts.test.tsx`: the mark.
+  - Docs: TRD §3.5 (retries, logging, the fallback), §4.9 (`ModelCall`); Schema §1, §2.18; App Flow §10.2; UI/UX §4.8. `openapi.json` and `schema.d.ts` regenerated.
+  - Gate: `uv run pytest` 447 passed, 3 skipped (16 min); `pnpm test` 96 passed; `pnpm e2e` passed.
+- **Decisions:**
+  - **"Deadline-starved" means the next Super retry would start with under 5 s before the deadline.** Then Ultra gets the time left at once, instead of a doomed Super retry or a backoff that passes the deadline. A Super call waiting for a free Super slot isn't covered (BACKLOG): falling back there would move chat's overflow onto Ultra's two slots, which the Cleaner uses.
+  - **The thresholds are constants, not settings** (`BREAKER_FAILS`, `BREAKER_WINDOW_S`, `BREAKER_OPEN_S`, `FALLBACK_MIN_LEFT_S`): the plan fixes 3, 60 s and 30 s, and none needs tuning per deployment.
+  - **Only Super falls back.** Ultra has nothing larger to go to, and Nano's route call already falls back to one `ask_data` step.
+  - The ask eval wasn't rerun: the fallback changes nothing while Super answers, which is every call of a healthy run, and the plan names no eval for 2b.8. It can only turn a failing Super call (the 529s in `FEEDBACK.md`) into an answer.
+  - **Out of the plan's order:** 2b.8 landed before 2b.1–2b.7, which other streams own, since the owner asked for parallel work (`parallel.md`).
+- **BACKLOG:** added "The Nemotron fallback doesn't cover a full Super gate".
+- **Found in passing:** `pnpm typecheck` (which `pnpm build` runs) failed in `web/src/components/csv/Grid.tsx` after 41fc04d, while `pnpm e2e` (which uses `vite build`) passed. Told the `tavily` stream, whose file it is; its fix (3bb807d, "Narrow the column-note hover…") landed before this row.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

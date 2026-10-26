@@ -17,7 +17,7 @@ MAX_LISTED = 500  # a long clean makes a few hundred calls; the totals always co
 ERROR_CHARS = 200
 
 _COLUMNS = ("id, role, model, purpose, prompt_tokens, completion_tokens, latency_ms, ok, error, repaired, cached, "
-            "created_at")
+            "fallback_from, created_at")
 _TOTALS = ("COUNT(*) AS calls, COALESCE(SUM(1 - ok), 0) AS failed, COALESCE(SUM(repaired), 0) AS repaired, "
            "COALESCE(SUM(cached), 0) AS cached, COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, "
            "COALESCE(SUM(completion_tokens), 0) AS completion_tokens, COALESCE(SUM(latency_ms), 0) AS latency_ms")
@@ -36,6 +36,7 @@ class ModelCall(BaseModel):
     error: str | None
     repaired: bool                  # the one repair call after a reply failed validation
     cached: bool                    # answered from a cache, no request sent (web rows)
+    fallback_from: str | None       # the role this call stood in for: Ultra answering in Super's place
     created_at: str
 
 
@@ -62,7 +63,7 @@ def to_call(row: sqlite3.Row) -> ModelCall:
         prompt_tokens=row["prompt_tokens"], completion_tokens=row["completion_tokens"],
         tokens=(row["prompt_tokens"] or 0) + (row["completion_tokens"] or 0), latency_ms=row["latency_ms"],
         ok=bool(row["ok"]), error=error[:ERROR_CHARS] if error else None, repaired=bool(row["repaired"]),
-        cached=bool(row["cached"]), created_at=row["created_at"],
+        cached=bool(row["cached"]), fallback_from=row["fallback_from"], created_at=row["created_at"],
     )
 
 

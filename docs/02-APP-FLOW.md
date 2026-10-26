@@ -417,7 +417,7 @@ The answerers behind the bar:
    - **Proposal**: a card with Approve / Reject for data changes or step-by-step cleaning.
    - **Clarification**: the question and 2–3 buttons; the thread waits.
 4. Every answer has a **How do you know?** disclosure (SQL, recipe run, step references) and a copy button.
-   - Inside it, **How I worked it out** (collapsed) lists the model calls that made the answer, in order: what each step did ("Read the question", "Wrote the query", "Wrote the answer"), the model that ran it, its time and its tokens, a repair call marked "(repair)" and a failed attempt "(failed)", then the total ("Total: 3 calls · 4.1 s waiting on them · 5,120 tokens"). A web request, once the web client logs them, shows as "Searched the web" with "cached" when the web cache answered it. Every Sherlock message has the disclosure, so a clarification or a failed answer shows the calls it made too (TRD §4.9 receipts).
+   - Inside it, **How I worked it out** (collapsed) lists the model calls that made the answer, in order: what each step did ("Read the question", "Wrote the query", "Wrote the answer"), the model that ran it, its time and its tokens, a repair call marked "(repair)", a failed attempt "(failed)", and a call Ultra answered because Super was failing or out of time "(in place of the medium model)" (TRD §3.5), then the total ("Total: 3 calls · 4.1 s waiting on them · 5,120 tokens"). A web request, once the web client logs them, shows as "Searched the web" with "cached" when the web cache answered it. Every Sherlock message has the disclosure, so a clarification or a failed answer shows the calls it made too (TRD §4.9 receipts).
 5. Follow-ups reuse the saved focus (scope, columns, result ids).
 
 As built:

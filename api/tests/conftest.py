@@ -54,3 +54,14 @@ def app():
 def client(app):
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def closed_breakers():
+    """The model client's circuit breakers are process-wide (TRD §3.5): a test's failures mustn't send
+    the next test's Super calls to Ultra."""
+    from sherlock.llm.client import reset_breakers
+
+    reset_breakers()
+    yield
+    reset_breakers()

@@ -187,3 +187,20 @@ def test_llm_stats_cli_reads_without_writing(capsys):
     assert cli.main(["llm", "stats", "--days", "3"]) == 0
     assert "Model calls over the last 3 days" in capsys.readouterr().out
     assert path.stat().st_mtime_ns == before
+
+
+def test_a_fallback_call_shows_in_the_receipt_and_the_fallback_rate():
+    db = seeded_db(SEEDED)
+    try:
+        db.execute("INSERT INTO llm_calls (message_id, role, model, purpose, prompt_tokens, completion_tokens, latency_ms, ok, "
+                   "fallback_from, created_at) VALUES ('msg_b', 'large', 'nvidia/ultra', 'sql', 900, 100, 2500, 1, 'medium', "
+                   "'2026-10-25T10:00:50.000Z')")
+        receipt = calls.for_message(db, "msg_b")
+        out = calls.stats(db)
+    finally:
+        db.close()
+    assert [(c.role, c.fallback_from) for c in receipt.calls][-2:] == [("medium", None), ("large", "medium")]
+    sql = next(p for p in out["purposes"] if p["purpose"] == "sql")
+    assert sql["roles"] == ["large", "medium"] and sql["fallback_rate"] == pytest.approx(1 / 5)
+    large = next(r for r in out["roles"] if r["role"] == "large")
+    assert large["fallback_rate"] == pytest.approx(1 / 2)

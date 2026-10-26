@@ -10,7 +10,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 const call = (over: Partial<ModelCall>): ModelCall => ({
   id: 1, role: "medium", model: "nvidia/nemotron-test-super", purpose: "sql", prompt_tokens: 900, completion_tokens: 100,
-  tokens: 1000, latency_ms: 1200, ok: true, error: null, repaired: false, cached: false, created_at: "", ...over,
+  tokens: 1000, latency_ms: 1200, ok: true, error: null, repaired: false, cached: false, fallback_from: null, created_at: "",
+  ...over,
 });
 
 const ANSWER: Receipt = {
@@ -19,7 +20,8 @@ const ANSWER: Receipt = {
     call({ id: 2, purpose: "sql", tokens: 0, prompt_tokens: null, completion_tokens: null, latency_ms: 30000, ok: false,
            error: "APITimeoutError: Request timed out." }),
     call({ id: 3, purpose: "sql", repaired: true, tokens: 1200 }),
-    call({ id: 4, purpose: "compose", tokens: 900, latency_ms: 2500 }),
+    call({ id: 4, role: "large", model: "nvidia/nemotron-test-ultra", purpose: "compose", tokens: 900, latency_ms: 2500,
+           fallback_from: "medium" }),
     call({ id: 5, role: "web", model: "tavily-search", purpose: "web_search", tokens: 0, latency_ms: 0, cached: true }),
   ],
   total: { calls: 5, failed: 1, repaired: 1, cached: 1, prompt_tokens: 2000, completion_tokens: 500, tokens: 2500, latency_ms: 34500 },
@@ -34,7 +36,8 @@ describe("How I worked it out", () => {
     fireEvent.click(screen.getByText("How I worked it out"));
     const rows = (await screen.findAllByRole("row")).slice(1);
     expect(rows.map((r) => within(r).getAllByRole("cell")[0].textContent)).toEqual([
-      "1. Read the question", "2. Wrote the query(failed)", "3. Wrote the query(repair)", "4. Wrote the answer", "5. Searched the web",
+      "1. Read the question", "2. Wrote the query(failed)", "3. Wrote the query(repair)",
+      "4. Wrote the answer(in place of the medium model)", "5. Searched the web",
     ]);
     expect(within(rows[0]).getByText("nvidia/nemotron-test-nano")).toBeInTheDocument();
     expect(within(rows[0]).getByText("0.8 s")).toBeInTheDocument();

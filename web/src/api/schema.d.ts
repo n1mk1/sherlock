@@ -1693,6 +1693,8 @@ export interface components {
             created_at: string;
             /** Error */
             error: string | null;
+            /** Fallback From */
+            fallback_from: string | null;
             /** Id */
             id: number;
             /** Latency Ms */

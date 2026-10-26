@@ -876,6 +876,17 @@
       ],
       "title": "Error"
      },
+     "fallback_from": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fallback From"
+     },
      "id": {
       "title": "Id",
       "type": "integer"
@@ -940,6 +951,7 @@
      "error",
      "repaired",
      "cached",
+     "fallback_from",
      "created_at"
     ],
     "title": "ModelCall",

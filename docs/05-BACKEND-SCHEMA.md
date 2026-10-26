@@ -12,7 +12,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
 - Soft deletes use `deleted_at`; a purge job removes rows and files 10 minutes after soft delete (datasets, widgets, cards) or at TTL expiry.
 - SQLite settings: `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL`.
 - Migrations: numbered SQL files in `api/sherlock/db/migrations/`, applied at startup, tracked in `schema_migrations`.
-  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, `003_plan_scope.sql` adds `clean_plans.scope_json`, `004_llm_calls_indexes.sql` adds `llm_calls.cached` and three `llm_calls` indexes (§2.18), `005_web_cache.sql` adds `web_cache` (§2.22) and `llm_calls.results`, and `008_column_notes.sql` adds `column_notes` (§2.23). From 004 on, each slice of work that changes the schema has its own numbered file, so files written in parallel land in any order: `migrate()` applies every file it hasn't applied, by number. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
+  - `001_initial.sql` creates every table and index in §2.1–§2.19, `002_clean_plans.sql` adds `clean_plans` (§2.21) and its index, `003_plan_scope.sql` adds `clean_plans.scope_json`, `004_llm_calls_indexes.sql` adds `llm_calls.cached` and three `llm_calls` indexes (§2.18), `005_web_cache.sql` adds `web_cache` (§2.22) and `llm_calls.results`, `007_llm_fallback.sql` adds `llm_calls.fallback_from` (§2.18), and `008_column_notes.sql` adds `column_notes` (§2.23). From 004 on, each slice of work that changes the schema has its own numbered file, so files written in parallel land in any order: `migrate()` applies every file it hasn't applied, by number. The column comments here can be longer than the SQL files'; the test compares tables and columns, not comments. `schema_migrations` itself is created by `sherlock/db/migrate.py` before any migration runs.
   - Each migration runs in one transaction.
   - A test (`api/tests/test_db.py`) parses this document and fails if a table or a column, in order, differs from the migrated database. So any change to §2 needs a new migration in the same commit.
 - ID prefixes are 2–4 letters (`ds_` is two). ULIDs are 26 Crockford base32 characters, generated in `sherlock/db/util.py`. Request IDs (`req_…`) use the same format but are never stored.
@@ -498,7 +498,8 @@ CREATE TABLE llm_calls (
   repaired    INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
   cached      INTEGER NOT NULL DEFAULT 0,      -- 1: answered from a cache, no request sent (004)
-  results     INTEGER                          -- web rows: the results (search) or pages (extract, map) returned (005)
+  results     INTEGER,                         -- web rows: the results (search) or pages (extract, map) returned (005)
+  fallback_from TEXT                           -- the role this call stood in for (medium, when Ultra answered in Super's place), else NULL (007)
 );
 CREATE INDEX llm_calls_user_day ON llm_calls(user_id, created_at);
 CREATE INDEX llm_calls_message ON llm_calls(message_id);   -- 004: a chat answer's receipt
@@ -523,6 +524,7 @@ Receipts (TRD §4.9, §4.10; migration `004_llm_calls_indexes.sql`):
 - `GET /chat/messages/{mid}/calls` reads the rows whose `message_id` is an assistant message's ID, and `GET /jobs/{jid}/calls` the rows whose `job_id` is the job's, oldest first (`ORDER BY id`), through `sherlock/llm/calls.py`. The indexes on `message_id` and `job_id` keep those reads off a full scan; the one on `created_at` serves the app-wide budget's sum since midnight UTC, which runs before every model call.
 - **Web rows.** A Tavily call (TRD §3.6) is a row like a model call: `role = 'web'`, `model` the tool (`tavily-search`, `tavily-extract` or `tavily-map`), the purpose of the feature that made it, `latency_ms`, `ok` and `error`, no tokens (both NULL, so neither the token budgets nor the app-wide ceiling count it), `cached = 1` (with latency 0) when the 24 h web cache answered it without a request, and `results` (migration `005_web_cache.sql`), how many results or pages came back. The hourly web limit (`WEB_RATE_LIMIT`) counts a user's web rows with `cached = 0` in the last hour. A call that never went out (no key, `WEB_SEARCH=off`, the limit, no time left) writes no row.
 - `cached` is 0 for every Nemotron call: the model client has no cache.
+- **`fallback_from`** (migration `007_llm_fallback.sql`) names the role a call stood in for. The model client sends a Super (`medium`) call to Ultra (`large`) when Super's circuit breaker is open or its next retry would pass the call's deadline (TRD §3.5); that row has `role = 'large'`, Ultra's `model`, the original `purpose`, and `fallback_from = 'medium'`. Every other row has NULL. Receipts show it, and `sherlock llm stats` reports it as the fallback rate.
 - The rows still aren't purged (BACKLOG): the budgets and the spend figures read them.
 
 ### 2.19 exports
