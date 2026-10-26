@@ -522,6 +522,20 @@ Baseline before the first slice: `uv run pytest` 391 passed, 3 skipped (10 min 2
   - The total's time is the calls' latencies summed ("waiting on them"), not the answer's wall time, which a parallel stories pool would make smaller.
 - **BACKLOG:** the `llm_calls` line keeps only what's open: the table is never purged (the daily budget's scan has its index now).
 
+### Slice 10 (plan 2.3): the cleaning log's line is built in code
+
+- **Done:**
+  - A commit or flag line's text comes from the step's full-data verifier report (`verifiers.effect_line`): "Changed 120 cells, quarantined 1 row; 99 → 0 numbers stored as text". The model's `expected_effect` moved to `note`, shown under it in smaller grey text, and only when it has no digit and no number in words (`loop.prose`, which reuses `stories.narrate.number_in_words`).
+  - The same rule covers the model's other words that reached the cleaning screens: the diagnosis' cause in "Left as is: …" (the fixed "the values look legitimate" when it has a number) and in the step's decision (`reason` null), and the critic's concerns in a flag's reason and the step's `review` (concerns with a number are dropped).
+  - Every outcome line of an issue that called the model carries `calls: {count, models, latency_ms}`, from the job's `llm_calls` rows since the issue started; the log shows "3 model calls · Nemotron-3-Ultra-550b-a55b, nemotron-3-super-120b-a12b · 12.3 s".
+  - Tests: `test_cleaning_units.py` (the line's numbers equal the report's, in order; singular and user-step forms; digits and number words keep a sentence out), `test_cleaner.py` (the messy file's two outcome lines, exactly, with their notes and three calls each across both models; a "Left as is" skip has one call), `cleaning.test.tsx` (the entry shows the line, the note and the calls).
+  - Docs: TRD §5.1 (`job.log` `text`, `note`, `calls`), §7.2 ("The log's words"); App Flow §5 (as built). BACKLOG: removed D3 M2 ("The cleaning log shows the model's own numbers").
+- **Decisions:**
+  - "Changed 263 cells", not the plan's "Fixed 263 cells": the report counts changed cells, and a flagged step isn't known to be right.
+  - A sentence with a number in words is dropped as well as one with digits ("quarantines the one value" passes, since `number_in_words` leaves out "one" on purpose, D8 F1), so the stricter half of Rule 2 holds without a new word list.
+  - A model sentence with a number is dropped whole, not edited: cutting the number out leaves a sentence nobody wrote.
+  - The calls line names the model IDs without the `nvidia/` prefix; receipts (slice 8) own the fuller per-call view.
+
 ## 2026-10-26 (Mon, morning): new browsers turned away, and a cleanup for judging
 
 The owner reported that https://sherlock-anw3.onrender.com didn't open in a private window or another browser, then asked for a cleanup that leaves the project ready to keep building and for judges to test.

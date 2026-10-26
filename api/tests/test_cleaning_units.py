@@ -1,3 +1,5 @@
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -382,3 +384,35 @@ def test_a_users_step_may_quarantine_at_most_a_fifth_of_the_rows():
     assert "resolved" not in r.soft  # no detector to re-run
     fine = quarantine_rows(before, before["_row_id"] <= 20, "your step")
     assert verify(before, fine, None, "city").hard["quarantine_scope"] == "pass"
+
+
+# --- the cleaning log's line (TRD §7.2, BACKLOG D3 M2) -----------------------------------------
+
+
+def test_the_log_line_takes_its_numbers_from_the_verifier_report():
+    from sherlock.cleaning.verifiers import effect_line
+
+    before = frame(age=[None] * 263 + ["x"] * 4 + [30.0] * 33)
+    filled = before.assign(age=[30.0] * 263 + [None] * 4 + [30.0] * 33)
+    after = quarantine_rows(filled, before["age"].eq("x"), "parse: age")
+    r = verify(before, after, "missing", "age")
+    line = effect_line(r, "missing values")
+    assert line == f"Changed {r.cells_changed:,} cells, quarantined 4 rows; {r.issue_before:,} → {r.issue_after:,} missing values"
+    numbers = [int(n.replace(",", "")) for n in re.findall(r"[\d,]+\d|\d", line)]
+    assert numbers == [r.cells_changed, r.quarantined, r.issue_before, r.issue_after]
+    one = verify(frame(a=["x ", "y"]), frame(a=["x", "y"]), None, "a")
+    assert effect_line(one, None) == "Changed 1 cell"  # a user's step: no detector count
+    only_rows = verify(before, quarantine_rows(before, before["age"].eq("x"), "bad"), None, "age")
+    assert effect_line(only_rows, None) == "Quarantined 4 rows"
+
+
+def test_the_models_sentence_is_shown_only_without_digits():
+    from sherlock.cleaning.loop import issue_words, prose, short_line
+
+    assert prose("Fills each missing age from the passenger's group.") == "Fills each missing age from the passenger's group."
+    assert prose("Fills 263 missing ages.") is None and prose("Parses dates as ISO 8601") is None
+    assert prose("Fills twelve missing ages.") is None  # a number in words is a number too
+    assert prose("  ") is None and prose(None) is None
+    issue = {"detector": "missing", "column": "age", "count": 263}
+    assert issue_words(issue) == "missing values" and short_line(issue) == "263 missing values"
+    assert issue_words({"user": True, "instruction": "trim", "detector": "user_request"}) is None

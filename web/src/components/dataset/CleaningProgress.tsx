@@ -1,5 +1,7 @@
 // Cleaning in progress (App Flow §5, UI brief §5.4): the live log from the dataset's event stream,
-// "So far" counts, the checks on the latest step, the budget line, and Stop.
+// "So far" counts, the checks on the latest step, the budget line, and Stop. A step's line is built in
+// code from its verifier report; the model's own sentence (`note`, never with digits) and the issue's
+// model calls (`calls`) sit under it.
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, CircleDot, Clock, Flag, Redo2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -168,7 +170,14 @@ export function collapse(entries: JobLogEntry[]): JobLogEntry[] {
   return out;
 }
 
-function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | null }) {
+/** "4 model calls · Nemotron-3-Ultra-550b-a55b · 12.3 s": the issue's calls from `llm_calls`. */
+export function callsLine(calls: NonNullable<JobLogEntry["calls"]>) {
+  const models = calls.models.map((m) => m.replace(/^nvidia\//i, "")).join(", ");
+  const n = calls.count === 1 ? "1 model call" : `${calls.count} model calls`;
+  return `${n} · ${models} · ${(calls.latency_ms / 1000).toFixed(1)} s`;
+}
+
+export function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | null }) {
   const t = started ? (Date.parse(entry.ts) - started) / 1000 : 0;
   const gate = entry.gate;
   const tone =
@@ -183,6 +192,7 @@ function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | nu
           <span className="text-foreground-2">{entry.column ? " · " : ""}{entry.text}</span>
         </p>
         {entry.outcome && <p className="mt-1 text-[13px] text-foreground-2">{entry.outcome}</p>}
+        {entry.note && <p className="mt-0.5 text-[12.5px] text-muted-foreground">{entry.note}</p>}
         {entry.candidates && entry.candidates.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {entry.candidates.map((c) => (
@@ -199,6 +209,7 @@ function LogEntry({ entry, started }: { entry: JobLogEntry; started: number | nu
           </div>
         )}
         {entry.detail && <p className={cn("mt-1.5 text-[12px]", tone)}>{entry.detail}</p>}
+        {entry.calls && <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">{callsLine(entry.calls)}</p>}
       </div>
     </li>
   );

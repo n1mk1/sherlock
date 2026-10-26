@@ -14,6 +14,9 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
   added to the cleaning plan has no detector and no count, so it may quarantine at most a fifth of
   the rows (`QUARANTINE_USER_SHARE`).
 
+`effect_line` turns a report into the cleaning log's main line for the step (cells changed, rows
+quarantined, the issue's count before → after), so every number on that line comes from code.
+
 The soft score is the mean of: parse success rate, the share of the issue resolved (the detector
 re-run on the result; none for a user's step, `detector=None`), 1 − the share of cells changed outside the issue's column, and distribution
 conservation for a numeric column that stays numeric (how little its median and spread moved).
@@ -183,6 +186,26 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
         r.soft["distribution"] = _conservation(b[column], a[column])
     r.soft["unrelated"] = min(r.soft["unrelated"], 1.0 - unrelated / total_cells)
     return r
+
+
+def _n(count: int, one: str, many: str) -> str:
+    return f"{count:,} {one if count == 1 else many}"
+
+
+def effect_line(report: Report, issue_words: str | None) -> str:
+    """The cleaning log's main line for a step, built from its full-data report and never from the
+    model's words (TRD §7.2): "Changed 263 cells, quarantined 4 rows; 263 → 0 missing values".
+    `issue_words` names what the detector counts; a user's step (no detector) has no count to show."""
+    parts = []
+    if report.cells_changed:
+        parts.append(f"changed {_n(report.cells_changed, 'cell', 'cells')}")
+    if report.quarantined:
+        parts.append(f"quarantined {_n(report.quarantined, 'row', 'rows')}")
+    line = ", ".join(parts) or "changed nothing"
+    line = line[0].upper() + line[1:]
+    if issue_words:
+        line += f"; {report.issue_before:,} → {report.issue_after:,} {issue_words}"
+    return line
 
 
 QUARANTINE_FACTOR = 2

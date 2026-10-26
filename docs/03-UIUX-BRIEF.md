@@ -442,7 +442,7 @@ As drawn:
 - **Side panels.** The board shows the centre alone. The app keeps both side panels on this screen, because App Flow §5 needs the library row (progress, switching datasets) and the story placeholders.
 
 
-Left 2/3: the live log card (`--card`), entries as a 3-column grid (mono time · icon · text), hairline between entries, auto-scroll. Candidate chips inside entries; the chosen one in `--primary` fill. Right 1/3: "So far" (2 × 2 stat tiles), "Checks" (list with ✓), budget line, and a dashed card "When cleaning finishes, the dashboard builds itself". Top: display title, subtitle, Stop (secondary), progress bar with step label and elapsed time.
+Left 2/3: the live log card (`--card`), entries as a 3-column grid (mono time · icon · text), hairline between entries, auto-scroll. Candidate chips inside entries; the chosen one in `--primary` fill. A step's outcome line (13 px, `--foreground-2`) is written by code from its verifier report; the model's own sentence, when it has no number, sits under it at 12.5 px in `--muted-foreground`, and the issue's model calls end the entry in mono 11.5 px `--muted-foreground` ("3 model calls · <models> · 12.3 s"). Right 1/3: "So far" (2 × 2 stat tiles), "Checks" (list with ✓), budget line, and a dashed card "When cleaning finishes, the dashboard builds itself". Top: display title, subtitle, Stop (secondary), progress bar with step label and elapsed time.
 
 ### 5.5 Dashboard
 

@@ -43,7 +43,6 @@ The owner's, unless a line says otherwise.
 
 The five demo-path bugs (D6 F2, F3; D7 F1, F4; D8 F1) were fixed in `f064fd9`. Still open:
 
-- **The cleaning log shows the model's own numbers** (D3 M2). `expected_effect` is the log's main text, `diagnosis.cause` reaches skip reasons and decisions, and the critic's first concern becomes `flag_reason`. Build the line from the verifier report (cells changed, rows quarantined, issue count before → after) and keep the model's sentence as secondary text with no digits.
 - **Noise can "beat the baseline"** (D7 F2). The verdict only checks `lift >= 0.02`, and at 150 rows one row is 3.3 points of a fold: 3 of 30 pure-noise sets passed. Require a clearly positive fold-wise lift (`core.baselines` would return per-fold scores), or scale the threshold with n.
 - **A number that settles a text target isn't flagged as a leak** (D7 F5). The correlation check runs only for numeric targets, and the purity check only on non-numeric features, so `refund_amount > 0` exactly when `churned = yes` becomes the top driver.
 - **A target computed from the features** (D7 F7). `revenue = units × unit_price` is reported as R² 0.9995 and "beats the best simple rule". Warn on held-out R² > 0.99 or accuracy > 99%.

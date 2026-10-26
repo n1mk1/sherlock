@@ -129,6 +129,8 @@ export interface JobLogEntry {
   checks?: Record<string, string>;
   detail?: string;
   issue_id?: string;
+  note?: string | null; // the model's sentence about the step, only when it has no digits
+  calls?: { count: number; models: string[]; latency_ms: number } | null; // the issue's model calls
   outcome?: string; // the client's merge of a "running" line with its result
   [key: string]: unknown;
 }

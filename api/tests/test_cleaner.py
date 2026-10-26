@@ -77,6 +77,19 @@ def test_clean_commits_steps_reports_and_builds(client):
     assert flagged_entry["detail"].startswith("committed with a flag · step 2")
     committed = next(entry for entry in logs if entry.get("gate") == "commit" and entry.get("step_no") == 3)
     assert committed["detail"] == "committed · step 3" and committed["checks"]["row_ledger"] == "pass"
+    # Each outcome line's numbers come from the step's full-data report, not the model's sentence,
+    # which follows as a note without digits; the issue's model calls come from llm_calls (TRD §7.2).
+    for entry in (flagged_entry, committed):
+        v = next(s for s in steps if s["no"] == entry["step_no"])["verifiers"]
+        assert str(v["cells_changed"]) in entry["text"] and f"{v['issue_before']} → {v['issue_after']}" in entry["text"]
+        assert entry["note"] is None or not any(ch.isdigit() for ch in entry["note"])
+        assert entry["calls"]["count"] == 3 and entry["calls"]["latency_ms"] >= 0  # diagnose, propose, critic
+        assert entry["calls"]["models"] == [get_settings().model_large, get_settings().model_medium]
+    assert flagged_entry["text"] == "Changed 120 cells, quarantined 1 row; 99 → 0 numbers stored as text"
+    assert committed["text"] == "Changed 63 cells; 56 → 0 spacing or case variants"
+    assert committed["note"] == "Merges spelling variants of each region."
+    left = next(entry for entry in logs if entry.get("text", "").startswith("Left as is"))
+    assert left["calls"]["count"] == 1  # the diagnosis alone
     # The clean queues the build, and the build queues the stories (TRD §7.3 step 7).
     assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()][:3] == [
         "stories", "build_dashboard", "clean"]

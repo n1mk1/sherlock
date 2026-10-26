@@ -10,7 +10,7 @@ import { useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel } from "./CleanPlanPanel";
-import { collapse, mmss } from "./CleaningProgress";
+import { callsLine, collapse, LogEntry, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
 import { OfferActions } from "./OfferActions";
 
@@ -45,6 +45,21 @@ describe("cleaning screens", () => {
     const out = collapse(entries);
     expect(out.map((e) => e.icon)).toEqual(["check", "wait"]);
     expect(out[0]).toMatchObject({ text: "263 missing values", outcome: "Fills ages by title" });
+  });
+
+  it("shows a step's line from its report, the model's note and the issue's model calls", () => {
+    const base = { job_id: "j", ts: "2026-10-24T00:00:00Z", level: "info" };
+    const calls = { count: 3, models: ["nvidia/Nemotron-3-Ultra", "nvidia/nemotron-3-super"], latency_ms: 12345 };
+    const [entry] = collapse([
+      { ...base, icon: "running", text: "263 missing values", column: "age", issue_id: "i1" },
+      { ...base, icon: "check", text: "Changed 263 cells; 263 → 0 missing values", column: "age", issue_id: "i1", gate: "commit",
+        detail: "committed · step 2", note: "Fills each age from its group.", calls },
+    ]);
+    renderAt(<ol><LogEntry entry={entry} started={Date.parse(base.ts)} /></ol>);
+    expect(screen.getByText("Changed 263 cells; 263 → 0 missing values")).toBeInTheDocument();
+    expect(screen.getByText("Fills each age from its group.")).toBeInTheDocument();
+    expect(screen.getByText("3 model calls · Nemotron-3-Ultra, nemotron-3-super · 12.3 s")).toBeInTheDocument();
+    expect(callsLine({ count: 1, models: ["nvidia/x"], latency_ms: 800 })).toBe("1 model call · x · 0.8 s");
   });
 
   it("Clean with AI makes the plan and can remember the choice", async () => {

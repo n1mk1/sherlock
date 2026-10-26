@@ -20,6 +20,7 @@ report (`GET /report`) is assembled from it, the run's steps and the `issues` ta
 
 import json
 import random
+import re
 import shutil
 import sqlite3
 import time
@@ -44,12 +45,14 @@ from sherlock.profile import service as profile_service
 from sherlock.sandbox import runner as sandbox
 from sherlock.sandbox.worker import output_select
 from sherlock.steps.commit import Context, StepSpec, commit_step
+from sherlock.stories.narrate import number_in_words
 from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
 NOT_IN_PLAN = "You left this out of the plan"
 USER_SEVERITY = 2.0  # above any detector's (at most 1.0): the user's steps go first
 USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data block"
+LEFT_AS_IS = "the values look legitimate"  # when the diagnosis' own cause has digits
 VOTE_DETECTORS = ("ambiguous_dates",)
 VOTES = 3
 
@@ -108,7 +111,24 @@ def short_line(issue: dict) -> str:
     if issue.get("user"):
         text = issue["instruction"]
         return f"Your step: {text if len(text) <= 80 else text[:79] + '…'}"
-    return f"{issue['count']:,} {ISSUE_WORDS.get(issue['detector'], issue['detector'].replace('_', ' '))}"
+    return f"{issue['count']:,} {issue_words(issue)}"
+
+
+def issue_words(issue: dict) -> str | None:
+    """What the issue's detector counts, for the log's "263 → 0 missing values"; None for a user's step."""
+    if issue.get("user"):
+        return None
+    return ISSUE_WORDS.get(issue["detector"], issue["detector"].replace("_", " "))
+
+
+DIGIT = re.compile(r"\d")
+
+
+def prose(text: str | None) -> str | None:
+    """A model's sentence as the log, report and steps show it: only without digits or a number in
+    words (CLAUDE.md Rule 2: a cleaning line's numbers come from the verifier report), else None."""
+    text = (text or "").strip()
+    return text if text and not DIGIT.search(text) and not number_in_words(text) else None
 
 
 def _json(value, limit: int = 1500) -> str:
@@ -148,6 +168,7 @@ class Cleaner:
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
         self.work = self.settings.data_dir / ".clean" / ctx.id
         self.work.mkdir(parents=True, exist_ok=True)
+        self.calls_after: int | None = None  # while an issue runs: the last `llm_calls` id before it
 
     # --- data access ----------------------------------------------------------------------------
 
@@ -319,11 +340,30 @@ class Cleaner:
         self.db.execute("UPDATE issues SET outcome = 'skipped', skip_reason = ? WHERE id = ?", (reason, issue["id"]))
         self._outcome(issue, "skipped", reason)
         self.ctx.log(reason, icon="skip", column=issue["column"], gate="skip", candidates=candidates,
-                     detail=log_text or "skipped", issue_id=issue["id"], checks=checks)
+                     detail=log_text or "skipped", issue_id=issue["id"], checks=checks, calls=self._calls())
 
     # --- one issue ------------------------------------------------------------------------------
 
     def _handle(self, issue: dict) -> None:
+        self.calls_after = self.db.execute("SELECT COALESCE(MAX(id), 0) FROM llm_calls").fetchone()[0]
+        try:
+            self._attempt(issue)
+        finally:
+            self.calls_after = None
+
+    def _calls(self) -> dict | None:
+        """The model calls the running issue made so far, for its outcome line: how many, which models
+        (in the order used), and their summed latency, from `llm_calls` by job."""
+        if self.calls_after is None:
+            return None
+        rows = self.db.execute("SELECT model, latency_ms FROM llm_calls WHERE id > ? AND job_id = ? ORDER BY id",
+                               (self.calls_after, self.ctx.id)).fetchall()
+        if not rows:
+            return None
+        return {"count": len(rows), "models": list(dict.fromkeys(r["model"] for r in rows)),
+                "latency_ms": sum(r["latency_ms"] or 0 for r in rows)}
+
+    def _attempt(self, issue: dict) -> None:
         self.state.handled.append(run_key(issue))
         self.state.attempted += 1
         column = issue["column"]
@@ -340,7 +380,7 @@ class Cleaner:
         except StructuredOutputError:
             return self._skip(issue, "model output invalid")
         if diagnosis.leave_as_is and not requested:  # the user asked for it: the diagnosis doesn't end it
-            return self._skip(issue, f"Left as is: {diagnosis.cause}")
+            return self._skip(issue, f"Left as is: {prose(diagnosis.cause) or LEFT_AS_IS}")
         try:
             proposed = self._propose(issue, diagnosis, before)
         except StructuredOutputError:
@@ -416,8 +456,9 @@ class Cleaner:
             restricted = self.work / f"commit_{uuid.uuid4().hex}.parquet"
             _write(after_full, restricted, _types(path))
         flag_reason = decision.reason if decision.gate == "flag" else None
-        if critique and critique.concerns and decision.gate == "flag":
-            flag_reason = f"{decision.reason}; the review noted: {critique.concerns[0]}"
+        concerns = [c for c in (critique.concerns if critique else []) if prose(c)]
+        if concerns and decision.gate == "flag":
+            flag_reason = f"{decision.reason}; the review noted: {concerns[0]}"
         spec = StepSpec(
             kind="clean", summary=f"{best.label} ({column})" if column else best.label, created_by="cleaner",
             notebook_code=self._notebook_code(best.code), code=best.code, column_targets=[column] if column else [],
@@ -426,7 +467,7 @@ class Cleaner:
             decisions=[{"question": (f"How to do what you asked in {column or 'the rows'}?" if issue.get("user") else
                                      f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?"),
                         "chosen": best.label, "alternatives": [c.label for c, *_ in scored if c is not best],
-                        "reason": diagnosis.cause, "review": critique.concerns if critique else [],
+                        "reason": prose(diagnosis.cause), "review": concerns,
                         **({"asked": issue["instruction"]} if requested else {})}],
             verifiers=full_report.as_json(), job_id=self.ctx.id,
         )
@@ -444,10 +485,11 @@ class Cleaner:
         self._outcome(issue, outcome, flag_reason, step)
         text = (f"committed · step {step['no']}" if decision.gate == "commit"
                 else f"committed with a flag · step {step['no']} · confidence {decision.confidence:.2f}")
-        self.ctx.log(best.expected_effect, icon="check" if decision.gate == "commit" else "flag", column=column,
-                     gate=decision.gate, candidates=chips, step_id=step["id"], step_no=step["no"],
+        # The line's numbers come from the full-data report; the model's sentence is a digit-free note.
+        self.ctx.log(verifiers.effect_line(full_report, issue_words(issue)), icon="check" if decision.gate == "commit" else "flag",
+                     column=column, gate=decision.gate, candidates=chips, step_id=step["id"], step_no=step["no"],
                      confidence=decision.confidence, detail=text, checks=full_report.hard, issue_id=issue["id"],
-                     review=critique.concerns if critique else [])
+                     review=concerns, note=prose(best.expected_effect), calls=self._calls())
 
     def _stop_requested(self) -> bool:
         """Polled while a sandbox worker runs, so Stop kills it instead of waiting for it."""
