@@ -142,7 +142,7 @@ Request:
 PLAN_EDITS = """Turn the message into changes to the cleaning plan below. Nothing is cleaned until the user presses Start; your changes apply to the plan at once.
 
 Ops:
-- untick or tick an item (by its ref) to leave a fix out of the plan or put it back; untick_module or tick_module for a whole module.
+- untick or tick an item (by its ref) to leave a fix out of the plan or put it back; untick_module or tick_module for a whole module; untick_level or tick_level for every fix of a level (breaks, skews, splits, check for "worth a look", cosmetic).
 - set_instruction rewrites an item's fix in plain words, from the message; null puts Sherlock's wording back.
 - add makes a new step: a column of the file (or null for the rows) and what to do with it, in plain words.
 - remove deletes a step the user added (source you or chat).
@@ -151,7 +151,7 @@ Rules:
 - Use only refs, modules and columns from the plan. Columns of the file: {columns}
 - Write instructions in the user's own terms. Don't add numbers the user didn't give.
 
-The plan (ref · module · column · issue · ticked or not · the planned fix):
+The plan (ref · module · level · column · issue · ticked or not · source · the planned fix · why the level, when a review gave one):
 {plan}
 
 Message:

@@ -36,7 +36,8 @@ MODULES = {
 USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
-OPS = ("tick", "untick", "tick_module", "untick_module", "set_instruction", "set_date_order", "add", "remove")
+OPS = ("tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction",
+       "set_date_order", "add", "remove")
 DATE_ORDERS = {"dmy": "day-first (dd/mm/yyyy)", "mdy": "month-first (mm/dd/yyyy)"}
 
 
@@ -110,24 +111,36 @@ def _item(issue: dict, card: dict, item_id: str | None = None, rating: dict | No
         "ticked": kept is None, "change": kept is None, "module": module,
         # The issue's severity level (PRD CLEAN-8c): code's default until a review rates it.
         "sev": None if kept else levels.default_level(issue, card), "sev_reason": None,
-        "sev_source": None if kept else "default", "likely_real": False,
+        "sev_source": None if kept else "default", "likely_real": False, "touched": False,
     }
     if kept:
         item["reason"] = kept[0]
     if rating and not kept:  # the review's level and reason (TRD §7.2)
         item.update(rating)
+    if not kept:
+        item["ticked"] = starts_ticked(item)
     if spec.plan_extras and not kept:
         item.update(spec.plan_extras(issue))
     return item
 
 
+def starts_ticked(item: dict) -> bool:
+    """A fix starts ticked unless it is worth a look: probably real, so left as it is unless the user
+    ticks it (PRD CLEAN-8c)."""
+    return item["sev"] != "check"
+
+
 def reviewed(items: list[dict], reviews: dict[str, dict]) -> list[dict]:
-    """The items with a review's levels and reasons by key. Only the level fields change: a tick or an
-    instruction stays as it is."""
+    """The items with a review's levels and reasons by key. An item the user ticked, unticked or
+    reworded (`touched`) keeps their choice; any other is ticked as its new level starts."""
     out = []
     for i in items:
         rating = reviews.get(i["key"]) if i["key"] and i["change"] else None
-        out.append({**i, **rating} if rating else i)
+        if rating:
+            i = {**i, **rating}
+            if not i.get("touched"):
+                i["ticked"] = starts_ticked(i)
+        out.append(i)
     return out
 
 
@@ -138,8 +151,9 @@ def _reviews(db: sqlite3.Connection, dataset_id: str, version: int) -> dict[str,
 
 
 def diagnose(card: dict, reviews: dict[str, dict] | None = None) -> list[dict]:
-    """The plan's items for a DataCard in module order, most severe first within a module, every
-    changeable fix ticked, with the version's review (`reviews` by key) where it has one."""
+    """The plan's items for a DataCard in module order, most severe first within a module, with the
+    version's review (`reviews` by key) where it has one; every changeable fix ticked but those worth a
+    look."""
     items: dict[str, dict] = {}
     reviews = reviews or {}
     for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
@@ -171,8 +185,10 @@ def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None) -
             items.append(item)
             continue
         item["id"] = before["id"]
-        if item["change"] and before["change"]:
+        if item["change"] and before["change"] and before.get("touched"):
             item["ticked"] = before["ticked"]
+            item["touched"] = True
+        if item["change"] and before["change"]:
             item["instruction"] = before["instruction"]
             if "date_order" in item:
                 item["date_order"] = before.get("date_order")
@@ -182,7 +198,7 @@ def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None) -
         notes.append(f"{_count(len(gone), 'fix', 'fixes')} no longer needed: {', '.join(fix_name(i) for i in gone[:5])}"
                      + ("…" if len(gone) > 5 else "") + ".")
     if added:
-        notes.append(f"{_count(added, 'new fix', 'new fixes')} found, ticked.")
+        notes.append(f"{_count(added, 'new fix', 'new fixes')} found.")
     return _ordered(items), notes
 
 
@@ -222,6 +238,7 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
     def tick(i: dict, on: bool) -> None:
         if not i["change"]:
             raise PlanError(f"{i['column']} is marked, not changed, so it can't be ticked.")
+        i["touched"] = True  # the user's choice: a later review leaves its tick alone
         if i["ticked"] != on:
             i["ticked"] = on
             done["ticked" if on else "unticked"].append(fix_name(i))
@@ -237,6 +254,13 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
             for i in items:
                 if i["module"] == module and i["change"]:
                     tick(i, kind == "tick_module")
+        elif kind in ("tick_level", "untick_level"):
+            level = op.get("level")
+            if level not in levels.HEADINGS:
+                raise PlanError(f"There's no level {level!r}; use one of {', '.join(levels.HEADINGS)}.")
+            for i in items:
+                if i.get("sev") == level and i["change"] and i["key"]:
+                    tick(i, kind == "tick_level")
         elif kind == "set_instruction":
             i = item(op)
             if not i["change"]:
@@ -250,6 +274,8 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
                     done["reset"].append(fix_name(i))
                 continue
             text = _instruction(text)
+            i["touched"] = True
+            i["ticked"] = True  # rewording a fix asks for it
             if text != i["instruction"]:
                 i["instruction"] = text
                 if i["key"] is None:
@@ -262,6 +288,7 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
             order = op.get("order")
             if order is not None and order not in DATE_ORDERS:
                 raise PlanError(f"The date order is 'dmy' (day-first) or 'mdy' (month-first), not {order!r}.")
+            i["touched"] = True
             if order != i["date_order"]:
                 i["date_order"] = order
                 if order:
@@ -276,7 +303,7 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
             new = {"id": new_id("pit"), "source": source, "key": None, "detector": USER_DETECTOR, "column": column,
                    "count": None, "severity": None, "action": text, "instruction": text, "examples": [],
                    "ticked": True, "change": True, "module": "yours",
-                   "sev": None, "sev_reason": None, "sev_source": None, "likely_real": False}
+                   "sev": None, "sev_reason": None, "sev_source": None, "likely_real": False, "touched": True}
             items.append(new)
             by_id[new["id"]] = new
             done["added"].append(column or "the rows")

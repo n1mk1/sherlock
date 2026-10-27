@@ -158,6 +158,8 @@ def test_chat_changes_the_open_cleaning_plan_at_once(client, ready):
     cabin = next(i for i in plan["items"] if i["key"] == "missing|cabin")
     assert plan["items"][0]["id"] == cabin["id"]  # f1 in the prompt: module order, most severe first
 
+    # Missing values start unticked (worth a look); the user ticks cabin's, then tells chat to leave it.
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "tick", "item_id": cabin["id"]}]})
     events, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
     assert msg["text"] == "Unticked 1 fix: missing values in cabin." and "proposal" not in msg
     after = client.get(f"{API}/clean-plans/{plan['id']}").json()
@@ -179,7 +181,7 @@ def test_without_an_open_plan_chat_doesnt_edit_one(client, ready):
     plan = client.post(f"{API}/datasets/{ds}/clean/plan").json()
     _, msg = send(client, ds, "don't touch cabin")  # no plan_id: edit_plan isn't one of the tab's tools
     assert "press Clean with AI to open one" in msg["text"]
-    assert all(i["ticked"] for i in client.get(f"{API}/clean-plans/{plan['id']}").json()["items"] if i["change"])
+    assert client.get(f"{API}/clean-plans/{plan['id']}").json()["items"] == plan["items"]  # nothing changed
     client.delete(f"{API}/clean-plans/{plan['id']}")
     _, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
     assert "isn't open any more" in msg["text"]  # a discarded plan

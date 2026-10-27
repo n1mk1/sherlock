@@ -152,6 +152,35 @@ describe("cleaning screens", () => {
     renderAt(<ReportSummary datasetId="ds_1" />);
     expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
   });
+
+  it("says what became of each issue, and lists the skips under their lines with their levels", async () => {
+    const skip = (id: string, kind: string, level: string | null, reason: string) =>
+      ({ issue_id: id, column: id, detector: "missing", reason, skip_kind: kind, level });
+    mockApi({
+      "GET /api/v1/datasets/ds_1/report": {
+        job_id: "job_1", status: "done", from_version: 2, to_version: 4, ended_by: "time", waited_for_model_s: 0,
+        attempted: 4, budget: { max_steps: 20, max_seconds: 300 }, started_at: null, finished_at: null, error: null,
+        counts: { found: 9, fixed: 2, flagged: 1, skipped: 4, rows_deleted: 0, checked_and_kept: 1, couldnt_fix: 1,
+                  not_attempted: 3, kept_by_design: 1 },
+        steps: [], hand_edited_skipped: [], decisions: [],
+        skipped: [skip("cabin", "left_as_is", "check", "Left as is: the values look legitimate"),
+                  skip("fare", "failed_checks", "breaks", "No candidate passed the checks"),
+                  skip("notes", "unticked", "cosmetic", "You left this out of the plan"),
+                  skip("code", "kept_by_design", null, "Looks like an ID column, so it is left as is")],
+      },
+    });
+    renderAt(<ReportSummary datasetId="ds_1" />);
+    const tiles = await screen.findAllByRole("term");
+    expect(tiles.map((t) => t.textContent)).toEqual(["fixed", "flagged", "checked and kept", "couldn't fix", "not attempted"]);
+    expect(screen.getByText("9 found · 1 marked, not changed (leakage and ID columns) · no rows deleted")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View full report" }));
+    const kept = await screen.findByRole("heading", { name: "Checked and kept" });
+    expect(kept.parentElement).toHaveTextContent("cabin · Left as is: the values look legitimate · Worth a look");
+    expect(screen.getByRole("heading", { name: "Couldn't fix" }).parentElement).toHaveTextContent("Breaks answers");
+    expect(screen.getByRole("heading", { name: "Not attempted" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Marked, not changed" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Skipped" })).toBeNull();
+  });
 });
 
 // --- the cleaning plan (PRD CLEAN-8a) -------------------------------------------------------------------
@@ -159,18 +188,20 @@ describe("cleaning screens", () => {
 const item = (over: Partial<CleanPlanItem>): CleanPlanItem => ({
   id: "pit_x", source: "sherlock", key: "missing|age", detector: "missing", column: "age", count: 263, severity: 0.1,
   action: "Fill from a rule over related columns", instruction: null, examples: [], ticked: true, change: true, module: "missing",
+  sev: "check", sev_reason: null, sev_source: "default", likely_real: false,
   ...over,
 });
 const PLAN: CleanPlan = {
   id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null, created_at: "", updated_at: "",
   items: [
     item({ id: "pit_amount", key: "numbers_as_text|amount", detector: "numbers_as_text", column: "amount", count: 99, module: "types",
-           examples: ["$980", "$2,000"] }),
+           examples: ["$980", "$2,000"], sev: "breaks", sev_source: "model", sev_reason: "Averages of the measure can't be read." }),
     item({ id: "pit_age", key: "missing|age", column: "age", count: 13 }),
     item({ id: "pit_fare", key: "outliers|fare", detector: "outliers", column: "fare", count: 40, module: "outliers" }),
     item({ id: "pit_age_out", key: "outliers|age", detector: "outliers", column: "age", count: 4, module: "outliers" }),
     item({ id: "pit_id", key: "id_candidates|customer_id", detector: "id_candidates", column: "customer_id", count: 120,
-           module: "kept", ticked: false, change: false, reason: "Looks like an ID column, so it is left as is" }),
+           module: "kept", ticked: false, change: false, reason: "Looks like an ID column, so it is left as is",
+           sev: null, sev_source: null }),
   ],
 };
 const WITH_PLAN = { ...DS, clean_plan_id: "pln_1" } as Dataset;
@@ -250,7 +281,7 @@ describe("the cleaning plan", () => {
       "GET /api/v1/clean-plans/pln_1": PLAN,
       "PATCH /api/v1/clean-plans/pln_1": (_: URL, init?: RequestInit) => {
         const ops = JSON.parse(String(init?.body)).ops as { op: string }[];
-        const off = ops[0].op === "untick_module" ? ["pit_fare", "pit_age_out"] : ["pit_age"];
+        const off = ops[0].op === "untick_level" ? ["pit_age", "pit_fare", "pit_age_out"] : ["pit_age"];
         return { ...PLAN, items: PLAN.items.map((i) => (off.includes(i.id) ? { ...i, ticked: false } : i)) };
       },
     });
@@ -258,10 +289,26 @@ describe("the cleaning plan", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: "age: missing values" }));
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "age: missing values" })).not.toBeChecked());
     expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{ op: "untick", item_id: "pit_age" }] });
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Outliers: tick all" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("checkbox", { name: "Outliers: tick all" }));
+    // A level's box ticks or unticks every fix of that level (PRD CLEAN-8c); with one unticked, it ticks them all.
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Worth a look: tick all" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Worth a look: tick all" }));
     await waitFor(() => expect(sent(calls).filter((c) => c.method === "PATCH")).toHaveLength(2));
-    expect(sent(calls).filter((c) => c.method === "PATCH")[1].body).toEqual({ ops: [{ op: "untick_module", module: "outliers" }] });
+    expect(sent(calls).filter((c) => c.method === "PATCH")[1].body).toEqual({ ops: [{ op: "tick_level", level: "check" }] });
+  });
+
+  it("groups the fixes by level, with the review's reason or the default level, while it reviews", async () => {
+    const bigFare = PLAN.items.map((i) => (i.id === "pit_fare" ? { ...i, severity: 0.5 } : i));
+    mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, review: "running", items: bigFare } });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(await screen.findByText("Reviewing…")).toBeInTheDocument();
+    const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(["Breaks answers", "Worth a look", "Marked, not changed"]);
+    expect(screen.getByText("Averages of the measure can't be read.")).toBeInTheDocument();
+    expect(screen.getAllByText("(default level)")).toHaveLength(3); // the three fixes still on code's level
+    // Within a level, the biggest first.
+    const look = screen.getByRole("region", { name: "Worth a look" });
+    expect(within(look).getAllByRole("checkbox").slice(1).map((b) => b.getAttribute("aria-label")))
+      .toEqual(["fare: outliers", "age: missing values", "age: outliers"]);
   });
 
   it("can't start with nothing ticked, and starts the plan's job", async () => {

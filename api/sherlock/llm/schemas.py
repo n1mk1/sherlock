@@ -207,9 +207,12 @@ class EditsDraft(Strict):
 
 
 class PlanEdit(Strict):
-    op: Literal["tick", "untick", "tick_module", "untick_module", "set_instruction", "add", "remove"]
+    op: Literal["tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction", "add",
+                "remove"]
     item: str | None = Field(description="the plan item's ref (f1, f2, …) for tick, untick, set_instruction and remove; else null")
     module: str | None = Field(description="the module for tick_module and untick_module; else null")
+    level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None = Field(
+        description="the level for tick_level and untick_level; else null")
     column: str | None = Field(description="for add: the column the step is about, exactly as named, or null for the rows")
     instruction: str | None = Field(description="for add and set_instruction: what to do, in plain words; null on "
                                                 "set_instruction puts Sherlock's wording back")

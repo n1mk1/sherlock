@@ -1809,13 +1809,15 @@ export interface components {
             instruction?: string | null;
             /** Item Id */
             item_id?: string | null;
+            /** Level */
+            level?: ("breaks" | "skews" | "splits" | "check" | "cosmetic") | null;
             /** Module */
             module?: string | null;
             /**
              * Op
              * @enum {string}
              */
-            op: "tick" | "untick" | "tick_module" | "untick_module" | "set_instruction" | "set_date_order" | "add" | "remove";
+            op: "tick" | "untick" | "tick_module" | "untick_module" | "tick_level" | "untick_level" | "set_instruction" | "set_date_order" | "add" | "remove";
             /** Order */
             order?: ("dmy" | "mdy") | null;
         };

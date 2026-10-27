@@ -1,7 +1,9 @@
 // The cleaning plan (App Flow §4, UI brief §5.3a, PRD CLEAN-8a): what Clean with AI will try on the current
-// version, diagnosed by Sherlock's code detectors, grouped into modules, every fix ticked. The user unticks
-// what they don't want, rewrites a fix in plain words (✎), adds steps of their own (PRD CLEAN-8b) or asks
-// the chat to do any of that, then starts. Leakage and ID columns are info rows under "Marked, not changed".
+// version, diagnosed by Sherlock's code detectors, grouped by severity level (PRD CLEAN-8c), every fix ticked
+// but those worth a look. Each shows the review's reason in muted text, or "(default level)" when code's
+// default stands; "Reviewing…" while the review runs. The user unticks what they don't want (a fix, or a
+// whole level), rewrites a fix in plain words (✎), adds steps of their own (PRD CLEAN-8b) or asks the chat
+// to do any of that, then starts. Leakage and ID columns are info rows under "Marked, not changed".
 // While it's open, the chat bar sends its `plan_id`, so chat can change it.
 // From the offer it fills the centre (`layout="centre"`); from the CSV tab it replaces Changes in the right
 // panel (`layout="side"`), with the scope radios, so the grid stays visible. A plan opened for some rows
@@ -16,7 +18,7 @@ import { makeSelection } from "@/api/csv";
 import {
   stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useStartCleaning, type CleanScope,
 } from "@/api/queries";
-import type { CleanPlan, CleanPlanItem, Dataset, Issue, PlanModule, PlanOp, PlanScope } from "@/api/types";
+import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope } from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { displayValue } from "@/lib/cells";
@@ -31,17 +33,23 @@ export function issueLine(i: Pick<Issue, "detector" | "column" | "count">, label
   return `${i.count.toLocaleString()} ${what}${i.column ? ` in ${i.column}` : ""}`;
 }
 
-// Display order (`cleaning/plan.py` MODULES).
-const MODULES: [PlanModule, string][] = [
+// Display order: your steps, the five levels most severe first (`cleaning/levels.py` HEADINGS), then the
+// columns that are never changed.
+type Group = "yours" | Level | "kept";
+const GROUPS: [Group, string][] = [
   ["yours", "Your steps"],
-  ["types", "Types and parsing"],
-  ["missing", "Missing and placeholder values"],
-  ["text", "Spelling and formatting"],
-  ["records", "Duplicates and broken records"],
-  ["outliers", "Outliers"],
-  ["other", "Other checks"],
+  ["breaks", "Breaks answers"],
+  ["skews", "Skews answers"],
+  ["splits", "Splits groups"],
+  ["check", "Worth a look"],
+  ["cosmetic", "Cosmetic"],
   ["kept", "Marked, not changed"],
 ];
+
+export function groupOf(i: CleanPlanItem): Group {
+  if (i.module === "yours" || i.module === "kept") return i.module;
+  return i.sev ?? "check";
+}
 const ISSUE_BUDGET = 20; // CLEAN_MAX_STEPS's default: issues attempted per run (PRD CLEAN-9)
 const MAX_INSTRUCTION = 500; // cleaning/plan.py MAX_INSTRUCTION
 const AFTER_UPLOAD_LABEL = "Open the cleaning plan";
@@ -120,7 +128,11 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
   }, [plan.notes]);
 
   const groups = useMemo(
-    () => MODULES.map(([m, title]) => ({ module: m, title, items: plan.items.filter((i) => i.module === m) })).filter((g) => g.items.length),
+    () => GROUPS.map(([g, title]) => ({
+      group: g, title,
+      // Within a level, the biggest by code severity first; your steps keep their order.
+      items: plan.items.filter((i) => groupOf(i) === g).sort((a, b) => g === "yours" ? 0 : (b.severity ?? 0) - (a.severity ?? 0)),
+    })).filter((g) => g.items.length),
     [plan.items],
   );
   const changeable = plan.items.filter((i) => i.change);
@@ -160,6 +172,7 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
             // A new version arrived while the plan was open; reading it again merges it onto that version.
             ? `Sherlock checked v${plan.version}; the data is v${dataset.current_version}. Checking the plan again…`
             : `Sherlock checked v${plan.version}. Untick, edit or add steps, or ask in chat.`}
+          {plan.review === "running" && <span role="status" className="ml-2 text-[12.5px]">Reviewing…</span>}
         </p>
         {plan.source === "after_upload" && !side && (
           <p className="mt-2 text-[13px] text-muted-foreground">
@@ -195,9 +208,11 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
 
       <div className={cn("flex flex-col", side ? "gap-3" : "mt-6 gap-5")}>
         {groups.map((g) => (
-          <ModuleGroup key={g.module} module={g.module} title={g.title} items={g.items} side={side} busy={ops.isPending}
+          <PlanGroup key={g.group} group={g.group} title={g.title} items={g.items} side={side} busy={ops.isPending}
             send={send} onDirty={markDirty}
-            onTickModule={(on) => send([{ op: on ? "tick_module" : "untick_module", module: g.module }])} />
+            onTickAll={(on) => send([g.group === "yours"
+              ? { op: on ? "tick_module" : "untick_module", module: "yours" }
+              : { op: on ? "tick_level" : "untick_level", level: g.group as Level }])} />
         ))}
         {!changeable.length && <p className="text-muted-foreground">Nothing that needs cleaning yet. Add a step of your own below.</p>}
         <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
@@ -291,23 +306,23 @@ export function DateOrder({ item, busy, onPick }: {
   );
 }
 
-function ModuleGroup({ module, title, items, side, busy, send, onDirty, onTickModule }: {
-  module: PlanModule; title: string; items: CleanPlanItem[]; side: boolean; busy: boolean;
-  send: Send; onDirty: (id: string, on: boolean) => void; onTickModule: (on: boolean) => void;
+function PlanGroup({ group, title, items, side, busy, send, onDirty, onTickAll }: {
+  group: Group; title: string; items: CleanPlanItem[]; side: boolean; busy: boolean;
+  send: Send; onDirty: (id: string, on: boolean) => void; onTickAll: (on: boolean) => void;
 }) {
-  const kept = module === "kept";
+  const kept = group === "kept";
   const on = items.filter((i) => i.ticked).length;
   const box = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (box.current) box.current.indeterminate = on > 0 && on < items.length;
   }, [on, items.length]);
-  const headingId = `plan-module-${module}`;
+  const headingId = `plan-group-${group}`;
   return (
     <section aria-labelledby={headingId}>
       <div className="flex items-center gap-2 border-b border-border pb-1.5">
         {!kept && (
           <input ref={box} type="checkbox" checked={on === items.length} disabled={busy}
-            aria-label={`${title}: tick all`} onChange={(e) => onTickModule(e.target.checked)} className="accent-[var(--accent)]" />
+            aria-label={`${title}: tick all`} onChange={(e) => onTickAll(e.target.checked)} className="accent-[var(--accent)]" />
         )}
         <h3 id={headingId} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
         {!kept && <span className="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{on} of {items.length}</span>}
@@ -351,6 +366,11 @@ function ItemRow({ item, side, busy, send, onDirty }: {
           ) : (
             <p className={cn("text-[12.5px]", yours ? "text-foreground" : "text-muted-foreground", !side && "basis-full")}>
               {item.action}{item.source === "chat" && <span className="ml-1.5 text-[11px] text-muted-foreground">· from chat</span>}
+            </p>
+          )}
+          {item.change && !yours && (item.sev_reason || item.sev_source === "default") && (
+            <p className={cn("text-[12px] text-muted-foreground", !side && "basis-full")}>
+              {item.sev_reason}{item.sev_source === "default" && <span className={cn(item.sev_reason && "ml-1.5")}>(default level)</span>}
             </p>
           )}
         </div>

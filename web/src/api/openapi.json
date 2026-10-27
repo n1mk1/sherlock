@@ -1163,6 +1163,24 @@
       ],
       "title": "Item Id"
      },
+     "level": {
+      "anyOf": [
+       {
+        "enum": [
+         "breaks",
+         "skews",
+         "splits",
+         "check",
+         "cosmetic"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Level"
+     },
      "module": {
       "anyOf": [
        {
@@ -1180,6 +1198,8 @@
        "untick",
        "tick_module",
        "untick_module",
+       "tick_level",
+       "untick_level",
        "set_instruction",
        "set_date_order",
        "add",

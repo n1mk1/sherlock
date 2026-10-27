@@ -129,6 +129,7 @@ export interface PlanScope {
 export type PlanOp =
   | { op: "tick" | "untick" | "remove"; item_id: string }
   | { op: "tick_module" | "untick_module"; module: PlanModule }
+  | { op: "tick_level" | "untick_level"; level: Level } // every fix of a level (PRD CLEAN-8c)
   | { op: "set_instruction"; item_id: string; instruction: string | null } // null puts Sherlock's wording back
   | { op: "set_date_order"; item_id: string; order: "dmy" | "mdy" | null } // null clears the order
   | { op: "add"; column: string | null; instruction: string };

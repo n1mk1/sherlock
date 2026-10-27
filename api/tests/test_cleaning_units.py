@@ -256,7 +256,10 @@ def test_plan_diagnose_groups_dedupes_and_marks_kept_columns():
     by_key = {i["key"]: i for i in items}
     assert len(items) == 7  # the two duplicates findings share a key
     assert by_key["duplicates|None"]["count"] == 9  # the most severe one, the one the loop attempts
-    assert by_key["missing|age"]["module"] == "missing" and by_key["missing|age"]["ticked"] and by_key["missing|age"]["change"]
+    # Missing values are worth a look (probably real): listed, changeable, but not ticked to start with.
+    assert by_key["missing|age"]["module"] == "missing" and by_key["missing|age"]["change"]
+    assert by_key["missing|age"]["sev"] == "check" and not by_key["missing|age"]["ticked"]
+    assert by_key["duplicates|None"]["ticked"] and not by_key["duplicates|None"]["touched"]
     assert by_key["outliers|fare"]["module"] == "outliers" and by_key["brand_new_check|name"]["module"] == "other"
     assert len(by_key["missing|age"]["examples"]) == 5
     kept = {k: i for k, i in by_key.items() if i["module"] == "kept"}
@@ -267,19 +270,21 @@ def test_plan_diagnose_groups_dedupes_and_marks_kept_columns():
     assert all(i["source"] == "sherlock" and i["instruction"] is None and i["id"].startswith("pit_") for i in items)
 
 
-def test_plan_merge_keeps_ticks_by_key_and_ticks_new_fixes():
+def test_plan_merge_keeps_the_users_ticks_by_key_and_ticks_new_fixes_by_level():
     from sherlock.cleaning import plan
 
     old = plan.diagnose(card_with([("missing", "age", 263, 0.1), ("outliers", "fare", 40, 0.01), ("sentinels", "name", 4, 0.02)]))
-    old, _ = plan.apply_ops(old, [{"op": "untick", "item_id": next(i["id"] for i in old if i["key"] == "outliers|fare")}])
+    old, _ = plan.apply_ops(old, [{"op": "tick", "item_id": next(i["id"] for i in old if i["key"] == "outliers|fare")},
+                                  {"op": "untick", "item_id": next(i["id"] for i in old if i["key"] == "outliers|fare")}])
     items, notes = plan.merge(old, card_with([("missing", "age", 250, 0.1), ("outliers", "fare", 41, 0.01),
                                               ("mojibake", "name", 3, 0.03)]))
     by_key = {i["key"]: i for i in items}
     assert set(by_key) == {"missing|age", "outliers|fare", "mojibake|name"}
     assert not by_key["outliers|fare"]["ticked"] and by_key["outliers|fare"]["count"] == 41
-    assert by_key["mojibake|name"]["ticked"]
+    assert by_key["outliers|fare"]["touched"] and not by_key["missing|age"]["touched"]
+    assert by_key["mojibake|name"]["ticked"] and not by_key["missing|age"]["ticked"]  # new: splits ticked; check not
     assert by_key["missing|age"]["id"] == next(i["id"] for i in old if i["key"] == "missing|age")  # same item
-    assert notes == ["1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."]
+    assert notes == ["1 fix no longer needed: placeholder values in name.", "1 new fix found."]
     order = [i["module"] for i in items]
     assert order == sorted(order, key=list(plan.MODULES).index)
 
@@ -289,15 +294,21 @@ def test_plan_ops_tick_untick_modules_and_refusals():
 
     items = plan.diagnose(card_with([("outliers", "fare", 40, 0.01), ("outliers", "age", 4, 0.01), ("missing", "age", 9, 0.1),
                                      ("leakage", "boat", 500, 0.4)]))
-    out, summary = plan.apply_ops(items, [{"op": "untick_module", "module": "outliers"}])
+    out, summary = plan.apply_ops(items, [{"op": "tick_module", "module": "outliers"}])
+    assert summary == "Ticked 2 fixes: outliers in fare, outliers in age."
+    assert all(not i["ticked"] for i in items if i["module"] == "outliers")  # the input isn't changed
+    out, summary = plan.apply_ops(out, [{"op": "untick_module", "module": "outliers"}])
     assert summary == "Unticked 2 fixes: outliers in fare, outliers in age."
-    assert [i["ticked"] for i in out if i["module"] == "outliers"] == [False, False]
-    assert all(i["ticked"] for i in items if i["module"] == "outliers")  # the input isn't changed
     age = next(i for i in out if i["key"] == "outliers|age")
     out, summary = plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}, {"op": "tick", "item_id": age["id"]}])
     assert summary == "Ticked 1 fix: outliers in age."
     assert plan.apply_ops(out, [{"op": "tick", "item_id": age["id"]}])[1] == "The plan already said that, so nothing changed."
-    assert plan.run_params(out)["skip_keys"] == ["outliers|fare"]
+    assert sorted(plan.run_params(out)["skip_keys"]) == ["missing|age", "outliers|fare"]
+    # A level at once: every "worth a look" fix (PRD CLEAN-8c).
+    out, summary = plan.apply_ops(out, [{"op": "tick_level", "level": "check"}])
+    assert summary == "Ticked 2 fixes: missing values in age, outliers in fare." and not plan.run_params(out)["skip_keys"]
+    with pytest.raises(plan.PlanError, match="no level"):
+        plan.apply_ops(out, [{"op": "untick_level", "level": "urgent"}])
     boat = next(i for i in out if i["key"] == "leakage|boat")
     for bad, message in ([{"op": "tick", "item_id": "pit_nope"}], "There's no item"), \
                         ([{"op": "tick", "item_id": boat["id"]}], "marked, not changed"), \
@@ -328,6 +339,7 @@ def test_plan_ops_rewrite_add_and_remove_steps():
     assert [(i["column"], i["source"], i["detector"], i["ticked"], i["change"]) for i in mine] == [
         ("name", "you", "user_request", True, True), (None, "you", "user_request", True, True)]
     run = plan.run_params(out)
+    assert next(i for i in out if i["key"] == "missing|age")["ticked"]  # rewording a fix asks for it: ticked
     assert run["instructions"] == {"missing|age": "Fill age with the median by class"}
     assert [(u["column"], u["instruction"]) for u in run["user_steps"]] == [
         ("name", "Trim spaces in name"), (None, "Quarantine rows with no fare and no age")]

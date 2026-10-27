@@ -1,10 +1,11 @@
-// The end-of-run report (App Flow §5, PRD CLEAN-6): counts and the first steps, with the full report
-// (every step, skipped issue and decision, and "How I worked it out": the run's model calls) one click
-// away. The Changes panel links here (D5.4).
+// The end-of-run report (App Flow §5, PRD CLEAN-6): what became of each issue (fixed · flagged · checked
+// and kept · couldn't fix · not attempted, with marked-not-changed apart) and the first steps, with the full
+// report (every step, each skipped issue under its line with its level, the decisions, and "How I worked it
+// out": the run's model calls) one click away. The Changes panel links here (D5.4).
 import { Check, Flag, Redo2 } from "lucide-react";
 import { useState } from "react";
 import { useReport } from "@/api/queries";
-import type { CleaningReport } from "@/api/types";
+import type { CleaningReport, Level } from "@/api/types";
 import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -17,6 +18,26 @@ const ENDED: Record<CleaningReport["ended_by"], string> = {
   stopped: "You stopped the run.",
   error: "The model service became unavailable.",
 };
+
+const LEVEL: Record<Level, string> = {
+  breaks: "Breaks answers", skews: "Skews answers", splits: "Splits groups", check: "Worth a look", cosmetic: "Cosmetic",
+};
+// Each skip's report line, by its kind (`loop.SKIP_KINDS`), in display order.
+const LINES: [string, string, string[]][] = [
+  ["checked_and_kept", "Checked and kept", ["left_as_is"]],
+  ["couldnt_fix", "Couldn't fix", ["failed_checks", "disagreement", "gate", "model_error", "conflict"]],
+  ["not_attempted", "Not attempted", ["unticked", "needs_choice"]],
+  ["kept_by_design", "Marked, not changed", ["kept_by_design"]],
+];
+
+/** The summary's counts: the five outcomes for a run that records why it skipped, else the old four. */
+export function reportCounts(c: CleaningReport["counts"]): [string, number][] {
+  if (c.checked_and_kept === undefined) {
+    return [["found", c.found], ["fixed", c.fixed], ["flagged", c.flagged], ["skipped", c.skipped], ["rows deleted", 0]];
+  }
+  return [["fixed", c.fixed], ["flagged", c.flagged], ["checked and kept", c.checked_and_kept],
+    ["couldn't fix", c.couldnt_fix ?? 0], ["not attempted", c.not_attempted ?? 0]];
+}
 
 export function ReportSummary({ datasetId, title = "Cleaning report" }: { datasetId: string; title?: string }) {
   const { data: report } = useReport(datasetId);
@@ -34,7 +55,7 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
         {report.waited_for_model_s > 0 && ` · waited ${Math.round(report.waited_for_model_s)} s for the model`}
       </p>
       <dl className="mt-4 grid grid-cols-5 gap-2 text-center">
-        {([["found", c.found], ["fixed", c.fixed], ["flagged", c.flagged], ["skipped", c.skipped], ["rows deleted", 0]] as const).map(
+        {reportCounts(c).map(
           ([label, n]) => (
             <div key={label} className="rounded-xl bg-muted p-2">
               <dd className="font-serif text-[24px] leading-none">{n}</dd>
@@ -43,6 +64,11 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
           ),
         )}
       </dl>
+      {c.kept_by_design !== undefined && (
+        <p className="mt-2 text-[13px] text-muted-foreground">
+          {c.found.toLocaleString()} found · {c.kept_by_design} marked, not changed (leakage and ID columns) · no rows deleted
+        </p>
+      )}
       <ul className="mt-4 flex flex-col gap-1.5">
         {report.steps.slice(0, 3).map((s) => <StepLine key={s.step_id} step={s} />)}
       </ul>
@@ -73,6 +99,22 @@ function StepLine({ step }: { step: CleaningReport["steps"][number] }) {
         {step.flag_reason && <span className="block text-[13px] text-warning">{step.flag_reason}</span>}
       </span>
     </li>
+  );
+}
+
+function SkipList({ skips }: { skips: CleaningReport["skipped"] }) {
+  return (
+    <ul className="mt-2 flex flex-col gap-1.5">
+      {skips.map((s) => (
+        <li key={s.issue_id} className="flex items-start gap-2">
+          <Redo2 className="mt-1 size-4 text-muted-foreground" aria-hidden />
+          <span>
+            <span className="font-mono text-[13px]">{s.column ?? "rows"}</span> · {s.reason}
+            {s.level && <span className="text-[12.5px] text-muted-foreground"> · {LEVEL[s.level]}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -107,18 +149,23 @@ export function FullReport({ report }: { report: CleaningReport }) {
           {report.steps.length ? report.steps.map((s) => <StepLine key={s.step_id} step={s} />) : <li className="text-muted-foreground">No steps were committed.</li>}
         </ul>
       </section>
-      <section>
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Skipped</h4>
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {report.skipped.map((s) => (
-            <li key={s.issue_id} className="flex items-start gap-2">
-              <Redo2 className="mt-1 size-4 text-muted-foreground" aria-hidden />
-              <span><span className="font-mono text-[13px]">{s.column ?? "rows"}</span> · {s.reason}</span>
-            </li>
-          ))}
-          {!report.skipped.length && <li className="text-muted-foreground">Nothing was skipped.</li>}
-        </ul>
-      </section>
+      {LINES.map(([key, title, kinds]) => {
+        const skips = report.skipped.filter((s) => s.skip_kind && kinds.includes(s.skip_kind));
+        return skips.length > 0 && (
+          <section key={key}>
+            <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h4>
+            <SkipList skips={skips} />
+          </section>
+        );
+      })}
+      {/* A run from before skips recorded their kind lists them together. */}
+      {(report.skipped.some((s) => !s.skip_kind) || !report.skipped.length) && (
+        <section>
+          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Skipped</h4>
+          {report.skipped.length ? <SkipList skips={report.skipped.filter((s) => !s.skip_kind)} />
+            : <p className="mt-2 text-muted-foreground">Nothing was skipped.</p>}
+        </section>
+      )}
       {report.hand_edited_skipped.length > 0 && (
         <section>
           <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Cells you edited (left as they are)</h4>

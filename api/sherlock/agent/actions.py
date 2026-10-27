@@ -195,9 +195,10 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
     items = json.loads(row["items_json"])
     columns = [c for c in ws.user_types(kit.env, dataset, dataset["current_version"])]
     refs = {f"f{n}": i for n, i in enumerate(items, 1)}
-    lines = [" · ".join([ref, i["module"], i["column"] or "rows", registry.label(i["detector"]),
-                         ("ticked" if i["ticked"] else "unticked") if i["change"] else "kept",
-                         f"source {i['source']}", i["instruction"] or i["action"]]) for ref, i in refs.items()]
+    lines = [" · ".join([ref, i["module"], f"level {i.get('sev') or 'none'}", i["column"] or "rows",
+                         registry.label(i["detector"]), ("ticked" if i["ticked"] else "unticked") if i["change"] else "kept",
+                         f"source {i['source']}", i["instruction"] or i["action"]]
+                        + ([f"why: {i['sev_reason']}"] if i.get("sev_reason") else [])) for ref, i in refs.items()]
 
     def to_ops(d: PlanEdits) -> list[dict]:
         ops = []
@@ -209,6 +210,8 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
                 op["item_id"] = refs[e.item]["id"]
             if e.op in ("tick_module", "untick_module"):
                 op["module"] = e.module
+            if e.op in ("tick_level", "untick_level"):
+                op["level"] = e.level
             if e.op in ("set_instruction", "add"):
                 op["instruction"] = e.instruction
             if e.op == "add":
