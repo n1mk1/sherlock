@@ -115,7 +115,7 @@ def test_every_prompt_keeps_the_files_text_inside_data_blocks(script, client):  
                         {"reading": EVIL, "sql": "SELECT region, sum(amount) AS total FROM t WHERE {{rows}} GROUP BY 1",
                          "answerable": True, "closest": None}]
     chat(client, ds_id, s, f"total amount by {EVIL}", "ask_data")
-    # The result check (plan 2.7): a literal that isn't one of region's values quotes those values, the evil one
+    # The result check: a literal that isn't one of region's values quotes those values, the evil one
     # among them, and the column the message names, to the repair.
     nowhere = {"reading": EVIL, "sql": "SELECT sum(amount) AS total FROM t WHERE {{rows}} AND region = 'Nowhere'",
                "answerable": True, "closest": None}

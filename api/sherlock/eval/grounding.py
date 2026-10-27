@@ -13,7 +13,7 @@ check it by hand:
   numerals included), and none uses causal wording.
 - **Labels.** Every label resolves to a name, and every `value:` label names a value that is in its
   column.
-- **Claims (plan 2b.10).** "Highest" and "most" sit next to a top the facts name, "lowest" and "least"
+- **Claims.** "Highest" and "most" sit next to a top the facts name, "lowest" and "least"
   next to the bottom group, a rank next to the factor of that rank, and "rising" or "falling" go with a
   trend that does (`narrate.claims`). The report counts the claims checked and the ones that failed.
 
@@ -25,7 +25,7 @@ same way, its chips resolving through the cards it cites. The report counts each
 how many cards the model wrote (the rest fell back to the fact sheet's bullets). The PRD target is
 100% grounded.
 
-Then the **stale-reuse** scenario (plan 1.3), which needs no model call: one of the synthesis's cards
+Then the **stale-reuse** scenario, which needs no model call: one of the synthesis's cards
 is deleted and restored, and the synthesis must no longer be `ready`; then, with "Story updates: Ask
 first", one cell of the column most cards read is edited, and after the cascade the overview isn't
 `ready`, the cascade's audit and a fresh `audit()` find 0 cards to fix, and the notebook carries an
@@ -333,7 +333,7 @@ def report(tallies: list[Tally]) -> str:
                      f"{t.labels_bad} | {t.claims_checked} | {t.claims_failed} | {t.synthesis} |")
     stale = [t.stale for t in tallies if t.stale]
     if stale:
-        lines += ["", "Stale reuse (plan 1.3): one card of the synthesis deleted, then one cell edited under Ask first.", "",
+        lines += ["", "Stale reuse: one card of the synthesis deleted, then one cell edited under Ask first.", "",
                   "| File | Column edited | Synthesis after the delete | Overview after the edit | Cards outdated | "
                   "Notebook notes (cards not ready) | Audit after the cascade |", "|---|---|---|---|---|---|---|"]
         lines += [f"| {r.file} | {r.column or '-'} | {r.synthesis_after_delete} | {r.overview} | {r.outdated_cards} | "

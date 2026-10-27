@@ -1,4 +1,4 @@
-// The event stream catches up (plan 2b.1, TRD §5.2): a dropped stream reopens from the last id it saw,
+// The event stream catches up (TRD §5.2): a dropped stream reopens from the last id it saw,
 // says so (the caller reads its queries again), and handles each event once even out of order.
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

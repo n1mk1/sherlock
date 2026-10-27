@@ -13,7 +13,7 @@ The tech stack is planned in `docs/04-TRD.md` §2. Pinned versions are in TRD §
   - App: FastAPI with one uvicorn worker and pydantic-settings.
   - State and data: SQLite in WAL mode for app state; Parquet files queried through in-memory DuckDB; sqlglot to validate SQL.
   - Cleaning: pandas in a sandboxed subprocess, with rapidfuzz, dateparser, ftfy and pandera.
-  - ML: scikit-learn (permutation importance and partial dependence; no SHAP, TRD §7.5). statsmodels is pinned for the linear and logistic methods, which cut 4 removed.
+  - ML: scikit-learn (permutation importance and partial dependence; no SHAP, TRD §7.5).
   - Notebooks: nbformat and matplotlib.
 - **`web/`:** Vite, React 18, TypeScript and pnpm.
   - UI: Tailwind and shadcn/ui, Bklit charts (visx, plus custom visx charts), react-grid-layout, Glide Data Grid, React Flow, TipTap, Motion, sonner, lucide-react.

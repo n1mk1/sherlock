@@ -2,7 +2,7 @@
 
 Version 1.3 · 2026-10-26 · Build order from an empty folder to a submitted project. Deadline 2026-10-30 13:00 EDT; internal deadline 2026-10-29.
 
-**Status, 2026-10-26.** Days 1–9 are built within the nine cuts (§2.0), merged to `main` and deployed (https://sherlock-anw3.onrender.com). After the Day 8 freeze the owner approved two exceptions: the cleaning plan (PRD CLEAN-8a, CLEAN-8b) and the agent-layer and Tavily work (`.claude/plans/agent-layer-tavily.md`, untracked; its rows are cited as "plan 2.6", "plan 2b.9", "T-3"). Day 10 (submission) is left.
+**Status, 2026-10-26.** Days 1–9 are built within the nine cuts (§2.0), merged to `main` and deployed (https://sherlock-anw3.onrender.com). After the Day 8 freeze the owner approved two exceptions: the cleaning plan (PRD CLEAN-8a, CLEAN-8b) and the agent-layer and Tavily work (route guards, chat checks, receipts, web retrieval with Tavily, the data dictionary). Day 10 (submission) is left.
 
 ---
 
@@ -68,7 +68,7 @@ If a Must from this table slips, §5 has nothing left to cut, so any further dro
 ### Day 1 · Oct 20: foundations, model facts, first deploy
 
 Done. The scaffold, the Nemotron smoke test (Ultra, Super and Nano pass; `LLM_TOOLS_MODE=native`; `embed` is empty because the catalog has no NVIDIA embedding model), the Render deploy with the `/data` exit check passed (TRD §11), and identity, ownership, rate limits and `/me`. The theme-token stretch is done.
-Items: 1 scaffold (`api/`, `web/`, `docker-compose.yml`, `.env.example`, README, `FEEDBACK.md`, `LICENSE`, CI) · 2 Nemotron smoke test (`scripts/smoke_llm.py`; sets `MODEL_LARGE/MEDIUM/SMALL/EMBED`, `NVIDIA_EMBED_MODELS`, `LLM_TOOLS_MODE`, TRD §3.5) · 3 hello-world deploy (§2.0 hosting change) · 4 migration 001, the `sherlock_uid` identity middleware, the ownership dependency, the rate limiter, `GET /me`, `PUT /me/settings` · 5 spikes: Bklit, Glide Data Grid, react-grid-layout (run as 1-hour checks, §2.0).
+Items: 1 scaffold (`api/`, `web/`, `docker-compose.yml`, `.env.example`, README, `FEEDBACK.md`, `LICENSE`, CI) · 2 Nemotron smoke test (sets `MODEL_LARGE/MEDIUM/SMALL/EMBED`, `NVIDIA_EMBED_MODELS`, `LLM_TOOLS_MODE`, TRD §3.5) · 3 hello-world deploy (§2.0 hosting change) · 4 migration 001, the `sherlock_uid` identity middleware, the ownership dependency, the rate limiter, `GET /me`, `PUT /me/settings` · 5 spikes: Bklit, Glide Data Grid, react-grid-layout (run as 1-hour checks, §2.0).
 
 ### Day 2 · Oct 21: ingest, profile, steps, sandbox, shell
 
@@ -78,7 +78,7 @@ Items: 1 `ingest/` and `POST /datasets`, `POST /datasets/sample`, `GET /datasets
 ### Day 3 · Oct 22: the Cleaner
 
 Done. The headless Cleaner (TRD §7.2) with verifiers, gate and helpers, the corruption benchmark, "Use as is", the `sherlock` CLI, the seeded samples, job cancellation, and the cleaning screens. `sherlock clean sample` ran headless with the real model and deleted 0 rows; the Titanic expectations were checked by hand.
-Items: 1 `cleaning/verifiers.py`, `gate.py`, `helpers/` · 2 `cleaning/loop.py`, `POST /datasets/{id}/clean`, `GET /datasets/{id}/report`, `job.log` events · 3 `eval/corruption.py` · 4 "Use as is" (`POST /use-as-is`) · 5 `sherlock` CLI (`clean`, `eval`, `export`), `scripts/make_samples.py`, `POST /jobs/{jid}/cancel` · 6 cleaning offer, in-progress and report screens.
+Items: 1 `cleaning/verifiers.py`, `gate.py`, `helpers/` · 2 `cleaning/loop.py`, `POST /datasets/{id}/clean`, `GET /datasets/{id}/report`, `job.log` events · 3 `eval/corruption.py` · 4 "Use as is" (`POST /use-as-is`) · 5 `sherlock` CLI (`clean`, `eval`, `export`), the synthetic samples, `POST /jobs/{jid}/cancel` · 6 cleaning offer, in-progress and report screens.
 
 ### Day 4 · Oct 23: shell, dashboard builder, widgets, chat v1
 
@@ -141,20 +141,20 @@ A box is ticked when everything on its line is built except what a cut removed (
 - [x] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts (D3.1, D3.2); `plan.py` (CLEAN-8a, CLEAN-8b)
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
 - [x] `steps/` commit, undo latest, undo with replay (D5.5), lineage queries, user-edited cells
-- [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job, `nebius` backend stub: all but the `nebius` stub (`JOB_BACKEND=nebius` is accepted and ignored)
+- [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job: the Nebius Serverless Jobs backend isn't built
 - [x] `widgets/` spec, compile, validate, execute, cache, explain; SQL and analysis widgets (D4.1, D7)
 - [x] `dashboard/` candidates, scoring, curation, validation, layout, job; custom-chart candidates (D6.5) and the driver widget (D7.2)
 - [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade (D6); no material hash (cut 6)
 - [x] `ml/` plan, core, analysis, registry, runner, repro: `driver_analysis` with Auto (D7). Explain-row and predictions (cut 7) and compare-auto (cut 4) are cut
 - [x] `agent/` loop, router, resolve, 11 answerers (`ask_data`, `find_rows`, `explain_widget`, `ask_history`, `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, `web_context` on every tab, `ask_story` on Flow), actions, verify, compose, focus, summaries, the planner, `edit_plan` (CLEAN-8b); suggestions are cut 9
 - [x] `llm/` client, schemas, repair, budgets, logging (D2.7)
-- [x] `web/` Tavily client and cache, `agent/web.py` (`web_context`, column meanings from the web): T-0 to T-3, T-5, T-6. T-4 (web context on anomaly cards, PRD STORY-9) isn't built
+- [x] `web/` Tavily client and cache, `agent/web.py` (`web_context`, column meanings from the web, the data dictionary, the web eval). Web context on anomaly cards (PRD STORY-9) isn't built
 - [x] `canvas/` model, persistence, pruning (D8.1)
 - [x] `notebook/` exporter job (`jobs/export.py`), cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test (D5.6, D6.6, D7.5, D8.3)
 - [x] chat threads, messages, pin and proposals (`routers/chat.py`, `agent/loop.py`, `agent/actions.py`, `routers/proposals.py`; there is no `chat/` package)
 - [ ] `routers/*` for every endpoint in TRD §4: all but the cut ones and the `{ prompt }` form of `PATCH /widgets/{wid}`, which answers `422` (TRD §4.5)
 - [x] `eval/` corruption benchmark, planted-truth, grounding, ask-anything, notebook, web (§4)
-- [x] `scripts/` `smoke_llm.py`, `seed_sample.py`, `deploy.sh`, plus `live_check.py`, `example_notebook.py`, `architecture.py`, `make_samples.py`, `fetch_sample.py`, `dump_openapi.py` (§4)
+- [x] `scripts/` `seed_sample.py`, `deploy.sh`, `live_check.py`, `example_notebook.py`, `dump_openapi.py` (§4)
 - [ ] tests: unit, integration (mocked LLM), fixtures: all but the mocked clean → build → stories run on all five files of the end-to-end set (TRD §14); the five files are only imported and profiled (`api/tests/test_samples_and_eval.py`)
 
 ### Frontend
@@ -190,8 +190,6 @@ A box is ticked when everything on its line is built except what a cut removed (
 | Clean a file headless | `uv run sherlock clean <file.csv or sample> [--timeout 900]`: imports it, prints the live log and the report |
 | Model-call stats | `uv run sherlock llm stats [--days N] [--json]`: per purpose and role, p50/p95 latency, tokens, repair, fail and fallback rates, read-only from `llm_calls` (TRD §14) |
 | Export a notebook | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |
-| Make the synthetic samples | `uv run --project api python scripts/make_samples.py` (seeded; writes `api/samples/`) |
-| Smoke the model | `uv run --project api python scripts/smoke_llm.py [--models a,b] [--out report.json] [--no-thinking]` (a bare `uv run python` at the root has none of the API's packages) |
 | Seed the sample | `uv run --project api python scripts/seed_sample.py [--out DIR] [--keep-data]`: writes `api/samples/seed/titanic3/`. `--keep-data` keeps the seed's cleaned data and reruns its analyses and stories (TRD §4.2) |
 | Deploy | Render (prod): push to `main`, then a Manual Deploy in the Render dashboard. CI is blocked, so `autoDeployTrigger: checksPass` never fires (README "Deploy", TRD §11). Then check that `/healthz` reports the new `commit`. Nebius alternative: `./scripts/deploy.sh setup` once, then `./scripts/deploy.sh` (build, push, restart), `./scripts/deploy.sh check` (the `/data` exit check), `./scripts/deploy.sh url` |
 | Check the deployed site | `uv run --project api python scripts/live_check.py [--url …] [--files all\|none]`: health, the instant sample, isolation, rate limits, a sourced answer, the cascade; `--files all` also uploads the five-file set and executes each exported notebook here |
@@ -232,7 +230,7 @@ Sample files live in `api/samples/`.
 
 | File | Purpose | Source |
 |---|---|---|
-| `titanic3.csv` | the sample and eval baseline | OpenML 40945, bundled (`scripts/fetch_sample.py` rebuilds it from the ARFF and checks its MD5): 1,309 rows, 14 columns, ARFF `?` written as empty cells |
+| `titanic3.csv` | the sample and eval baseline | OpenML 40945, bundled: 1,309 rows, 14 columns, ARFF `?` written as empty cells |
 | `titanic_blanks.csv` | prediction demo (50 `survived` values blanked) | derived. Not made: cut 7 removed `predict` |
 | `sales_dated.csv` | time-series path (5,000 rows × 8, monthly) | generated |
 | `wide_messy.csv` | 60 columns, mixed formats, sentinels (800 rows) | generated |
@@ -243,14 +241,14 @@ Sample files live in `api/samples/`.
 | `seed/titanic3/` | the cached sample that Try with sample clones (TRD §4.2) | `scripts/seed_sample.py` |
 | `samples/eval/corruption/*` | clean sets plus the injection config | code, not files (below) |
 
-The five-file end-to-end set is `titanic3.csv`, `sales_dated.csv`, `wide_messy.csv`, `reviews_text.csv` and `broken_latin1.txt`. `titanic_blanks.csv` would only serve the prediction demo. The synthetic files come from `scripts/make_samples.py` (seeded): two runs write byte-identical files, equal to the committed ones.
+The five-file end-to-end set is `titanic3.csv`, `sales_dated.csv`, `wide_messy.csv`, `reviews_text.csv` and `broken_latin1.txt`. `titanic_blanks.csv` would only serve the prediction demo. The four synthetic files were generated once from seeded code and are committed as they are.
 
 In `broken_latin1.txt` the two preamble lines use the data's delimiter, so the sniffer reads them as data (152 rows) unless the import preview sets header row 3. This header-detection gap is known (App Flow §18: "auto-detection tries the first 5 rows").
 
 The corruption benchmark's clean sets come from `sherlock/eval/synthetic.py` (seeded generators; `titanic_clean` is the sample's complete rows on eight plain columns), and the damage plan (column, kind, share, seed) is in `sherlock/eval/corruption.py` (TRD §14):
 - `titanic_clean`, `sales` and `hr`: the original three sets.
-- `dates_dmy` and `dates_mdy` (`synthetic.visits`, 400 rows whose every date reads both ways, written day-first in one and month-first in the other) and `lookalikes` (`synthetic.lookalikes`, 600 rows with "Plan A"/"Plan B", "Region 1" to "Region 4" and "Austria"/"Australia"). They score a guess and a wrong merge (plan 2.6).
-- `dates_dmy_picked` and `dates_mdy_picked`: the two date sets cleaned with the order picked in the plan (plan 2b.9).
+- `dates_dmy` and `dates_mdy` (`synthetic.visits`, 400 rows whose every date reads both ways, written day-first in one and month-first in the other) and `lookalikes` (`synthetic.lookalikes`, 600 rows with "Plan A"/"Plan B", "Region 1" to "Region 4" and "Austria"/"Australia"). They score a guess and a wrong merge.
+- `dates_dmy_picked` and `dates_mdy_picked`: the two date sets cleaned with the order picked in the plan.
 
 ---
 
@@ -258,7 +256,7 @@ The corruption benchmark's clean sets come from `sherlock/eval/synthetic.py` (se
 
 What each artifact must contain is set by PRD §12 (the official rules and the judges' rubric). The owner of every artifact is As Wasti.
 
-- **Repo:** `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), the architecture diagram, rendered by `scripts/architecture.py`, a screenshot, and `docs/examples/titanic3-v4.ipynb` (the sample's exported notebook, viewable on GitHub, with its raw file). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). `FEEDBACK.md` is kept from Day 1 and finalized on Day 10.
+- **Repo:** `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), the architecture diagram (the README's Mermaid flow), a screenshot, and `docs/examples/titanic3-v4.ipynb` (the sample's exported notebook, viewable on GitHub, with its raw file). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). `FEEDBACK.md` is kept from Day 1 and finalized on Day 10.
 - **README sections, in order:** what Sherlock is in two sentences and the hosted URL · a screenshot · try it (sample, then your own CSV) · **NVIDIA models and Nebius** (a table per role: model ID, what it does, median latency, tokens and cost per sample run; the Nebius services the deployed app uses; the request/data-flow diagram) · how trust works (sources, chips, verifiers, quarantine) · results (cleaning benchmark, ML planted-truth tests, grounding test, ask-anything eval, user test and baseline comparison) · **known limitations** (failed eval questions, cleaning cases the benchmark misses, files that fail, anonymous identity with no recovery, 7-day expiry, anything not shipped from P0) · accessibility · local setup and run (`.env.example`, a Token Factory key, `docker compose up`) · deploy · tests and evals · license and third-party notices.
 - **User tests and baseline:** for each tester (at least 3, none who has seen Sherlock): who they are, the CSV, the task, time to first sourced answer, where they hesitated, what they said, what was changed because of it. Plus the baseline comparison: the same 3 questions on the same file by hand and with Sherlock (time, steps, and how many answers could be traced to their source). Results go in the README's Results.
 - **Public URL** on Render (or the Nebius alternative), live through the judging period and the winner announcement (PRD §9, TRD §11).

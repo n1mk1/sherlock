@@ -90,7 +90,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   expect((await download).suggestedFilename()).toMatch(/\.ipynb$/);
   await expect(dialog).toBeHidden();
 
-  // Change a widget from chat (plan 1.5): the focused KPI becomes a pie drawn from its new query (the old
+  // Change a widget from chat: the focused KPI becomes a pie drawn from its new query (the old
   // query's one-column rows can't show the slices), and the answer's Undo puts it back.
   const widget = (title: string) =>
     page.locator("article[data-widget-id]").filter({ has: page.getByRole("heading", { name: title, exact: true }) });

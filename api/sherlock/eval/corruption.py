@@ -14,12 +14,12 @@ version), with the real model unless `LLM_MOCK` is set. Scores per set:
 The output ends with every step the Cleaner committed (its gate and confidence) and every issue it
 skipped and why, so a fix that didn't happen can be told from one that went wrong.
 
-Three sets test what the Cleaner must not do (plan 2.6): `dates_dmy` and `dates_mdy` hold the same
+Three sets test what the Cleaner must not do: `dates_dmy` and `dates_mdy` hold the same
 kind of column, dates whose every day is 12 or less, written day-first in one and month-first in
 the other, so nothing in the data tells them apart and any fixed guess is wrong on one of them; and
 `lookalikes` holds categories that look alike but are different ("Plan A"/"Plan B", "Region 1"/
 "Region 2", "Austria"/"Australia"), so a merge is harm. `dates_dmy_picked` and `dates_mdy_picked` are
-the two date sets cleaned through a plan in which the user picked the right order (plan 2b.9).
+the two date sets cleaned through a plan in which the user picked the right order.
 """
 
 import io

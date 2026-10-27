@@ -1,4 +1,4 @@
-"""Chat checks (plan 2.7–2.9; TRD §8.1 steps 3 and 5, PRD ASK-6, STORY-3, STORY-8): every `ask_data` result
+"""Chat checks (TRD §8.1 steps 3 and 5, PRD ASK-6, STORY-3, STORY-8): every `ask_data` result
 checked in code with one repair, clarifications with buttons for names nothing resolved, and one wording
 check for the chat's model-written text. Recorded model replies: `chat_titanic.json` plus `chat_checks.json`."""
 

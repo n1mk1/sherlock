@@ -9,7 +9,7 @@ change data starts ticked. Leakage and ID-like columns are info rows under "Mark
 The user can untick fixes, rewrite a fix in plain words (`instruction`), and add steps of their own
 (`detector: user_request`), from the panel or from chat; `apply_ops` is the one place a plan changes.
 An ambiguous-dates item carries up to three of its values read both ways (`both_ways`) and the order
-the user picks (`date_order`: "dmy", "mdy" or null, plan 2b.9); a column every date of which reads
+the user picks (`date_order`: "dmy", "mdy" or null); a column every date of which reads
 both ways is cleaned only with an order (`needs_order`).
 A plan made on an older version is merged onto the current one (`merge`) before it's shown or started.
 Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset.
@@ -86,7 +86,7 @@ def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
 
 def needs_order(issue: dict) -> bool:
     """A date column every value of which reads both ways (`ambiguous_dates`, kind `ambiguous`): no
-    reading of the data settles the order, so the Cleaner doesn't guess one (plan 2.6)."""
+    reading of the data settles the order, so the Cleaner doesn't guess one."""
     return issue["detector"] == "ambiguous_dates" and (issue.get("details") or {}).get("kind") == "ambiguous"
 
 

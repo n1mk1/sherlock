@@ -197,7 +197,7 @@ def check_wording(out: list[dict], chip_facts: dict, facts: dict) -> None:
     """Claims around the chips that the facts don't back, though each number is right (Day 7 review F4):
     a name said twice ("Sex sex"), an importance placed away from its column ("influenced by 1.00"),
     a level read as a gap ("0.373 lower than unit_price"), and a ranking or a trend the facts don't
-    show (`claims`, plan 2b.10)."""
+    show (`claims`)."""
     for i, item in enumerate(out):
         name = _name(item, chip_facts)
         if name:
@@ -252,7 +252,7 @@ def check_comparison(sent: list[dict], chip_facts: dict) -> None:
         raise ValueError(f"the comparison is wrong or unclear: {numbers[0][1]['formatted']} against {numbers[1][1]['formatted']}")
 
 
-# --- Claims around the names (plan 2b.10, D6 F8) -------------------------------------------------
+# --- Claims around the names -------------------------------------------------
 
 # A ranking or a trend the words claim: "highest", "most" and "top" must name a top of the facts (the top group,
 # the peak period, the heatmap's highest cell, the first factor), "lowest" and "least" the bottom group, an
@@ -331,7 +331,7 @@ def _clauses(sent: list[dict]) -> list[list[dict]]:
 
 
 def claims(out: list[dict], chip_facts: dict, facts: dict) -> tuple[int, list[str]]:
-    """(claims checked, what's wrong with them) in a story, a bullet or a synthesis (plan 2b.10). A ranking word
+    """(claims checked, what's wrong with them) in a story, a bullet or a synthesis. A ranking word
     is checked against the name nearest it in its clause (the one after it, else the one before); a clause
     with no name claims nothing about a group ("the highest fare is 512.33"). A trend word is always checked."""
     checked, wrong = 0, []

@@ -62,7 +62,7 @@ describe("cleaning screens", () => {
     expect(callsLine({ count: 1, models: ["nvidia/x"], latency_ms: 800 })).toBe("1 model call · x · 0.8 s");
   });
 
-  it("loads the log so far from the job's own log and keeps each line once (plan 2b.6)", async () => {
+  it("loads the log so far from the job's own log and keeps each line once", async () => {
     const base = { job_id: "job_1", level: "info", icon: "check" };
     const first = { ...base, ts: "2026-10-24T00:00:01Z", text: "Trimmed spaces in name" };
     const second = { ...base, ts: "2026-10-24T00:00:02Z", text: "Filled age by title" };

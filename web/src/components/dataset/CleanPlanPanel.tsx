@@ -7,7 +7,7 @@
 // panel (`layout="side"`), with the scope radios, so the grid stays visible. A plan opened for some rows
 // (the new-rows toast's "Clean them", chat's "clean these rows") starts on those rows (PRD CLEAN-1).
 // An ambiguous-dates fix asks which order its dates are written in, with three values read both ways
-// (plan 2b.9); dates that every one reads both ways are cleaned only once the order is picked.
+//; dates that every one reads both ways are cleaned only once the order is picked.
 import { useIsMutating } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";

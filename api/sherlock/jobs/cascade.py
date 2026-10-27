@@ -36,7 +36,7 @@ ROWS_CHANGED = ("rows_added", "rows_deleted", "quarantined", "rows_restored")
 
 def queue_cascade(db: sqlite3.Connection, dataset: sqlite3.Row, reason: str = "version") -> None:
     """Queue a cascade for the dataset unless one is already waiting. Only datasets with something
-    that can go stale need one: a widget, a card or a run (plan 2b.2: an answer card or a run can
+    that can go stale need one: a widget, a card or a run (an answer card or a run can
     exist without a dashboard)."""
     has_any = db.execute(
         "SELECT 1 WHERE EXISTS (SELECT 1 FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL) "
@@ -80,7 +80,7 @@ def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -
             u = db.execute("SELECT * FROM steps WHERE id = ?", (s["undone_step_id"],)).fetchone()
             cols.update(json.loads(u["column_targets_json"]))
             impact = json.loads(u["impact_json"])
-            # Undoing a restore quarantines those rows again (plan 2b.3), like undoing any change of rows.
+            # Undoing a restore quarantines those rows again, like undoing any change of rows.
             restored = bool(u["edits_json"] and json.loads(u["edits_json"]).get("restore_row_ids"))
             if any(impact.get(k) for k in ROWS_CHANGED) or restored \
                     or json.loads(u["columns_added_json"]) or json.loads(u["columns_removed_json"]) \
@@ -120,7 +120,7 @@ def _cascade(ctx: JobContext) -> dict:
 
     outdated_runs = set(ml.outdate(ctx.db, ctx.bus, dataset, since_version, ctx.id))
     # A run already outdated (under Ask first) is still out of date: its widgets stay affected, so they
-    # re-run once the user switches to Automatic (plan 2b.3).
+    # re-run once the user switches to Automatic.
     stale_runs = outdated_runs | {r["id"] for r in ctx.db.execute(
         "SELECT id FROM runs WHERE dataset_id = ? AND status = 'outdated'", (dataset["id"],))}
     columns = list(widgets.user_types(env, dataset, version))
@@ -145,7 +145,7 @@ def _cascade(ctx: JobContext) -> dict:
     cards = [c["id"] for c in ctx.db.execute(
         f"SELECT id FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND widget_id IN ({','.join('?' * len(affected))})",
         (dataset["id"], *[r["id"] for r in affected])).fetchall()] if affected else []
-    # An export cached from before the cascade, or made during it, isn't reused after (plan 1.4).
+    # An export cached from before the cascade, or made during it, isn't reused after.
     ctx.db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (dataset["id"],))
     ctx.emit("cascade.started", {"version": version, "widget_ids": [r["id"] for r in affected], "card_ids": cards,
                                  "run_ids": sorted(outdated_runs), "columns": sorted(changed), "all": everything})
@@ -200,9 +200,9 @@ def _cascade(ctx: JobContext) -> dict:
         if wid not in overtaken:  # only forward: an older cascade never moves a widget back
             ctx.db.execute("UPDATE widgets SET version_built = MAX(version_built, ?) WHERE id = ? AND updated_at = ?",
                            (version, wid, stamp))
-    # Answer cards re-run their stored queries (plan 2b.2), or go outdated under Ask first.
+    # Answer cards re-run their stored queries, or go outdated under Ask first.
     answers = stories.recheck_answers(env, dataset, since_version, ask_first=ask, job_id=ctx.id)
-    # Under Automatic a synthesis whose cited numbers moved is written again (plan 2b.6), by a stories job
+    # Under Automatic a synthesis whose cited numbers moved is written again, by a stories job
     # that runs once this cascade ends; one with fewer than two usable sources keeps its Refresh.
     rewrite = [] if ask else _syntheses_to_rewrite(ctx.db, dataset)
     if rewrite:
@@ -210,7 +210,7 @@ def _cascade(ctx: JobContext) -> dict:
         ctx.runner.wake()
     counts = {"widgets": len(affected), "errors": errors, "cards": told.get("cards", 0),
               "outdated": told.get("outdated", 0), "runs": len(outdated_runs)}
-    # The invariant (plan 1.3): no `ready` card shows numbers that may not hold on this version. 0 when the
+    # The invariant: no `ready` card shows numbers that may not hold on this version. 0 when the
     # cascade did its job; a newer version's cascade, queued behind this one, checks its own version.
     from sherlock.stories import trust
 

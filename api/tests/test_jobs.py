@@ -176,17 +176,18 @@ def test_cancel_running_job_and_log(client, monkeypatch):
     assert client.post(f"{API}/jobs/{job_id}/cancel").status_code == 204
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "cancelled" and j)
     assert job["error"] == "Cancelled."
-    # The stories job's failure hook settles its cards (plan 1.2); it never touches the dataset's status.
+    # The stories job's failure hook settles its cards; it never touches the dataset's status.
     assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer"
     entries = client.get(f"{API}/jobs/{job_id}/log").json()["entries"]
     assert [(e["text"], e["icon"], e["column"]) for e in entries] == [("looking at age", "search", "age")]
     assert events_of(ds["id"])[-1][0] == "job.failed"
 
 
-def test_kind_without_handler_fails(client):
+def test_kind_without_handler_fails(client, monkeypatch):
+    monkeypatch.setattr(runner_mod, "KINDS", runner_mod.KINDS + ("no_handler",))  # every real kind has one
     ds = upload(client)
     wait_status(client, ds["id"], "offer")
-    job_id = _start(client, ds["id"], "undo")  # undo runs in the request, so the kind has no job handler
+    job_id = _start(client, ds["id"], "no_handler")
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "failed" and j)
     assert "No handler" in job["error"]
 
@@ -427,7 +428,7 @@ def test_a_stream_opens_with_the_newest_id_and_replays_the_newest(live, monkeypa
 
 
 def test_emit_publishes_in_id_order(client):
-    """Two threads emit at once: the row written first is published first (plan 2b.1). Without the lock
+    """Two threads emit at once: the row written first is published first. Without the lock
     around insert and publish, the second thread wrote 11 and published it while the first still held 10."""
     settings = get_settings()
     first_written, release = threading.Event(), threading.Event()

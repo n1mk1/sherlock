@@ -366,7 +366,7 @@ def _cached(db: sqlite3.Connection, dataset_id: str, key: str) -> str | None:
 
 def depends(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> set[str]:
     """The columns a run read: its target, its features and the columns its row predicate names, and
-    (given `db`) those its selection's predicate names (plan 2b.3)."""
+    (given `db`) those its selection's predicate names."""
     import sqlglot
     from sqlglot import exp
 
@@ -546,7 +546,7 @@ def on_failure(db: sqlite3.Connection, bus: EventBus | None, job: sqlite3.Row, m
         _emit_run(db, bus, dataset, run_id, job["id"])
         from sherlock.stories import service as stories
 
-        # Its widgets' cards tell an earlier run, or nothing: outdated, not ready or spinning (plan 1.2).
+        # Its widgets' cards tell an earlier run, or nothing: outdated, not ready or spinning.
         for w in db.execute("SELECT id FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run_id,)).fetchall():
             stories.mark_widget_card(db, bus, dataset, w["id"], "outdated", job["id"])
 

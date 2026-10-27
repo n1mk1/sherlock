@@ -61,6 +61,5 @@ def test_settings_defaults_match_trd(monkeypatch):
     assert s.database_url == "sqlite:////data/sherlock.db"
     assert str(s.data_dir).replace("\\", "/") == "/data"
     assert s.llm_tools_mode == "json"
-    assert s.job_backend == "local"
     assert (s.max_upload_mb, s.max_columns, s.max_rows) == (50, 1000, 2_000_000)
     assert s.notebook_pins.startswith("pandas==2.2.3,")

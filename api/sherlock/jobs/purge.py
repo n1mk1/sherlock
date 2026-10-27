@@ -30,7 +30,6 @@ from sherlock.jobs.runner import JobContext, register
 from sherlock.sandbox.runner import sandbox_root
 from sherlock.storage import VersionConnections, dataset_dir, folder_bytes, remove_folder
 
-SYSTEM_USER = "system"
 GRACE_S = 600
 EVENTS_TTL_S = 24 * 3600
 EXPORTS_TTL_S = 24 * 3600
@@ -81,7 +80,7 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
         hard_delete_dataset(settings, db, cache, row)
         counts["datasets"] += 1
     gone = [r["id"] for r in db.execute("SELECT id FROM widgets WHERE deleted_at IS NOT NULL AND deleted_at < ?", (grace,))]
-    # The datasets whose cards go now: a synthesis citing one of them is checked again below (plan 1.3).
+    # The datasets whose cards go now: a synthesis citing one of them is checked again below.
     touched = {r["dataset_id"] for r in db.execute(
         "SELECT dataset_id FROM cards WHERE (deleted_at IS NOT NULL AND deleted_at < ?) OR widget_id IN "
         "(SELECT id FROM widgets WHERE deleted_at IS NOT NULL AND deleted_at < ?)", (grace, grace))}
@@ -100,7 +99,7 @@ def purge(settings: Settings, db: sqlite3.Connection, cache: VersionConnections 
         dataset = db.execute("SELECT * FROM datasets WHERE id = ? AND deleted_at IS NULL", (ds_id,)).fetchone()
         if dataset is not None:
             synthesis.check_sources(db, bus, dataset)
-            # Prune the gone cards' nodes now and tell open canvases (plan 2b.6), rather than at the next read.
+            # Prune the gone cards' nodes now and tell open canvases, rather than at the next read.
             stored = db.execute("SELECT etag FROM canvases WHERE dataset_id = ?", (ds_id,)).fetchone()
             if stored is not None:
                 _, etag = canvas.read(db, ds_id)

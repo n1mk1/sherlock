@@ -93,7 +93,7 @@ def label_text(ref: str, columns: list[str], values: set[str] | None = None) -> 
 
 def label_values(results: dict[str, Result], known: dict[str, list] | None = None) -> set[str]:
     """The values a `value:` label may show (Day 6 review F2): a cell of one of the answer's result columns
-    that isn't a number type (text, a date, a yes/no; plan 2.9, PRD STORY-8), and `<column>:<value>` for
+    that isn't a number type (text, a date, a yes/no; PRD STORY-8), and `<column>:<value>` for
     the values the DataCard knows (its top values). A count or an average is a chip, never a label."""
     out = {str(row[i]) for res in results.values() for i, c in enumerate(res.columns)
            if not NUMBER_TYPE.match(str(c.get("type") or "")) for row in res.rows if row[i] is not None}

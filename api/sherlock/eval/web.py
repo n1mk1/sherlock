@@ -1,4 +1,4 @@
-"""The web eval (TRD §14, plan T-6): `samples/eval/web_questions.yaml`, ten outside-world questions and ten
+"""The web eval (TRD §14): `samples/eval/web_questions.yaml`, ten outside-world questions and ten
 column-meaning questions over the three eval files, asked through `POST /chat` as the ask eval does.
 
 Each question is asked three times, with web retrieval on, failing and off:

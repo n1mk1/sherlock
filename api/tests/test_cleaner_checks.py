@@ -1,5 +1,5 @@
-"""The Cleaner's output agreement and its date-order rule end to end, with recorded replies
-(plan 2.4 and 2.6): candidates that value the same cells differently are skipped before the full
+"""The Cleaner's output agreement and its date-order rule end to end, with recorded replies:
+candidates that value the same cells differently are skipped before the full
 run, case and spacing variants of one value don't count as different, and dates that every value
 reads both ways are left as text with no model call."""
 

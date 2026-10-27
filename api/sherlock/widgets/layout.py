@@ -18,7 +18,6 @@ DEFAULT_SIZE = {
     "gauge": (3, 3), "scatter": (6, 7), "histogram": (6, 7), "box": (6, 7), "heatmap": (6, 8), "table": (6, 8),
     "importance": (8, 8), "confusion": (6, 8), "roc": (6, 7), "residuals": (6, 7), "coefficients": (8, 8),
 }
-MIN_W, MIN_H = 3, 5  # KPI tiles may be 3 × 3
 
 
 class Item(BaseModel):

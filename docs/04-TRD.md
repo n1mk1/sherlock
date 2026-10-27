@@ -30,9 +30,9 @@ Version 1.1 · How Sherlock is built. Pairs with the [Backend Schema](05-BACKEND
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-One container image serves the API and the jobs. Jobs run in-process (`JOB_BACKEND=local`, the default and what production runs).
+One container image serves the API and the jobs. Jobs run in the API process's job runner (§3.3).
 
-`JOB_BACKEND=nebius` would dispatch cleaning and ML jobs to Serverless Jobs with the same code path. Not built yet: the setting accepts the value but no code reads it, and there is no `sherlock.jobs.run`. The README and the submission name Serverless Jobs only if production runs with `JOB_BACKEND=nebius` (PRD §12.5).
+Dispatching cleaning and ML jobs to Nebius Serverless Jobs with the same code path is not built yet: there is no backend setting and no `sherlock.jobs.run`. The README and the submission name Serverless Jobs only once production runs jobs there (PRD §12.5).
 
 Model roles (PRD §9), all on Token Factory: `large` = Nemotron 3 Ultra, `medium` = Nemotron 3 Super, `small` = Nemotron 3 Nano, `embed` = an NVIDIA embedding model. The IDs come from the catalog (§3.5). `embed` is empty, because the catalog has no NVIDIA embedding model.
 
@@ -159,10 +159,8 @@ sherlock/
       test/                    test setup and helpers
     e2e/                       Playwright flow and axe check
   docs/                        the six specs; help/ (app_help pages, copied into the image, §8.2); examples/ (the
-                               sample's notebook and raw file); hackathon rules and rubric; the architecture diagram,
-                               rendered by `scripts/architecture.py`
-  scripts/                     deploy.sh, seed_sample.py, smoke_llm.py, live_check.py, dump_openapi.py (§3.1),
-                               architecture.py, example_notebook.py, fetch_sample.py, make_samples.py
+                               sample's notebook and raw file); hackathon rules and rubric
+  scripts/                     deploy.sh, seed_sample.py, live_check.py, dump_openapi.py (§3.1), example_notebook.py
 ```
 
 Evals run through `sherlock eval`, not a script. CI (`.github/workflows/ci.yml`) is correct but doesn't run, because Actions won't start jobs on this account (billing). Tests run locally and deploys are by hand (§11).
@@ -182,7 +180,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
   - **One dataset stream.** `useDatasetEvents` opens `GET /datasets/{id}/events` once per open dataset in `DatasetPage`, for every tab. It handles `version.created` (dataset, steps, data card, jobs, the library list), `widget.updated`, `layout.updated`, `card.updated` and the cascade events. Any `dataset.status` also refetches the widget list, so the builder's widgets appear when the dataset becomes ready.
   - **Identity first.** The app renders only the theme until `GET /me` answers. Otherwise, on a first visit with no cookie, the first requests (the library, the user-level stream) would each create their own anonymous user, and the stream would listen to a different user from the one whose cookie the browser keeps.
   - **After an upload.** The dataset is read again after the upload's response, because a short profile job can finish, and emit `dataset.status`, before the response arrives.
-  - **Charts.** Bklit's bar, line, area, pie and ring charts come from the `@bklit` shadcn registry and are copied into `src/components/charts/`, bringing `@visx/*` 4.0.0, `d3-array`, `d3-shape`, `motion` and `@number-flow/react`. `adapter.tsx` turns a widget's view and data into a chart, a KPI tile or a table. Our edits to the copied code: `Bar` takes `getFill`/`isDimmed`, and `line.tsx` has a React 18 ref type. The custom charts (`custom.tsx`) use the same `@visx/*` packages.
+  - **Charts.** Bklit's bar, line, area and pie charts (a ring is the pie drawn as a donut) come from the `@bklit` shadcn registry and are copied into `src/components/charts/`, bringing `@visx/*` 4.0.0, `d3-array`, `d3-shape`, `motion` and `@number-flow/react`. `adapter.tsx` turns a widget's view and data into a chart, a KPI tile or a table. Our edits to the copied code: `Bar` takes `getFill`/`isDimmed`, and `line.tsx` has a React 18 ref type. The custom charts (`custom.tsx`) use the same `@visx/*` packages.
   - **Widget data keys.** A widget's data query is keyed by its ID, the filter, the dataset version and its `updated_at`; its "How do you know?" query by ID, filter and `updated_at`. Every write that changes a spec (a PATCH, chat's `update_widget`, Undo) moves `updated_at`, so after `widget.updated` the chart gets a new key and redraws from the new query. Chat's Undo is the widget's own (`useWidgetActions().undo`).
   - **Grid.** `react-grid-layout` 1.5.2, given its container's width from a `ResizeObserver`.
   - **Code-splitting** (`React.lazy`). The Dashboard tab, the CSV tab (Glide Data Grid), the Flow tab (`@xyflow/react` 12.11.3) and the chart adapter load when first needed; so do the story card editor (TipTap 3.32.0, `@tiptap/react`, `core`, `pm`, `starter-kit`) and the model card drawer. `ResultTable` lives apart from the adapter, so table answers don't pull in the chart libraries. The Flow palette, header actions and `src/state/flow.ts` stay in the main bundle and don't import React Flow. Approximate sizes: first-load script 488 kB, dashboard 90 kB, charts 331 kB, Flow 183 kB, card editor 400 kB.
@@ -264,7 +262,7 @@ Toolchain (exact versions are in `api/uv.lock`, `web/package.json` and `web/pnpm
   - `stories` checkpoints `{ told: [widget_id…] }` after each card it stores; a resumed run tells only the rest, and writes the overview again at the end.
   - The other kinds start over, which their idempotence makes safe: profile reads the cached DataCard, build keeps a dashboard that has widgets, cascade and export recompute, and the Cleaner (whose `state_json` is the report's run state) finds fewer issues because those already fixed are gone. An ML run starts again.
 - **Cancellation.** A `cancel_requested` flag is checked between steps. While a sandbox worker runs, the Cleaner polls the flag every 0.5 s and the worker is killed at once, so Stop takes effect mid-candidate. Direct workers are killed by the API; with `sherlock-sandboxd`, the API closes its connection and the daemon, which watches it, kills the worker.
-- **`JOB_BACKEND=nebius`** is not built (§1).
+- **Nebius Serverless Jobs** as a job backend is not built (§1).
 - **`purge`** (`jobs/purge.py`). The sweeper queues one (user `system`, no dataset, so it's in no one's job list) at its first pass after a start and then every `PURGE_INTERVAL_S` (600; 0 turns it off, as does `JOB_WORKERS=0`), at most one queued or running. Its steps are Schema §6's. Its result counts what it removed: `{ datasets, expired, widgets, cards, events, cache, web_cache, exports, sandbox_dirs, clean_dirs, users }`.
 - **`build_dashboard`** (`jobs/build.py`) runs the dashboard builder (§7.3) in three steps: "Choosing charts", "Picking the story", "Adding widgets · i of n".
   - Result: `{ version, widgets, candidates, curated_by: "model"|"fallback", columns_used? }`, `columns_used` only for wide files.
@@ -321,7 +319,7 @@ Generated pandas code runs in a separate Python subprocess per execution (`sherl
 ### 3.5 LLM client
 
 - **Roles.** `role` ∈ `{large, medium, small, embed}` maps to `MODEL_LARGE`, `MODEL_MEDIUM`, `MODEL_SMALL`, `MODEL_EMBED`, filled from Token Factory's catalog. Every role is an NVIDIA model (the hackathon rule needs at least one; Sherlock uses only NVIDIA). `/healthz` reports the four configured IDs.
-- **Configured IDs** (`render.yaml`, `.env.example`; picked by `scripts/smoke_llm.py`, results in `FEEDBACK.md`):
+- **Configured IDs** (`render.yaml`, `.env.example`; picked by a smoke test of the catalog, results in `FEEDBACK.md`):
   - `large` = `nvidia/Nemotron-3-Ultra-550b-a55b`
   - `medium` = `nvidia/nemotron-3-super-120b-a12b`
   - `small` = `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`
@@ -895,7 +893,7 @@ Behaviour (`routers/chat.py`, `sherlock/agent/`):
 | GET | `/jobs/{jid}/log` | `{ entries }`: the job's `job.log` events from `job_events` (kept 24 h) |
 | GET | `/jobs/{jid}/calls` | `Receipt` (§4.9): the model calls the job made, oldest first, with a total |
 
-`Job` (`jobs/runner.py::to_job`): `{ id, dataset_id, kind: "profile"|"clean"|"build_dashboard"|"stories"|"ml_run"|"cascade"|"undo"|"export_notebook"|"purge", status: "queued"|"running"|"done"|"failed"|"cancelled", progress: { step, of, label, pct }, created_at, started_at, finished_at, error, result, automatic: bool }`.
+`Job` (`jobs/runner.py::to_job`): `{ id, dataset_id, kind: "profile"|"clean"|"build_dashboard"|"stories"|"ml_run"|"cascade"|"export_notebook"|"purge", status: "queued"|"running"|"done"|"failed"|"cancelled", progress: { step, of, label, pct }, created_at, started_at, finished_at, error, result, automatic: bool }`.
 - `automatic` is true when the After upload setting queued the job rather than a click (its params' `automatic`, Schema §2.14).
 - Before a job reports, `progress` is `{ step: 0, of: 0, label: "", pct: 0 }`.
 
@@ -1114,7 +1112,7 @@ Fields (`sherlock/profile/datacard.py`):
 
 Fields (`steps/commit.py::load_step`):
 - `undone_step_id` is set for undo steps, and `replayed_step_ids` for an undo with replay.
-- `impact.before_after` holds up to 20 changed cells, values as text. An undo step's `impact` also has `rows_restored` (rows its undo brought back from quarantine), and its `quarantined` counts the rows it quarantines again (plan 2b.3, §7.8).
+- `impact.before_after` holds up to 20 changed cells, values as text. An undo step's `impact` also has `rows_restored` (rows its undo brought back from quarantine), and its `quarantined` counts the rows it quarantines again (§7.8).
 - The API adds `active` (§4.4).
 - `helpers_used` is stored with the step (Schema) but not returned by the steps API.
 
@@ -1220,7 +1218,7 @@ Facts (`sherlock/stories/facts.py`):
 - **Counting and dependencies:**
   - **`n` counts the rows with the widget's columns filled** (its scope's `x`, `series` and `y`, where they are columns of the data), within its rows.
   - **`depends_on` reads only the data's columns.** A column qualified by another table, such as a histogram's `b.lo` and `b.w` from its own CTE, is left out, so two histograms of different measures aren't related through their CTE's `lo` and `w`.
-  - **A `*` reads every column, and an alias of `t` counts** (plan 2b.3). Given the version's columns, `SELECT *` (with or without `EXCLUDE`) and `a.*` of `t` depend on all of them, and `a.fare` from `FROM t AS a` depends on `fare`. `COUNT(*)` and a CTE's `b.*` read none of the data's columns by themselves. The cascade and the fact sheets pass the columns, so a pinned chat table (`SELECT *`, no scope columns) updates when any column changes.
+  - **A `*` reads every column, and an alias of `t` counts**. Given the version's columns, `SELECT *` (with or without `EXCLUDE`) and `a.*` of `t` depend on all of them, and `a.fare` from `FROM t AS a` depends on `fare`. `COUNT(*)` and a CTE's `b.*` read none of the data's columns by themselves. The cascade and the fact sheets pass the columns, so a pinned chat table (`SELECT *`, no scope columns) updates when any column changes.
 
 ### 6.5 RecipeManifest
 
@@ -1314,7 +1312,7 @@ Every run writes `repro.py` at completion (`sherlock/ml/repro.py`). The notebook
   - It builds the same pipeline, performs the same split with the same seed, and fits the winning model only (the header names the others).
   - It returns `run(...)` for the winning model: `{ metrics, baselines, importance (DataFrame), rows }`, plus `grouped_by` (the group column, or null when the folds weren't grouped) and, for classification, `oof` (§7.5 step 9). With a group column, a comment says that rows sharing it stay in one fold.
 - **One code path.** The runner gets the model card's numbers by executing this same text on the version's data (`repro.execute`), so the notebook, which runs it on the rebuilt DataFrame, reports the same metrics.
-- **Imports.** pandas, numpy, duckdb and scikit-learn. statsmodels isn't needed with Auto only.
+- **Imports.** pandas, numpy, duckdb and scikit-learn.
 
 Every `edit` step stores `notebook_code` at commit time (`sherlock/steps/notebook.py::render_edit_batch`):
 - For each edit, `df.loc[df._row_id == <id>, "<col>"] = <value>`, grouped by column under a comment ("# age: 2 cell(s) edited by hand").
@@ -1893,7 +1891,7 @@ Code: `sherlock/stories/` (`facts.py`, `service.py`, `narrate.py`, `wording.py`,
 Wherever a card or a run feeds another output, only a usable one does:
 - **Usable.** A card is usable when it is `ready`, it and its widget aren't deleted, and its numbers hold on the dataset's current version. They hold when its fact sheet was computed on that version, or when the steps since the sheet's version (`cascade.changes`) touch none of the sheet's `depends_columns` and don't change everything (`Trust.stale_sheet`).
   - A synthesis or answer card without a sheet is usable when every card its chips cite is. A cited card whose widget was deleted still counts, since Restore brings it back.
-  - `Trust(db, dataset).why_not(card)` says why not in a few words (`WORDS`): "outdated", "being updated", "its sources changed", "still being written", "failed", "deleted", "its widget was deleted", "written on version 3", "it cites a card that's out of date", "it cites a card that's being updated". `usable_cards` and `is_usable` use it.
+  - `Trust(db, dataset).why_not(card)` says why not in a few words (`WORDS`): "outdated", "being updated", "its sources changed", "still being written", "failed", "deleted", "its widget was deleted", "written on version 3", "it cites a card that's out of date", "it cites a card that's being updated". `usable_cards` uses it.
 - **The overview** reads only usable widget cards, and its own sheet depends on the union of their columns, so a later change to them makes it stale too. With nothing usable to read, an overview whose numbers may not hold becomes `outdated`. Under "Story updates: Ask first" the cascade marks the cards `outdated`, the overview with them, and the syntheses citing those cards too (`trust.outdate_citing`).
 - **An analysis card** tells only a `done` run's facts. On an `outdated` run `build_sheet` fails (`409`), so the card is `outdated` until Re-run.
 - **A card that tells no facts** on the new version keeps its text as `ready` only while its old sheet still holds; otherwise it's `outdated`.
@@ -2107,7 +2105,7 @@ nbformat.validate(nb); scan(nb); write exports/notebook_<cache_key>.ipynb; recor
 **Rules:**
 - Embedded outputs are computed from the app's data (DuckDB on the version), never by executing the notebook. Full execution is a test concern (§14).
 - **The scan** (`scan.py`) runs on every cell before the file is written:
-  - Code cells may import only the allowlist: the sandbox's (`pandas`, `numpy`, `re`, `math`, `datetime`, `rapidfuzz`, `dateparser`, `ftfy`) plus `duckdb`, `matplotlib`, `sklearn`, `statsmodels`, `IPython`, `json` and `warnings`.
+  - Code cells may import only the allowlist: the sandbox's (`pandas`, `numpy`, `re`, `math`, `datetime`, `rapidfuzz`, `dateparser`, `ftfy`) plus `duckdb`, `matplotlib`, `sklearn`, `IPython`, `json` and `warnings`.
   - Banned: `open`, `exec`, `eval`, `compile`, `__import__`, `os`, `sys`, `shutil`, `subprocess`, `socket`, `requests`, `urllib`, `pathlib`, file-writing calls (`to_csv`, `write_text`, `savefig`, …), and shell or magic lines. The sandbox's `read_`/`to_` attribute ban doesn't apply.
   - Exempt by cell tag: the requirements cell (only `%pip install` and comments) and the load cell (its one `pathlib` write of the UTF-8 copy).
   - Every cell, Markdown included, is refused if it looks like a secret or an identifier: an `sk-…` key, a `Bearer` token, the names `LLM_API_KEY` or `sherlock_uid`.
@@ -2195,7 +2193,7 @@ Implemented in `sherlock/steps/lineage.py`:
    - The latest answer's question and SQL (the `focus` of the newest assistant message among the last six), with the instruction to use them only when the message doesn't stand on its own. So "and for women only?" continues the last answer, and "Survival rate by sex" after it is a new question.
    - Column notes from a linked data dictionary or the web, under "What some columns mean (from a data dictionary or the web, not from the data)" (§7.1.1, Schema §2.23).
    - The running summary, as "Earlier in this conversation (a summary)".
-   - The last six messages (`HISTORY`), up to 300 characters each. Each line starts with the version it was written on and its role (`history_line`: "[v5] assistant: …", plan 2b.4), so an answer from before an edit reads as older. The summary's lines carry the same prefix.
+   - The last six messages (`HISTORY`), up to 300 characters each. Each line starts with the version it was written on and its role (`history_line`: "[v5] assistant: …"), so an answer from before an edit reads as older. The summary's lines carry the same prefix.
    - **Running summary** (`Agent._summarize`). After each answer, once `SUMMARY_EVERY` (10) or more messages older than the latest six aren't covered, `small` folds them into the summary: purpose `summary`, plain text, the previous summary included, at most 1,500 characters. The call's cap is 1,500 tokens so the reasoning before the text isn't cut off (§3.5). It is stored in `thread_summaries` with the last folded message's ID. A failed call keeps the old summary.
 
 2. **Route.**
@@ -2246,7 +2244,7 @@ Implemented in `sherlock/steps/lineage.py`:
    - An intent the tab doesn't expose answers with where it works (`ELSEWHERE`), such as "Adding a widget works from the Dashboard tab; ask there, or use Add widget."
    - A failed step becomes a note in the answer: `CantAnswer` (the answerer's own sentence), `StructuredOutputError` ("I couldn't turn that into a query. Try naming the columns, e.g. “<example_question>”."), `DeadlineExceeded` ("I stopped early to stay within this answer's budget.", and no more steps run), any other `ApiError` (its message). An unavailable model or a spent budget ends the whole answer instead (Budgets, below). Each note appears once.
    - One proposal per message: a second `edit_cells` or `clean_selection` answers "One change at a time: approve or reject the proposal above first."
-   - **Clarifications built in code (plan 2.8, PRD ASK-6).** An answerer that can't go on without a choice raises `answerers.Clarify` with two or three options and what each stands for (`means`), never an open question:
+   - **Clarifications built in code (PRD ASK-6).** An answerer that can't go on without a choice raises `answerers.Clarify` with two or three options and what each stands for (`means`), never an open question:
 
      | Case | Question | Options |
      |---|---|---|
@@ -2258,7 +2256,7 @@ Implemented in `sherlock/steps/lineage.py`:
      - A name the SQL step read correctly ("salery" for `salary`) needs no question, and one that matches nothing ("nationality") keeps "This file has no column that answers that.".
      - It is asked (`Agent._ask`) only when no other step answered and the message isn't itself a clarification's answer. Otherwise its sentence (the open question or refusal) is a note, so a thread never loops on questions.
      - It is saved like the router's clarification. Its `focus` keeps the previous answer's focus (without its actions, so follow-ups still continue that answer) and adds `clarify: { name, means }`. The choice resumes as "<original question>\n(Clarified: by “<name>” I mean <option>)" (or "(Clarified: <option>)"), and the picked option goes into the resolved names (step 3).
-   - **Result checks on `ask_data` (plan 2.7; `Toolkit._checked`).** A query that runs is checked in code. Each finding is a sentence the repair reads.
+   - **Result checks on `ask_data` (`Toolkit._checked`).** A query that runs is checked in code. Each finding is a sentence the repair reads.
      - **No rows** (`Toolkit.findings`): the query returned no rows.
      - **An empty column**: a result column is null in every row.
      - **A named column unused**: a resolved column (or a resolved value's column) the query never uses (sqlglot, `{{rows}}` read as `TRUE`; `SELECT *` uses all). A resolved column counts only with a role in `NAMED_ROLES` (`dimension`, `measure`, `target_like`, `time`); a resolved value's column always counts. An ID or free-text column named like the records ("how many reviews" → `review`) is the rows themselves.
@@ -2283,7 +2281,7 @@ Implemented in `sherlock/steps/lineage.py`:
      - prose with no text run of at least two words;
      - a number shape without its chip, or with digits in its label;
      - a chart with no result of at least two rows;
-     - a `value:<column>:<value>` label whose value is neither a non-numeric result cell nor a DataCard top value of that column (`compose.label_values`; plan 2.9, PRD STORY-8). A label is shown as written, so `value:fare:87.51` is refused even when it's a cell; `value:pclass:1` passes;
+     - a `value:<column>:<value>` label whose value is neither a non-numeric result cell nor a DataCard top value of that column (`compose.label_values`; PRD STORY-8). A label is shown as written, so `value:fare:87.51` is refused even when it's a cell; `value:pclass:1` passes;
      - text runs (read together) or a number's label that break the wording check (below). The prompt's rule says text runs hold no digits and no numbers in words.
    - Code adds a missing space between sentences, a comma between two chips in a row, and a full stop when the prose doesn't end with `.`, `!`, `?` or `:`.
    - Blocks: a `number` shows the cell. A `chart` shows the first column against the first numeric one, as a pinnable spec over the query with `{{rows}}`. A `table` or `text` shows the result table, so the rows behind the prose stay visible. Results the blocks don't show are added as tables.
@@ -2292,14 +2290,14 @@ Implemented in `sherlock/steps/lineage.py`:
 
 7. **Verify.** Every value in a block or chip is read from a result cell by code, and text runs can't contain digits (the `TextRun` validator). So every number maps to a result cell, fact or model-card field by construction, and the eval counts unsourced answers.
 
-8. **Focus and save.** The notes follow the blocks. The message's `text` is its text runs, else a number's "<label>: <value>", else "Here is the result (<n> rows).", else the proposal's summary. Its `focus` holds `{ question, intents, selection_id, sql, columns, result_ids, actions }` (the first query's SQL and columns), plus `widget_id`, `run_id` or `card_id` when an answerer set one. A message on an older version than the dataset's no longer offers Add to Flow (plan 2b.4). Then the running summary is updated (step 1).
+8. **Focus and save.** The notes follow the blocks. The message's `text` is its text runs, else a number's "<label>: <value>", else "Here is the result (<n> rows).", else the proposal's summary. Its `focus` holds `{ question, intents, selection_id, sql, columns, result_ids, actions }` (the first query's SQL and columns), plus `widget_id`, `run_id` or `card_id` when an answerer set one. A message on an older version than the dataset's no longer offers Add to Flow. Then the running summary is updated (step 1).
 
 **Budgets.** `MAX_CALLS` (8 answerer and action steps), `message_token_budget` (40,000 tokens) and `WALL_S` (90 s) per message.
 - The step count and the 90 s are checked before each step; past either, the answer is composed from what exists with the note "I stopped early to stay within this answer's budget."
 - The 90 s is also every model call's deadline (`CallScope.deadline`, §3.5). A call that would run past it raises `DeadlineExceeded`: in a step, the same note and compose falls back to the results it has; on the route call, the answer is "This answer ran out of time."
 - Past 40,000 tokens the next model call raises `BudgetExceeded`. Compose, the plan, the result repair and the summary fall back; elsewhere the answer is "This answer used its model budget." with an `error` event. An unavailable model service answers "The model service is unavailable. Your data is safe; try again in a minute."
 
-**The wording check** (plan 2.9, `stories/wording.py::wording_problem`). One check for the chat's model-written text: no number in words (`NUMBER_WORDS`, `ROMAN`), no causal wording (`CAUSAL`), no chip or label markup (`MARKUP`), the narrator's lists (§7.4). What happens on a failure:
+**The wording check** (`stories/wording.py::wording_problem`). One check for the chat's model-written text: no number in words (`NUMBER_WORDS`, `ROMAN`), no causal wording (`CAUSAL`), no chip or label markup (`MARKUP`), the narrator's lists (§7.4). What happens on a failure:
 
 | Text | On failure |
 |---|---|
@@ -2375,7 +2373,7 @@ The route prompt lists only the exposed intents. An intent routed on a tab that 
 
 **`update_widget`** (Dashboard tab).
 - The widget is the focused one, else one named in the message, else the previous answer's. Without one, step 5's clarification asks which; when it can't be asked, the note is "Which widget? Click one on the dashboard (it becomes the chat's context), or name it."
-- `medium` returns the whole new widget (schema `WidgetDraft`, purpose `update_widget`) from its current title, SQL, view and columns, with one repair on a failing query. The draft changes the query, the view and its x and y (or a KPI's value); `answerers.merged_spec` keeps everything else: its row predicate and selection, `inherit_global_filters`, its other columns and view options (plan 2b.4).
+- `medium` returns the whole new widget (schema `WidgetDraft`, purpose `update_widget`) from its current title, SQL, view and columns, with one repair on a failing query. The draft changes the query, the view and its x and y (or a KPI's value); `answerers.merged_spec` keeps everything else: its row predicate and selection, `inherit_global_filters`, its other columns and view options.
 - It applies at once through the widgets service, like an edit in the widget's menu: the old spec goes to `prev_spec_json` and the story is told again. The answer shows the widget, its query as the source, and `open_widget` and `undo_widget`.
 - Analysis widgets are refused: "That widget is an analysis; change it from its settings, or ask for a plain chart."
 
@@ -2429,7 +2427,7 @@ The route prompt lists only the exposed intents. An intent routed on a tab that 
 - The column is named in the message, or appears in it as a bare word; else step 5's clarification.
 - What the data says is written in code: the type and role, filled and total rows, distinct values and the range, with the eight most common values.
 - What such a column usually records comes from `medium` with schema `Meaning` (one or two sentences, no digits), in a block marked `labeled: "general"` that begins "In general (not from your data):", with a `general` source.
-- **From a data dictionary or the web (T-2, `agent/web.py`).**
+- **From a data dictionary or the web (`agent/web.py`).**
   - With a dictionary note on the column (§7.1.1), that note answers instead: a `labeled: "web"` block "From the data dictionary you linked (not from your data): <its sentence>" citing the page, with the page as a `web` source quoting its excerpt. Nothing is searched.
   - Else, with web retrieval on, Tavily searches `"<column>" meaning` with up to three other column names as domain hints (names only, never values; purpose `meaning_web`). `medium` with schema `WebAnswer` writes what the column usually records from the fenced snippets (its prompt, sent only to Nemotron, has the example values), each sentence cited, under the wording rules. It shows as a `labeled: "web"` block "In general, from the web (not from your data): …" with `web` sources and no `general` one.
   - That answer is kept as the column's `web` note (Super's sentences and the first cited excerpt, Schema §2.23), which later prompts read (§8.1 step 1) and the CSV header shows.
@@ -2493,7 +2491,6 @@ Settings are read by `api/sherlock/config.py` (pydantic-settings) from the envir
 | `LLM_MOCK` | empty | a fixture file or a directory of them (§3.5): every model call is answered from recorded responses, with no network |
 | `LLM_RECORD` | empty | a fixture file that every live model reply is appended to |
 | `LLM_CONCURRENCY_LARGE` / `LLM_CONCURRENCY_MEDIUM` / `LLM_CONCURRENCY_SMALL` | `2` / `6` / `4` | model calls of each role in flight at once, across every client in the process (one shared gate per role, §3.5) |
-| `JOB_BACKEND` | `local` | `local` or `nebius`. Only `local` is built (jobs run in the API process); `nebius` is accepted and ignored (§11) |
 | `JOB_WORKERS` | `4` | worker tasks of the in-process job runner; `0` runs no jobs and queues no purge (the tests' default) |
 | `PURGE_INTERVAL_S` | `600` | the purge job's period (Schema §6); `0` turns it off |
 | `SAMPLE_SEED_DIR` | empty | the cached sample "Try with sample" clones: empty is the seed in the image, a folder is another seed, `off` imports the sample live |
@@ -2514,7 +2511,7 @@ Settings are read by `api/sherlock/config.py` (pydantic-settings) from the envir
 | `TAVILY_TIMEOUT_S` | `8` | each Tavily call's timeout in seconds, or less when the call's deadline is nearer (§3.6) |
 | `WEB_RATE_LIMIT` | `20` | Tavily calls per user per hour; cache hits don't count; `0` = no cap (§3.6) |
 | `WEB_MOCK` | empty | a fixture file or a directory of them (§3.6): every Tavily call is answered from recorded responses, with no network, even without a key. `WEB_SEARCH=off` still wins. For the offline `sherlock eval web` and tests |
-| `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; equal to the pins in `api/pyproject.toml` |
+| `NOTEBOOK_PINS` | `pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,matplotlib==3.9.2,rapidfuzz==3.10.1,dateparser==1.2.0,ftfy==6.3.1` | versions written into the notebook's requirements cell; equal to the pins in `api/pyproject.toml` |
 | `CORS_ORIGINS` | empty | local dev only (`.env.example` sets `http://localhost:5173`); production serves the web app from the API origin |
 | `WEB_DIST_DIR` | empty (image: `/app/web`) | the built web app served under `/` with a single-page-app fallback to `index.html`. Paths under `/api/` never fall back, and files outside the directory are never served. Empty in local dev, where Vite serves the web app |
 | `LOG_LEVEL` | `info` | the level of the `sherlock.*` loggers (`main._app_logging`); a name Python's `logging` doesn't know fails startup. uvicorn keeps its own level |
@@ -2574,7 +2571,7 @@ Secrets (`LLM_API_KEY`, `TAVILY_API_KEY`) are never committed. Locally they live
   - **Replicas.** An endpoint is a single VM running one container, which satisfies "one replica".
   - **State.** The registry path and filesystem ID are kept in the git-ignored `scripts/.deploy-state`.
   - **Not run against Nebius yet.** The Nebius CLI supports only Linux and macOS, so on the Windows dev machine it runs under WSL, where it is installed and logged in. The account's AI Cloud tenant has no billing or credits, so no Nebius resources exist.
-- **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume. Not built yet: there is no `sherlock.jobs.run` module, and `JOB_BACKEND` is ignored (§10). Every job runs in the API process's job runner (§3.1).
+- **Nebius Serverless Jobs** (optional for the hackathon): same image, command `python -m sherlock.jobs.run $JOB_ID`, same volume. Not built yet: there is no `sherlock.jobs.run` module and no setting to choose it. Every job runs in the API process's job runner (§3.1).
 
 ---
 
@@ -2632,12 +2629,12 @@ Large files are sampled for LLM context and for ML (50k rows, stratified for a c
       | broken_latin1.txt | 2 | 6 | yes | 155 s |
 
       The time is the whole check for a file: build, export, a fresh virtualenv, the notebook's `%pip install` of the pins, and the run.
-  - `api` dev dependencies add `nbclient` and `ipykernel`. `nbformat` and `matplotlib` (pinned as in `NOTEBOOK_PINS`) are runtime dependencies, with `scikit-learn` and `statsmodels` for the ML runner (§7.5).
+  - `api` dev dependencies add `nbclient` and `ipykernel`. `nbformat` and `matplotlib` (pinned as in `NOTEBOOK_PINS`) are runtime dependencies, with `scikit-learn` for the ML runner (§7.5).
 - **Benchmarks (`sherlock eval`)**: corruption, ML, grounding, ask, notebook and web, all runnable from the CLI (`api/sherlock/cli.py`) and printed as markdown tables for the README. Each runs the app in-process in a throwaway data directory, with the real model unless `LLM_MOCK` is set; `ml` calls the analysis directly, with no app and no model, and `notebook` needs no model. Live evals run one at a time (the owner's `eval-locked.sh` wrapper, outside the repo).
   - **Corruption** (`eval/corruption.py`, `eval/synthetic.py`; `uv run sherlock eval corruption [--sets a,b]`).
     - **Sets**, from seeded generators:
       - `titanic_clean` (the sample's complete rows on its eight plain columns, 1,043 rows), `sales` (1,500 dated orders) and `hr` (800 employees, with a city → region-code dependency and accented names).
-      - What the Cleaner must not do (plan 2.6, PRD CLEAN-4b): `dates_dmy` and `dates_mdy` are 400 clinic visits (`synthetic.visits`) whose dates all have a day of 12 or less and never day = month, written day-first in one and month-first in the other. Nothing tells them apart, so the honest result is the text left as it is (0 recovered, 0 wrong) until the user gives the order. `lookalikes` is 600 members (`synthetic.lookalikes`) with categories that differ on purpose (`plan` "Plan A/B/C", `region` "Region 1–4", `country` "Austria" and "Australia" at 30% each), case variants in all three and money formatting in `monthly_fee`; a merge shows up as harm.
+      - What the Cleaner must not do (PRD CLEAN-4b): `dates_dmy` and `dates_mdy` are 400 clinic visits (`synthetic.visits`) whose dates all have a day of 12 or less and never day = month, written day-first in one and month-first in the other. Nothing tells them apart, so the honest result is the text left as it is (0 recovered, 0 wrong) until the user gives the order. `lookalikes` is 600 members (`synthetic.lookalikes`) with categories that differ on purpose (`plan` "Plan A/B/C", `region` "Region 1–4", `country` "Austria" and "Australia" at 30% each), case variants in all three and money formatting in `monthly_fee`; a merge shows up as harm.
       - `dates_dmy_picked` and `dates_mdy_picked`: the two date sets cleaned through a plan in which the user picked the right order (`Case.date_order`, `set_date_order`). Both should end 100% recovered.
     - **Damage.** Seeded injectors damage a share of a column's cells: money formatting (`$1,234.50`), placeholders (`N/A`, `-999`, `?`), case and spacing variants, one-letter typos, mojibake, and unambiguous day-first dates. Each damaged cell keeps its clean value; for a placeholder, the honest recovery is a missing value.
     - **Run.** Each damaged CSV goes through the real pipeline (import, profile and typing, the Cleaner, the final version).

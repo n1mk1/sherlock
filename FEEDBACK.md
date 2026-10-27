@@ -77,7 +77,7 @@ Each entry covers: what we used it for · what worked · the problem, with steps
   - `sales` units placeholders: 3 of 45, 27 of 45 before.
 - Same input and temperature 0, different code. This is the reproducibility point above, measured.
 
-**Rerun after output agreement, merge safety and two new corruptions** (2026-10-26, plan 2.4–2.6): three new sets test what the Cleaner must not do, dates that read both ways (written day-first in one set and month-first in the other) and look-alike categories ("Plan A"/"Plan B", "Region 1"/"Region 2", "Austria"/"Australia"). **Wrong** counts damaged cells changed into the wrong value.
+**Rerun after output agreement, merge safety and two new corruptions** (2026-10-26): three new sets test what the Cleaner must not do, dates that read both ways (written day-first in one set and month-first in the other) and look-alike categories ("Plan A"/"Plan B", "Region 1"/"Region 2", "Austria"/"Australia"). **Wrong** counts damaged cells changed into the wrong value.
 
 | Set | Recovered | Wrong | Harm | Row loss | Steps | Time |
 |---|---|---|---|---|---|---|
@@ -260,7 +260,7 @@ Chat messages with model calls: 3; tokens per message p50 6,717, p95 7,288.
 - **Failures.** The only failed attempts were three narrate calls that got HTTP 529 (`server_error`, overloaded) from Token Factory, each after about 3.4 s, and were retried. That is 19% of narrate's attempts and 6% of Super's. A 529 is retried like a 5xx (TRD §3.5).
 - **Suggestion:** a `Retry-After` on the 529 would let clients wait exactly as long as needed instead of backing off blind; and a documented per-model rate limit would let us size the per-role gates (`LLM_CONCURRENCY_*`) from the numbers instead of from trial.
 
-## Tavily web retrieval, live (2026-10-26, plan T-6)
+## Tavily web retrieval, live (2026-10-26)
 
 `uv run sherlock eval web --live` with a real `TAVILY_API_KEY` in the local `.env`. The deployed app has no key yet, so web retrieval is off there. Each question is asked three times: with the web on, with Tavily failing (a stand-in that answers a 502 or a timeout at once) and with the web off. Tavily is used for `search`, `extract` and `map` only; Nemotron writes every sentence.
 

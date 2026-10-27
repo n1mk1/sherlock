@@ -1,6 +1,5 @@
 """Model-role rules (TRD §3.5): every role is an NVIDIA model on Token Factory."""
 
-import re
 import time
 
 from openai import OpenAI
@@ -47,28 +46,6 @@ def is_nemotron_chat(model_id: str) -> bool:
 def is_nvidia_embed(model_id: str) -> bool:
     lowered = model_id.lower()
     return "embed" in lowered and ("nvidia" in lowered or "nv-" in lowered or "nemotron" in lowered)
-
-
-def _size_billions(model_id: str) -> float:
-    match = re.search(r"(\d+(?:\.\d+)?)b\b", model_id.lower())
-    return float(match.group(1)) if match else 0.0
-
-
-def pick_roles(catalog_ids: list[str]) -> dict[str, str]:
-    """Suggest the Nemotron 3 Ultra / Super / Nano IDs for large / medium / small.
-
-    Prefers "nemotron-3" IDs, then the largest parameter count within a tier. A role is
-    left empty when the catalog has no model of its tier; the smoke test reports it.
-    """
-    chat = [m for m in catalog_ids if is_nemotron_chat(m)]
-    roles: dict[str, str] = {}
-    for role, tier in ROLE_TIERS.items():
-        tiered = [m for m in chat if tier in m.lower()]
-        tiered.sort(key=lambda m: ("nemotron-3" in m.lower(), _size_billions(m)), reverse=True)
-        roles[role] = tiered[0] if tiered else ""
-    embeds = sorted(m for m in catalog_ids if is_nvidia_embed(m))
-    roles["embed"] = embeds[0] if embeds else ""
-    return roles
 
 
 class LLMReachability:

@@ -476,7 +476,7 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
 - **Item row** (separated by 1px `--border`): checkbox (`--accent`) · the column in mono · the issue in body (muted when unticked) · the count in mono muted · on the next line the planned action in body-sm muted · on the right a ▸ chevron when there are examples, opening up to 5 values as mono chips (`--muted` fill, 1px border, radius 8, truncated at 240px). Checkbox names read "age: missing".
 - **Marked, not changed** rows: the `flag` icon in `--warning` instead of a checkbox, and the reason ("ticket looks like an ID column, so it is left as is") in place of the action.
 - **Editing** (PRD CLEAN-8b): a ghost ✎ (`pencil`, 14px) on the right of every changeable row opens an inline editor under it: a 3-row textarea (13px, `--card`, `--input` border, `--accent` on focus, at most 500 characters with a mono counter), Save (primary, sm), Cancel (ghost), and Reset (ghost) on a rewritten fix. A rewritten fix shows the instruction in body-sm with an "edited" tag (`--accent-soft` fill, `--accent` text, 11px, radius 4), and Sherlock's wording beneath, muted and struck through.
-- **Date order** (plan 2b.9, `DateOrder`): under an ambiguous-dates row, indented with the action:
+- **Date order** (`DateOrder`): under an ambiguous-dates row, indented with the action:
   - a body-sm medium "Which order are these dates in?";
   - a 12px mono table (Value · Day first · Month first; header muted; the picked column in `--accent`) of up to three values;
   - a `radiogroup` of two 28px buttons, "Day first" and "Month first" (picked: `--primary` fill; the other outlined `--border-strong`); a second click clears the order.

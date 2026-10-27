@@ -26,7 +26,6 @@ def test_sample_files_import_and_profile(client, name, options, rows, columns):
 
 def test_samples_are_seeded():
     pd.testing.assert_frame_equal(synthetic.sales(rows=50), synthetic.sales(rows=50))
-    assert synthetic.broken_latin1() == synthetic.broken_latin1()
 
 
 def test_benchmark_scoring():
@@ -49,7 +48,7 @@ def test_benchmark_scoring():
 
 def test_benchmark_counts_wrong_guesses_and_keeps_ambiguous_text_unread():
     # A date left as "04/03/2021" isn't recovered (reading it would pick an order), and isn't wrong
-    # either; the same date read in the other order is wrong (plan 2.6).
+    # either; the same date read in the other order is wrong.
     assert not corruption.same("04/03/2021", "2021-04-03") and corruption.same("2021-04-03", "2021-04-03")
     assert corruption.same(pd.Timestamp("2021-04-03"), "2021-04-03") and corruption.same("22", 22.0)
     visits = synthetic.visits(rows=40)

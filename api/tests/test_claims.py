@@ -1,4 +1,4 @@
-"""Claims checked in code (plan 2b.10; TRD §7.4, PRD STORY-8; BACKLOG D6 F8): a ranking word names the group
+"""Claims checked in code (TRD §7.4, PRD STORY-8): a ranking word names the group
 or factor the facts rank there, and a trend word goes with a trend, change or correlation that does."""
 
 import pytest
@@ -65,7 +65,7 @@ def test_a_ranking_names_the_group_the_facts_rank_there():
 
 
 def test_a_rank_names_the_factor_of_that_rank():
-    # D6 F8: "Ticket comes third" when the third factor is fare.
+    # "Ticket comes third" when the third factor is fare.
     n, wrong = problems(DRIVERS, ("label", "column:ticket"), " comes third.")
     assert n == 1 and "factor number 3 is fare" in wrong[0]
     assert problems(DRIVERS, ("label", "column:fare"), " comes third.") == (1, [])
@@ -83,7 +83,7 @@ def test_a_trend_word_needs_a_trend_that_goes_that_way():
     assert problems(flat_up, "Revenue increased from the first month to the last.") == (1, [])
     assert problems(falling, "Revenue increased over the months.")[1]  # the trend says otherwise
     assert problems({"correlation": fact(0.4, "num")}, "Fare rises with age.") == (1, [])
-    # D6 F8: a bar chart of classes has no trend, so "decreases for lower classes" is a claim no fact makes.
+    # A bar chart of classes has no trend, so "decreases for lower classes" is a claim no fact makes.
     n, wrong = problems(GROUPS, "Survival decreases for lower classes.")
     assert n == 1 and "no trend, change or correlation" in wrong[0]
 

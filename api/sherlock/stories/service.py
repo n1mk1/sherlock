@@ -49,7 +49,7 @@ def build_sheet(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, version:
     spec = json.loads(widget["spec_json"])
     if spec["op"]["type"] != "sql":
         # An analysis widget tells its run's facts (from the model card, TRD §7.5 step 10), and only a
-        # finished run's: an outdated run's numbers are for an earlier version (plan 1.3).
+        # finished run's: an outdated run's numbers are for an earlier version.
         run = env.db.execute("SELECT status, fact_sheet_id FROM runs WHERE id = ?",
                              (widget["run_id"],)).fetchone() if widget["run_id"] else None
         if run is not None and run["status"] == "outdated":
@@ -167,7 +167,7 @@ def to_card(db: sqlite3.Connection, r: sqlite3.Row) -> dict:
 
 def fact_for(db: sqlite3.Connection, dataset_id: str, key: str) -> dict | None:
     """The fact a `<card_id>.<fact key>` chip names, from that card's current fact sheet. A deleted card
-    names none, so a synthesis citing it shows `sources_changed` (plan 1.3)."""
+    names none, so a synthesis citing it shows `sources_changed`."""
     cid, _, fkey = key.partition(".")
     r = db.execute("SELECT fact_sheet_id FROM cards WHERE id = ? AND dataset_id = ? AND deleted_at IS NULL",
                    (cid, dataset_id)).fetchone()
@@ -294,7 +294,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
             if cid:
                 emit_card(db, env.bus, dataset, cid, scope.job_id)
                 marked.append(cid)
-        if marked:  # the overview reads those cards' numbers: outdated too, until Refresh (plan 1.3)
+        if marked:  # the overview reads those cards' numbers: outdated too, until Refresh
             ov = db.execute("SELECT id FROM cards WHERE dataset_id = ? AND kind = 'overview' AND deleted_at IS NULL "
                             "AND status = 'ready'", (dataset["id"],)).fetchone()
             if ov:
@@ -367,7 +367,7 @@ def tell(env: ws.Env, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, wi
             # Its numbers are for a version that's gone: outdated, which the newer version's cascade tells again.
             cid = _set_status(db, dataset["id"], w["id"], "outdated", version)
         elif w["id"] not in told:
-            # No facts now keeps the text only while its old numbers still hold on this version (plan 1.3).
+            # No facts now keeps the text only while its old numbers still hold on this version.
             card = db.execute("SELECT fact_sheet_id FROM cards WHERE dataset_id = ? AND widget_id = ? AND deleted_at IS NULL",
                               (dataset["id"], w["id"])).fetchone()
             old = get_sheet(db, card["fact_sheet_id"]) if card else None
@@ -448,7 +448,7 @@ def _datacard(env: ws.Env, dataset: sqlite3.Row) -> dict:
     return profile_service.get_or_build(env.settings, env.db, env.cache, dataset)
 
 
-# --- answer cards (TRD §7.6 `rerun_fact_sql`, plan 2b.2) -----------------------------------------
+# --- answer cards (TRD §7.6 `rerun_fact_sql`) -----------------------------------------
 
 def answer_depends(sheet: dict) -> set[str]:
     """The data columns an answer card's numbers read: those its sheet records and every column its
@@ -508,7 +508,7 @@ def _store_answer_sheet(db, dataset: sqlite3.Row, facts: dict, depends: set[str]
 
 
 def recheck_answers(env: ws.Env, dataset: sqlite3.Row, changes_since, *, ask_first: bool, job_id: str | None = None) -> dict:
-    """The cascade's answer cards (plan 2b.2). An answer card whose numbers read a column that changed
+    """The cascade's answer cards. An answer card whose numbers read a column that changed
     since its sheet's version is outdated under "Ask first". Otherwise its stored queries run again: the
     same numbers keep it `ready` on a sheet of the new version; different ones, or a query that fails,
     make it `outdated` (its words were written about the old numbers; Refresh takes the new ones).

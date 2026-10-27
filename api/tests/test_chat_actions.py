@@ -186,7 +186,7 @@ def test_without_an_open_plan_chat_doesnt_edit_one(client, ready):
 
 
 def test_an_answer_and_a_decided_proposal_tell_the_other_tabs(client, ready):
-    """`chat.updated` on the dataset stream (plan 2b.5): a tab that didn't send the message reads its
+    """`chat.updated` on the dataset stream: a tab that didn't send the message reads its
     thread again when an answer is saved, and when a proposal in it is approved or rejected."""
     ds = ready["id"]
 

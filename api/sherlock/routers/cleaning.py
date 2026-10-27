@@ -120,7 +120,7 @@ def _plan_event(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row, 
 
 
 def plan_scope(env: ws.Env, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
-    """A plan's stored scope with its row count (a selection's counted on the current version, plan 2b.4),
+    """A plan's stored scope with its row count (a selection's counted on the current version),
     or None for the whole dataset."""
     if scope is None or scope.kind == "all":
         return None

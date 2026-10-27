@@ -1,6 +1,6 @@
 """Near-duplicate categories: values one or two typos apart ("New York" / "New Yrok").
 
-A pair the merge rule refuses isn't one (plan 2.5, `helpers._merge_refusal`): values that differ
+A pair the merge rule refuses isn't one (`helpers._merge_refusal`): values that differ
 only in their numbers ("Region 1" / "Region 2") or that are both common (each on 5% of the rows or
 more, "Austria" / "Australia") are categories of their own, unless one is the other with an inner
 letter left out ("Wst" / "West", `helpers._dropped_letter`). `details.pairs` lists the pairs that

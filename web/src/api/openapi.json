@@ -1441,7 +1441,7 @@
     ]
    },
    "patch": {
-    "description": "The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's\nvalue from the sheet (one whose fact isn't there is unverified), and the card is never narrated\nover again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were\nwritten on, the version of the sheet its chips read (the web's \"Written on vN\" badge, plan 2b.7).",
+    "description": "The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's\nvalue from the sheet (one whose fact isn't there is unverified), and the card is never narrated\nover again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were\nwritten on, the version of the sheet its chips read (the web's \"Written on vN\" badge).",
     "operationId": "edit_card_api_v1_cards__cid__patch",
     "parameters": [
      {
@@ -4482,7 +4482,7 @@
   },
   "/api/v1/me/settings": {
    "put": {
-    "description": "Accepts a full or partial Settings; fields left out keep their stored value. Switching \"Story\nupdates\" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,\nso they're brought up to date without a new edit (plan 2b.3).",
+    "description": "Accepts a full or partial Settings; fields left out keep their stored value. Switching \"Story\nupdates\" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,\nso they're brought up to date without a new edit.",
     "operationId": "put_settings_api_v1_me_settings_put",
     "requestBody": {
      "content": {

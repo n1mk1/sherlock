@@ -84,7 +84,7 @@ export interface CleanPlanItem {
   change: boolean; // false for leakage and ID columns: marked, never changed
   reason?: string;
   module: PlanModule;
-  // An ambiguous-dates item (plan 2b.9): the order the user picked, up to three values read both ways,
+  // An ambiguous-dates item: the order the user picked, up to three values read both ways,
   // and whether every date reads both ways, so it's cleaned only with an order.
   date_order?: "dmy" | "mdy" | null;
   both_ways?: { value: string; day_first: string; month_first: string }[];
@@ -346,7 +346,7 @@ export interface Message {
   proposal?: Proposal;
   plan?: { steps: PlanStep[] };
   created_at: string;
-  /** The dataset version the message read (plan 2b.4); null for a message written before it was kept. */
+  /** The dataset version the message read; null for a message written before it was kept. */
   version?: number | null;
 }
 

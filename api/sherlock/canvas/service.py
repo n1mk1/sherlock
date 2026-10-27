@@ -24,8 +24,6 @@ MAX_SIZE = 4000
 NODE_TYPES = ("text", "file", "link", "group")
 SIDES = ("top", "right", "bottom", "left")
 EDGE_KINDS = ("summarized_in", "next", "contrasts", "custom")
-NODE_KEYS = ("id", "type", "x", "y", "width", "height", "text", "color", "file", "url", "label", "sherlock")
-EDGE_KEYS = ("id", "fromNode", "toNode", "fromSide", "toSide", "label", "color", "sherlock")
 CARD_W, CARD_H = 240, 170
 
 
@@ -60,7 +58,7 @@ def _text(value, what: str, limit: int) -> str:
 def validate(db: sqlite3.Connection, dataset_id: str, doc) -> dict:
     """The document as stored: known keys only, numbers checked, card nodes naming this dataset's cards,
     edges between existing nodes. A card node whose card is gone for good but was on the stored canvas (a
-    tab saving what it read before the purge) is dropped with its edges rather than refused (plan 2b.6).
+    tab saving what it read before the purge) is dropped with its edges rather than refused.
     Anything else is `422`."""
     if not isinstance(doc, dict) or not isinstance(doc.get("nodes", []), list) or not isinstance(doc.get("edges", []), list):
         raise _invalid("expected {nodes: [...], edges: [...]}")

@@ -59,7 +59,7 @@ def edit_card(cid: str, body: CardEdit, request: Request, _: Owned = Depends(own
     """The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's
     value from the sheet (one whose fact isn't there is unverified), and the card is never narrated
     over again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were
-    written on, the version of the sheet its chips read (the web's "Written on vN" badge, plan 2b.7)."""
+    written on, the version of the sheet its chips read (the web's "Written on vN" badge)."""
     sets = ["edited_by_user = 1", "updated_at = ?",
             "version = COALESCE((SELECT version FROM fact_sheets WHERE id = cards.fact_sheet_id), version)"]
     params = [now_iso()]
@@ -82,7 +82,7 @@ def refresh_card(cid: str, request: Request, _: Owned = Depends(owned("card")), 
     r = _card(db, cid)
     dataset = _dataset(db, r["dataset_id"])
     if r["kind"] in ("synthesis", "answer") and not r["widget_id"]:
-        ids = "answer_ids" if r["kind"] == "answer" else "synthesis_ids"  # an answer re-runs its queries (plan 2b.2)
+        ids = "answer_ids" if r["kind"] == "answer" else "synthesis_ids"  # an answer re-runs its queries
         job = insert_job(db, dataset["user_id"], dataset["id"], "stories", {ids: [cid], "reason": "refresh"})
         request.app.state.jobs.wake()
         return to_job(job)
@@ -123,10 +123,10 @@ def dismiss_badge(cid: str, request: Request, _: Owned = Depends(owned("card")),
 def delete_card(cid: str, request: Request, _: Owned = Depends(owned("card")), db: sqlite3.Connection = Depends(get_db)) -> None:
     db.execute("UPDATE cards SET deleted_at = ? WHERE id = ?", (now_iso(), cid))
     r = _card(db, cid)
-    db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (r["dataset_id"],))  # a new export key (plan 1.4)
+    db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (r["dataset_id"],))  # a new export key
     dataset = _dataset(db, r["dataset_id"])
     stories.emit_card(db, request.app.state.bus, dataset, cid)
-    # A synthesis citing it can no longer show its numbers: `sources_changed`, with Refresh (plan 1.3).
+    # A synthesis citing it can no longer show its numbers: `sources_changed`, with Refresh.
     synthesis.check_sources(db, request.app.state.bus, dataset)
 
 

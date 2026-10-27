@@ -96,7 +96,7 @@ class Clarify(CantAnswer):
 
 
 def reading_text(reading: str) -> str:
-    """The model's reading as the source label shows it, or "" when it breaks the wording rules (plan 2.9)."""
+    """The model's reading as the source label shows it, or "" when it breaks the wording rules."""
     reading = (reading or "").strip()[:200]
     return "" if wording_problem(reading) else reading
 
@@ -232,7 +232,7 @@ class Toolkit:
         return res if len(left) > len(found) else fixed
 
     def findings(self, res: Result, template: str) -> list[str]:
-        """What code sees wrong with a result that ran (plan 2.7, TRD §8.1 step 5): no rows; a column of
+        """What code sees wrong with a result that ran (TRD §8.1 step 5): no rows; a column of
         the result that is empty in every row; a column the message names (one that groups, measures or
         dates the rows) that the query never uses; a column the query groups by but doesn't show; and a
         text literal compared to a column whose values (the value index) don't include it."""
@@ -336,7 +336,7 @@ class Toolkit:
 
     def _closest(self, closest: str | None) -> str:
         """ASK-8's honest limit with the model's closest question, or this file's own example when the
-        model's breaks the wording rules (plan 2.9)."""
+        model's breaks the wording rules."""
         closest = (closest or "").strip()
         if closest and wording_problem(closest):
             closest = self.example
@@ -344,7 +344,7 @@ class Toolkit:
 
     def _unanswered(self, fallback: str) -> CantAnswer:
         """A name the message used that nothing resolved, and that looks like one of the file's columns or
-        values, becomes a clarification with its closest matches as buttons (plan 2.8, PRD ASK-6). Asked
+        values, becomes a clarification with its closest matches as buttons (PRD ASK-6). Asked
         only when the query can't be written: a name the SQL step read correctly needs no question."""
         columns = list(self.types)
         for text in self.resolved.get("unresolved") or []:
@@ -460,7 +460,7 @@ def _closest(closest: str | None) -> str:
 
 
 def merged_spec(spec: dict, draft: WidgetDraft) -> dict:
-    """`update_widget`'s draft applied to the widget's spec (plan 2b.4): the query, the view and its x and y
+    """`update_widget`'s draft applied to the widget's spec: the query, the view and its x and y
     (or a KPI's value) change; everything else the widget had stays, such as its row predicate and selection,
     `inherit_global_filters`, its other columns and its other view options."""
     new = json.loads(json.dumps(spec))
@@ -476,7 +476,7 @@ def merged_spec(spec: dict, draft: WidgetDraft) -> dict:
 
 def widget_title(title: str, spec: dict) -> str:
     """A chat widget's title: the model's when it passes the builder's title check and the wording check
-    (plan 2.9, PRD STORY-3), otherwise the templated title from the spec, as the builder falls back."""
+    (PRD STORY-3), otherwise the templated title from the spec, as the builder falls back."""
     title = (title or "").strip()
     return ws.templated_title(spec) if title_problem(title) else title
 

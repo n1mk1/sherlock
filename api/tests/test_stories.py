@@ -134,7 +134,7 @@ def test_hand_typed_numbers_become_unverified_chips():
     runs = body["blocks"][0]["runs"]
     assert [r["type"] for r in runs] == ["text", "chip", "text", "chip", "text"]
     assert runs[1] == {"type": "chip", "id": "u1", "key": None, "value": "75%", "unverified": True}
-    # Plan 2b.7 (D6 F18): a number typed in words is a number too, but a Roman-looking size isn't.
+    # Plan 2b.7: a number typed in words is a number too, but a Roman-looking size isn't.
     body = mark_unverified({"blocks": [{"type": "paragraph", "runs": [
         {"type": "text", "text": "Zero women in XL cabins paid twice the fare; one in three came back."}]}]})
     chips = [r["value"] for r in body["blocks"][0]["runs"] if r["type"] == "chip"]
@@ -547,7 +547,7 @@ def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
     labels, so any `value:` label was shown as written."""
     from sherlock.stories import synthesis
 
-    # A card's sheet names its top group with its top value, and "highest" must name it (plan 2b.10).
+    # A card's sheet names its top group with its top value, and "highest" must name it.
     facts = {"c1.top_group": {"value": "female", "formatted": "female", "format": "text", "label": "sex with the highest rate"},
              "c1.top_value": {"value": 0.7, "formatted": "70.0%", "label": "rate"}}
     values = synthesis._values(["column:sex", "value:sex:female", "value:sex:male"])
@@ -563,7 +563,7 @@ def test_a_synthesis_takes_only_the_value_labels_its_cards_use():
             synthesis._check([bad], facts, ["sex", "fare"], values)
 
 
-# --- the update path: one job per dataset, write guards, failure hooks (plan 1.1, 1.2) -------------
+# --- the update path: one job per dataset, write guards, failure hooks -------------
 
 def _settled(client, ds, timeout=120):
     """Every job of the dataset has finished (a cascade's re-runs and their stories too)."""
@@ -722,7 +722,7 @@ def test_a_failed_rerun_leaves_its_card_outdated(mocked, client, monkeypatch):
     assert told[-2:] == ["updating", "outdated"]
 
 
-# --- the trustworthy-source rule (plan 1.3) -------------------------------------------------------
+# --- the trustworthy-source rule -------------------------------------------------------
 
 @pytest.mark.usefixtures("run_jobs")
 def test_only_usable_cards_feed_another_output(mocked, client):

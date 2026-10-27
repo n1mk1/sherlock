@@ -387,7 +387,7 @@ def test_a_users_step_may_quarantine_at_most_a_fifth_of_the_rows():
     assert verify(before, fine, None, "city").hard["quarantine_scope"] == "pass"
 
 
-# --- the cleaning log's line (TRD §7.2, BACKLOG D3 M2) -----------------------------------------
+# --- the cleaning log's line (TRD §7.2) -----------------------------------------
 
 
 def test_the_log_line_takes_its_numbers_from_the_verifier_report():
@@ -419,7 +419,7 @@ def test_the_models_sentence_is_shown_only_without_digits():
     assert issue_words({"user": True, "instruction": "trim", "detector": "user_request"}) is None
 
 
-# --- merge safety (plan 2.5) -------------------------------------------------------------------
+# --- merge safety -------------------------------------------------------------------
 
 
 def test_look_alike_categories_are_not_merged():
@@ -458,7 +458,7 @@ def test_a_merge_of_look_alike_categories_fails_the_checks():
     assert verify(rare, rare.assign(city=["Southampton"] * 31), "near_duplicate_categories", "city").hard["merge_safety"] == "pass"
 
 
-# --- output agreement (plan 2.4) ---------------------------------------------------------------
+# --- output agreement ---------------------------------------------------------------
 
 
 def test_candidates_that_value_the_same_cells_differently_disagree():

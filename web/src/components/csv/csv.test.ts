@@ -61,7 +61,7 @@ describe("the pending edits buffer", () => {
     expect(localStorage.getItem("sherlock:edits:ds:2")).toBeNull();
   });
 
-  it("takes another tab's edits, save or discard from the storage event (plan 2b.5)", () => {
+  it("takes another tab's edits, save or discard from the storage event", () => {
     useEdits.getState().setCell("ds", 2, { row_id: 1, column: "age", value: "5", old: 22 });
     // Another tab adds an edit on the same base: localStorage changes, then this tab hears of it.
     const other = JSON.parse(localStorage.getItem("sherlock:edits:ds:2")!);

@@ -23,7 +23,7 @@ from sherlock.storage import dataset_dir, dataset_lock, folder_bytes
 
 
 def undo_impact(rows_in: int, rows_out: int, diff) -> dict:
-    """An undo's impact, all of it from the diff of the two versions (plan 2b.3): rows it quarantines
+    """An undo's impact, all of it from the diff of the two versions: rows it quarantines
     again (undoing a restore) and rows it restores (undoing a quarantine) count, so the cascade sees
     that every widget's rows changed."""
     restored = sum(1 for r in diff.lineage if r[1] == "_row" and r[3] == "restored")

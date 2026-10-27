@@ -4,7 +4,7 @@ runnable Jupyter notebook that rebuilds it from the raw file.
 `build()` assembles the cells; the `export_notebook` job writes the file and the `exports` row. An
 export is cached by sha1(kind, version, state_rev, options): a new version or any widget, card,
 run, layout or canvas change bumps `state_rev`, so a repeat export of the same state is instant. A
-cascade bumps it when it starts and when it ends, and so does a deleted card (plan 1.4). A widget that
+cascade bumps it when it starts and when it ends, and so does a deleted card. A widget that
 fails on the version becomes a Markdown cell saying why, so one widget never fails the export.
 """
 
@@ -172,7 +172,7 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
                 continue
             try:
                 made = _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
-            except Exception as exc:  # noqa: BLE001 - one widget never fails the export (plan 1.4)
+            except Exception as exc:  # noqa: BLE001 - one widget never fails the export
                 nb.cells += _failed(w, version, exc)
                 failed += 1
                 continue
@@ -184,12 +184,12 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
         try:
             sql = widgets.compiled(env, dataset, spec, version, [])
             data = widgets.data(env, dataset, w, [], version)
-        except Exception as exc:  # noqa: BLE001 - one widget never fails the export (plan 1.4)
+        except Exception as exc:  # noqa: BLE001 - one widget never fails the export
             nb.cells += _failed(w, version, exc)
             failed += 1
         else:
             point = json.loads(w["point_json"])["key"] if w["point_json"] else None
-            # The note under a capped table gives the query's real row count (plan 2b.6), not the cap.
+            # The note under a capped table gives the query's real row count, not the cap.
             total = data.get("total", data["row_count"])
             nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], total), point)
             emitted += 1
@@ -233,7 +233,7 @@ def _finished_run(db, run_id: str | None) -> sqlite3.Row | None:
 def _extra_runs(db, dataset_id: str, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
     """Finished runs that no live widget shows, newest first (at most ten). A widget's earlier runs
     (before a re-run or a change of settings) are left out: the widget is emitted with its current one.
-    So are the runs of a deleted widget (plan 2b.6): the user took that analysis off the dashboard."""
+    So are the runs of a deleted widget: the user took that analysis off the dashboard."""
     live = {w["id"] for w in rows}
     deleted = {r["id"] for r in db.execute("SELECT id FROM widgets WHERE dataset_id = ? AND deleted_at IS NOT NULL",
                                            (dataset_id,))}
@@ -277,7 +277,7 @@ def _card(entry: tuple[dict, dict, str | None], level: str = "###") -> list:
 
 
 def stale_note(why: str | None, card: dict, version: int) -> str | None:
-    """The note under a card that isn't usable (plan 1.3): its words may not match the numbers."""
+    """The note under a card that isn't usable: its words may not match the numbers."""
     if why is None:
         return None
     written = f" It was written for version {card['version']}; this notebook rebuilds version {version}."         if card["version"] < version else ""

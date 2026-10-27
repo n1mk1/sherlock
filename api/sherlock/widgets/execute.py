@@ -22,7 +22,7 @@ LRU_SIZE = 500
 def run_query(conn: duckdb.DuckDBPyConnection, sql: str, timeout_s: float = TIMEOUT_S) -> dict:
     """`{columns: [{name, type}], rows, row_count, truncated, total}` for one validated query. `row_count`
     counts the rows returned (at most `MAX_RESULT_ROWS`); `total` is the query's real row count, counted
-    again when the rows were capped (plan 2b.6)."""
+    again when the rows were capped."""
     timer = threading.Timer(timeout_s, conn.interrupt)
     timer.daemon = True
     timer.start()

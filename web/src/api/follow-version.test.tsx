@@ -1,4 +1,4 @@
-// Web state follows the version (plan 2b.5): what a tab shows is re-checked when the data moves on,
+// Web state follows the version: what a tab shows is re-checked when the data moves on,
 // and a change made in another tab reaches this one.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, screen, waitFor } from "@testing-library/react";

@@ -13,7 +13,7 @@ safe because job kinds are idempotent. The sweeper also queues the `purge` job e
 
 The kinds that write a dataset's widgets and cards (`SERIAL_KINDS`) run one at a time per dataset:
 the claim skips a queued one while another of them runs for its dataset, so an older update can't
-land after a newer one (plan 1.1).
+land after a newer one.
 """
 
 import asyncio
@@ -35,7 +35,7 @@ from sherlock.storage import VersionConnections
 
 log = logging.getLogger("sherlock.jobs")
 
-KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "undo", "export_notebook", "purge")
+KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "export_notebook", "purge")
 # At most one of these runs per dataset at a time: each writes the dataset's widgets and story cards.
 SERIAL_KINDS = ("cascade", "stories", "build_dashboard")
 _SERIAL = ", ".join(f"'{k}'" for k in SERIAL_KINDS)

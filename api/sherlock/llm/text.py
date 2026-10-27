@@ -46,13 +46,6 @@ def extract_json(text: str) -> object:
     return json.loads(text[start : end + 1])
 
 
-def extract_code(text: str) -> str:
-    """Return the first fenced code block, or the whole reply without reasoning."""
-    text = strip_reasoning(text)
-    fenced = _FENCE.search(text)
-    return (fenced.group(1) if fenced else text).strip()
-
-
 def has_digits(text: str) -> bool:
     """The narrator's no-digits rule (TRD §7.4): numbers in prose must be chips. Any Unicode number
     counts, not only 0-9: "²", "½", "①" and "Ⅻ" read as numbers too."""

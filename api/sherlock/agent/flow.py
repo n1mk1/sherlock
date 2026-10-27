@@ -68,7 +68,7 @@ def make_sense(db, bus, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, 
     blocks = [text_block([{"type": "text", "text": f"I added a synthesis of {len(cited)} cards to the canvas: "},
                           *card["headline"]["blocks"][0]["runs"]]),
               {"type": "text", "body": card["body"]}]
-    if left:  # cards whose numbers may not hold aren't cited (plan 1.3)
+    if left:  # cards whose numbers may not hold aren't cited
         blocks.append(text_block([{"type": "text", "text": synthesis.left_out_note(left)}]))
     return blocks, card_sources(db, cited), card
 
@@ -82,7 +82,7 @@ def ask_story(db, llm: LLMClient, scope: CallScope, dataset: sqlite3.Row, questi
         raise CantAnswer(synthesis.left_out_note(left) if left else "There are no story cards to answer from yet.")
     runs = synthesis.answer(llm, scope, db, cards, columns, question)
     blocks = [text_block(runs)]
-    if left:  # only usable cards are read (plan 1.3); the answer says which weren't
+    if left:  # only usable cards are read; the answer says which weren't
         blocks.append(text_block([{"type": "text", "text": synthesis.left_out_note(left)}]))
     return blocks, card_sources(db, cards)
 
@@ -128,7 +128,7 @@ def add_to_flow(db: sqlite3.Connection, bus, dataset: sqlite3.Row, message: sqli
                       "sql": sql_of.get(rid), "cell": [int(r), int(c)] if r.isdigit() and c.isdigit() else None}
     focus = json.loads(message["focus_json"] or "{}")
     # The columns its numbers read: the result's, and every column its queries name (so a change to one
-    # reaches it, plan 2b.2).
+    # reaches it).
     depends = sorted(stories.answer_depends({"depends_columns": focus.get("columns") or [], "facts": facts}))
     question = db.execute("SELECT text FROM messages WHERE dataset_id = ? AND role = 'user' AND created_at <= ? "
                           "ORDER BY created_at DESC, id DESC LIMIT 1", (dataset["id"], message["created_at"])).fetchone()

@@ -6,7 +6,7 @@ Rules every helper keeps:
 - Nothing removes rows. Rows that should go are quarantined with `quarantine_rows`.
 - A parse never hides a failure: `parse_failures(original, parsed)` gives the rows that didn't
   parse, and the caller quarantines them.
-- A merge never joins categories that are different on purpose (`_merge_refusal`, plan 2.5): values
+- A merge never joins categories that are different on purpose (`_merge_refusal`): values
   that differ only in their numbers ("Region 1", "Region 2"), or two values that are both common,
   unless one is the other with an inner letter left out ("Wst", "West": a typo, `_dropped_letter`).
 """

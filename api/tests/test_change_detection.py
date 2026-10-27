@@ -1,4 +1,4 @@
-"""Change detection (plan 2b.3, TRD §7.6, §7.8, §6.4): the gaps through which a change could miss the
+"""Change detection (TRD §7.6, §7.8, §6.4): the gaps through which a change could miss the
 widgets, cards or runs that read it. Each test failed on the code before the fix."""
 
 import json

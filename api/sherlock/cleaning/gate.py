@@ -1,7 +1,7 @@
 """The gate (TRD §7.2, PRD CLEAN-4): commit, commit with a flag, or skip.
 
 confidence = 0.6 × best score + 0.2 × agreement + 0.2 × (1 if the review passed else 0),
-where agreement is the output agreement (plan 2.4, `verifiers.compare`): the share of candidates
+where agreement is the output agreement (`verifiers.compare`): the share of candidates
 whose results match the best one's on at least 99% of the cells either changes. The review passes
 unless the critic says the step changed something it shouldn't (or the review couldn't be read).
 Disagreement (`disagree`): when two candidates that pass the hard checks give different values to

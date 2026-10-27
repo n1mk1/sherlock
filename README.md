@@ -49,7 +49,7 @@ Sherlock can read the web through **Tavily**, for retrieval only: `search`, `ext
 - **Without a key** (the default here) the app runs the same, and each web feature says in one line that web search isn't set up instead of failing.
 - Responses are cached for 24 h, each user has 20 Tavily calls an hour (`WEB_RATE_LIMIT`), and every call is logged next to the model calls (`llm_calls`, `role = 'web'`).
 
-The same flow as a diagram GitHub draws (`scripts/architecture.py` renders the same flow as a PNG):
+The same flow as a diagram GitHub draws:
 
 ```mermaid
 flowchart LR
@@ -109,7 +109,6 @@ Requirements: [uv](https://docs.astral.sh/uv/) (Python 3.12 is pinned in `api/.p
 
 ```bash
 cp .env.example .env        # then set LLM_API_KEY (LLM_BASE_URL and the MODEL_* IDs are filled in)
-uv run --project api python scripts/smoke_llm.py   # optional: tests the Nemotron models, prints the MODEL_* lines
 ```
 
 The API refuses to start unless `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` are NVIDIA Nemotron IDs (`nvidia/…nemotron…`). If the catalog changes, copy the lines the smoke test prints into `.env`. Web retrieval stays off until `TAVILY_API_KEY` is set.

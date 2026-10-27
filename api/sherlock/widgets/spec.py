@@ -10,14 +10,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-VIEW_TYPES = (
-    "bar", "line", "area", "pie", "ring", "gauge", "scatter", "heatmap", "histogram", "box", "kpi", "table",
-    "importance", "confusion", "roc", "residuals", "coefficients",
-)
 # Views the web app draws: Bklit's (D4.7) and the custom visx charts (D6.5). The builder only proposes
 # these; gauges render as a KPI tile.
 P0_VIEWS = ("bar", "line", "area", "pie", "ring", "kpi", "table", "histogram", "heatmap", "box", "scatter")
-AGGS = ("count", "sum", "avg", "min", "max", "median", "rate")
 
 ViewType = Literal[
     "bar", "line", "area", "pie", "ring", "gauge", "scatter", "heatmap", "histogram", "box", "kpi", "table",

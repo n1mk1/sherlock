@@ -3,7 +3,7 @@
 Types are inferred from the text of each value, because version 1 is imported all-VARCHAR.
 A type wins when at least 99% of the non-missing values parse as it. A column of dates that every
 one reads both ways (day-first and month-first, no part over 12, the readings apart) isn't a date:
-no order is guessed, and the Cleaner's plan asks for one (plan 2.6, TRD §7.1).
+no order is guessed, and the Cleaner's plan asks for one (TRD §7.1).
 Mostly-unique values that read as amounts (`measure_like`: "36.74", "$4.20", "1,250", "12%") are a
 measure stored as text, not an ID: an ID is codes or whole numbers, or a column named like one.
 """
@@ -53,10 +53,6 @@ class Column:
     @property
     def missing(self) -> int:
         return int(self.raw.isna().sum())
-
-    @property
-    def nonnull(self) -> int:
-        return int(self.raw.notna().sum())
 
 
 def as_text(series: pd.Series) -> pd.Series:

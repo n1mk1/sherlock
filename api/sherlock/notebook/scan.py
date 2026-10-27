@@ -12,7 +12,7 @@ import re
 
 ALLOWED_IMPORTS = {
     "pandas", "numpy", "re", "math", "datetime", "rapidfuzz", "dateparser", "ftfy",  # the sandbox's
-    "duckdb", "matplotlib", "sklearn", "statsmodels", "IPython", "json", "warnings",
+    "duckdb", "matplotlib", "sklearn", "IPython", "json", "warnings",
 }
 EXEMPT_TAGS = {"requirements", "load"}
 WRITE_ATTRS = {"write_text", "write_bytes", "to_csv", "to_parquet", "to_excel", "to_pickle", "to_json", "savefig",

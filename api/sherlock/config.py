@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     llm_concurrency_medium: int = 6
     llm_concurrency_small: int = 4
 
-    job_backend: Literal["local", "nebius"] = "local"
     job_workers: int = 4
     purge_interval_s: int = 600  # the purge job's period (Schema §6); 0 turns it off
     # The cached sample "Try with sample" clones (D9.1): empty is the seed in the image, "off" builds it live.
@@ -84,7 +83,7 @@ class Settings(BaseSettings):
     web_mock: str = ""
     notebook_pins: str = (
         "pandas==2.2.3,duckdb==1.1.3,numpy==2.1.3,scikit-learn==1.5.2,"
-        "statsmodels==0.14.4,matplotlib==3.9.2,rapidfuzz==3.10.1,"
+        "matplotlib==3.9.2,rapidfuzz==3.10.1,"
         "dateparser==1.2.0,ftfy==6.3.1"
     )
     cors_origins: str = ""

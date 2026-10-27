@@ -1,4 +1,4 @@
-# The web eval (TRD §14, plan T-6): run by `uv run sherlock eval web` (offline, on recorded fixtures) or
+# The web eval (TRD §14): run by `uv run sherlock eval web` (offline, on recorded fixtures) or
 # `--live` (real Nemotron and Tavily, with TAVILY_API_KEY). Ten outside-world questions (web_context,
 # PRD ASK-11) and ten column-meaning questions (ask_meaning with the web, TRD §8.2) over the three eval
 # files. Each is asked with web retrieval on, failing and off (sherlock/eval/web.py says what each

@@ -334,7 +334,7 @@ def test_meaning_query_is_names_only():
     assert aw.meaning_query("status_code", COLUMNS) == '"status_code" meaning region q1_sales'
 
 
-# --- "Use this data dictionary" (T-3, PRD LOAD-7) --------------------------------------------------
+# --- "Use this data dictionary" (PRD LOAD-7) --------------------------------------------------
 
 CODEBOOK = {"results": [{"url": "https://codebook.example.org/vars", "title": "Variables",
                          "raw_content": "region: the sales region of the store that took the order, as named in the "

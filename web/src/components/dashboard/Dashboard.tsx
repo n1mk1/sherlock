@@ -34,7 +34,7 @@ export function useWidgetParam(widgets: Widget[] | undefined) {
 }
 
 /** A new version can leave the dashboard filter on a column or a value that's gone, and every widget that
- * applies it would read "No rows match": it's cleared, with a toast that says why (plan 2b.5). Checked
+ * applies it would read "No rows match": it's cleared, with a toast that says why. Checked
  * once per version the dashboard sees, not each time the filter is set (a value just clicked is there). */
 export function useFilterCheck(dataset: Dataset, card: DataCard | undefined) {
   const checked = useRef<number | null>(null);

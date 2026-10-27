@@ -422,7 +422,7 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
     if run is None:
         raise CantAnswer("There's no analysis yet. Ask “what drives <a column>?”, or use a widget's analysis menu.")
     mc = json.loads(run["model_card_json"])
-    outdated = run["status"] == "outdated"  # said, never passed off as current (plan 1.3)
+    outdated = run["status"] == "outdated"  # said, never passed off as current
     source = {"kind": "run", "run_id": run["id"], "label": f"The model card of “what drives {mc['target']}” "
                                                           f"(version {mc['version']}{', outdated' if outdated else ''})"}
     stale = [text_block([text(f"This model ran on version {mc['version']}, and the data has changed since in columns it "

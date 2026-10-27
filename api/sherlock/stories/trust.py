@@ -1,4 +1,4 @@
-"""The trustworthy-source rule (plan 1.3, TRD §7.4): which story cards may feed another output.
+"""The trustworthy-source rule (TRD §7.4): which story cards may feed another output.
 
 A card is usable when it is `ready`, it and its widget aren't deleted, and its numbers hold on the
 dataset's current version: its fact sheet was computed on that version, or nothing that changed since
@@ -94,10 +94,6 @@ def cited(card: sqlite3.Row) -> list[str]:
         for b in part.get("blocks", []):
             keys += [r["key"] for r in b["runs"] if r.get("type") == "chip" and r.get("key") and "." in r["key"]]
     return keys
-
-
-def is_usable(db: sqlite3.Connection, card: sqlite3.Row, dataset: sqlite3.Row) -> bool:
-    return Trust(db, dataset).usable(card)
 
 
 def usable_cards(db: sqlite3.Connection, dataset: sqlite3.Row) -> list[sqlite3.Row]:

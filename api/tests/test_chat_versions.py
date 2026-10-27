@@ -1,4 +1,4 @@
-"""A version on every chat message (plan 2b.4; TRD §8.1, §4.9, Schema §2.15–2.16): history lines say the version
+"""A version on every chat message (TRD §8.1, §4.9, Schema §2.15–2.16): history lines say the version
 they were written on, Add to Flow refuses an answer from an older version, `update_widget` keeps the rest of
 the widget's spec, and a selection is counted on the current version. Recorded replies: `chat_titanic.json`
 and `chat_actions.json`."""

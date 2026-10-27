@@ -220,7 +220,7 @@ def runnable(code: str) -> str:
 
 
 def order_needed(issue: dict) -> str:
-    """The skip reason for dates that read both ways: no model call and no guess (plan 2.6)."""
+    """The skip reason for dates that read both ways: no model call and no guess."""
     shown = "; ".join(f"{v} is {d} or {m}" for v, d, m in both_ways(issue.get("examples") or [])[:2])
     return ("Left as text: every date reads both ways" + (f" ({shown})" if shown else "")
             + ", so the order is yours to choose: pick it in the cleaning plan")
@@ -442,7 +442,7 @@ class Cleaner:
                 self.state.handled.append(key(issue))
                 self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
                 continue
-            if key(issue) in self.date_orders:  # the user picked the order (plan 2b.9): no vote
+            if key(issue) in self.date_orders:  # the user picked the order: no vote
                 order = self.date_orders[key(issue)]
                 text = " ".join(t for t in (self.instructions.get(key(issue)), order_instruction(issue["column"], order)) if t)
                 return {**issue, "requested": True, "instruction": text, "date_order": order,
@@ -570,7 +570,7 @@ class Cleaner:
             return self._skip(issue, f"No candidate passed the checks ({why})", candidates=chips)
         best, best_score, sample_report, _ = scored[best_i]
         chips[best_i]["chosen"] = True
-        # Output agreement (plan 2.4): candidates that pass but value the same cells differently leave
+        # Output agreement: candidates that pass but value the same cells differently leave
         # the data's answer open, so the step is skipped before the full run, with two cells both ways.
         compared = verifiers.compare(sample, results, best_i)
         apart = gate.disagree(compared.disagreement)

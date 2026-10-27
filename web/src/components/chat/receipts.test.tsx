@@ -75,7 +75,7 @@ describe("How I worked it out", () => {
     expect(screen.getByText(/^Total: 9 calls · 9\.0 s waiting on them · 9,900 tokens$/)).toBeInTheDocument();
   });
 
-  it("names the result check's repair (plan 2.7)", () => {
+  it("names the result check's repair", () => {
     expect(stepName(call({ purpose: "sql_check" }))).toBe("Checked the result");
   });
 

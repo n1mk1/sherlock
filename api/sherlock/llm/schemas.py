@@ -257,5 +257,5 @@ class ColumnNote(Strict):
 
 
 class ColumnNotes(Strict):
-    """A data dictionary mapped to the file's columns (T-3, TRD §7.1)."""
+    """A data dictionary mapped to the file's columns (TRD §7.1)."""
     notes: list[ColumnNote] = Field(max_length=200, description="one note per column an excerpt describes")

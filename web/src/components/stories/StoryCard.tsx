@@ -51,7 +51,7 @@ export function hasTypedNumbers(card: Card): boolean {
   return [...card.headline.blocks, ...card.body.blocks].some((b) => b.runs.some((r) => r.type === "chip" && r.unverified));
 }
 
-/** User-written text once the data moves on (PRD STORY-7, plan 2b.7): an edited card says which version its
+/** User-written text once the data moves on (PRD STORY-7): an edited card says which version its
  * words were written on, and one with numbers typed by hand asks for them to be checked, since no code
  * keeps those numbers current. On the card in the panel and on its canvas node. */
 export function UserTextBadges({ card, small = false }: { card: Card; small?: boolean }) {

@@ -63,7 +63,7 @@ def put_settings(
 ) -> Settings:
     """Accepts a full or partial Settings; fields left out keep their stored value. Switching "Story
     updates" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,
-    so they're brought up to date without a new edit (plan 2b.3)."""
+    so they're brought up to date without a new edit."""
     current = users.get(conn, user.id)
     stored = current.settings if current else {}
     before = effective_settings(stored).story_updates

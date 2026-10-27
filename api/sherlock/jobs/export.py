@@ -1,7 +1,7 @@
 """The `export_notebook` job (TRD §7.7, PRD NB-9): build the notebook, write it under the dataset's
 `exports/`, and mark the `exports` row done with its download URL.
 
-An export never mixes two versions' cards silently (plan 1.4): while a cascade, stories job or build is
+An export never mixes two versions' cards silently: while a cascade, stories job or build is
 queued or running for the dataset, it waits up to `WAIT_S`; if they're still busy, the notebook says
 the cards were being updated (and each card that isn't current carries its own note)."""
 

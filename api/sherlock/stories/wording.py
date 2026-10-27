@@ -1,6 +1,6 @@
 """The wording rules for model text shown to the user (TRD §7.4, §8.1; PRD STORY-3, STORY-8): no number
 in words, no causal wording, no chip or label markup. The narrator checks its stories with these, and
-`wording_problem` is the one check for chat text (plan 2.9). Kept apart from `narrate.py` so the chat
+`wording_problem` is the one check for chat text. Kept apart from `narrate.py` so the chat
 agent can import it without the narrator's imports."""
 
 import re
@@ -32,7 +32,7 @@ def number_in_words(text: str) -> str | None:
 def wording_problem(text: str) -> str | None:
     """Why model text shown to the user breaks the wording rules, or None: a number in words, causal
     wording, or chip or label markup. Chat applies it to compose prose, `closest`, the router's
-    clarification options, `reading` and widget titles (plan 2.9)."""
+    clarification options, `reading` and widget titles."""
     if number_in_words(text):
         return f"a number in words ({number_in_words(text)!r}); use a chip for a number"
     if CAUSAL.search(text):

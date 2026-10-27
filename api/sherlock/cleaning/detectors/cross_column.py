@@ -6,7 +6,7 @@ created→updated, birth→death, departure→arrival, check_in→check_out), fo
 
 import re
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import Finding, Frame
 from sherlock.profile.infer import NUMERIC_TYPES
 
 PAIRS = (("start", "end"), ("begin", "end"), ("from", "to"), ("min", "max"), ("open", "close"),

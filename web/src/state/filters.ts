@@ -30,7 +30,7 @@ export function appliedFilter(widget: Pick<Widget, "spec">, filter: FilterClause
 }
 
 /** Why the filter means nothing on this data card's version, or null when it still applies: its column
- * is gone, or the card lists every value of the column and its value isn't one of them (plan 2b.5). */
+ * is gone, or the card lists every value of the column and its value isn't one of them. */
 export function filterGone(clause: FilterClause, card: DataCard): string | null {
   const col = card.columns.find((c) => c.name === clause.col);
   if (!col) return `v${card.version} has no column ${clause.col}`;

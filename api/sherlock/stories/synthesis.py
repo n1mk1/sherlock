@@ -96,7 +96,7 @@ def sources(db: sqlite3.Connection, dataset_id: str, card_ids: list[str],
             left_out: list[str] | None = None) -> list[tuple[sqlite3.Row, dict]]:
     """The cards whose facts can be cited, with their facts. A card with a fact sheet is cited
     directly; a synthesis or answer card without one stands for the cards its chips name. Only usable
-    cards are cited (`trust`, plan 1.3): one that is outdated, updating, deleted or told on a version
+    cards are cited (`trust`): one that is outdated, updating, deleted or told on a version
     whose numbers no longer hold is left out, and `left_out` gets "<title> (<why>)" for each."""
     from sherlock.stories import trust
 

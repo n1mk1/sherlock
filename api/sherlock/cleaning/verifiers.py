@@ -14,15 +14,15 @@ Hard checks (any failure scores the candidate 0, and on the full data stops the 
   added to the cleaning plan has no detector and no count, so it may quarantine at most a fifth of
   the rows (`QUARANTINE_USER_SHARE`).
 - `merge_safety`: no text value was rewritten into another value that was already in its column
-  when the two differ only in their numbers or are both common (`helpers._merge_refusal`, plan 2.5):
+  when the two differ only in their numbers or are both common (`helpers._merge_refusal`):
   "Region 2" → "Region 1" and "Austria" → "Australia" fail; "male " → "Male" passes.
 - `missing_fill`: missing values stay missing (owner's decision) unless a related column recovers
   them: every filled cell must hold the one value its row's group has in this column, for some
   other column (a city → region code dependency recovers a code; a median by class doesn't). A
   step the user asked for (`requested`) may fill as it was told.
 
-`changed` is the per-cell rule all of this counts by. `compare` sets candidates' results side by side
-(plan 2.4): the share of the cells two candidates both change where their values differ (the gate
+`changed` is the per-cell rule all of this counts by. `compare` sets candidates' results side by side:
+the share of the cells two candidates both change where their values differ (the gate
 skips over 1%, with two example cells shown both ways), and the output agreement, the share of
 candidates whose results match the best one's on the cells either changes. Text compares without
 case or spacing: "plan a" and "Plan A" are one value spelled two ways, not a disagreement.
@@ -284,7 +284,7 @@ class Comparison:
 
 
 def compare(before: pd.DataFrame, results: list[pd.DataFrame | None], best: int) -> Comparison:
-    """Candidates' results on the same rows side by side (plan 2.4). `results[i]` is candidate i's
+    """Candidates' results on the same rows side by side. `results[i]` is candidate i's
     result, or None when it failed its checks. Every pair of results is compared on the cells both
     changed: the worst pair's share of those cells with different values is the disagreement, with
     up to two of them as examples. The agreement is the share of all candidates (failed ones count

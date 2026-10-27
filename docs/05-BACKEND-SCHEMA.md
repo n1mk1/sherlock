@@ -405,7 +405,7 @@ CREATE TABLE jobs (
   id         TEXT PRIMARY KEY,                 -- job_…
   dataset_id TEXT REFERENCES datasets(id) ON DELETE CASCADE,
   user_id    TEXT NOT NULL,
-  kind       TEXT NOT NULL,                    -- profile|clean|build_dashboard|stories|ml_run|cascade|undo|export_notebook|purge
+  kind       TEXT NOT NULL,                    -- profile|clean|build_dashboard|stories|ml_run|cascade|export_notebook|purge
   status     TEXT NOT NULL,                    -- queued|running|done|failed|cancelled
   params_json TEXT NOT NULL DEFAULT '{}',
   state_json TEXT,                             -- checkpoint; a clean job keeps its RunState here (TRD §7.2)
@@ -439,7 +439,7 @@ CREATE INDEX job_events_dataset ON job_events(dataset_id, id);
 - **One at a time.** `cascade`, `stories` and `build_dashboard` (`SERIAL_KINDS`) run one at a time per dataset: the claim skips a queued one while another runs for its dataset.
 - `tokens_used` sums the job's model tokens; the job's budget reads it (TRD §3.5).
 - `progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
-- **`undo`** is a listed kind, but no `undo` job is queued: an undo, its replay included, runs inside its request (TRD §7.8).
+- **No `undo` kind:** an undo, its replay included, runs inside its request (TRD §7.8).
 - **`purge`** jobs have `user_id = 'system'` and `dataset_id` NULL (§6).
 - **`clean`** started from a cleaning plan (PRD CLEAN-8a): `params_json.plan` is `{id, version, items}`, a frozen copy of the plan's items when Start was pressed (§2.21), so later edits can't change a running job. `state_json` is the Cleaner's `RunState` (`cleaning/loop.py`): `from_version`, `ended_by`, `plan_id`, `max_steps`, `max_seconds`, `waited_for_model_s`, `attempted`, `handled`, `skipped`, `hand_edited_skipped` (at most 500), `step_ids` and `plan_outcomes` (plan item ID → `{outcome, reason?, step_id?, step_no?}`, which the report's `your_steps` reads, TRD §7.2).
 - **`build_dashboard`** queued by the profile because After upload is "I'll clean it myself" has `params_json.automatic: true` (the `Job` response shows it, TRD §4.10). No `clean` job is queued without a click: "Open the cleaning plan" only makes a draft (§2.21).

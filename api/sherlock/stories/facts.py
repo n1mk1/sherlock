@@ -399,7 +399,7 @@ def verify(conn: duckdb.DuckDBPyConnection, facts: dict[str, dict], keys: list[s
 def depends_on(spec: dict, sql: str, columns: list[str] | None = None) -> list[str]:
     """The data columns a widget reads: its scope's columns and every column its query names. A column
     qualified by an alias of `t` (`FROM t AS a`, `a.fare`) counts, and with `columns` (the version's) a
-    `*` or `a.*` reads every one of them (plan 2b.3); `COUNT(*)` reads none."""
+    `*` or `a.*` reads every one of them; `COUNT(*)` reads none."""
     import sqlglot
     from sqlglot import exp
 

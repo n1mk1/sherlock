@@ -19,7 +19,7 @@ describe("off a dataset route (Day 9 review)", () => {
 });
 
 
-describe("user-written text once the data moves on (plan 2b.7)", () => {
+describe("user-written text once the data moves on", () => {
   const typed: Card = {
     id: "crd_1", dataset_id: "ds_1", kind: "widget", widget_id: "wdg_1", source_card_ids: null, fact_sheet_id: "fs_1",
     status: "ready", edited_by_user: true, changed_badge: false, suggestion: null, version: 5, narrated_by: null,

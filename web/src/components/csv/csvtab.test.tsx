@@ -42,7 +42,7 @@ describe("the CSV tab while a job owns the data", () => {
 });
 
 describe("Find on a new version", () => {
-  it("runs again, so its rows and count are the new version's (plan 2b.5)", async () => {
+  it("runs again, so its rows and count are the new version's", async () => {
     let finds = 0;
     mockApi({
       "GET /api/v1/datasets/ds_1/find": () => {

@@ -158,7 +158,7 @@ def results_text(found: list[dict]) -> str:
 
 
 def _check_prose(answer: WebAnswer, n: int) -> None:
-    """The chat wording check on web prose (TRD §7.4, plan 2.9): text runs already have no digits (`TextRun`)."""
+    """The chat wording check on web prose (TRD §7.4): text runs already have no digits (`TextRun`)."""
     from sherlock.stories.wording import wording_problem
 
     cites = [r.cite for r in answer.prose if isinstance(r, CiteRun)]
@@ -263,7 +263,7 @@ def web_context(kit: Toolkit, web: WebClient, question: str, columns: list[str])
                  focus={"web_query": query})
 
 
-# --- ask_meaning on the web (T-2) -------------------------------------------------------------------
+# --- ask_meaning on the web -------------------------------------------------------------------
 
 def meaning_query(column: str, columns: list[str]) -> str:
     """`"<column>" meaning` and up to three other column names as domain hints: names only, never values."""
@@ -318,7 +318,7 @@ def note_source(note: dict) -> dict:
                      f"“{note['excerpt'] or note['description']}”"}
 
 
-# --- "Use this data dictionary" (T-3, PRD LOAD-7) --------------------------------------------------
+# --- "Use this data dictionary" (PRD LOAD-7) --------------------------------------------------
 
 DICTIONARY_WALL_S = 60.0   # extract, maybe map and extract again, then one Super call
 DICTIONARY_HINT = "data dictionary, codebook, variable definitions"

@@ -65,16 +65,15 @@ STEP_LABELS = {"ask_data": "Query the data", "find_rows": "Find the rows", "expl
                "create_widget": "Add a widget", "update_widget": "Change the widget", "ask_story": "Read the cards",
                "edit_cells": "Propose the edits", "clean_selection": "Propose a clean", "edit_plan": "Change the plan"}
 SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at a time (TRD §8.1 step 1)
-DATA_INTENTS = ("ask_data", "find_rows")
 INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help", "web_context")
 DASHBOARD_WORDS = re.compile(r"\b(dashboard|widget|pin)\b", re.I)
 # A significance test only when the message asks about one: live (D8.4 eval), Nano sent "what is the
 # overall survival rate?" and "what is the return rate?" to ask_stats.
-# The cleaning history only when the message is about what changed in the file: live (T-1 eval), Nano sent
+# The cleaning history only when the message is about what changed in the file: live, Nano sent
 # "historically, what were <two ports>?" to ask_history.
 HISTORY_WORDS = re.compile(r"\b(clean\w*|edit\w*|chang\w*|step\w*|undo\w*|undid|fix\w*|did you|you did|done to|happen\w*|"
                            r"modif\w*|replac\w*|quarantin\w*|remov\w*|fill\w*|typed|why)\b", re.I)
-# A column's meaning only when the message asks what something means or is: live (T-1 eval), Nano sent "what did
+# A column's meaning only when the message asks what something means or is: live, Nano sent "what did
 # a <column word> on <something> usually include?" to ask_meaning.
 MEANING_WORDS = re.compile(r"\b(mean\w*|stand\w*|represent\w*|refer\w*|defin\w*|describ\w*|explain\w*|what is|what's|"
                            r"what are|what kind|what type|code\w*|abbreviat\w*|unit\w*|column\w*|field\w*|tell me about)\b", re.I)
@@ -137,7 +136,7 @@ def swap(intents: list[str], old: tuple[str, ...], new: str) -> list[str]:
 
 def to_message(row: sqlite3.Row, db: sqlite3.Connection | None = None, current_version: int | None = None) -> dict:
     """A message in the TRD §4.9 `Message` shape (with its proposal when `db` is given). With the dataset's
-    `current_version`, an answer from an older version doesn't offer Add to Flow (plan 2b.4)."""
+    `current_version`, an answer from an older version doesn't offer Add to Flow."""
     out = {
         "id": row["id"], "role": row["role"], "text": row["text"], "blocks": json.loads(row["blocks_json"]),
         "sources": json.loads(row["sources_json"]), "created_at": row["created_at"],
@@ -232,7 +231,7 @@ class Agent:
             scope.selection_id = context["selection_id"]
             scope.selection = ws.selection_sql(self.db, self.dataset["id"], context["selection_id"])
             n = self.db.execute("SELECT label FROM selections WHERE id = ?", (context["selection_id"],)).fetchone()
-            count = ws.selection_rows(self.env, self.dataset, context["selection_id"])  # on this version (plan 2b.4)
+            count = ws.selection_rows(self.env, self.dataset, context["selection_id"])  # on this version
             words.append(f"the selection {n['label'] or ''} ({count} rows)".replace("  ", " "))
         if context.get("global_filter"):
             scope.global_filter = wc.filter_sql(wc.parse_filter(context["global_filter"]), types)
@@ -266,7 +265,7 @@ class Agent:
         summary = self.db.execute("SELECT summary FROM thread_summaries WHERE dataset_id = ?", (self.dataset["id"],)).fetchone()
         if summary:
             parts.append("Earlier in this conversation (a summary):\n" + fence(summary["summary"]))
-        # Each line says the version it was written on, so an answer from before an edit reads as older (plan 2b.4).
+        # Each line says the version it was written on, so an answer from before an edit reads as older.
         recent = [f"{history_line(r)}: {r['text'][:300]}" for r in history if r["text"]]
         if recent:
             parts.append("Recent messages:\n" + fence("\n".join(recent)))
@@ -283,7 +282,7 @@ class Agent:
         scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], message_id=mid,
                           on_wait=lambda t: self.emit("status", {"text": t}), deadline=self.started + WALL_S)
         question = text
-        chosen = None  # what the picked option of a code-built clarification stands for (plan 2.8)
+        chosen = None  # what the picked option of a code-built clarification stands for
         if clarification_of:
             asked = self.db.execute("SELECT * FROM messages WHERE id = ? AND dataset_id = ?", (clarification_of, dataset["id"])).fetchone()
             original = self.db.execute(
@@ -346,7 +345,7 @@ class Agent:
         ctx_text = self._context(card, rows_scope, history, focus, resolved, context)
         kit = Toolkit(self.env, self.llm, scope, dataset, ctx_text, rows_scope, example=example_question(card),
                       resolved=resolved, types=types, roles={c["name"]: c["role"] for c in card["columns"]})
-        asking: Clarify | None = None  # a code-built clarification (plan 2.8), asked when no other step answers
+        asking: Clarify | None = None  # a code-built clarification, asked when no other step answers
         blocks, sources, results, actions, notes, streamed, computed = [], [], [], [], [], [], []
         focus_out = {"question": question, "intents": list(route.intents), "selection_id": rows_scope.selection_id}
 
@@ -358,7 +357,7 @@ class Agent:
         if "ask_stats" in intents and not STATS_WORDS.search(question):
             intents = list(dict.fromkeys("ask_data" if i == "ask_stats" else i for i in intents))
         # Outside-world questions the router took for the file's: a meaning of nothing the file has ("what is
-        # <a term>?") or that asks no meaning, or a history with no word about changes, goes to the web (live, T-1 eval).
+        # <a term>?") or that asks no meaning, or a history with no word about changes, goes to the web (live).
         if WEB_ASK.search(question) and "web_context" not in intents:
             intents = swap(intents, ("ask_history", "ask_meaning"), "web_context")
             if "web_context" not in intents:
@@ -588,7 +587,7 @@ class Agent:
         for note in notes:
             blocks.append(text_block([{"type": "text", "text": note}]))
         # Narrative answers with numbers can go on the canvas (PRD ASK-4), and so can a web answer with its
-        # citations (T-5); a synthesis is already there.
+        # citations; a synthesis is already there.
         if "card_id" not in focus_out:
             for i, b in enumerate(blocks):
                 if b["type"] == "text" and (b.get("web") == "context" or b.get("labeled") != "general" and any(
@@ -623,7 +622,7 @@ class Agent:
 
     def _ask(self, mid: str, asking: Clarify, route: Route, context: dict, scope: CallScope, focus: dict | None,
              plan: list | None) -> dict:
-        """A clarification built in code (plan 2.8): its buttons, and in the focus what each one stands for,
+        """A clarification built in code: its buttons, and in the focus what each one stands for,
         so the choice resumes with the name resolved. The focus keeps the previous answer's, for follow-ups."""
         clar = asking.clarification()
         self.emit("clarification", clar)
@@ -786,7 +785,7 @@ class Agent:
 
 
 def checked_clarification(route: Route) -> dict | None:
-    """The router's clarification under the wording check (plan 2.9): its question and options are the
+    """The router's clarification under the wording check: its question and options are the
     model's words shown as buttons. An option that fails is dropped; with fewer than two left, or a
     question that fails, there's no clarification and the message is answered as routed."""
     if not route.ambiguous or route.clarification is None:
@@ -799,7 +798,7 @@ def checked_clarification(route: Route) -> dict | None:
 
 
 def choose(resolved: dict, chosen: dict) -> None:
-    """Put the picked option of a code-built clarification into the message's names (plan 2.8)."""
+    """Put the picked option of a code-built clarification into the message's names."""
     name = chosen["name"]
     if "column" in chosen:
         resolved["columns"][name] = chosen["column"]

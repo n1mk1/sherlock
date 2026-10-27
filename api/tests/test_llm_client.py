@@ -404,7 +404,7 @@ def test_the_deadline_bounds_attempts_and_waits(db):
     assert timeouts == []
 
 
-# --- the Nemotron fallback (plan 2b.8, TRD §3.5) ----------------------------------------------------
+# --- the Nemotron fallback (TRD §3.5) ----------------------------------------------------
 
 
 class SuperDown(Transport):

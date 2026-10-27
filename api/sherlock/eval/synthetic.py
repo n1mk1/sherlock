@@ -1,9 +1,8 @@
-"""Seeded synthetic data (Implementation Plan §6): the sample files and the benchmark's clean sets.
+"""Seeded synthetic data (Implementation Plan §6): the corruption benchmark's clean sets.
 
 Everything here is generic test data. Nothing in the app is tuned to it (CLAUDE.md rule 4).
 """
 
-import random
 from datetime import date, timedelta
 
 import numpy as np
@@ -110,58 +109,3 @@ def titanic_clean(path) -> pd.DataFrame:
     df = pd.read_csv(path)
     cols = ["pclass", "survived", "sex", "age", "sibsp", "parch", "fare", "embarked"]
     return df[cols].dropna().reset_index(drop=True)
-
-
-def wide_messy(rows: int = 800, seed: int = 31) -> pd.DataFrame:
-    """60 columns with mixed formats and placeholders (Implementation Plan §6)."""
-    rng = random.Random(seed)
-    data: dict[str, list] = {}
-    for i in range(60):
-        kind = i % 6
-        name = f"{['metric', 'score', 'label', 'when', 'amount', 'note'][kind]}_{i}"
-        col = []
-        for _ in range(rows):
-            if kind == 0:
-                v = str(round(rng.gauss(100, 15), 2))
-            elif kind == 1:
-                v = str(rng.randint(0, 10))
-            elif kind == 2:
-                v = rng.choice(["alpha", "Alpha ", "beta", "BETA", "gamma"])
-            elif kind == 3:
-                d = date(2023, 1, 1) + timedelta(days=rng.randint(0, 600))
-                v = d.strftime(rng.choice(["%Y-%m-%d", "%d/%m/%Y", "%Y-%m-%d"]))
-            elif kind == 4:
-                v = rng.choice(["$1,200", "980", "€45,50", "1 250", "300"])
-            else:
-                v = rng.choice(["ok", "check later", "", "n/a", "see notes"])
-            if rng.random() < 0.04:
-                v = rng.choice(["N/A", "-999", "?", ""])
-            col.append(v)
-        data[name] = col
-    return pd.DataFrame(data)
-
-
-REVIEW_BITS = ["arrived late", "works great", "battery died after a week", "excellent value",
-               "would not buy again", "the support team was helpful", "packaging was damaged",
-               "exactly as described", "too small for me", "five stars, no complaints"]
-
-
-def reviews(rows: int = 600, seed: int = 41) -> pd.DataFrame:
-    """Product reviews with a free-text column (Implementation Plan §6)."""
-    rng = random.Random(seed)
-    out = []
-    for i in range(rows):
-        rating = rng.choice([1, 2, 3, 4, 5, 5, 4])
-        text = ", ".join(rng.sample(REVIEW_BITS, rng.randint(2, 4))).capitalize() + "."
-        out.append({"review_id": f"R{10000 + i}", "product": rng.choice(list(PRODUCTS)), "rating": rating,
-                    "review": text, "verified": rng.choice(["true", "false", "true"]),
-                    "posted": (date(2024, 1, 1) + timedelta(days=rng.randint(0, 300))).isoformat()})
-    return pd.DataFrame(out)
-
-
-def broken_latin1(seed: int = 51) -> bytes:
-    """Semicolon-delimited Latin-1 text with two lines of preamble before the header (header on row 3)."""
-    df = hr(rows=150, seed=seed)[["employee_id", "name", "city", "salary"]]
-    lines = ["Personalbericht;;;", "exportiert;2024-05-01;;", ";".join(df.columns)]
-    lines += [";".join(str(v) for v in row) for row in df.itertuples(index=False)]
-    return ("\n".join(lines) + "\n").encode("latin-1", errors="replace")

@@ -29,7 +29,6 @@ NUMERIC = re.compile(r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALL
 EXPORT = re.compile(r"\b(export|download|save|give me)\b.*\b(notebook|ipynb|jupyter)\b|\b(notebook|ipynb|jupyter)\b.*\b(export|download)\b", re.I)
 SYSTEM_COLUMNS = ("_row_id", "_quarantine_reason")
 MAX_PROMPT_CELLS = 60
-PREVIEW = 20
 
 
 # --- notebook export from chat (App Flow §17.1) -----------------------------------------------------
@@ -158,7 +157,7 @@ def _same(before, value: str | None) -> bool:
 def propose_clean(env: ws.Env, dataset: sqlite3.Row, context: dict, message_id: str) -> dict:
     """`clean_selection`: Clean with AI on the selection (the context's, or the selected cells' rows),
     else on the whole file. No model call until it's approved. The selection's rows are counted on the
-    current version (plan 2b.4)."""
+    current version."""
     db = env.db
     rows, _ = _selected(context)
     selection_id = context.get("selection_id")
