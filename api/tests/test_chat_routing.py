@@ -105,6 +105,39 @@ def test_a_quantity_no_column_records_gets_the_honest_limit(client, ready):
     in_eval(msg, q)
 
 
+@pytest.fixture
+def income_live(tmp_path):
+    """The live replies on e967bb8 in place of the recorded ones for the income question: the route names no column
+    (so `substituted` never sees "income"), and the repair keeps AVG(fare)."""
+    import json
+    q = "What was the average income of first-class passengers?"
+    path = tmp_path / "llm" / "chat_routing.json"
+    entries = [e for e in json.loads(path.read_text(encoding="utf-8")) if not any(q in m for m in e["match"])]
+    path.write_text(json.dumps(entries), encoding="utf-8")
+    shutil.copy(LLM / "chat_income_live.json", tmp_path / "llm" / "chat_income_live.json")
+
+
+def test_a_money_word_is_never_answered_with_another_kind_of_amount(income_live, client, ready):
+    # Live on e967bb8 this answered "The average income of first-class passengers is 87.51" from AVG(fare).
+    q = "What was the average income of first-class passengers?"
+    _, msg = send(client, ready["id"], q)
+    assert "sql_check" in purposes(ready["id"])
+    assert msg["text"].startswith("This file has no column that answers that.") and not blocks_of(msg, "number")
+    assert "87.5" not in msg["text"]
+    in_eval(msg, q)
+
+
+def test_money_swapped_only_flags_a_different_kind_of_amount():
+    k = kit({"fare": "DOUBLE", "pclass": "BIGINT", "unit_price": "DOUBLE", "revenue": "DOUBLE"})
+    sql = "SELECT AVG(fare) AS average_income FROM t WHERE {{rows}} AND pclass = 1"
+    assert len(k.money_swapped("What was the average income of first-class passengers?", sql)) == 1
+    assert k.money_swapped("Which passengers paid more than 500?", "SELECT * FROM t WHERE {{rows}} AND fare > 500") == []
+    assert k.money_swapped("What was the average cost of a ticket?", "SELECT AVG(fare) FROM t WHERE {{rows}}") == []
+    assert k.money_swapped("What is the total revenue?", "SELECT SUM(revenue) FROM t WHERE {{rows}}") == []
+    assert len(k.money_swapped("What is the total profit?", "SELECT SUM(revenue) FROM t WHERE {{rows}}")) == 1
+    assert kit({"AnnualIncome": "DOUBLE"}).money_swapped("average income", "SELECT AVG(AnnualIncome) FROM t") == []
+
+
 def test_a_column_that_records_the_word_is_kept_after_the_check(client, ready):
     # "port" isn't named like `embarked`, so the check asks; the repair keeps the query and the answer stands.
     _, msg = send(client, ready["id"], "Average fare by port")
@@ -155,7 +188,7 @@ def test_records_over_an_amount_are_a_row_list_even_when_routed_to_ask_data(clie
 def test_quarantine_questions_are_counted_in_code(client, ready):
     for q in ("Why were some rows quarantined?", "How many rows are quarantined and why?"):
         _, msg = send(client, ready["id"], q)
-        assert "quarantined in this version" in msg["text"], msg["text"]
+        assert msg["text"] == "No rows are quarantined in this version.", msg["text"]  # no unrelated steps after it
         assert not any(s["kind"] == "run" for s in msg["sources"]) and "no column" not in msg["text"]
         assert any(s["kind"] == "sql" and "_quarantine_reason IS NOT NULL" in s["sql"] for s in msg["sources"])
         in_eval(msg, q)

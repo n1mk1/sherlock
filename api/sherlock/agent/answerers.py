@@ -36,6 +36,17 @@ COMPARED = re.compile(r"=|<|>|\b(in|like|ilike|between|is)\b", re.I)
 # Words that say how a quantity is summed up, not what it is ("average income" asks about income).
 AMOUNT_WORDS = {"average", "avg", "mean", "median", "typical", "total", "sum", "overall", "rate", "rates", "share", "number",
                 "count", "amount", "percent", "percentage", "proportion", "the", "of", "per", "and", "for"}
+# Kinds of money amount that are never each other (live, "the average income of <a group>" was answered with the
+# average fare): a word of one kind is never answered with a column of another. Synonyms within a kind are fine
+# ("cost" and "fare", "paid" and "price"). "Pay" and "sales" are left out: they mean either.
+MONEY_KINDS = {
+    "money earned": {"income", "incomes", "salary", "salaries", "wage", "wages", "earnings", "earned", "earn"},
+    "revenue": {"revenue", "revenues", "turnover"},
+    "profit": {"profit", "profits", "margin", "margins"},
+    "a price or cost paid": {"price", "prices", "fare", "fares", "cost", "costs", "fee", "fees", "charge", "charges",
+                             "paid", "spent", "spend", "spending", "expense", "expenses"},
+    "tax": {"tax", "taxes"},
+}
 # A word followed by a comparison is a condition on the column it was read as ("paid more than <an amount>").
 CONDITION_AFTER = (r"\s+((more|less|fewer|greater|higher|lower|bigger|smaller)\s+than|over|under|above|below|"
                    r"at\s+(least|most)|exactly|between)\b")
@@ -54,6 +65,14 @@ def stem_linked(word: str, col: str) -> bool:
         shared = next((i for i, (x, y) in enumerate(zip(t, n)) if x != y), min(len(t), len(n)))
         return shared >= 4 or (min(len(t), len(n)) >= 4 and (t in n or n in t))
     return any(close(t, n) for t in tokens for n in names)
+
+
+def money_kinds(name: str) -> set[str]:
+    """The kinds of money amount a word or a column's name is about: a word of it is one of the kind's words, or,
+    for words of four letters or more, sits inside the name ("annualincome", "unit_price")."""
+    low = name.lower()
+    tokens = set(re.findall(r"[a-z]+", re.sub(r"([a-z])([A-Z])", r"\1 \2", name).lower()))
+    return {kind for kind, words in MONEY_KINDS.items() if tokens & words or any(len(w) >= 4 and w in low for w in words)}
 
 
 class CantAnswer(Exception):
@@ -181,7 +200,8 @@ class Toolkit:
         """Plan 2.7: a result that ran is checked in code; what was found goes back for one repair. The
         repaired query replaces the first when it runs and shows no more findings; otherwise, or when the
         repair fails, the first result stands (it ran, and the question may really have no rows)."""
-        found = self.findings(res, draft.sql) + self.substituted(draft.reading, question)
+        swapped = self.money_swapped(question, draft.sql)
+        found = self.findings(res, draft.sql) + swapped + self.substituted(draft.reading, question)
         if not found:
             return res
         log.info("ask_data result check: %s", " | ".join(found))
@@ -190,7 +210,13 @@ class Toolkit:
         try:
             again = self.llm.structured("medium", ask, SqlDraft, purpose="sql_check", scope=self.scope).value
         except (StructuredOutputError, LLMUnavailable, BudgetExceeded):
+            if swapped:
+                raise self._unanswered(self._closest(None)) from None
             return res
+        if swapped:
+            # Code knows no column of the file is that kind of amount, whatever the repair says; the repair only
+            # words the closest question (ASK-8).
+            raise self._unanswered(self._closest(None if again.answerable else again.closest))
         if not again.answerable and self.substituted(draft.reading, question):
             # The repair agrees that no column records what the question asks for: the honest limit (ASK-8).
             raise self._unanswered(self._closest(again.closest))
@@ -241,6 +267,34 @@ class Toolkit:
                 continue
             shown = ", ".join(f"'{v}'" for v in values[:SHOWN_VALUES]) + (", …" if len(values) > SHOWN_VALUES else "")
             out.append(f"{col} = '{literal}' matches no row: {col} has {shown}.")
+        return out
+
+    def money_swapped(self, question: str, template: str) -> list[str]:
+        """A kind of money amount the question asks about that no column of this file is about, answered with a
+        column of another kind (`MONEY_KINDS`; live, "the average income of first-class passengers" answered
+        `AVG(fare)` past `substituted` and its repair). It needs no router entity and no reading, and the answer
+        is ASK-8's honest limit whatever the repair says."""
+        asked: dict[str, str] = {}
+        for word in re.findall(r"[a-z]+", question.lower()):
+            for kind in money_kinds(word):
+                asked.setdefault(kind, word)
+        recorded = set().union(*(money_kinds(c) for c in self.types))
+        if not set(asked) - recorded:
+            return []
+        try:
+            tree = wc._parse_one(template.replace("{{rows}}", "TRUE"))
+        except ApiError:
+            return []
+        by_lower = {c.lower(): c for c in self.types}
+        used = list(dict.fromkeys(by_lower[c.name.lower()] for c in tree.find_all(exp.Column) if c.name.lower() in by_lower))
+        out = []
+        for kind, word in asked.items():
+            for col in used if kind not in recorded else []:
+                if money_kinds(col) and kind not in money_kinds(col):
+                    out.append(f"The question asks about “{word}” ({kind}), and no column of this file records it; the query "
+                               f"reads it as {col}, which is {' and '.join(sorted(money_kinds(col)))}, a different amount. "
+                               "Don't answer with another column in its place: set answerable to false and give the closest "
+                               "question this file can answer.")
         return out
 
     def substituted(self, reading: str, question: str = "") -> list[str]:

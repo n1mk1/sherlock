@@ -469,6 +469,8 @@ class Agent:
                         reply = insight.quarantined(kit, f"r{len(results) + len(computed) + 1}")
                         blocks += reply.blocks
                         sources += reply.sources
+                        if not (reply.focus or {}).get("quarantined"):
+                            continue  # none are quarantined, so no step set them: the steps would be unrelated text
                     vrow = ws.version_row(self.db, dataset["id"], dataset["current_version"])
                     found = ask_history(self.db, dataset["id"], q, json.loads(vrow["effective_step_ids_json"]))
                     if not found:

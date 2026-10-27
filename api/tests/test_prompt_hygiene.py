@@ -181,8 +181,9 @@ def test_generic_prompts_and_messages_carry_nothing_from_the_sample():
     # CLAUDE.md Rule 4: examples in prompts, schemas and messages are placeholders, never the sample's columns.
     root = Path(__file__).parents[1]
     header = (root / "samples" / "titanic3.csv").read_text(encoding="utf-8").splitlines()[0]
-    # Plain English words the prompts use in their own sense ("a body of two to four sentences").
-    columns = {c.strip('"').lower() for c in header.split(",")} - {"name", "age", "sex", "body"}
+    # Plain English words the prompts use in their own sense ("a body of two to four sentences"). "Fare" is a price
+    # paid (a bus or taxi fare), one of the generic money words of `answerers.MONEY_KINDS`, never an example.
+    columns = {c.strip('"').lower() for c in header.split(",")} - {"name", "age", "sex", "body", "fare"}
     words = columns | {"titanic", "passenger", "passengers", "survival", "women", "first class"}
     texts = []
     for folder in ("agent", "dashboard", "stories", "llm", "cleaning"):

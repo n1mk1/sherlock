@@ -1,0 +1,8 @@
+[
+  {"purpose": "route", "match": ["<data>\nWhat was the average income of first-class passengers?\n</data>"],
+   "content": {"intents": ["ask_data"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "first-class", "kind": "value"}]}},
+  {"purpose": "sql", "match": ["Question:\n<data>\nWhat was the average income of first-class passengers?\n</data>"],
+   "content": {"reading": "first-class → pclass = 1", "sql": "SELECT AVG(fare) AS average_income FROM t WHERE {{rows}} AND pclass = 1", "answerable": true, "closest": null}},
+  {"purpose": "sql_check", "match": ["Question:\n<data>\nWhat was the average income of first-class passengers?\n</data>"],
+   "content": {"reading": "first-class → pclass = 1", "sql": "SELECT AVG(fare) AS average_income FROM t WHERE {{rows}} AND pclass = 1", "answerable": true, "closest": null}}
+]
