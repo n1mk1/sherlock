@@ -337,7 +337,8 @@ def test_a_step_the_critic_rejects_is_skipped(monkeypatch, tmp_path):
         report = client.get(f"{API}/datasets/{ds['id']}/report").json()
     assert [s["summary"] for s in report["steps"]] == ["Parse money as numbers (amount)"]
     skipped = {(s["detector"], s["column"]): s["reason"] for s in report["skipped"]}
-    assert skipped[("whitespace_case", "region")] == "Skipped: the review found it changed values it shouldn't have"
+    assert skipped[("whitespace_case", "region")] == ("Skipped: the review found it changed values it shouldn't have "
+                                                      "(State codes were re-cased)")
 
 
 def test_a_users_step_runs_first_and_records_what_they_asked(client):

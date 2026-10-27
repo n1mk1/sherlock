@@ -649,7 +649,9 @@ class Cleaner:
             # A domain rule's fix that only quarantines the rows the rule names is flagged instead: the
             # rule, not the model, says those values are impossible.
             if rule is None or not rule_only(full_report):
-                return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", "gate", candidates=chips,
+                said = next((c for c in critique.concerns if prose(c)), None)  # its first concern, as the flag shows it
+                return self._skip(issue, "Skipped: the review found it changed values it shouldn't have"
+                                  + (f" ({said.rstrip('.')})" if said else ""), "gate", candidates=chips,
                                   checks=full_report.hard)
             overruled = True
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]

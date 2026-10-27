@@ -1526,7 +1526,7 @@ Issues the user shaped are `requested`:
   - In a whole-dataset clean, a hand-edited cell in a column the step retypes is parsed with the rest of the column.
 
 **7. Critic** (`medium`, schema `Critique`: `{changed_something_it_shouldnt, concerns[≤ 5]}`). It sees the label, the code, up to 12 changed values, the counts (cells changed, outside the column, rows quarantined, the issue's count before → after) and the hard checks, and judges against the user's instruction when there is one.
-- **The verdict skips the step.** `changed_something_it_shouldnt` skips it before the gate ("Skipped: the review found it changed values it shouldn't have"); the review's 0.2 share of the confidence couldn't stop a commit on its own. This holds for requested steps too.
+- **The verdict skips the step.** `changed_something_it_shouldnt` skips it before the gate ("Skipped: the review found it changed values it shouldn't have", then its first concern without digits in brackets, as `prose` keeps it); the review's 0.2 share of the confidence couldn't stop a commit on its own. This holds for requested steps too.
 - **The overrule.** For a domain rule, the critic's objection is overruled when the fix only quarantines rows, rewrites no cell and leaves none of the issue (`loop.rule_only`). The step is committed with a flag (`gate.overrule`: "the review objected, but every row it sets aside breaks the rule (customer_age must be between 0 and 120)").
 - **Concerns** don't lower confidence and can't keep a step from committing. They're recorded in the step's decision (`review`) and on the log line (`review`).
 - A review that can't be read counts as not passed (it lowers the confidence) but doesn't skip.
