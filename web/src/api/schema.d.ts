@@ -688,6 +688,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Rules */
+        get: operations["list_rules_api_v1_datasets__dataset_id__rules_get"];
+        put?: never;
+        /**
+         * Add Rule
+         * @description Save a check: validated against the file's columns (422 names the bad field), run on the
+         *     current version, and added to an open plan.
+         */
+        post: operations["add_rule_api_v1_datasets__dataset_id__rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/runs": {
         parameters: {
             query?: never;
@@ -1187,6 +1209,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/rules/{rid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Rule */
+        patch: operations["patch_rule_api_v1_rules__rid__patch"];
         trace?: never;
     };
     "/api/v1/runs/{rid}": {
@@ -1817,9 +1856,10 @@ export interface components {
              * Op
              * @enum {string}
              */
-            op: "tick" | "untick" | "tick_module" | "untick_module" | "tick_level" | "untick_level" | "set_instruction" | "set_date_order" | "add" | "remove";
+            op: "tick" | "untick" | "tick_module" | "untick_module" | "tick_level" | "untick_level" | "set_instruction" | "set_date_order" | "add" | "remove" | "add_rule";
             /** Order */
             order?: ("dmy" | "mdy") | null;
+            rule?: components["schemas"]["RuleIn"] | null;
         };
         /** PlanPatch */
         PlanPatch: {
@@ -1835,6 +1875,40 @@ export interface components {
             /** Calls */
             calls: components["schemas"]["ModelCall"][];
             total: components["schemas"]["CallTotals"];
+        };
+        /** RuleIn */
+        RuleIn: {
+            /**
+             * Action
+             * @default flag
+             * @enum {string}
+             */
+            action: "quarantine" | "flag" | "fix";
+            /** Column */
+            column: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "range" | "date_window" | "allowed" | "pattern" | "not_missing" | "unique" | "order" | "depends";
+            /**
+             * Params
+             * @default {}
+             */
+            params: {
+                [key: string]: unknown;
+            };
+        };
+        /** RulePatch */
+        RulePatch: {
+            /** Action */
+            action?: ("quarantine" | "flag" | "fix") | null;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            } | null;
+            /** Status */
+            status?: ("active" | "off") | null;
         };
         /**
          * Settings
@@ -3339,6 +3413,76 @@ export interface operations {
             };
         };
     };
+    list_rules_api_v1_datasets__dataset_id__rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_rule_api_v1_datasets__dataset_id__rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_run_api_v1_datasets__dataset_id__runs_post: {
         parameters: {
             query?: never;
@@ -4139,6 +4283,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_rule_api_v1_rules__rid__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RulePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

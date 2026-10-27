@@ -75,9 +75,11 @@ def column_entry(col: Column, rows: int) -> dict:
     }
 
 
-def build_datacard(conn: duckdb.DuckDBPyConnection, version: int) -> tuple[dict, Frame]:
+def build_datacard(conn: duckdb.DuckDBPyConnection, version: int, rules: list[dict] | None = None) -> tuple[dict, Frame]:
+    """The version's DataCard; `rules` are the dataset's active checks (PRD CLEAN-13), run by the rule detector."""
     df, types, quarantined = load_frame(conn)
     frame = build_frame(df, types)
+    frame.rules = list(rules or [])
     issues = []
     # The column lists the specs' `marks_column` fill (`leakage_candidates`), each present when empty.
     marked: dict[str, list] = {s.marks_column: [] for s in registry.all() if s.marks_column}

@@ -17,6 +17,9 @@ from sherlock.agent.answerers import CantAnswer, Toolkit
 from sherlock.agent.compose import fmt, fmt_kind
 from sherlock.cleaning import plan as plans
 from sherlock.cleaning import registry
+from sherlock.cleaning.rules import interpreter
+from sherlock.cleaning.rules import service as rule_service
+from sherlock.cleaning.rules.kinds import from_draft
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.jobs.events import emit
@@ -192,6 +195,7 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
     if row is None or row["dataset_id"] != dataset["id"] or row["status"] != "draft":
         raise CantAnswer("That cleaning plan isn't open any more. Press Clean with AI to open one.")
     row, _ = plans.current(db, row, dataset, lambda d: profile_service.get_or_build(kit.env.settings, db, kit.env.cache, d))
+    card = profile_service.get_or_build(kit.env.settings, db, kit.env.cache, dataset)
     items = json.loads(row["items_json"])
     columns = [c for c in ws.user_types(kit.env, dataset, dataset["current_version"])]
     refs = {f"f{n}": i for n, i in enumerate(items, 1)}
@@ -212,12 +216,17 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
                 op["module"] = e.module
             if e.op in ("tick_level", "untick_level"):
                 op["level"] = e.level
+            if e.op == "add_rule":
+                if e.rule is None:
+                    raise ValueError("add_rule needs its rule")
+                op["rule"] = from_draft(e.rule.model_dump())
+                interpreter.validate(op["rule"], rule_service.columns(card))  # a RuleError, a ValueError: repaired
             if e.op in ("set_instruction", "add"):
                 op["instruction"] = e.instruction
             if e.op == "add":
                 op["column"] = e.column
             ops.append(op)
-        plans.apply_ops(items, ops, columns, source="chat")  # raises PlanError, a ValueError: the repair sees it
+        plans.apply_ops(items, [o for o in ops if o["op"] != "add_rule"], columns, source="chat")  # PlanError: repaired
         return ops
 
     messages = [{"role": "system", "content": prompts.SYSTEM},
@@ -230,8 +239,8 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
         draft = kit.llm.structured("medium", messages, PlanEdits, purpose="plan_edits", scope=kit.scope, validate=check).value
     except StructuredOutputError as exc:
         raise CantAnswer(f"I couldn't change the plan: {str(exc).split(': ', 1)[-1][:200]}") from None
-    new_items, summary = plans.apply_ops(items, to_ops(draft), columns, source="chat")
-    plans.save(db, row["id"], new_items)
+    _, summary = rule_service.apply(kit.env.settings, db, kit.env.cache, kit.env.bus, dataset, row, to_ops(draft), columns,
+                                    source="chat")
     emit(db, kit.env.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]})
     return summary
 

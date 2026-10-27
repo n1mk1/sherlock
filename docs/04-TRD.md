@@ -585,6 +585,9 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 | Method | Path | Body / Query | Response |
 |---|---|---|---|
 | GET | `/detectors` | — | `{ detectors: [{ id, label, description, group, default_level, source }] }` (the detector catalog, §7.1 step 4) |
+| GET | `/datasets/{id}/rules` | — | `{ rules: Rule[] }`, oldest first |
+| POST | `/datasets/{id}/rules` | `{ kind, column, params, action }` | `201 Rule`; `422` names the bad field ("column: name is text; a range check needs int or float.") |
+| PATCH | `/rules/{rid}` | `{ status?: "active"\|"off", params?, action? }` | `Rule` |
 | POST | `/datasets/{id}/clean` | `{ mode: "auto"\|"stepwise", scope: CleanScope, include_user_edited: bool, plan_id? }` | `201 Job` |
 | POST | `/datasets/{id}/clean/plan` | `{ scope?: CleanScope }` | `CleanPlan`: made (`201`) or the draft already open (`200`), merged onto the current version when it's older |
 | GET | `/clean-plans/{pid}` | — | `CleanPlan` (a stale draft is merged first) |
@@ -600,6 +603,11 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
 `CleanScope`: `{ kind: "all"|"selection"|"new_rows", selection_id?, row_ids? }`.
+
+**Rules** (`routers/rules.py`, `cleaning/rules/service.py`, PRD CLEAN-13): a dataset's checks (§7.1 step 4).
+- **`Rule`**: `{ id: "rul_…", source: "user"|"suggested"|"pack", status: "active"|"suggested"|"off", kind, column, params, action, reason?, words, count, error }`. `words` is the rule in plain words ("fare is at most 100"). `count` is how many rows break it on the current version, run by code on every read, null for an `off` rule; `error` is "This check took too long" or "A column this check reads is no longer in the file", else null.
+- **Saving, changing or switching off** a rule (`rules.service.add`, `change`) validates it against the current version's columns, rebuilds that version's DataCard so the plan, the Cleaner and the review see it, and merges an open draft plan onto it (`plan.merge`, `plan.updated`): a new rule's item comes in, an `off` rule's goes. A rule runs on every later version.
+- `add_rule` (below) does the same from the plan.
 
 **`GET /detectors`** (`registry.catalog`, PRD CLEAN-12) lists every registered detector in run order. `label` is its plain words ("placeholder values"), `group` its plan module, `default_level` one of `breaks`, `skews`, `splits`, `check`, `cosmetic`, or null for a detector whose issues are never changed (leakage, ID candidates), and `source` is `builtin`. The web app reads its labels from it once per session (`useDetectorLabel`); before it loads, or for an id it doesn't list, a label is the id in words, and a user's step is "your step".
 
@@ -645,6 +653,7 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 | `set_instruction` | `item_id`, `instruction\|null` | rewrites a fix; null puts Sherlock's wording back (a user's step can't be reset, only removed). "Rewrote missing values in age.", "Put Sherlock's wording back on …" |
 | `add` | `column\|null`, `instruction` | a user's step on one of the file's user columns, or on the rows (null). "Added 2 steps on name, the rows." |
 | `remove` | `item_id` | removes a user's step; on a Sherlock fix it unticks it. "Removed your 1 step on name." |
+| `add_rule` | `rule: { kind, column, params, action }` | saves a check of your own (PRD CLEAN-13, `rules.service.apply`): every rule and op of the request is checked first (`422` "rule.<field>: …"), then the rules are saved, their items come in, and the other ops apply. "Added your check: fare is at most 100." |
 | `set_date_order` | `item_id`, `order: "dmy"\|"mdy"\|null` | sets or clears the date order; `422` on another item ("… has no date order to choose; only ambiguous dates do."). "Set the date order of visit_date to day-first.", "Cleared the date order of visit_date." |
 
 An instruction is 1–500 characters after its whitespace is collapsed. Chat's `edit_plan` can't set the date order; it can rewrite the fix in words instead.
@@ -1398,8 +1407,8 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
    - It produces version 2, which is then profiled.
    - Like every step it can be undone. The Changes panel warns first that undoing it turns every column back into text, so charts and models that need numbers will stop working.
 4. **Detectors.** Run every enabled detector (`registry.run_all`, PRD §7.3.2) on the typed version and write the results to the DataCard's `issues` and to the `issues` table, most severe first. Severity = min(count / rows, 1) × the detector's `spec.weight`: leakage 1.0, mixed types 0.9, exact and near duplicates 0.8, sentinels 0.7, impossible values 0.7, numbers stored as text 0.6, ambiguous dates 0.6, mojibake 0.6, cross-column violations 0.6, missing values (missingness patterns) 0.5, near-duplicate categories 0.5, unit mixes 0.5, broken functional dependencies 0.5, whitespace/case 0.4, outliers 0.3, ID candidates 0.2. A finding of a detector with `spec.marks_column` also goes on that DataCard list (`leakage_candidates`: `{ column, target, reason }`).
-   - **The registry** (`cleaning/registry.py`, PRD CLEAN-12). Each module in `cleaning/detectors/` exports a `DetectorSpec` (`SPEC`, `detectors/base.py`), and `detectors.BUILTINS` lists the 16 in run order. They register when the registry is imported. `register` takes specs together and refuses, with `RegistryError`, all of them if one has a duplicate or non-snake_case id, a `group` outside `types`, `missing`, `text`, `records`, `outliers`, `other`, a `default_level` outside `breaks`, `skews`, `splits`, `check`, `cosmetic` (null only with `never_change`), a `scope` outside `column`, `rows`, `columns`, a weight outside 0–1, no label or description, or a `runs_before` that names an unknown id or makes a cycle. A refused built-in fails the import, so the API doesn't start.
-   - **Lookups.** `all()` and `enabled()` (the specs with `enabled_by_default`, today all 16), in run order; `get(id)`; `label(id)`; `catalog()` for `GET /detectors` (§4.4). `get` of an id that isn't registered returns an "unknown detector" spec: its id in words as the label, group `other`, weight 0, and a `detect` that finds nothing.
+   - **The registry** (`cleaning/registry.py`, PRD CLEAN-12). Each module in `cleaning/detectors/` exports a `DetectorSpec` (`SPEC`, `detectors/base.py`), and `detectors.BUILTINS` lists the 16 in run order. They register when the registry is imported, with the rule detector after them. `register` takes specs together and refuses, with `RegistryError`, all of them if one has a duplicate or non-snake_case id, a `group` outside `types`, `missing`, `text`, `records`, `outliers`, `other`, a `default_level` outside `breaks`, `skews`, `splits`, `check`, `cosmetic` (null only with `never_change`), a `scope` outside `column`, `rows`, `columns`, a weight outside 0–1, no label or description, or a `runs_before` that names an unknown id or makes a cycle. A refused built-in fails the import, so the API doesn't start.
+   - **Lookups.** `all()` and `enabled()` (the specs with `enabled_by_default`, today all 17), in run order; `get(id)`; `label(id)`; `catalog()` for `GET /detectors` (§4.4). `get` of an id that isn't registered returns an "unknown detector" spec: its id in words as the label, group `other`, weight 0, and a `detect` that finds nothing.
    - **`DetectorSpec`.** `id` (stored as `issues.detector`), `label`, `description`, `group` (the plan module, §4.4), `weight`, `default_level`, `scope` (`column`; `rows` for duplicates; `columns` for cross-column and functional dependencies), `detect`, and `version` (1), `source` (`builtin`) and `enabled_by_default`. What the Cleaner does with its issues (§7.2):
 
      | Field | Built-ins | Effect |
@@ -1416,6 +1425,25 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
      An `Injector` is `damage(df, column, rows, rng)` → the cells to change, `{(row, column): value}`, plus `missing_ok` and `share`. The built-ins' damage kinds: `missing` (emptied), `mixed_types` `spelled` (whole numbers spelled out) and `dmy_date`, `sentinels` `sentinel`, `whitespace_case` `case`, `near_duplicate_categories` `typo`, `duplicates` `repeat` (a row copied from another), `impossible_values` `negative`, `numbers_as_text` `money`, `ambiguous_dates` `dmy_text` and `mdy_text`, `mojibake`, `unit_mixes` `unit` (a smaller unit), `cross_column` `order` (a later value before its earlier one), `functional_dependency` `broken`, `outliers` `extreme` (fifty times larger).
 
      `default_level` is set on every spec that can change data. `GET /detectors` lists it; it doesn't change the plan or the queue.
+   - **The rule detector** (`cleaning/rules/`, PRD CLEAN-13). One more registered detector, `rule` ("your check", after the 16), runs the dataset's active rules (`Frame.rules`, from `detector_rules`, Schema §2.25), which the profile passes to `build_datacard`. A rule is data, run by a fixed interpreter (`rules/interpreter.py`), never code. Each rule is its own finding, detector `rule:<rule id>` (`registry.get` maps an id with a `:` to the detector before it), so it is counted, levelled, rated, queued and keyed (`rule:<id>|<column>`) like any other. Its finding carries, in `details`, the rule, its words, its kind's default level and its action, which override the spec's behaviour for that finding (`registry.setting`):
+     - `quarantine`: `domain_rule`, so the rule's own quarantine (`rules.interpreter.quarantine`, the spec's `code_fix`) joins the candidates and wins when it passes (§7.2);
+     - `flag`: `never_change`, its reason the rule's words, so it is listed under "Marked, not changed" with its count and never changed;
+     - `fix`: the Cleaner's normal diagnose and propose, with the rule's words as the planned fix.
+
+     | Kind | Column types | Parameters | Finds | Default level |
+     |---|---|---|---|---|
+     | `range` | int, float | `min`, `max` (either may be null) | numbers outside the range | skews |
+     | `date_window` | date, datetime | `earliest`, `latest` (ISO; either may be null) | dates outside the window | skews |
+     | `allowed` | category, text, bool, id, int | `values` (1–200) | values not in the list, ignoring case and spacing | splits |
+     | `pattern` | category, text, id | `regex` | text that doesn't match the pattern | splits |
+     | `not_missing` | any | — | missing values | check |
+     | `unique` | any | — | repeats of a value after its first | skews |
+     | `order` | int, float, date, datetime | `left`, `op` (`<`, `<=`) | rows where `left` isn't before the column (both numbers, or both dates) | skews |
+     | `depends` | any | `from` | rows whose value isn't the one its `from` value usually has | check |
+
+     - **Checked when saved** (`interpreter.validate`, `RuleError` naming the field): a known kind and action, a column of the file of a type the kind takes, and parameters that fit it. A pattern is at most 200 characters, anchored (`^…$`), with no back-references and no repeated group that itself repeats, and must compile.
+     - **Run** vectorised in pandas, never `eval`, `query` or per-row Python, except the pattern: each distinct value is matched once with the `regex` package and a timeout. A rule that runs past `RULE_MAX_S` (2 s) on the version is stopped and finds nothing; its count reads "This check took too long".
+     - **The quarantine code** each kind writes for the sandbox builds the same mask from `pd.to_numeric`, `pd.to_datetime` and string methods, then `quarantine_rows(df, bad, 'check: <column>')`. The verifier re-runs the rule detector with the dataset's rules (`verifiers.verify(…, rules=)`), so a fix's before → after count is the rule's.
 5. **Value index.** For every dimension and target-like column of the current version, the distinct values with counts. Embedding the values of columns with ≤ 5,000 distinct values (`embed` role) into `value_index` is not built: `value_index.embedding` is always NULL (§3.5).
 6. **Ending.** Set status `offer`, with a draft cleaning plan when After upload is "Open the cleaning plan", or start the build when it is "I'll clean it myself". Emit `dataset.status`.
 
@@ -2401,7 +2429,7 @@ Actions: `create_widget(prompt|spec)`, `update_widget(id, patch|prompt)`, `run_r
 The route prompt lists only the exposed intents. An intent routed on a tab that doesn't expose it gets a sentence saying where it works (`ELSEWHERE`); `clean_selection` elsewhere answers "Cleaning from chat works from the CSV tab; select rows there, or use Clean with AI."
 
 **`edit_plan`** (PRD CLEAN-8b, `agent/actions.py::edit_plan`). It's offered while the chat context has `plan_id` (the open cleaning plan, which the web app sends while the plan panel is on screen), with the intent line "edit_plan: change the open cleaning plan: …" and the step label "Change the plan".
-- `medium` with schema `PlanEdits` `{ reading, ops: [{ op, item, module, level, column, instruction }] (1–20) }`, purpose `plan_edits`, reads the plan's items in a data block, one line each: a ref (`f1`, `f2`, … in the plan's order: module order, most severe first), module, `level <sev>`, column, issue, ticked/unticked/kept, source, the planned fix and, when a review gave one, "why: <reason>"; plus the file's columns and the message. `tick_level` and `untick_level` take a `level`.
+- `medium` with schema `PlanEdits` `{ reading, ops: [{ op, item, module, level, column, instruction }] (1–20) }`, purpose `plan_edits`, reads the plan's items in a data block, one line each: a ref (`f1`, `f2`, … in the plan's order: module order, most severe first), module, `level <sev>`, column, issue, ticked/unticked/kept, source, the planned fix and, when a review gave one, "why: <reason>"; plus the file's columns and the message. `tick_level` and `untick_level` take a `level`. `add_rule` takes a `rule` (`RuleDraft`: `kind`, `column`, `min`, `max`, `earliest`, `latest`, `values`, `regex`, `other`, `action`; `rules.kinds.from_draft` turns it into parameters), checked like a saved rule, so a bad one gets the repair. The prompt says to take every threshold from the message ("flag rows where fare is below zero").
 - Code maps the refs to item IDs and checks the ops with `plan.apply_ops`. A failure, such as a ref the plan doesn't have, gets the client's one repair, then "I couldn't change the plan: …". The ops apply at once (nothing touches the data until Start), with `source: "chat"` on added steps. The reply is `apply_ops`' code-written summary, and `plan.updated` refreshes the panel.
 - A `plan_id` that isn't a draft of this dataset answers "That cleaning plan isn't open any more. Press Clean with AI to open one." Without `plan_id`, a routed `edit_plan` answers "Changing a cleaning plan from chat works while the plan is open; press Clean with AI to open one."
 
@@ -2557,6 +2585,7 @@ Settings are read by `api/sherlock/config.py` (pydantic-settings) from the envir
 | `NEW_USERS_PER_IP_HOUR` | `300` | new cookie users per client IP per hour; `0` = no cap (§15) |
 | `TRUSTED_PROXY_HOPS` | `1` | `X-Forwarded-For` entries the host's proxies append after the client's (Render: 1) (§15) |
 | `CLEAN_MAX_STEPS` / `CLEAN_MAX_SECONDS` | `20` / `300` | issues attempted, committed or not / wall-clock seconds |
+| `RULE_MAX_S` | `2` | seconds a rule may run on a version before it's stopped: "This check took too long" (§7.1 step 4) |
 | `CLEAN_REVIEW` | `on` | `off`: no severity review; every plan item keeps code's default level (§7.2). The tests run with it off unless they test it |
 | `TAVILY_API_KEY` | empty | turns on web retrieval through Tavily (§3.6): search, extract and map. Empty: every web feature is off and says so in one line, and no request is sent. Secret; the notebook scan refuses a file that holds it |
 | `WEB_SEARCH` | `on` | `off` turns web retrieval off even with a key (§3.6). Not a user setting |

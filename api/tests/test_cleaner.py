@@ -221,7 +221,7 @@ def test_a_plan_round_trip_and_an_unticked_fix_is_skipped(client):
     plan = r.json()
     assert plan["status"] == "draft" and plan["source"] == "user" and plan["version"] == ds["current_version"]
     assert {i["key"] for i in plan["items"]} >= {"numbers_as_text|amount", "whitespace_case|region", "id_candidates|customer_id"}
-    assert all(i["ticked"] for i in plan["items"] if i["change"])
+    assert all(i["ticked"] == (i["sev"] != "check") for i in plan["items"] if i["change"])  # worth a look: unticked
     assert item(plan, "id_candidates|customer_id")["module"] == "kept" and not item(plan, "id_candidates|customer_id")["ticked"]
     assert client.get(f"{API}/datasets/{ds['id']}").json()["clean_plan_id"] == plan["id"]
     again = client.post(f"{API}/datasets/{ds['id']}/clean/plan")

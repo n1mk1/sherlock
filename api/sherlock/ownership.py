@@ -27,6 +27,7 @@ BARE_ID_KINDS: dict[str, tuple[str, str]] = {
     "message": ("messages", "mid"),
     "fact_sheet": ("fact_sheets", "fsid"),
     "clean_plan": ("clean_plans", "pid"),
+    "rule": ("detector_rules", "rid"),
 }
 
 

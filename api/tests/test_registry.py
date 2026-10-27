@@ -23,9 +23,10 @@ def spec(id="extra_check", **changes) -> DetectorSpec:
     return replace(base, **changes)
 
 
-def test_the_sixteen_built_ins_register_in_run_order():
-    assert [s.id for s in registry.all()] == [s.id for s in BUILTINS]
-    assert len(registry.all()) == 16 and registry.enabled() == registry.all()
+def test_the_sixteen_built_ins_and_the_rule_detector_register_in_run_order():
+    assert [s.id for s in registry.all()] == [s.id for s in BUILTINS] + ["rule"]
+    assert len(BUILTINS) == 16 and registry.enabled() == registry.all()
+    assert registry.get("rule:rul_123").id == "rule"  # a rule's finding is the rule detector's
     assert registry.get("sentinels").runs_before == ("impossible_values",)
 
 
@@ -78,11 +79,11 @@ def test_a_removed_detector_still_displays():
     assert gone not in registry.all()
 
 
-def test_get_detectors_lists_the_sixteen(client):
+def test_get_detectors_lists_the_sixteen_and_the_rule_detector(client):
     r = client.get("/api/v1/detectors")
     assert r.status_code == 200
     found = r.json()["detectors"]
-    assert [d["id"] for d in found] == [s.id for s in BUILTINS]
+    assert [d["id"] for d in found] == [s.id for s in BUILTINS] + ["rule"]
     by_id = {d["id"]: d for d in found}
     assert by_id["sentinels"] == {"id": "sentinels", "label": "placeholder values",
                                   "description": registry.get("sentinels").description, "group": "missing",

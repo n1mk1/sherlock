@@ -26,6 +26,19 @@ test("the plan groups fixes by level and starts worth-a-look fixes unticked", as
   await expect(missingAge).toBeChecked();
   await expectNoAxeViolations(page, "the cleaning plan by level");
 
+  // Add a check (PRD CLEAN-13): code counts it on the current version as soon as it's saved.
+  await page.getByRole("button", { name: "Add a check" }).click();
+  const form = page.getByRole("group", { name: "Add a check" });
+  await form.getByRole("combobox", { name: "Column" }).selectOption("fare");
+  await form.getByRole("textbox", { name: "Highest" }).fill("100");
+  await form.getByRole("button", { name: "Add check" }).click();
+  const kept = page.getByRole("region", { name: "Marked, not changed" });  // flagged: listed, not changed
+  const check = kept.getByRole("listitem").filter({ hasText: "your check" });
+  await expect(check).toContainText("fare is at most 100");
+  await expect(check).toContainText(/\d+/);
+  await check.getByRole("button", { name: "Turn off your check on fare" }).click();
+  await expect(kept.getByText("fare is at most 100")).toHaveCount(0);
+
   await page.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Clean with AI" })).toBeVisible();
 });

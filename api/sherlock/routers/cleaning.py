@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from sherlock.cleaning import plan as plans
 from sherlock.cleaning import registry, review
 from sherlock.cleaning.report import build_report
+from sherlock.cleaning.rules import service as rule_service
+from sherlock.cleaning.rules.kinds import RuleError
 from sherlock.db.connection import get_db
 from sherlock.errors import ApiError, not_found
 from sherlock.jobs.clean import queue_build
@@ -19,6 +21,7 @@ from sherlock.jobs.runner import to_job
 from sherlock.ownership import Owned, owned, owned_dataset
 from sherlock.profile import service as profile_service
 from sherlock.ratelimit import llm_rate_limit
+from sherlock.routers.rules import RuleIn
 from sherlock.widgets import service as ws
 
 router = APIRouter(tags=["cleaning"])
@@ -49,10 +52,11 @@ class PlanRequest(BaseModel):
 class PlanOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
     op: Literal["tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction",
-                "set_date_order", "add", "remove"]
+                "set_date_order", "add", "remove", "add_rule"]
     item_id: str | None = None
     module: str | None = None
     level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None = None  # tick_level, untick_level
+    rule: RuleIn | None = None  # add_rule: a check of your own (PRD CLEAN-13)
     column: str | None = None  # add: a column of the file, or null for the rows
     instruction: str | None = Field(default=None, max_length=plans.MAX_INSTRUCTION)  # null on set_instruction resets
     order: Literal["dmy", "mdy"] | None = None  # set_date_order: day-first or month-first; null clears it
@@ -229,10 +233,12 @@ def patch_plan(
     env = ws.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
     columns = list(ws.user_types(env, dataset, dataset["current_version"]))
     try:
-        items, summary = plans.apply_ops(json.loads(row["items_json"]), [o.model_dump() for o in body.ops], columns)
+        row, summary = rule_service.apply(env.settings, db, env.cache, env.bus, dataset, row,
+                                          [o.model_dump() for o in body.ops], columns)
+    except RuleError as exc:
+        raise ApiError(422, "invalid", f"rule.{exc.field}: {exc}") from None
     except plans.PlanError as exc:
         raise ApiError(422, "invalid", str(exc)) from None
-    row = plans.save(db, row["id"], items)
     _plan_event(request, db, dataset, row["id"])
     return {**_out(request.app, db, row, notes), "summary": summary}
 

@@ -206,7 +206,8 @@
           "module": null,
           "column": null,
           "instruction": null,
-          "level": null
+          "level": null,
+          "rule": null
         }
       ]
     }
@@ -245,7 +246,8 @@
           "module": null,
           "column": "name",
           "instruction": "Trim spaces in name",
-          "level": null
+          "level": null,
+          "rule": null
         }
       ]
     }
@@ -279,7 +281,8 @@
           "module": null,
           "column": null,
           "instruction": null,
-          "level": null
+          "level": null,
+          "rule": null
         }
       ]
     }

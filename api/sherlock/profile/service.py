@@ -57,8 +57,10 @@ def get_or_build(
             return stored  # built while this request waited
         # An undo version points at an earlier version's file, so the path comes from the row.
         folder = dataset_dir(settings, dataset["user_id"], dataset["id"])
+        from sherlock.cleaning.rules import store as rule_store
+
         with cache.connection(dataset["id"], version, folder / row["parquet_path"]) as conn:
-            card, frame = build_datacard(conn, version)
+            card, frame = build_datacard(conn, version, rule_store.active(db, dataset["id"]))
         _store(db, dataset["id"], version, card, frame, is_current=version == dataset["current_version"])
     return card
 

@@ -27,6 +27,7 @@ class Frame:
     df: pd.DataFrame
     columns: dict[str, Column]
     target_candidates: list[str] = field(default_factory=list)
+    rules: list[dict] = field(default_factory=list)  # the dataset's active rules, for the rule detector
 
     @property
     def rows(self) -> int:
@@ -87,6 +88,7 @@ class DetectorSpec:
     injectors: dict[str, Injector] = field(default_factory=dict)
     clean_fixture: Callable[[], tuple[pd.DataFrame, str]] | None = None
     found_fixture: Callable[[], pd.DataFrame] | None = None
+    fixture_rules: tuple[dict, ...] = ()  # rules the contract suite runs it with (the rule detector)
     enabled_by_default: bool = True
     source: str = "builtin"
 

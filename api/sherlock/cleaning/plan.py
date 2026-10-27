@@ -37,7 +37,7 @@ USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
 OPS = ("tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction",
-       "set_date_order", "add", "remove")
+       "set_date_order", "add", "remove")  # and add_rule, which `rules.service.apply` handles
 DATE_ORDERS = {"dmy": "day-first (dd/mm/yyyy)", "mdy": "month-first (mm/dd/yyyy)"}
 
 
@@ -55,8 +55,9 @@ def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
     for an ID by mistake still gets its types fixed): (reason, kind), kind being the id of the
     detector whose `skip_text` the log shows, or None for an issue the Cleaner may fix."""
     spec = registry.get(issue["detector"])
-    if spec.never_change is not None:
-        return spec.never_change, spec.id
+    reason = registry.setting(issue, "never_change")  # a flag rule's finding is never changed either
+    if reason is not None:
+        return reason, spec.id
     leaking = {c["column"] for c in card.get("leakage_candidates", [])}
     if issue["column"] in leaking:
         return f"{issue['column']} records the outcome, so it is not changed", "leakage"

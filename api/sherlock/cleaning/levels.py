@@ -58,7 +58,7 @@ def shift(level: str, by: int) -> str:
 def default_level(issue: dict, card: dict) -> str | None:
     """The level code gives an issue before any review (PRD CLEAN-8c)."""
     spec = registry.get(issue["detector"])
-    base = spec.default_level
+    base = registry.setting(issue, "default_level")  # a rule's finding carries its kind's
     if base is None or base == "check" or spec.scope == "rows":
         return base
     roles = {role(c, card) for c in columns_of(issue, card)}

@@ -29,7 +29,7 @@ from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import canvas, cards, chat, proposals, cleaning, datasets, exports, jobs, me, rows, runs, steps, streams, widgets
+from sherlock.routers import canvas, cards, chat, proposals, cleaning, datasets, exports, jobs, me, rows, rules, runs, steps, streams, widgets
 from sherlock.storage import VersionConnections, clear_spill
 from sherlock.storage_check import check_storage
 
@@ -169,6 +169,7 @@ def create_app() -> FastAPI:
     api.include_router(steps.router)
     api.include_router(rows.router)
     api.include_router(cleaning.router)
+    api.include_router(rules.router)
     api.include_router(jobs.router)
     api.include_router(streams.router)
     api.include_router(widgets.router)

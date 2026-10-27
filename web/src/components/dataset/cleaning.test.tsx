@@ -296,6 +296,23 @@ describe("the cleaning plan", () => {
     expect(sent(calls).filter((c) => c.method === "PATCH")[1].body).toEqual({ ops: [{ op: "tick_level", level: "check" }] });
   });
 
+  it("adds a check of your own as a plan op, with its parameters", async () => {
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": PLAN,
+      "GET /api/v1/datasets/ds_1/datacard": { columns: [{ name: "amount", type: "float" }, { name: "age", type: "float" }] },
+      "PATCH /api/v1/clean-plans/pln_1": PLAN,
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a check" }));
+    const form = screen.getByRole("group", { name: "Add a check" });
+    fireEvent.change(await within(form).findByRole("combobox", { name: "Column" }), { target: { value: "amount" } });
+    fireEvent.change(within(form).getByRole("textbox", { name: "Lowest" }), { target: { value: "0" } });
+    fireEvent.change(within(form).getByRole("combobox", { name: "Rows that break it" }), { target: { value: "quarantine" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Add check" }));
+    await waitFor(() => expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{
+      op: "add_rule", rule: { kind: "range", column: "amount", params: { min: 0, max: null }, action: "quarantine" } }] }));
+  });
+
   it("groups the fixes by level, with the review's reason or the default level, while it reviews", async () => {
     const bigFare = PLAN.items.map((i) => (i.id === "pit_fare" ? { ...i, severity: 0.5 } : i));
     mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, review: "running", items: bigFare } });

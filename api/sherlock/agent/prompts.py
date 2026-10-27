@@ -146,6 +146,7 @@ Ops:
 - set_instruction rewrites an item's fix in plain words, from the message; null puts Sherlock's wording back.
 - add makes a new step: a column of the file (or null for the rows) and what to do with it, in plain words.
 - remove deletes a step the user added (source you or chat).
+- add_rule adds a check of the user's own that code runs on every version: a kind (range: min and max; date_window: earliest and latest; allowed: values; pattern: an anchored regex; not_missing; unique; order: other comes first; depends: other determines the column), the column, and an action: quarantine the rows that break it, flag them for review, or fix the values. Take every threshold from the message, never invent one.
 Rules:
 - Items marked "kept" are never changed and can't be ticked.
 - Use only refs, modules and columns from the plan. Columns of the file: {columns}

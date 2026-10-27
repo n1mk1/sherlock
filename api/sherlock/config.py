@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     clean_max_seconds: int = 300
     # The background review that rates each finding's severity (TRD §7.2); off, every item keeps code's default level.
     clean_review: Literal["on", "off"] = "on"
+    rule_max_s: float = 2.0  # a rule running longer on a version is stopped: "This check took too long"
 
     # Web retrieval through Tavily (TRD §3.6): search, extract and map only. Empty key: every web feature is
     # off and says so in one line. WEB_SEARCH=off turns it off with a key set.

@@ -97,15 +97,17 @@ def _duck_type(s: pd.Series) -> str:
     return "VARCHAR"
 
 
-def issue_count(df: pd.DataFrame, detector: str, column: str | None) -> int:
-    """Re-run one detector on a frame (usable rows only) and count its findings for the column."""
+def issue_count(df: pd.DataFrame, detector: str, column: str | None, rules=()) -> int:
+    """Re-run one detector on a frame (usable rows only) and count its findings for the column; `rules`
+    are the dataset's checks, for the rule detector."""
     usable = df[df["_quarantine_reason"].isna()] if "_quarantine_reason" in df else df
     user = usable.set_index("_row_id").drop(columns=[c for c in SYSTEM if c in usable and c != "_row_id"])
     types = {c: _duck_type(user[c]) for c in user.columns}
     user = user.astype(object).where(user.notna(), None)
     frame = build_frame(user, types)
+    frame.rules = list(rules)
     detect = registry.get(detector).detect
-    return sum(f.count for f in detect(frame) if column is None or f.column == column)
+    return sum(f.count for f in detect(frame) if f.detector == detector and (column is None or f.column == column))
 
 
 def _is_placeholder(values: pd.Series) -> pd.Series:
@@ -133,7 +135,7 @@ def changed(bc: pd.Series, ac: pd.Series) -> pd.Series:
 
 
 def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, column: str | None,
-           requested: bool = False) -> Report:
+           requested: bool = False, rules=()) -> Report:
     r = Report()
     # --- row ledger -------------------------------------------------------------------------
     if "_row_id" not in after or len(after) != len(before) or set(after["_row_id"]) != set(before["_row_id"]):
@@ -193,8 +195,8 @@ def verify(before: pd.DataFrame, after: pd.DataFrame, detector: str | None, colu
     counted = False
     if detector:
         try:
-            r.issue_before = issue_count(before, detector, column)
-            r.issue_after = issue_count(after, detector, column)
+            r.issue_before = issue_count(before, detector, column, rules)
+            r.issue_after = issue_count(after, detector, column, rules)
             r.soft["resolved"] = 1.0 - (r.issue_after / r.issue_before) if r.issue_before else 1.0
             counted = True
         except Exception:  # a detector that can't run on the result counts as unresolved

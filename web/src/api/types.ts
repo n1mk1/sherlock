@@ -8,6 +8,9 @@ export type Settings = components["schemas"]["Settings"];
 export type Me = components["schemas"]["Me"];
 // One check in the detector catalog (`GET /detectors`, PRD CLEAN-12).
 export type Detector = components["schemas"]["Detector"];
+// A check of your own as you save it (`POST /datasets/{id}/rules`, PRD CLEAN-13).
+export type RuleIn = components["schemas"]["RuleIn"];
+export type RuleKind = RuleIn["kind"];
 export type Tab = "csv" | "dashboard" | "flow";
 
 export type JobKind =
@@ -130,6 +133,7 @@ export type PlanOp =
   | { op: "tick" | "untick" | "remove"; item_id: string }
   | { op: "tick_module" | "untick_module"; module: PlanModule }
   | { op: "tick_level" | "untick_level"; level: Level } // every fix of a level (PRD CLEAN-8c)
+  | { op: "add_rule"; rule: RuleIn } // a check of your own (PRD CLEAN-13)
   | { op: "set_instruction"; item_id: string; instruction: string | null } // null puts Sherlock's wording back
   | { op: "set_date_order"; item_id: string; order: "dmy" | "mdy" | null } // null clears the order
   | { op: "add"; column: string | null; instruction: string };

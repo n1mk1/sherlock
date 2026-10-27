@@ -23,7 +23,7 @@ const CATALOG: [string, string, string, string | null][] = [
   ["near_duplicate_categories", "near-duplicate categories", "text", "splits"], ["unit_mixes", "mixed units", "types", "skews"],
   ["functional_dependency", "rows breaking a dependency", "records", "check"],
   ["whitespace_case", "spacing or case variants", "text", "splits"], ["outliers", "outliers", "outliers", "check"],
-  ["id_candidates", "looks like an ID", "other", null],
+  ["id_candidates", "looks like an ID", "other", null], ["rule", "your check", "other", "skews"],
 ];
 export const DETECTORS = {
   detectors: CATALOG.map(([id, label, group, default_level]) => ({ id, label, description: "", group, default_level, source: "builtin" })),

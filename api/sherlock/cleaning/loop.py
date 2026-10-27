@@ -42,6 +42,7 @@ from sherlock.cleaning.plan import (
 )
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
+from sherlock.cleaning.rules import store as rule_store
 from sherlock.config import Settings
 from sherlock.errors import ApiError
 from sherlock.jobs.runner import JobCancelled, JobContext
@@ -127,7 +128,7 @@ def rule_candidate(issue: dict) -> Candidate | None:
     confidence or the critic's objection to a fix that only quarantines what the rule names flags the
     step instead of skipping it (TRD §7.2). None for other issues, or a rule the details don't give."""
     spec = registry.get(issue["detector"])
-    if issue.get("user") or not spec.domain_rule or spec.code_fix is None:
+    if issue.get("user") or not registry.setting(issue, "domain_rule") or spec.code_fix is None:
         return None
     return spec.code_fix(issue)
 
@@ -138,7 +139,7 @@ def code_fix(issue: dict) -> Candidate | None:
     tried when the model's proposal fails (a reply cut off at its token cap) or none of its candidates
     passes the checks, and on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
     spec = registry.get(issue["detector"])
-    if issue.get("user") or spec.domain_rule or spec.code_fix is None:
+    if issue.get("user") or registry.setting(issue, "domain_rule") or spec.code_fix is None:
         return None
     return spec.code_fix(issue)
 
@@ -262,6 +263,7 @@ class Cleaner:
         self.date_orders: dict[str, str] = run["date_orders"]     # the order picked for ambiguous dates, by key
         self.user_steps: list[dict] = run["user_steps"]           # in the plan's order
         self.levels: dict[str, str] = run["levels"]               # each listed fix's level, by key
+        self.rules = rule_store.active(self.db, self.dataset["id"])  # the dataset's checks, re-run by the verifier
         self.item_ids = {i["key"]: i["id"] for i in plan.get("items") or [] if i["key"]}
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
@@ -543,7 +545,7 @@ class Cleaner:
                 scored.append((cand, 0.0, None, str(exc)))
                 results.append(None)
                 return
-            report = verifiers.verify(sample, after, detector, column, requested=requested)
+            report = verifiers.verify(sample, after, detector, column, requested=requested, rules=self.rules)
             scored.append((cand, report.score, report, None if report.passed else _first_failure(report)))
             results.append(after if report.passed else None)
 
@@ -583,7 +585,7 @@ class Cleaner:
             after_full = self._restrict(before, self._read(full_out))
         except ScopeError as exc:
             return self._skip(issue, f"Not applied: {exc}", "failed_checks", candidates=chips)
-        full_report = verifiers.verify(before, after_full, detector, column, requested=requested)
+        full_report = verifiers.verify(before, after_full, detector, column, requested=requested, rules=self.rules)
         if not full_report.passed:
             return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", "failed_checks", candidates=chips,
                               checks=full_report.hard)

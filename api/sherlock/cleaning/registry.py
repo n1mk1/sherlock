@@ -13,6 +13,7 @@ import re
 
 from sherlock.cleaning.detectors import BUILTINS
 from sherlock.cleaning.detectors.base import GROUPS, LEVELS, SCOPES, DetectorSpec, Finding, Frame
+from sherlock.cleaning.rules.interpreter import SPEC as RULE
 
 ID = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -82,8 +83,9 @@ def enabled() -> list[DetectorSpec]:
 
 
 def get(detector: str) -> DetectorSpec:
-    """The spec for an id, or an "unknown detector" spec that finds nothing and changes nothing special."""
-    spec = _specs.get(detector)
+    """The spec for an id, or an "unknown detector" spec that finds nothing and changes nothing special.
+    An instance id, "<detector>:<instance>" (a rule's finding, `rule:rul_…`), is its detector's."""
+    spec = _specs.get(detector) or _specs.get(detector.split(":", 1)[0])
     if spec is not None:
         return spec
     return DetectorSpec(detector, detector.replace("_", " "), "A check that is no longer installed.",
@@ -110,6 +112,13 @@ def severity(finding: Finding, rows: int) -> float:
     return round(share * get(finding.detector).weight, 4)
 
 
+def setting(issue: dict, name: str):
+    """A behaviour of an issue: its finding's own (`details`, a rule's action) or else its spec's
+    (`domain_rule`, `never_change`, `default_level`)."""
+    own = (issue.get("details") or {}).get(name)
+    return own if own is not None else getattr(get(issue["detector"]), name)
+
+
 def run_all(frame: Frame) -> list[tuple[Finding, float]]:
     """Every enabled detector's findings with severities, most severe first."""
     results = []
@@ -127,4 +136,4 @@ def catalog() -> list[dict]:
              "default_level": s.default_level, "source": s.source} for s in _specs.values()]
 
 
-register(*BUILTINS)
+register(*BUILTINS, RULE)

@@ -16,9 +16,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { makeSelection } from "@/api/csv";
 import {
-  stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useStartCleaning, type CleanScope,
+  stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useRuleStatus, useStartCleaning,
+  type CleanScope,
 } from "@/api/queries";
-import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope } from "@/api/types";
+import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind } from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { displayValue } from "@/lib/cells";
@@ -209,13 +210,16 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
       <div className={cn("flex flex-col", side ? "gap-3" : "mt-6 gap-5")}>
         {groups.map((g) => (
           <PlanGroup key={g.group} group={g.group} title={g.title} items={g.items} side={side} busy={ops.isPending}
-            send={send} onDirty={markDirty}
+            send={send} onDirty={markDirty} planId={plan.id}
             onTickAll={(on) => send([g.group === "yours"
               ? { op: on ? "tick_module" : "untick_module", module: "yours" }
               : { op: on ? "tick_level" : "untick_level", level: g.group as Level }])} />
         ))}
         {!changeable.length && <p className="text-muted-foreground">Nothing that needs cleaning yet. Add a step of your own below.</p>}
-        <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
+        <div className="flex flex-wrap gap-x-2">
+          <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
+          <AddCheck datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("check", on)} />
+        </div>
       </div>
 
       <div className={cn("flex flex-col gap-1.5", side ? "border-t border-border pt-3" : "mt-6")}>
@@ -306,9 +310,9 @@ export function DateOrder({ item, busy, onPick }: {
   );
 }
 
-function PlanGroup({ group, title, items, side, busy, send, onDirty, onTickAll }: {
+function PlanGroup({ group, title, items, side, busy, send, onDirty, onTickAll, planId }: {
   group: Group; title: string; items: CleanPlanItem[]; side: boolean; busy: boolean;
-  send: Send; onDirty: (id: string, on: boolean) => void; onTickAll: (on: boolean) => void;
+  send: Send; onDirty: (id: string, on: boolean) => void; onTickAll: (on: boolean) => void; planId: string;
 }) {
   const kept = group === "kept";
   const on = items.filter((i) => i.ticked).length;
@@ -328,15 +332,18 @@ function PlanGroup({ group, title, items, side, busy, send, onDirty, onTickAll }
         {!kept && <span className="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{on} of {items.length}</span>}
       </div>
       <ul className="flex flex-col">
-        {items.map((i) => <ItemRow key={i.id} item={i} side={side} busy={busy} send={send} onDirty={(on) => onDirty(i.id, on)} />)}
+        {items.map((i) => <ItemRow key={i.id} item={i} side={side} busy={busy} send={send} onDirty={(on) => onDirty(i.id, on)}
+          planId={planId} />)}
       </ul>
     </section>
   );
 }
 
-function ItemRow({ item, side, busy, send, onDirty }: {
-  item: CleanPlanItem; side: boolean; busy: boolean; send: Send; onDirty: (on: boolean) => void;
+function ItemRow({ item, side, busy, send, onDirty, planId }: {
+  item: CleanPlanItem; side: boolean; busy: boolean; send: Send; onDirty: (on: boolean) => void; planId: string;
 }) {
+  const ruleStatus = useRuleStatus(planId);
+  const ruleId = item.detector.startsWith("rule:") ? item.detector.slice("rule:".length) : null;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const label = useDetectorLabel()(item.detector);
@@ -379,6 +386,14 @@ function ItemRow({ item, side, busy, send, onDirty }: {
             aria-label={yours ? `Edit your step on ${item.column ?? "the rows"}` : `Rewrite the fix for ${name}`}
             className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
             <Pencil className="size-3.5" />
+          </button>
+        )}
+        {ruleId && (
+          <button type="button" disabled={busy || ruleStatus.isPending}
+            onClick={() => ruleStatus.mutate({ ruleId, status: "off" }, { onError: (e) => toast.error((e as Error).message) })}
+            aria-label={`Turn off your check on ${item.column ?? "the rows"}`}
+            className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
+            <X className="size-3.5" />
           </button>
         )}
         {yours && (
@@ -445,6 +460,102 @@ function InstructionEditor({ item, busy, onDirty, onCancel, onSave }: {
 }
 
 /** "+ Add a step": a column of the file (or the rows) and what to do, in plain words. */
+// "Add a check" (PRD CLEAN-13): a rule code runs on every version; its count shows as soon as it's saved.
+const KINDS: [RuleKind, string][] = [
+  ["range", "Numbers between"], ["date_window", "Dates between"], ["allowed", "One of these values"],
+  ["pattern", "Matches a pattern"], ["not_missing", "Never missing"], ["unique", "Never repeated"],
+  ["order", "Comes after another column"], ["depends", "Set by another column"],
+];
+const ACTIONS: [RuleIn["action"], string][] = [
+  ["flag", "Flag the rows for review"], ["quarantine", "Quarantine the rows"], ["fix", "Fix the values"],
+];
+
+export function ruleParams(kind: RuleKind, f: Record<string, string>): Record<string, unknown> {
+  const num = (v: string) => (v.trim() === "" ? null : Number(v));
+  switch (kind) {
+    case "range": return { min: num(f.min ?? ""), max: num(f.max ?? "") };
+    case "date_window": return { earliest: f.min || null, latest: f.max || null };
+    case "allowed": return { values: (f.values ?? "").split(",").map((v) => v.trim()).filter(Boolean) };
+    case "pattern": return { regex: f.values ?? "" };
+    case "order": return { left: f.other ?? "", op: "<" };
+    case "depends": return { from: f.other ?? "" };
+    default: return {};
+  }
+}
+
+function AddCheck({ datasetId, busy, send, onDirty }: {
+  datasetId: string; busy: boolean; send: Send; onDirty: (on: boolean) => void;
+}) {
+  const { data: card } = useDatacard(datasetId);
+  const [open, setOpen] = useState(false);
+  const [column, setColumn] = useState("");
+  const [kind, setKind] = useState<RuleKind>("range");
+  const [action, setAction] = useState<RuleIn["action"]>("flag");
+  const [f, setF] = useState<Record<string, string>>({});
+  const close = () => { setOpen(false); setColumn(""); setF({}); onDirty(false); };
+  const set = (k: string, v: string) => { setF((x) => ({ ...x, [k]: v })); onDirty(true); };
+  const columns = card?.columns ?? [];
+  if (!open) {
+    return <Button variant="link" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus /> Add a check</Button>;
+  }
+  const field = (k: string, label: string, placeholder = "") => (
+    <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+      {label}
+      <input value={f[k] ?? ""} placeholder={placeholder} onChange={(e) => set(k, e.target.value)}
+        className="h-8 rounded-md border border-input bg-card px-2 text-[13px] text-foreground" />
+    </label>
+  );
+  const pick = (k: string, label: string) => (
+    <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+      {label}
+      <select value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)}
+        className="h-8 rounded-md border border-input bg-card px-2 font-mono text-[13px] text-foreground">
+        <option value="">Choose a column</option>
+        {columns.filter((c) => c.name !== column).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div className="flex w-full flex-col gap-2 rounded-[14px] border border-border p-3" role="group" aria-label="Add a check">
+      <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+        Column
+        <select value={column} onChange={(e) => { setColumn(e.target.value); onDirty(true); }}
+          className="h-8 rounded-md border border-input bg-card px-2 font-mono text-[13px] text-foreground">
+          <option value="">Choose a column</option>
+          {columns.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+        Check
+        <select value={kind} onChange={(e) => { setKind(e.target.value as RuleKind); setF({}); }}
+          className="h-8 rounded-md border border-input bg-card px-2 text-[13px] text-foreground">
+          {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+      </label>
+      {kind === "range" && <div className="flex gap-2">{field("min", "Lowest")}{field("max", "Highest")}</div>}
+      {kind === "date_window" && <div className="flex gap-2">{field("min", "Earliest", "YYYY-MM-DD")}{field("max", "Latest", "YYYY-MM-DD")}</div>}
+      {kind === "allowed" && field("values", "Allowed values, separated by commas")}
+      {kind === "pattern" && field("values", "Pattern", "^[A-Z]{2}-[0-9]+$")}
+      {kind === "order" && pick("other", "After the column")}
+      {kind === "depends" && pick("other", "Set by the column")}
+      <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+        Rows that break it
+        <select value={action} onChange={(e) => setAction(e.target.value as RuleIn["action"])}
+          className="h-8 rounded-md border border-input bg-card px-2 text-[13px] text-foreground">
+          {ACTIONS.map(([a, label]) => <option key={a} value={a}>{label}</option>)}
+        </select>
+      </label>
+      <div className="flex justify-end gap-1.5">
+        <Button size="sm" variant="ghost" onClick={close}>Cancel</Button>
+        <Button size="sm" variant="primary" disabled={busy || !column}
+          onClick={() => send([{ op: "add_rule", rule: { kind, column, params: ruleParams(kind, f), action } }], close)}>
+          Add check
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AddStep({ datasetId, busy, send, onDirty }: {
   datasetId: string; busy: boolean; send: Send; onDirty: (on: boolean) => void;
 }) {

@@ -27,6 +27,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
   | `007_llm_fallback.sql` | `llm_calls.fallback_from` (§2.18) |
   | `008_column_notes.sql` | `column_notes` (§2.23) |
   | `009_issue_review.sql` | `issues.detector_version`, `issues.skip_kind` (§2.8); `issue_reviews` (§2.24) |
+  | `010_detector_rules.sql` | `detector_rules` and `detector_rules_dataset` (§2.25) |
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
@@ -738,6 +739,28 @@ CREATE TABLE issue_reviews (
 - Written by the `review_issues` job (TRD §7.2), one row per issue key it sent, model or default, replacing the version's rows.
 - Deleted with the dataset by the foreign key cascade (§6).
 
+### 2.25 detector_rules
+
+Checks without code (PRD CLEAN-13, TRD §7.1 step 4): constraints on a dataset's columns that the rule detector runs on every version, so a check is data, never code.
+
+```sql
+CREATE TABLE detector_rules (
+  id          TEXT PRIMARY KEY,                -- rul_…
+  user_id     TEXT NOT NULL,
+  dataset_id  TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  source      TEXT NOT NULL,                   -- user|suggested|pack
+  status      TEXT NOT NULL,                   -- active|suggested|off
+  spec_json   TEXT NOT NULL,                   -- {kind, column, params, action, reason?}
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX detector_rules_dataset ON detector_rules(dataset_id);
+```
+
+- **`spec_json`** is the rule as checked when it was saved (`rules.interpreter.validate`): `kind` (`range`, `date_window`, `allowed`, `pattern`, `not_missing`, `unique`, `order`, `depends`), `column`, its `params`, `action` (`quarantine`, `flag`, `fix`), and for a suggestion the model's `reason`.
+- Only `active` rules run. `off` keeps a rule so it can be turned on again; a dismissed suggestion stays `off`, so the same kind on the same column isn't suggested again.
+- Deleted with the dataset by the foreign key cascade (§6).
+
 ---
 
 ## 3. DuckDB (in-memory, cached per version)
@@ -842,7 +865,7 @@ The `purge` job (`sherlock/jobs/purge.py`) runs these six steps, in this order, 
 
 **Hard-deleting a dataset** (`hard_delete_dataset`) drops its cached DuckDB connections, removes its folder, then deletes its rows:
 - Cleared explicitly (`LOOSE_TABLES`, no cascading key): `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals`, `value_index`.
-- Then the `datasets` row; the cascading foreign keys remove `versions` (and `datacards`), `steps`, `widgets`, `layouts`, `cards`, `canvases`, `runs`, `jobs`, `messages`, `selections`, `exports`, `clean_plans`, `column_notes` and `issue_reviews`.
+- Then the `datasets` row; the cascading foreign keys remove `versions` (and `datacards`), `steps`, `widgets`, `layouts`, `cards`, `canvases`, `runs`, `jobs`, `messages`, `selections`, `exports`, `clean_plans`, `column_notes`, `issue_reviews` and `detector_rules`.
 - Kept: `llm_calls` and `sandbox_runs`, which the daily budgets and spend figures read (§2.18). `web_cache` belongs to no dataset.
 - Only `datasets` references `users`, so deleting a user with no datasets removes that row alone.
 

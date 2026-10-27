@@ -24,8 +24,11 @@ def ids(specs):
     return [s.id for s in specs]
 
 
-def frame(df: pd.DataFrame):
-    return build_frame(df.astype(object).where(df.notna(), None), {})
+def frame(df: pd.DataFrame, spec=None):
+    """The frame a detector sees; the rule detector runs with its fixture rules."""
+    f = build_frame(df.astype(object).where(df.notna(), None), {})
+    f.rules = list(spec.fixture_rules) if spec else []
+    return f
 
 
 def damaged(spec, kind: str | None = None, seed: int = 3):
@@ -40,7 +43,7 @@ def damaged(spec, kind: str | None = None, seed: int = 3):
     dirty = df.copy()
     for (i, c), value in edits.items():
         dirty.at[i, c] = value
-    return frame(dirty), column, len({i for i, _ in edits})
+    return frame(dirty, spec), column, len({i for i, _ in edits})
 
 
 def found_on(spec, findings, column):
@@ -56,7 +59,7 @@ def test_metadata(spec):
 
 @pytest.mark.parametrize("spec", RATED, ids=ids(RATED))
 def test_finds_nothing_in_the_shared_clean_frame(spec):
-    assert spec.detect(frame(fixtures.clean_frame())) == []
+    assert spec.detect(frame(fixtures.clean_frame(), spec)) == []
 
 
 @pytest.mark.parametrize("spec", RATED, ids=ids(RATED))
@@ -65,7 +68,7 @@ def test_finds_nothing_in_its_own_clean_fixture(spec):
     assert spec.clean_fixture and spec.injectors, f"{spec.id} needs a clean fixture and an injector"
     df, column = spec.clean_fixture()
     assert column in df.columns
-    assert spec.detect(frame(df)) == []
+    assert spec.detect(frame(df, spec)) == []
 
 
 @pytest.mark.parametrize("spec", RATED, ids=ids(RATED))
@@ -82,7 +85,7 @@ def test_a_detector_that_never_changes_data_finds_its_fixture(spec):
 
 
 def _subject(spec):
-    return damaged(spec)[0] if spec.injectors else frame(spec.found_fixture())
+    return damaged(spec)[0] if spec.injectors else frame(spec.found_fixture(), spec)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=ids(SPECS))
@@ -93,7 +96,7 @@ def test_deterministic_pure_and_well_shaped(spec):
     assert [vars(x) for x in first] == [vars(x) for x in second]
     pd.testing.assert_frame_equal(f.df, before)
     for x in first:
-        assert x.detector == spec.id and x.count > 0
+        assert x.detector.split(":")[0] == spec.id and x.count > 0
         assert (x.column is None) == (spec.scope == "rows") and (x.column is None or x.column in f.columns)
         assert len(x.examples) <= 5
         json.dumps(x.details)

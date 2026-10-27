@@ -77,10 +77,10 @@ def _check_refs(refs: list[str]):
 
 def floor(issue: dict, card: dict, level: str) -> str:
     """On the target or a measure, never less severe than the detector's own default level."""
-    spec = registry.get(issue["detector"])
+    own = registry.setting(issue, "default_level")
     roles = {levels.role(c, card) for c in levels.columns_of(issue, card)}
-    if spec.default_level and roles & {"target", "measure"} and levels.rank(level) > levels.rank(spec.default_level):
-        return spec.default_level
+    if own and roles & {"target", "measure"} and levels.rank(level) > levels.rank(own):
+        return own
     return level
 
 

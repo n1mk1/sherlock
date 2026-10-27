@@ -96,7 +96,8 @@ export function useDetectorLabel(): (detector: string) => string {
   const { data } = useDetectors();
   return useCallback((detector: string) => {
     if (detector === "user_request") return "your step";
-    return data?.detectors.find((d) => d.id === detector)?.label ?? detector.replace(/_/g, " ");
+    const id = detector.split(":")[0]; // a rule's finding, "rule:rul_…", is the rule detector's
+    return data?.detectors.find((d) => d.id === id)?.label ?? id.replace(/_/g, " ");
   }, [data]);
 }
 
@@ -216,6 +217,8 @@ export function applyPlanOps(plan: CleanPlan, ops: PlanOp[]): CleanPlan {
   for (const op of ops) {
     if ("module" in op) {
       for (const i of items) if (i.module === op.module && i.change) i.ticked = op.op === "tick_module";
+    } else if ("level" in op) {
+      for (const i of items) if (i.sev === op.level && i.change && i.key) i.ticked = op.op === "tick_level";
     } else if ("item_id" in op) {
       const i = items.find((x) => x.id === op.item_id);
       if (!i?.change) continue;
@@ -272,6 +275,16 @@ export function usePlanOps(plan: CleanPlan) {
       if (ctx?.before) qc.setQueryData(key, ctx.before);
     },
     onSuccess: (next) => qc.setQueryData(key, next),
+  });
+}
+
+/** Turn one of your checks off (or on again): the plan is merged on the server and read again. */
+export function useRuleStatus(planId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ruleId, status }: { ruleId: string; status: "active" | "off" }) =>
+      request<unknown>("PATCH", `/api/v1/rules/${ruleId}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.plan(planId) }),
   });
 }
 

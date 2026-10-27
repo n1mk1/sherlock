@@ -206,13 +206,29 @@ class EditsDraft(Strict):
     edits: list[CellDraft] = Field(min_length=1, max_length=200)
 
 
+class RuleDraft(Strict):
+    """A check in plain fields (PRD CLEAN-13): the parameters its kind takes, the others null."""
+    kind: Literal["range", "date_window", "allowed", "pattern", "not_missing", "unique", "order", "depends"]
+    column: str = Field(description="the column the check is about, exactly as named")
+    min: float | None = Field(description="range: the lowest allowed value, or null")
+    max: float | None = Field(description="range: the highest allowed value, or null")
+    earliest: str | None = Field(description="date_window: the earliest allowed date, YYYY-MM-DD, or null")
+    latest: str | None = Field(description="date_window: the latest allowed date, YYYY-MM-DD, or null")
+    values: list[str] | None = Field(description="allowed: the allowed values, or null")
+    regex: str | None = Field(description="pattern: an anchored regular expression (^…$), or null")
+    other: str | None = Field(description="order: the column that comes first; depends: the column that determines "
+                                          "this one; else null")
+    action: Literal["quarantine", "flag", "fix"]
+
+
 class PlanEdit(Strict):
     op: Literal["tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction", "add",
-                "remove"]
+                "remove", "add_rule"]
     item: str | None = Field(description="the plan item's ref (f1, f2, …) for tick, untick, set_instruction and remove; else null")
     module: str | None = Field(description="the module for tick_module and untick_module; else null")
     level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None = Field(
         description="the level for tick_level and untick_level; else null")
+    rule: RuleDraft | None = Field(description="for add_rule: the check to add; else null")
     column: str | None = Field(description="for add: the column the step is about, exactly as named, or null for the rows")
     instruction: str | None = Field(description="for add and set_instruction: what to do, in plain words; null on "
                                                 "set_instruction puts Sherlock's wording back")
