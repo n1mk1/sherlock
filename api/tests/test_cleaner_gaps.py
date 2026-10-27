@@ -14,7 +14,8 @@ from sherlock.cleaning import gate
 from sherlock.cleaning.detectors import id_candidates, impossible_values, near_duplicate_categories
 from sherlock.cleaning.helpers import _merge_refusal, canonicalize_categories
 from sherlock.cleaning.helpers import parse_failures, parse_numbers, quarantine_rows
-from sherlock.cleaning.loop import RULE_LABEL, code_fix, queue, rule_candidate, rule_only, step_summary
+from sherlock.cleaning.detectors.impossible_values import RULE_LABEL
+from sherlock.cleaning.loop import code_fix, queue, rule_candidate, rule_only, step_summary
 from sherlock.cleaning.plan import never_change
 from sherlock.cleaning.verifiers import Report
 from sherlock.config import get_settings

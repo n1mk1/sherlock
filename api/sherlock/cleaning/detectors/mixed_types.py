@@ -5,7 +5,7 @@ Formatted numbers ("$1,200") are left to `numbers_as_text`; sentinels to `sentin
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 from sherlock.cleaning.detectors.numbers_as_text import clean_number
 from sherlock.profile.infer import THRESHOLD, parse_dates
 
@@ -41,3 +41,10 @@ def detect(frame: Frame) -> list[Finding]:
                     examples(odd.tolist()), {"expected": "date"},
                 ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "mixed_types", "values of another type",
+    "A mostly numeric or mostly date column with a minority of values that are neither.",
+    group="types", weight=0.9, default_level="skews", scope="column", detect=detect,
+)

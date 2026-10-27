@@ -3,7 +3,7 @@
 from ftfy import fix_text
 from ftfy.badness import is_bad
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 
 TEXT_TYPES = ("category", "text", "id")
 
@@ -24,3 +24,9 @@ def detect(frame: Frame) -> list[Finding]:
                 examples(col.text[mask].tolist()), {"fixes": fixed},
             ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "mojibake", "garbled characters", "Text decoded with the wrong encoding somewhere upstream.",
+    group="text", weight=0.6, default_level="splits", scope="column", detect=detect,
+)

@@ -74,7 +74,8 @@ sherlock/
       profile/                 DataCard (datacard.py), type and role inference (infer.py), stats, the typing step
                                (typing.py), the per-version cache (service.py); runs the detectors
       cleaning/
-        detectors/             one module per detector
+        detectors/             one module per detector, each exporting its DetectorSpec
+        registry.py            the detector registry and catalog (§7.1 step 4)
         helpers/               vetted pandas helpers the model composes (one module)
         prompts/               system, diagnose, propose, critic, helpers (.txt)
         verifiers.py
@@ -578,6 +579,7 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 
 | Method | Path | Body / Query | Response |
 |---|---|---|---|
+| GET | `/detectors` | — | `{ detectors: [{ id, label, description, group, default_level, source }] }` (the detector catalog, §7.1 step 4) |
 | POST | `/datasets/{id}/clean` | `{ mode: "auto"\|"stepwise", scope: CleanScope, include_user_edited: bool, plan_id? }` | `201 Job` |
 | POST | `/datasets/{id}/clean/plan` | `{ scope?: CleanScope }` | `CleanPlan`: made (`201`) or the draft already open (`200`), merged onto the current version when it's older |
 | GET | `/clean-plans/{pid}` | — | `CleanPlan` (a stale draft is merged first) |
@@ -593,6 +595,8 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 | POST | `/proposals/{proposal_id}/reject` | — | `204` |
 
 `CleanScope`: `{ kind: "all"|"selection"|"new_rows", selection_id?, row_ids? }`.
+
+**`GET /detectors`** (`registry.catalog`, PRD CLEAN-12) lists every registered detector in run order. `label` is its plain words ("placeholder values"), `group` its plan module, `default_level` one of `breaks`, `skews`, `splits`, `check`, `cosmetic`, or null for a detector whose issues are never changed (leakage, ID candidates), and `source` is `builtin`. The web app reads its labels from it once per session (`useDetectorLabel`); before it loads, or for an id it doesn't list, a label is the id in words, and a user's step is "your step".
 
 **Proposals** (`agent/actions.py`, `routers/proposals.py`):
 - **`Proposal`**: the §6.8 shape plus `result_step_id`. `edits` items carry `before`, `scope` is set for `clean_selection`, and an `edit_cells` with a new number outside its column's range has `warnings`. The message that made it carries it as `proposal`, read fresh from the table, so the thread shows its current status.
@@ -617,12 +621,12 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
   - `PlanScope` is `{ kind: "selection"|"new_rows", selection_id, row_ids, rows }`: the rows the plan was opened for; `null` is the whole dataset. `POST …/clean/plan` with `scope` (the new-rows toast's "Clean them") sets it, and a `selection` scope's `selection_id` must be this dataset's (`422`). `kind: "all"` clears it, and no scope leaves it as it is. The panel starts on it and sends it as `POST /clean`'s `scope`.
   - `notes` is set when the response merged the plan onto a newer version: what changed, in code-written sentences ("1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."), or "The data changed, so the plan was checked again." when the merge changed nothing.
 - **`PlanItem`**: `{ id: "pit_…", source: "sherlock"|"you"|"chat", key: "<detector>|<column>"|null, detector, column, count, severity, action, instruction: string|null, examples (≤ 5), ticked, change, reason?, module }`.
-  - `module` (`plan.MODULES`, in display order): `yours` (Your steps), `types` (mixed_types, numbers_as_text, ambiguous_dates, unit_mixes), `missing` (missing, sentinels), `text` (whitespace_case, near_duplicate_categories, mojibake), `records` (duplicates, cross_column, functional_dependency, impossible_values), `outliers`, `other` (any other detector) and `kept` (Marked, not changed).
-  - `kept` items (`plan.never_change`, the rule the Cleaner uses) are leakage and ID-candidate issues, any issue on a column in the card's `leakage_candidates`, and any issue on one of its `id_columns` except the type fixes `sentinels` and `numbers_as_text` (`TYPE_FIXES`). They have `change: false`, are never ticked, and carry the Cleaner's `reason`.
+  - `module` (`plan.MODULES`, in display order): `yours` (Your steps), the detector's `spec.group` (`types`: mixed_types, numbers_as_text, ambiguous_dates, unit_mixes; `missing`: missing, sentinels; `text`: whitespace_case, near_duplicate_categories, mojibake; `records`: duplicates, cross_column, functional_dependency, impossible_values; `outliers`; `other`: any other detector), and `kept` (Marked, not changed).
+  - `kept` items (`plan.never_change`, the rule the Cleaner uses) are the issues of a detector with `spec.never_change` (leakage, ID candidates), any issue on a column in the card's `leakage_candidates`, and any issue on one of its `id_columns` except those of a `spec.type_fix` detector (`sentinels`, `numbers_as_text`). They have `change: false`, are never ticked, and carry the Cleaner's `reason`.
   - `action` is the detector's `proposal`, and every number is the detector's: the plan makes no model call (Rule 2).
   - One item per `key`. When two findings share one (exact and near duplicates are both `duplicates|None`), the item is the more severe, the one the Cleaner attempts.
   - The user's steps (PRD CLEAN-8b) have `source: "you"` (the panel) or `"chat"`, `detector: "user_request"`, `key: null`, `module: "yours"`, `count` and `severity` null, `change: true`, and `action` equal to their `instruction`. A rewritten Sherlock fix keeps its `action` and has `instruction` set.
-  - **The date order.** An `ambiguous_dates` item that can change also has `date_order: "dmy"|"mdy"|null` (null until the user picks), `both_ways: [{ value, day_first, month_first }]` (up to three of its examples that read differently each way, dates shown as "3 Apr 2021"; `plan.both_ways`) and `needs_order` (every date reads both ways; `plan.needs_order`).
+  - **The date order.** An `ambiguous_dates` item that can change also has, from its `spec.plan_extras`, `date_order: "dmy"|"mdy"|null` (null until the user picks), `both_ways: [{ value, day_first, month_first }]` (up to three of its examples that read differently each way, dates shown as "3 Apr 2021"; `plan.both_ways`) and `needs_order` (every date reads both ways; `plan.needs_order`).
 - **`PlanOp`** (1–50 per PATCH; unknown keys are `422`). `plan.apply_ops` is the one place a plan changes: all or nothing, and `422` for an unknown op, item or module, or ticking a `kept` item. `summary` is code-written. `set_instruction`, `add` and `remove` are PRD CLEAN-8b's.
 
 | Op | Fields | Effect and summary |
@@ -1383,7 +1387,22 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
    - Its `code` is a DuckDB statement over the frame (`result = duckdb.sql(...).df()`), and its `notebook_code` is that code followed by `df = result`, like any clean step, so the app and the notebook cast identically.
    - It produces version 2, which is then profiled.
    - Like every step it can be undone. The Changes panel warns first that undoing it turns every column back into text, so charts and models that need numbers will stop working.
-4. **Detectors.** Run all detectors (PRD §7.3.2) on the typed version and write the results to the DataCard's `issues` and to the `issues` table. Severity = min(count / rows, 1) × the type weight (`detectors.WEIGHTS`): leakage 1.0, mixed types 0.9, exact and near duplicates 0.8, sentinels 0.7, impossible values 0.7, numbers stored as text 0.6, ambiguous dates 0.6, mojibake 0.6, cross-column violations 0.6, missing values (missingness patterns) 0.5, near-duplicate categories 0.5, unit mixes 0.5, broken functional dependencies 0.5, whitespace/case 0.4, outliers 0.3, ID candidates 0.2.
+4. **Detectors.** Run every enabled detector (`registry.run_all`, PRD §7.3.2) on the typed version and write the results to the DataCard's `issues` and to the `issues` table, most severe first. Severity = min(count / rows, 1) × the detector's `spec.weight`: leakage 1.0, mixed types 0.9, exact and near duplicates 0.8, sentinels 0.7, impossible values 0.7, numbers stored as text 0.6, ambiguous dates 0.6, mojibake 0.6, cross-column violations 0.6, missing values (missingness patterns) 0.5, near-duplicate categories 0.5, unit mixes 0.5, broken functional dependencies 0.5, whitespace/case 0.4, outliers 0.3, ID candidates 0.2. A finding of a detector with `spec.marks_column` also goes on that DataCard list (`leakage_candidates`: `{ column, target, reason }`).
+   - **The registry** (`cleaning/registry.py`, PRD CLEAN-12). Each module in `cleaning/detectors/` exports a `DetectorSpec` (`SPEC`, `detectors/base.py`), and `detectors.BUILTINS` lists the 16 in run order. They register when the registry is imported. `register` takes specs together and refuses, with `RegistryError`, all of them if one has a duplicate or non-snake_case id, a `group` outside `types`, `missing`, `text`, `records`, `outliers`, `other`, a `default_level` outside `breaks`, `skews`, `splits`, `check`, `cosmetic` (null only with `never_change`), a `scope` outside `column`, `rows`, `columns`, a weight outside 0–1, no label or description, or a `runs_before` that names an unknown id or makes a cycle. A refused built-in fails the import, so the API doesn't start.
+   - **Lookups.** `all()` and `enabled()` (the specs with `enabled_by_default`, today all 16), in run order; `get(id)`; `label(id)`; `catalog()` for `GET /detectors` (§4.4). `get` of an id that isn't registered returns an "unknown detector" spec: its id in words as the label, group `other`, weight 0, and a `detect` that finds nothing.
+   - **`DetectorSpec`.** `id` (stored as `issues.detector`), `label`, `description`, `group` (the plan module, §4.4), `weight`, `default_level`, `scope` (`column`; `rows` for duplicates; `columns` for cross-column and functional dependencies), `detect`, and `version` (1), `source` (`builtin`) and `enabled_by_default`. What the Cleaner does with its issues (§7.2):
+
+     | Field | Built-ins | Effect |
+     |---|---|---|
+     | `never_change`, `skip_text` | leakage, id_candidates | its issues are marked, never changed: the reason and the log detail |
+     | `type_fix` | sentinels, numbers_as_text | still fixed on an ID column |
+     | `domain_rule` | impossible_values | quarantined by its own fix, never guessed |
+     | `vote` | ambiguous_dates | diagnosed three times |
+     | `code_fix(issue)` | impossible_values (the rule's quarantine), numbers_as_text (the parse) | a candidate code writes without the model |
+     | `runs_before` | sentinels: `("impossible_values",)` | goes just before those detectors' issues on its column |
+     | `plan_extras(issue)` | ambiguous_dates | extra fields on its plan item |
+
+     `default_level` is set on every spec that can change data. `GET /detectors` lists it; it doesn't change the plan or the queue.
 5. **Value index.** For every dimension and target-like column of the current version, the distinct values with counts. Embedding the values of columns with ≤ 5,000 distinct values (`embed` role) into `value_index` is not built: `value_index.embedding` is always NULL (§3.5).
 6. **Ending.** Set status `offer`, with a draft cleaning plan when After upload is "Open the cleaning plan", or start the build when it is "I'll clean it myself". Emit `dataset.status`.
 
@@ -1571,17 +1590,17 @@ Rows are never removed: code that removes rows fails `row_ledger` and scores 0, 
 
 **2. The queue** (`_next_issue`, `loop.queue`). The key of an issue is `detector|column` (`plan.key`). After every attempt, the next issue is the first not yet handled:
 1. **The user's steps** (PRD CLEAN-8b) go first, in plan order, as issues with `user: True`, `detector: "user_request"`, severity 2.0 (above any detector's), the plan item's ID as `issue_id`, and `requested`. `handled` records them as `user|<item id>`. They count against the step budget.
-2. **The card's issues** on the current version come next, most severe first. One exception: a column's `sentinels` issue goes just before its domain rule (`impossible_values`), whatever their severities, so a placeholder such as "-999" in an age becomes missing rather than quarantining its row.
+2. **The card's issues** on the current version come next, most severe first. One exception: an issue whose `spec.runs_before` names other detectors goes just before the most severe of their issues on its column, and never later than its own place. So a column's `sentinels` issue goes just before its domain rule (`impossible_values`), whatever their severities, and a placeholder such as "-999" in an age becomes missing rather than quarantining its row.
 
 Before an issue is attempted, these are skipped with no model call and use no budget:
-- **Never changed** (`plan.never_change`, shared with the plan; `NEVER_CHANGE`, `SKIP_TEXT`):
+- **Never changed** (`plan.never_change`, shared with the plan; `spec.never_change`, `spec.skip_text`):
   - `leakage` and `id_candidates` issues ("Records the outcome, so it is marked as leakage and not changed", "Looks like an ID column, so it is left as is");
   - every other issue on a column in the card's `leakage_candidates` ("body records the outcome, so it is not changed");
-  - every other issue on a column in `id_columns`, except the type fixes `plan.TYPE_FIXES` (`sentinels`, `numbers_as_text`). These only make values readable, so a column taken for an ID by mistake still gets its placeholders and formatted numbers fixed (PRD CLEAN-4d).
+  - every other issue on a column in `id_columns`, except those of a `spec.type_fix` detector (`sentinels`, `numbers_as_text`). These only make values readable, so a column taken for an ID by mistake still gets its placeholders and formatted numbers fixed (PRD CLEAN-4d).
 
-  Log detail: "excluded from models" for leakage, "left as is" for IDs.
+  Log detail: the `skip_text` of `leakage` ("excluded from models") or of `id_candidates` ("left as is").
 - **Not in the plan.** A key in `skip_keys`: "You left this out of the plan", log detail "not in your plan".
-- **Dates that read both ways** (PRD CLEAN-4b). An `ambiguous_dates` issue with `details.kind: ambiguous` (`plan.needs_order`) with neither a picked order nor a rewritten fix. No reading of the data settles the order, so the Cleaner doesn't guess it. Skip reason: "Left as text: every date reads both ways (03/04/2021 is 3 Apr 2021 or 4 Mar 2021; 05/06/2021 is 5 Jun 2021 or 6 May 2021), so the order is yours to choose: pick it in the cleaning plan". Log detail: "needs your choice of order". `plan.both_ways` builds the examples from the issue's own values with `parse_dates_smart` and both hints.
+- **Dates that read both ways** (PRD CLEAN-4b). An `ambiguous_dates` issue with `details.kind: ambiguous` (`plan.needs_order`, true when the spec's `plan_extras` say `needs_order`) with neither a picked order nor a rewritten fix. No reading of the data settles the order, so the Cleaner doesn't guess it. Skip reason: "Left as text: every date reads both ways (03/04/2021 is 3 Apr 2021 or 4 Mar 2021; 05/06/2021 is 5 Jun 2021 or 6 May 2021), so the order is yours to choose: pick it in the cleaning plan". Log detail: "needs your choice of order". `plan.both_ways` builds the examples from the issue's own values with `parse_dates_smart` and both hints.
 
 Issues the user shaped are `requested`:
 - A rewritten fix carries its `instruction`.
@@ -1589,7 +1608,7 @@ Issues the user shaped are `requested`:
 
 **3. Diagnose** (`large`, schema `Diagnosis`: `{cause, approach_options[2..3], preferred_option, risk, leave_as_is}`).
 - **Context.** The issue line, the column's DataCard entry, 20 sample values, 10 examples of the issue, the detector's `details` (at most 600 characters), the column list with types, and the user's instruction or "none". It also gets earlier decisions: the `decisions_json` of the latest ten cleaner steps, at most ten decisions.
-- **The vote.** `ambiguous_dates` (a `mixed` column, where some values show the order) is diagnosed three times at temperature 0.7, and the majority `preferred_option` wins. With no majority, option 0 wins, the most conservative by the prompt's ordering. A picked `date_order` makes one call instead.
+- **The vote.** A `spec.vote` detector's issue (`ambiguous_dates`, a `mixed` column, where some values show the order) is diagnosed three times at temperature 0.7, and the majority `preferred_option` wins. With no majority, option 0 wins, the most conservative by the prompt's ordering. A picked `date_order` makes one call instead.
 - **Leave as is.** `leave_as_is` skips the issue as "Left as is: <cause>" with no code proposed, except in three cases:
   - a `requested` issue;
   - a domain rule's issue;
@@ -1600,11 +1619,11 @@ Issues the user shaped are `requested`:
 - **Context.** The diagnosis, the approaches (preferred first), the dtypes, samples, examples, `Detector details`, the instruction and the helper list (`helpers.txt`).
 - **Escaped line breaks.** A candidate whose code doesn't parse, but does once its literal `\n` are read as line breaks, runs with the line breaks restored (`loop.runnable`). That code is the step's code.
 - A candidate list still invalid after the repair skips the issue ("model output invalid"). This includes a reply still cut off after the client's retry at twice the cap (§3.5). The exception is an issue with a rule candidate or a code fix, which goes on with those.
-- **Domain rules** (PRD CLEAN-4c; `loop.DOMAIN_RULES`, the `impossible_values` detector). A value outside its column's plausible domain is quarantined, not kept and not replaced by a guess.
-  - `loop.rule_candidate` builds the rule's own fix from the issue's `details` and adds it after the model's candidates, labelled "Quarantine impossible values". For example: `values = pd.to_numeric(df['customer_age'], errors='coerce')`, `bad = (values < 0) | (values > 120)`, `result = quarantine_rows(df, bad, 'impossible: customer_age')`. A date rule uses `pd.to_datetime` and the `earliest` and `after` dates.
+- **Domain rules** (PRD CLEAN-4c; a `spec.domain_rule` detector: `impossible_values`). A value outside its column's plausible domain is quarantined, not kept and not replaced by a guess.
+  - `loop.rule_candidate` is the spec's `code_fix` (`impossible_values.rule_candidate`), which builds the rule's own fix from the issue's `details` and adds it after the model's candidates, labelled "Quarantine impossible values". For example: `values = pd.to_numeric(df['customer_age'], errors='coerce')`, `bad = (values < 0) | (values > 120)`, `result = quarantine_rows(df, bad, 'impossible: customer_age')`. A date rule uses `pd.to_datetime` and the `earliest` and `after` dates.
   - When it passes the checks it is the chosen fix, whatever the model's candidates score: clipping an age of 999 to 120 is a guess. The model's candidates stay as alternatives and count in the agreement.
-- **Code fixes** (PRD CLEAN-4e; `loop.CODE_FIXES`, the `numbers_as_text` detector). A fix the code can write without the model, so the issue doesn't depend on one long reply.
-  - `loop.code_fix` builds it, labelled "Parse numbers": `parsed = parse_numbers(df['unit_price'])`, `result = df.copy()`, `result['unit_price'] = parsed`, `result = quarantine_rows(result, parse_failures(df['unit_price'], parsed), 'unparsed: unit_price')`. A minus sign, `(300)` and `300-` stay negative; a placeholder becomes missing, not a parse failure.
+- **Code fixes** (PRD CLEAN-4e; the `spec.code_fix` of a detector that isn't a domain rule: `numbers_as_text`). A fix the code can write without the model, so the issue doesn't depend on one long reply.
+  - `loop.code_fix` builds it with the spec's `code_fix` (`numbers_as_text.parse_candidate`), labelled "Parse numbers": `parsed = parse_numbers(df['unit_price'])`, `result = df.copy()`, `result['unit_price'] = parsed`, `result = quarantine_rows(result, parse_failures(df['unit_price'], parsed), 'unparsed: unit_price')`. A minus sign, `(300)` and `300-` stay negative; a placeholder becomes missing, not a parse failure.
   - It runs only when no model candidate scores above 0: the propose output was invalid or cut off, it gave no candidates, or none passed the hard checks. Then it is scored, chosen, run on the full data, reviewed and gated like any candidate, with the model's failed candidates kept as alternatives.
   - When a model candidate passes, the code fix isn't run, so it changes neither the choice nor the agreement.
 
@@ -1687,7 +1706,7 @@ A `skip` is logged as "Skipped: <reason>".
 **10. Outputs.**
 - **The log** (`job.log`, App Flow §5). A whole-dataset run opens with the automatic typing step ("<summary> (automatic step N)"). Each issue gets a running line ("263 missing values", or "Your step: <instruction>"), then one outcome line with the candidates as chips, the hard checks, `confidence` and `calls`: the `llm_calls` rows of this job made since the issue started (`Cleaner._handle`: diagnose, three under the vote, then propose and critic, repairs included).
 - **The model never writes a number the user reads on the cleaning screens** (CLAUDE.md Rule 2).
-  - A commit or flag line's text is `verifiers.effect_line(full_report, issue_words)`: "Changed <cells> cells, quarantined <rows> rows; <issue before> → <issue after> <what the detector counts>". Each part appears only when it's non-zero, singular for one ("Quarantined 1 row"), "changed nothing" when both are zero, and no count for a user's step. `issue_words` is the detector's name for its findings (`loop.ISSUE_WORDS`: "missing values", "spacing or case variants", …). The line says "Changed", not "Fixed": the count is of changed cells, and a flagged step isn't known to be right.
+  - A commit or flag line's text is `verifiers.effect_line(full_report, issue_words)`: "Changed <cells> cells, quarantined <rows> rows; <issue before> → <issue after> <what the detector counts>". Each part appears only when it's non-zero, singular for one ("Quarantined 1 row"), "changed nothing" when both are zero, and no count for a user's step. `issue_words` is the detector's `spec.label` ("missing values", "spacing or case variants", …). The line says "Changed", not "Fixed": the count is of changed cells, and a flagged step isn't known to be right.
   - `loop.prose(text)` keeps a model sentence only when it has no digit and no number in words (`stories.wording.number_in_words`), else gives None. It decides:
     - the line's `note` (the candidate's `expected_effect`);
     - the decision's `reason` (null when the cause has a number);

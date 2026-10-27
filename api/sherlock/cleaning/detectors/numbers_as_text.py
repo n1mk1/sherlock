@@ -4,7 +4,8 @@ import re
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES, THRESHOLD
 
 CURRENCY = re.compile(r"[$€£¥₹₩₽¢]|\b(USD|EUR|GBP|JPY|INR|PKR|CHF|CAD|AUD)\b", re.I)
@@ -61,3 +62,23 @@ def detect(frame: Frame) -> list[Finding]:
                 examples(col.text[formatted].tolist()),
             ))
     return findings
+
+
+def parse_candidate(issue: dict) -> Candidate | None:
+    """The code's own fix, built without the model (PRD CLEAN-4e): parse the column with
+    `parse_numbers` and quarantine the values it can't read."""
+    column = issue.get("column")
+    if column is None:
+        return None
+    code = (f"parsed = parse_numbers(df[{column!r}])\nresult = df.copy()\nresult[{column!r}] = parsed\n"
+            f"result = quarantine_rows(result, parse_failures(df[{column!r}], parsed), {'unparsed: ' + column!r})")
+    return Candidate(label="Parse numbers", code=code,
+                     expected_effect="Reads the column as numbers; values that aren't numbers are set aside.")
+
+
+SPEC = DetectorSpec(
+    "numbers_as_text", "numbers stored as text",
+    "Numbers written with currency symbols, separators, locale decimals or percent signs.",
+    group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
+    type_fix=True, code_fix=parse_candidate,
+)

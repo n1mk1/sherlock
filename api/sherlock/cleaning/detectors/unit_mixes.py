@@ -2,7 +2,7 @@
 
 import re
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 
 WITH_UNIT = re.compile(r"^\s*[-+]?\d+(?:[.,]\d+)?\s*([A-Za-z°µ%]+[A-Za-z0-9²³/]*)\s*$")
 MAJORITY = 0.5
@@ -26,3 +26,9 @@ def detect(frame: Frame) -> list[Finding]:
             examples(col.text[mask].tolist()), {"units": {u: int(n) for u, n in counts.items()}},
         ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "unit_mixes", "mixed units", "One column holding numbers written with different units.",
+    group="types", weight=0.5, default_level="skews", scope="column", detect=detect,
+)

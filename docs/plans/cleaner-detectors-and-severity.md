@@ -168,21 +168,23 @@ class DetectorSpec:
     description: str             # one sentence for the catalog and the rating prompt
     group: str                   # plan section when levels are off: types | missing | text | records | outliers | other
     weight: float                # code severity weight, 0–1 (TRD §7.1 step 4); orders issues within a level
-    default_level: Level         # breaks | skews | splits | check | cosmetic (§5.2)
+    default_level: Level | None  # breaks | skews | splits | check | cosmetic (§5.2); None with never_change
     scope: Scope                 # "column" | "rows" | "columns" (a pair or more)
     applies_to: frozenset[str]   # column types it reads; empty = all
     detect: Callable[[Frame], list[Finding]]
 
     # Behaviour that is a special case in loop.py and plan.py today:
     never_change: str | None = None      # reason shown under "Marked, not changed" (leakage, IDs); not rated
-    marks_column: str | None = None      # the DataCard list it fills (leakage_candidates, id_columns)
+    skip_text: str | None = None         # the log's detail for an issue on a column it marks ("left as is")
+    marks_column: str | None = None      # the DataCard list it fills (leakage_candidates); id_columns come
+                                         # from the column role, not from id_candidates
     type_fix: bool = False               # allowed on an ID column (sentinels, numbers_as_text)
     domain_rule: bool = False            # violations quarantined, never guessed; low confidence flags
     vote: bool = False                   # an ambiguous order settled by a three-sample majority
-    code_fix: Callable[[Finding], Candidate | None] | None = None   # a fix code writes without the model:
+    code_fix: Callable[[dict], Candidate | None] | None = None      # a fix code writes without the model, from the issue:
                                          # numbers_as_text's parse, impossible_values' quarantine (today rule_candidate)
     runs_before: tuple[str, ...] = ()    # same-column order (sentinels before impossible_values)
-    plan_extras: Callable[[Finding], dict] | None = None     # extra plan fields (dates read both ways, needs_order)
+    plan_extras: Callable[[dict], dict] | None = None        # extra plan fields from the issue (dates read both ways, needs_order)
 
     # Quality gates (§9):
     injector: Callable[[pd.DataFrame, Random], Damage] | None = None   # benchmark damage of this kind
@@ -194,7 +196,7 @@ The `Finding` type (`detectors/base.py`) keeps its shape: detector, column, coun
 
 ### 3.2 The registry (`cleaning/registry.py`)
 
-- **`register(spec)`** refuses: a duplicate id; an unknown group or level; a weight outside 0–1; a `runs_before` that names an unknown id or creates a cycle.
+- **`register(*specs)`** takes specs together, all or nothing, so a `runs_before` may name a spec of the same call. It refuses: a duplicate id; an unknown group or level; a weight outside 0–1; a `runs_before` that names an unknown id or creates a cycle.
 - **Lookups:** `all()`, `enabled(settings)`, `get(id)`, `label(id)`. `get` returns an "unknown detector" spec for issue rows written by a pack that has since been removed, so old versions still display.
 - **`load_plugins()`** runs once at startup. It reads Python entry points in the group `sherlock.detectors`, which a pack declares in its own `pyproject.toml`:
 
@@ -882,11 +884,11 @@ What each slice built and the eval results it got go in its commit message, not 
 
 ## 14. Build order
 
-Each slice is verified (`uv run pytest`, `corepack pnpm test`, `corepack pnpm typecheck`, `corepack pnpm e2e` where the UI changes, `sherlock eval corruption`) and committed with its docs.
+Each slice is verified (`uv run pytest`, `corepack pnpm test`, `corepack pnpm typecheck`, `corepack pnpm e2e` where the UI changes, `sherlock eval corruption`) and writes its own specs: the rows of §12 for what it builds, in the same commit as its code (Rule 1). No slice writes specs for a later one.
 
 ```mermaid
 flowchart LR
-    S0[0 · Specs] --> S1["1 · Registry,<br/>no behaviour change"]
+    S1["1 · Registry,<br/>no behaviour change"]
     S1 --> S2["2 · Contract suite<br/>+ injectors"]
     S1 --> S3["3 · Default levels<br/>+ queue by level"]
     S3 --> S4["4 · Rating call<br/>review job"]
@@ -900,7 +902,6 @@ flowchart LR
     S8 --> S10
 ```
 
-0. **Specs.** The doc changes in §12, written first.
 1. **Registry, no behaviour change.**
    - Add `DetectorSpec` and `registry.py`, and give the 16 built-ins their specs (with `default_level`, unused yet).
    - Move every hard-coded map in §3.3 to the registry, merging `plan.LABELS` and `loop.ISSUE_WORDS` into `spec.label`; add `GET /detectors`; switch the web's labels to it.

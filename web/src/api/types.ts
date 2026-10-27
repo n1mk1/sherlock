@@ -6,6 +6,8 @@ export type Dataset = components["schemas"]["Dataset"];
 export type DatasetStatus = Dataset["status"];
 export type Settings = components["schemas"]["Settings"];
 export type Me = components["schemas"]["Me"];
+// One check in the detector catalog (`GET /detectors`, PRD CLEAN-12).
+export type Detector = components["schemas"]["Detector"];
 export type Tab = "csv" | "dashboard" | "flow";
 
 export type JobKind =

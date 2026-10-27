@@ -9,7 +9,7 @@ For each target-like column, a column leaks when either
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
 
 ACCURACY = 0.95
 PURITY = 0.98
@@ -62,3 +62,11 @@ def detect(frame: Frame) -> list[Finding]:
                              "reason": f"near-perfect predictor of {target} ({score:.2f})"},
                 ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "leakage", "records the outcome", "Columns that record the outcome, so a model using them would cheat.",
+    group="other", weight=1.0, default_level=None, scope="column", detect=detect,
+    never_change="Records the outcome, so it is marked as leakage and not changed", skip_text="excluded from models",
+    marks_column="leakage_candidates",
+)

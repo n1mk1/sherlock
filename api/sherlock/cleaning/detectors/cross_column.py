@@ -6,7 +6,7 @@ created→updated, birth→death, departure→arrival, check_in→check_out), fo
 
 import re
 
-from sherlock.cleaning.detectors.base import Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
 from sherlock.profile.infer import NUMERIC_TYPES
 
 PAIRS = (("start", "end"), ("begin", "end"), ("from", "to"), ("min", "max"), ("open", "close"),
@@ -43,3 +43,9 @@ def detect(frame: Frame) -> list[Finding]:
                     [int(i) for i in bad[bad].index[:5]], {"earlier": name, "later": partner},
                 ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "cross_column", "values out of order", "Rows where a later value, such as an end, is before its earlier one.",
+    group="records", weight=0.6, default_level="skews", scope="columns", detect=detect,
+)

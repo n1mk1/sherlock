@@ -67,7 +67,7 @@ describe("App shell", () => {
     expect(await within(nav).findByText("sales.csv")).toBeInTheDocument();
     expect(within(nav).getByText(/ready · v5/)).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /Here's what I found in titanic3.csv/ })).toBeInTheDocument();
-    expect(await screen.findByText("1,014 missing in cabin")).toBeInTheDocument();
+    expect(await screen.findByText("1,014 missing values in cabin")).toBeInTheDocument();
     expect(screen.getByText("boat records the outcome")).toBeInTheDocument();
     // Dashboard and Flow wait for the dataset to be ready; CSV is open once it's typed.
     expect(screen.getByRole("tab", { name: "Flow" })).toHaveAttribute("aria-disabled", "true");

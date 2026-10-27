@@ -13,8 +13,26 @@ export const ME = {
   },
 };
 
-/** Stubs fetch with a route table: "GET /api/v1/datasets" → body (or a function of the request). */
+// The detector catalog as `GET /detectors` serves it (`cleaning/registry.py`), for the labels.
+const CATALOG: [string, string, string, string | null][] = [
+  ["leakage", "records the outcome", "other", null], ["mixed_types", "values of another type", "types", "skews"],
+  ["duplicates", "duplicate rows", "records", "skews"], ["sentinels", "placeholder values", "missing", "skews"],
+  ["impossible_values", "impossible values", "records", "skews"], ["numbers_as_text", "numbers stored as text", "types", "skews"],
+  ["ambiguous_dates", "ambiguous dates", "types", "skews"], ["mojibake", "garbled characters", "text", "splits"],
+  ["cross_column", "values out of order", "records", "skews"], ["missing", "missing values", "missing", "check"],
+  ["near_duplicate_categories", "near-duplicate categories", "text", "splits"], ["unit_mixes", "mixed units", "types", "skews"],
+  ["functional_dependency", "rows breaking a dependency", "records", "check"],
+  ["whitespace_case", "spacing or case variants", "text", "splits"], ["outliers", "outliers", "outliers", "check"],
+  ["id_candidates", "looks like an ID", "other", null],
+];
+export const DETECTORS = {
+  detectors: CATALOG.map(([id, label, group, default_level]) => ({ id, label, description: "", group, default_level, source: "builtin" })),
+};
+
+/** Stubs fetch with a route table: "GET /api/v1/datasets" → body (or a function of the request). The
+ * detector catalog answers unless the table has its own. */
 export function mockApi(routes: Record<string, unknown>) {
+  routes = { "GET /api/v1/detectors": DETECTORS, ...routes };
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const req = typeof input === "object" && "url" in input ? (input as Request) : null;
     const url = new URL(req ? req.url : String(input), "http://localhost");

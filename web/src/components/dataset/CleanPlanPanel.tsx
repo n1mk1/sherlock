@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { makeSelection } from "@/api/csv";
 import {
-  stalePlan, useCleanPlan, useDatacard, useDiscardPlan, usePlanOps, useStartCleaning, type CleanScope,
+  stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useStartCleaning, type CleanScope,
 } from "@/api/queries";
 import type { CleanPlan, CleanPlanItem, Dataset, Issue, PlanModule, PlanOp, PlanScope } from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
@@ -24,28 +24,9 @@ import { cn } from "@/lib/utils";
 import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 
-export const LABELS: Record<string, string> = {
-  missing: "missing",
-  mixed_types: "mixed types",
-  sentinels: "placeholder values",
-  whitespace_case: "spacing or case variants",
-  near_duplicate_categories: "near-duplicate categories",
-  duplicates: "duplicate rows",
-  impossible_values: "impossible values",
-  numbers_as_text: "numbers stored as text",
-  ambiguous_dates: "ambiguous dates",
-  mojibake: "garbled characters",
-  unit_mixes: "mixed units",
-  cross_column: "values out of order",
-  functional_dependency: "broken dependencies",
-  id_candidates: "looks like an ID",
-  outliers: "outliers",
-  leakage: "records the outcome",
-  user_request: "your step",
-};
-
-export function issueLine(i: Pick<Issue, "detector" | "column" | "count">): string {
-  const what = LABELS[i.detector] ?? i.detector.replace(/_/g, " ");
+// "263 missing values in age", or "name looks like an ID"; `label` is `useDetectorLabel()`.
+export function issueLine(i: Pick<Issue, "detector" | "column" | "count">, label: (detector: string) => string): string {
+  const what = label(i.detector);
   if (i.detector === "leakage" || i.detector === "id_candidates") return `${i.column} ${what}`;
   return `${i.count.toLocaleString()} ${what}${i.column ? ` in ${i.column}` : ""}`;
 }
@@ -76,6 +57,7 @@ export function presetLabel(s: PlanScope): string {
 export function CleanPlanPanel({ dataset, layout }: { dataset: Dataset; layout: "centre" | "side" }) {
   const creating = useIsMutating({ mutationKey: ["create-plan", dataset.id] }) > 0;
   const { data: plan } = useCleanPlan(dataset.clean_plan_id);
+  useDetectors(); // fetched while the plan loads, so its items show their labels at once
   const shell = layout === "centre"
     ? "mx-auto mt-[6vh] w-full max-w-[720px] px-4 pb-8"
     : "flex h-full flex-col overflow-y-auto";
@@ -342,7 +324,7 @@ function ItemRow({ item, side, busy, send, onDirty }: {
 }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const label = LABELS[item.detector] ?? item.detector.replace(/_/g, " ");
+  const label = useDetectorLabel()(item.detector);
   const name = `${item.column ?? "rows"}: ${label}`;
   const yours = item.key === null;
   const onTick = (on: boolean) => send([{ op: on ? "tick" : "untick", item_id: item.id }]);

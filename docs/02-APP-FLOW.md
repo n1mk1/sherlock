@@ -135,7 +135,7 @@ Shown in the centre when profiling finishes and the "After upload" setting is "A
 Contents:
 - Heading: "Here's what I found in titanic3.csv".
 - A line: "1,309 rows · 14 columns · 7 issues".
-- The three most severe issues as a list with icons ("263 missing in age", "boat records the outcome"), or "Nothing that needs cleaning." when there are none. Every issue, with its count, examples and planned fix, is in the cleaning plan (§4.1).
+- The three most severe issues as a list with icons ("263 missing values in age", "boat records the outcome"), or "Nothing that needs cleaning." when there are none. Every issue, with its count, examples and planned fix, is in the cleaning plan (§4.1).
 - Two buttons: **Clean with AI** (primary) and **Clean it myself**.
 - A checkbox "Remember my choice" (writes the After upload setting), with "· You can change this in Settings" beside it. Checked, Clean with AI saves `after_upload: always` and Clean it myself saves `never`.
 

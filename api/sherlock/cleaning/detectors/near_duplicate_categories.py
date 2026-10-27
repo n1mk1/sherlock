@@ -11,7 +11,7 @@ Values need four characters, or three letters ("Wst").
 
 from rapidfuzz import fuzz
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 from sherlock.cleaning.helpers import _COMMON_SHARE, _merge_key, _merge_refusal
 
 MAX_DISTINCT = 200
@@ -50,3 +50,9 @@ def detect(frame: Frame) -> list[Finding]:
                 {"pairs": pairs[:20], **({"review_pairs": review[:20]} if review else {})},
             ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "near_duplicate_categories", "near-duplicate categories", "Category values one or two typos apart.",
+    group="text", weight=0.5, default_level="splits", scope="column", detect=detect,
+)

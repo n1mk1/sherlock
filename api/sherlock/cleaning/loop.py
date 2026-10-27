@@ -7,8 +7,9 @@ For each issue, most severe first, while the budget lasts (`CLEAN_MAX_STEPS` iss
   gate → commit_step (commit or flag) or skip; then re-profile and pick the next issue.
 
 Leakage and ID-like columns are never changed: they are logged as skipped without a model call
-(an ID column's placeholders and formatted numbers are still fixed, `plan.TYPE_FIXES`). A value
-that breaks the column's domain rule (`DOMAIN_RULES`) is quarantined by the rule's own fix.
+(an ID column's placeholders and formatted numbers are still fixed, `spec.type_fix`). A value
+that breaks the column's domain rule (`spec.domain_rule`) is quarantined by the rule's own fix.
+What the run knows about a detector comes from its spec (`registry`, PRD CLEAN-12).
 A run started from a cleaning plan (`params.plan`, PRD CLEAN-8a) skips the fixes the plan leaves
 unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted.
 The user's own steps (CLEAN-8b) run first, then the issues; a step the user asked for, or a fix they
@@ -35,9 +36,9 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from sherlock.cleaning import gate, prompts, verifiers
+from sherlock.cleaning import gate, prompts, registry, verifiers
 from sherlock.cleaning.plan import (
-    SKIP_TEXT, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
+    USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
 )
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
@@ -58,20 +59,7 @@ NOT_IN_PLAN = "You left this out of the plan"
 USER_SEVERITY = 2.0  # above any detector's (at most 1.0): the user's steps go first
 USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data block"
 LEFT_AS_IS = "the values look legitimate"  # when the diagnosis' own cause has digits
-VOTE_DETECTORS = ("ambiguous_dates",)
-VOTES = 3
-# A detector whose finding breaks the column's domain rule (a negative age, an age of 999): the
-# diagnosis' "leave as is" doesn't end it, the rule's own quarantine joins the candidates and is the
-# fix whenever it passes the checks (no guessed replacement), and a low confidence or the critic's
-# objection to a fix that only quarantines what the rule names flags the step instead of skipping it
-# (TRD §7.2).
-DOMAIN_RULES = ("impossible_values",)
-RULE_LABEL = "Quarantine impossible values"
-# A detector whose fix the code can write without the model (TRD §7.2, "Code fixes"): numbers stored
-# as text are parsed with `parse_numbers` and the values it can't read are quarantined. The code fix
-# is tried when the model's proposal fails (a reply cut off at its token cap) or none of its
-# candidates passes the checks, and on a measure column the diagnosis' "leave as is" doesn't end it.
-CODE_FIXES = {"numbers_as_text": "Parse numbers"}
+VOTES = 3  # diagnoses of a `spec.vote` detector (ambiguous dates); the majority wins
 
 
 @dataclass
@@ -115,15 +103,6 @@ def issue_line(issue: dict) -> str:
     return f"{issue['count']:,} rows with {what}{where}: {issue.get('proposal') or ''}".strip()
 
 
-ISSUE_WORDS = {
-    "missing": "missing values", "mixed_types": "values of another type", "sentinels": "placeholder values",
-    "whitespace_case": "spacing or case variants", "near_duplicate_categories": "near-duplicate categories",
-    "duplicates": "duplicate rows", "impossible_values": "impossible values", "numbers_as_text": "numbers stored as text",
-    "ambiguous_dates": "ambiguous dates", "mojibake": "garbled characters", "unit_mixes": "mixed units",
-    "cross_column": "values out of order", "functional_dependency": "rows breaking a dependency", "outliers": "outliers",
-}
-
-
 def short_line(issue: dict) -> str:
     """The log's one-line name for an issue: "263 missing values", "Your step: trim spaces in name"."""
     if issue.get("user"):
@@ -133,34 +112,27 @@ def short_line(issue: dict) -> str:
 
 
 def rule_candidate(issue: dict) -> Candidate | None:
-    """The domain rule's own fix for an impossible-values issue: quarantine the rows it names, built by
-    code from the detector's `details`, so a value outside the column's domain has a fix whatever the
-    model proposes. None for other issues, or a rule the details don't give."""
-    column, d = issue.get("column"), issue.get("details") or {}
-    if issue.get("user") or issue["detector"] not in DOMAIN_RULES or column is None:
+    """The domain rule's own fix for an issue of a `spec.domain_rule` detector (a negative age, an age
+    of 999): quarantine the rows it names, built by code, so a value outside the column's domain has a
+    fix whatever the model proposes. The diagnosis' "leave as is" doesn't end such an issue, the fix
+    joins the candidates and wins whenever it passes the checks (no guessed replacement), and a low
+    confidence or the critic's objection to a fix that only quarantines what the rule names flags the
+    step instead of skipping it (TRD §7.2). None for other issues, or a rule the details don't give."""
+    spec = registry.get(issue["detector"])
+    if issue.get("user") or not spec.domain_rule or spec.code_fix is None:
         return None
-    if d.get("earliest") and d.get("after"):
-        load = f"values = pd.to_datetime(df[{column!r}], errors='coerce')"
-        tests = [f"(values < pd.Timestamp({d['earliest']!r}))", f"(values > pd.Timestamp({d['after']!r}))"]
-    else:
-        load = f"values = pd.to_numeric(df[{column!r}], errors='coerce')"
-        tests = [f"(values {op} {d[k]!r})" for k, op in (("low", "<"), ("high", ">")) if d.get(k) is not None]
-    if not tests:
-        return None
-    code = f"{load}\nbad = {' | '.join(tests)}\nresult = quarantine_rows(df, bad, {'impossible: ' + column!r})"
-    return Candidate(label=RULE_LABEL, code=code,
-                     expected_effect="Sets aside the rows whose value breaks the column's domain rule.")
+    return spec.code_fix(issue)
 
 
 def code_fix(issue: dict) -> Candidate | None:
-    """The code's own fix for an issue in `CODE_FIXES`, built without the model; None for others."""
-    column = issue.get("column")
-    if issue.get("user") or issue["detector"] not in CODE_FIXES or column is None:
+    """The code's own fix for another detector with a `spec.code_fix` (TRD §7.2, "Code fixes"): numbers
+    stored as text are parsed with `parse_numbers` and the values it can't read are quarantined. It is
+    tried when the model's proposal fails (a reply cut off at its token cap) or none of its candidates
+    passes the checks, and on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
+    spec = registry.get(issue["detector"])
+    if issue.get("user") or spec.domain_rule or spec.code_fix is None:
         return None
-    code = (f"parsed = parse_numbers(df[{column!r}])\nresult = df.copy()\nresult[{column!r}] = parsed\n"
-            f"result = quarantine_rows(result, parse_failures(df[{column!r}], parsed), {'unparsed: ' + column!r})")
-    return Candidate(label=CODE_FIXES[issue["detector"]], code=code,
-                     expected_effect="Reads the column as numbers; values that aren't numbers are set aside.")
+    return spec.code_fix(issue)
 
 
 def measure_column(issue: dict, card: dict) -> bool:
@@ -170,17 +142,20 @@ def measure_column(issue: dict, card: dict) -> bool:
 
 
 def queue(issues: list[dict]) -> list[dict]:
-    """The card's issues in the order the Cleaner attempts them: most severe first, except that a
-    column's placeholders go just before its domain rule, so a "-999" age becomes a missing value
-    rather than quarantining its row; the rule then takes what is left."""
-    rule: dict[str, float] = {}
+    """The card's issues in the order the Cleaner attempts them: most severe first, except that an
+    issue whose spec `runs_before` other detectors goes just before the most severe of their issues on
+    its column, never later than its own place: a column's placeholders go before its domain rule, so
+    a "-999" age becomes a missing value rather than quarantining its row; the rule then takes what is
+    left."""
+    top: dict[tuple[str, str | None], float] = {}  # (detector, column) → its most severe issue
     for i in issues:
-        if i["detector"] in DOMAIN_RULES:
-            rule[i["column"]] = max(rule.get(i["column"], 0.0), i["severity"])
+        k = (i["detector"], i["column"])
+        top[k] = max(top.get(k, 0.0), i["severity"])
 
     def rank(i: dict) -> tuple[float, int]:
-        if i["detector"] == "sentinels" and i["column"] in rule:
-            return -max(i["severity"], rule[i["column"]]), 0
+        later = [top[(d, i["column"])] for d in registry.get(i["detector"]).runs_before if (d, i["column"]) in top]
+        if later:
+            return -max(i["severity"], *later), 0
         return -i["severity"], 1
 
     return sorted(issues, key=rank)
@@ -230,7 +205,7 @@ def issue_words(issue: dict) -> str | None:
     """What the issue's detector counts, for the log's "263 → 0 missing values"; None for a user's step."""
     if issue.get("user"):
         return None
-    return ISSUE_WORDS.get(issue["detector"], issue["detector"].replace("_", " "))
+    return registry.label(issue["detector"])
 
 
 DIGIT = re.compile(r"\d")
@@ -436,7 +411,7 @@ class Cleaner:
             kept = never_change(issue, card)
             if kept is not None:
                 self.state.handled.append(key(issue))
-                self._skip(issue, kept[0], log_text=SKIP_TEXT[kept[1]])
+                self._skip(issue, kept[0], log_text=registry.get(kept[1]).skip_text)
                 continue
             if key(issue) in self.skip_keys:  # unticked in the plan: no model call, no budget used
                 self.state.handled.append(key(issue))
@@ -701,7 +676,7 @@ class Cleaner:
             examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
             decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet", instruction=_instruction(issue),
         )
-        if issue["detector"] in VOTE_DETECTORS and not issue.get("date_order"):  # a picked order needs no vote
+        if registry.get(issue["detector"]).vote and not issue.get("date_order"):  # a picked order needs no vote
             votes = []
             for _ in range(VOTES):
                 out = self.llm.structured("large", self._messages(user), Diagnosis, purpose="diagnose",

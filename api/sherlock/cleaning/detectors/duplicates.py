@@ -1,7 +1,7 @@
 """Exact and near duplicate rows (near: equal after trimming and case-folding every value).
 Examples are `_row_id`s."""
 
-from sherlock.cleaning.detectors.base import Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
 
 
 def detect(frame: Frame) -> list[Finding]:
@@ -25,3 +25,9 @@ def detect(frame: Frame) -> list[Finding]:
             [int(i) for i in df.index[near][:5]], {"kind": "near"},
         ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "duplicates", "duplicate rows", "Rows that repeat another row exactly, or apart from spacing or case.",
+    group="records", weight=0.8, default_level="skews", scope="rows", detect=detect,
+)

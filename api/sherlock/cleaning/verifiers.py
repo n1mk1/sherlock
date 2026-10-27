@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from sherlock.cleaning import detectors
+from sherlock.cleaning import registry
 from sherlock.cleaning.helpers import SENTINELS, _merge_key, _merge_refusal, parse_numbers
 from sherlock.profile.datacard import build_frame
 
@@ -104,8 +104,8 @@ def issue_count(df: pd.DataFrame, detector: str, column: str | None) -> int:
     types = {c: _duck_type(user[c]) for c in user.columns}
     user = user.astype(object).where(user.notna(), None)
     frame = build_frame(user, types)
-    module = next(m for m in detectors.DETECTORS if m.__name__.rsplit(".", 1)[-1] == detector)
-    return sum(f.count for f in module.detect(frame) if column is None or f.column == column)
+    detect = registry.get(detector).detect
+    return sum(f.count for f in detect(frame) if column is None or f.column == column)
 
 
 def _is_placeholder(values: pd.Series) -> pd.Series:

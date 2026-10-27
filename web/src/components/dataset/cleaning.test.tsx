@@ -232,7 +232,7 @@ describe("the cleaning plan", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Diagnosing v2 of messy.csv…");
     answer(PLAN);
     expect(await screen.findByRole("heading", { name: "Cleaning plan · v2" })).toBeInTheDocument();
-    for (const name of ["amount: numbers stored as text", "age: missing", "fare: outliers", "age: outliers"]) {
+    for (const name of ["amount: numbers stored as text", "age: missing values", "fare: outliers", "age: outliers"]) {
       expect(screen.getByRole("checkbox", { name })).toBeChecked();
     }
     // Leakage and ID columns are info rows, with no checkbox.
@@ -255,8 +255,8 @@ describe("the cleaning plan", () => {
       },
     });
     renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "age: missing" }));
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "age: missing" })).not.toBeChecked());
+    fireEvent.click(await screen.findByRole("checkbox", { name: "age: missing values" }));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "age: missing values" })).not.toBeChecked());
     expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{ op: "untick", item_id: "pit_age" }] });
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Outliers: tick all" })).toBeEnabled());
     fireEvent.click(screen.getByRole("checkbox", { name: "Outliers: tick all" }));
@@ -378,7 +378,7 @@ describe("editing the cleaning plan (PRD CLEAN-8b)", () => {
       },
     });
     renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
-    fireEvent.click(await screen.findByRole("button", { name: "Rewrite the fix for age: missing" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Rewrite the fix for age: missing values" }));
     const box = screen.getByRole("textbox", { name: "The fix, in plain words" });
     expect(box).toHaveValue("Fill from a rule over related columns");
     fireEvent.change(box, { target: { value: "Median age by class" } });
@@ -389,7 +389,7 @@ describe("editing the cleaning plan (PRD CLEAN-8b)", () => {
     expect(screen.getByRole("button", { name: "Start cleaning (4)" })).toBeEnabled();
     expect(patched(calls)[0]).toEqual({ ops: [{ op: "set_instruction", item_id: "pit_age", instruction: "Median age by class" }] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Rewrite the fix for age: missing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rewrite the fix for age: missing values" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     await waitFor(() => expect(screen.queryByText("edited")).toBeNull());
     expect(patched(calls)[1]).toEqual({ ops: [{ op: "set_instruction", item_id: "pit_age", instruction: null }] });

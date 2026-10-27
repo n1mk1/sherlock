@@ -8,7 +8,8 @@ change data starts ticked. Leakage and ID-like columns are info rows under "Mark
 
 The user can untick fixes, rewrite a fix in plain words (`instruction`), and add steps of their own
 (`detector: user_request`), from the panel or from chat; `apply_ops` is the one place a plan changes.
-An ambiguous-dates item carries up to three of its values read both ways (`both_ways`) and the order
+An item's module, label and extra fields come from its detector's spec (`registry`, PRD CLEAN-12): an
+ambiguous-dates item carries up to three of its values read both ways (`both_ways`) and the order
 the user picks (`date_order`: "dmy", "mdy" or null); a column every date of which reads
 both ways is cleaned only with an order (`needs_order`).
 A plan made on an older version is merged onto the current one (`merge`) before it's shown or started.
@@ -18,6 +19,7 @@ Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset
 import json
 import sqlite3
 
+from sherlock.cleaning import registry
 from sherlock.db.util import new_id, now_iso
 
 # Display order; "Your steps" comes first.
@@ -31,29 +33,6 @@ MODULES = {
     "other": "Other checks",
     "kept": "Marked, not changed",
 }
-DETECTOR_MODULE = {
-    "mixed_types": "types", "numbers_as_text": "types", "ambiguous_dates": "types", "unit_mixes": "types",
-    "missing": "missing", "sentinels": "missing",
-    "whitespace_case": "text", "near_duplicate_categories": "text", "mojibake": "text",
-    "duplicates": "records", "cross_column": "records", "functional_dependency": "records", "impossible_values": "records",
-    "outliers": "outliers",
-    "leakage": "kept", "id_candidates": "kept",
-}
-# Plain words for an issue, as the offer and the plan panel show them (the web's LABELS).
-LABELS = {
-    "missing": "missing values", "mixed_types": "mixed types", "sentinels": "placeholder values",
-    "whitespace_case": "spacing or case variants", "near_duplicate_categories": "near-duplicate categories",
-    "duplicates": "duplicate rows", "impossible_values": "impossible values", "numbers_as_text": "numbers stored as text",
-    "ambiguous_dates": "ambiguous dates", "mojibake": "garbled characters", "unit_mixes": "mixed units",
-    "cross_column": "values out of order", "functional_dependency": "broken dependencies", "outliers": "outliers",
-    "id_candidates": "looks like an ID", "leakage": "records the outcome",
-}
-NEVER_CHANGE = {"leakage": "Records the outcome, so it is marked as leakage and not changed",
-                "id_candidates": "Looks like an ID column, so it is left as is"}
-SKIP_TEXT = {"leakage": "excluded from models", "id_candidates": "left as is"}
-# Fixes that only make values readable (a placeholder becomes missing, "$4.20" becomes 4.2): an ID
-# flag doesn't block them, so a column taken for an ID by mistake still gets its types fixed.
-TYPE_FIXES = ("sentinels", "numbers_as_text")
 USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
@@ -71,23 +50,26 @@ def key(issue: dict) -> str:
 
 def never_change(issue: dict, card: dict) -> tuple[str, str] | None:
     """Columns that record the outcome or identify rows are marked, never changed, whatever the issue
-    but a type fix on an ID column (`TYPE_FIXES`): (reason, kind), kind being a `SKIP_TEXT` key, or
-    None for an issue the Cleaner may fix."""
-    reason = NEVER_CHANGE.get(issue["detector"])
-    if reason is not None:
-        return reason, issue["detector"]
+    but a type fix on an ID column (`spec.type_fix`: it only makes values readable, so a column taken
+    for an ID by mistake still gets its types fixed): (reason, kind), kind being the id of the
+    detector whose `skip_text` the log shows, or None for an issue the Cleaner may fix."""
+    spec = registry.get(issue["detector"])
+    if spec.never_change is not None:
+        return spec.never_change, spec.id
     leaking = {c["column"] for c in card.get("leakage_candidates", [])}
     if issue["column"] in leaking:
         return f"{issue['column']} records the outcome, so it is not changed", "leakage"
-    if issue["column"] in set(card.get("id_columns", [])) and issue["detector"] not in TYPE_FIXES:
+    if issue["column"] in set(card.get("id_columns", [])) and not spec.type_fix:
         return f"{issue['column']} looks like an ID column, so it is left as is", "id_candidates"
     return None
 
 
 def needs_order(issue: dict) -> bool:
-    """A date column every value of which reads both ways (`ambiguous_dates`, kind `ambiguous`): no
-    reading of the data settles the order, so the Cleaner doesn't guess one."""
-    return issue["detector"] == "ambiguous_dates" and (issue.get("details") or {}).get("kind") == "ambiguous"
+    """An issue whose plan item says it is cleaned only once the user picks an order (a date column
+    every value of which reads both ways): no reading of the data settles it, so the Cleaner doesn't
+    guess one."""
+    extras = registry.get(issue["detector"]).plan_extras
+    return bool(extras and extras(issue).get("needs_order"))
 
 
 def both_ways(values: list) -> list[tuple[str, str, str]]:
@@ -113,13 +95,14 @@ def fix_name(item: dict) -> str:
     """"outliers in fare", "duplicate rows", "your step on name"."""
     if item["detector"] == USER_DETECTOR:
         return f"your step on {item['column']}" if item["column"] else "your step on the rows"
-    what = LABELS.get(item["detector"], item["detector"].replace("_", " "))
+    what = registry.label(item["detector"])
     return f"{what} in {item['column']}" if item["column"] else what
 
 
 def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
     kept = never_change(issue, card)
-    module = "kept" if kept else DETECTOR_MODULE.get(issue["detector"], "other")
+    spec = registry.get(issue["detector"])
+    module = "kept" if kept else spec.group
     item = {
         "id": item_id or new_id("pit"), "source": "sherlock", "key": key(issue), "detector": issue["detector"],
         "column": issue["column"], "count": issue["count"], "severity": issue["severity"],
@@ -128,10 +111,8 @@ def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
     }
     if kept:
         item["reason"] = kept[0]
-    if issue["detector"] == "ambiguous_dates" and not kept:
-        item["date_order"] = None
-        item["both_ways"] = [{"value": v, "day_first": d, "month_first": m} for v, d, m in both_ways(item["examples"])]
-        item["needs_order"] = needs_order(issue)
+    if spec.plan_extras and not kept:
+        item.update(spec.plan_extras(issue))
     return item
 
 

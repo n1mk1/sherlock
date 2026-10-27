@@ -654,6 +654,74 @@
     "title": "DatasetPatch",
     "type": "object"
    },
+   "Detector": {
+    "properties": {
+     "default_level": {
+      "anyOf": [
+       {
+        "enum": [
+         "breaks",
+         "skews",
+         "splits",
+         "check",
+         "cosmetic"
+        ],
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Default Level"
+     },
+     "description": {
+      "title": "Description",
+      "type": "string"
+     },
+     "group": {
+      "title": "Group",
+      "type": "string"
+     },
+     "id": {
+      "title": "Id",
+      "type": "string"
+     },
+     "label": {
+      "title": "Label",
+      "type": "string"
+     },
+     "source": {
+      "title": "Source",
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "label",
+     "description",
+     "group",
+     "default_level",
+     "source"
+    ],
+    "title": "Detector",
+    "type": "object"
+   },
+   "Detectors": {
+    "properties": {
+     "detectors": {
+      "items": {
+       "$ref": "#/components/schemas/Detector"
+      },
+      "title": "Detectors",
+      "type": "array"
+     }
+    },
+    "required": [
+     "detectors"
+    ],
+    "title": "Detectors",
+    "type": "object"
+   },
    "DictionaryRequest": {
     "additionalProperties": false,
     "properties": {
@@ -4117,6 +4185,28 @@
     "summary": "Create Widget",
     "tags": [
      "widgets"
+    ]
+   }
+  },
+  "/api/v1/detectors": {
+   "get": {
+    "description": "The detector catalog (PRD CLEAN-12): every registered check's id, plain-words label and group.",
+    "operationId": "list_detectors_api_v1_detectors_get",
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Detectors"
+        }
+       }
+      },
+      "description": "Successful Response"
+     }
+    },
+    "summary": "List Detectors",
+    "tags": [
+     "cleaning"
     ]
    }
   },

@@ -1,15 +1,17 @@
 // TanStack Query hooks over the API, and the user-level event stream that keeps the library live.
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { canvasKey, ownEtags } from "./canvas";
 import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  Card, CleaningReport, CleanPlan, DataCard, Dataset, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
+  Card, CleaningReport, CleanPlan, DataCard, Dataset, Detector, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
   Me, Message, PlanOp, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
 } from "./types";
 
 export const keys = {
   me: ["me"] as const,
+  detectors: ["detectors"] as const,
   datasets: ["datasets"] as const,
   dataset: (id: string) => ["datasets", id] as const,
   datacard: (id: string, version?: number) => ["datacard", id, version ?? "current"] as const,
@@ -77,6 +79,25 @@ export function useCurrentVersion(id: string): number | undefined {
     enabled: false,
     queryFn: () => unwrap(api.GET("/api/v1/datasets/{dataset_id}", { params: { path: { dataset_id: id } } })) as Promise<Dataset>,
   }).data?.current_version;
+}
+
+// The detector catalog (PRD CLEAN-12): fixed while the server runs, so it is fetched once.
+export function useDetectors() {
+  return useQuery({
+    queryKey: keys.detectors,
+    queryFn: () => unwrap(api.GET("/api/v1/detectors")) as Promise<{ detectors: Detector[] }>,
+    staleTime: Infinity,
+  });
+}
+
+// A detector's plain words from the catalog ("placeholder values"); a user's step is "your step", and
+// an id the catalog doesn't list (or before it loads) is shown in words ("unit mixes").
+export function useDetectorLabel(): (detector: string) => string {
+  const { data } = useDetectors();
+  return useCallback((detector: string) => {
+    if (detector === "user_request") return "your step";
+    return data?.detectors.find((d) => d.id === detector)?.label ?? detector.replace(/_/g, " ");
+  }, [data]);
 }
 
 export function useDatacard(id: string | undefined, enabled = true) {

@@ -848,6 +848,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/detectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Detectors
+         * @description The detector catalog (PRD CLEAN-12): every registered check's id, plain-words label and group.
+         */
+        get: operations["list_detectors_api_v1_detectors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -1622,6 +1642,26 @@ export interface components {
             last_tab?: ("csv" | "dashboard" | "flow") | null;
             /** Name */
             name?: string | null;
+        };
+        /** Detector */
+        Detector: {
+            /** Default Level */
+            default_level: ("breaks" | "skews" | "splits" | "check" | "cosmetic") | null;
+            /** Description */
+            description: string;
+            /** Group */
+            group: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Source */
+            source: string;
+        };
+        /** Detectors */
+        Detectors: {
+            /** Detectors */
+            detectors: components["schemas"]["Detector"][];
         };
         /** DictionaryRequest */
         DictionaryRequest: {
@@ -3620,6 +3660,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_detectors_api_v1_detectors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detectors"];
                 };
             };
         };

@@ -1,4 +1,5 @@
-"""Cleaning (TRD §4.4): the cleaning plan, start a clean, use the data as is, read the report."""
+"""Cleaning (TRD §4.4): the detector catalog, the cleaning plan, start a clean, use the data as is,
+read the report."""
 
 import json
 import sqlite3
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from sherlock.cleaning import plan as plans
+from sherlock.cleaning import registry
 from sherlock.cleaning.report import build_report
 from sherlock.db.connection import get_db
 from sherlock.errors import ApiError, not_found
@@ -57,6 +59,25 @@ class PlanOp(BaseModel):
 class PlanPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     ops: list[PlanOp] = Field(min_length=1, max_length=50)
+
+
+class Detector(BaseModel):
+    id: str
+    label: str
+    description: str
+    group: str
+    default_level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None
+    source: str  # "builtin"
+
+
+class Detectors(BaseModel):
+    detectors: list[Detector]
+
+
+@router.get("/detectors", response_model=Detectors)
+def list_detectors() -> Detectors:
+    """The detector catalog (PRD CLEAN-12): every registered check's id, plain-words label and group."""
+    return Detectors(detectors=[Detector(**d) for d in registry.catalog()])
 
 
 def _busy(db: sqlite3.Connection, dataset_id: str) -> bool:

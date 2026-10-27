@@ -6,7 +6,7 @@ values show day-first and others month-first.
 
 import re
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import MAX_EXAMPLES, DetectorSpec, Finding, Frame, examples
 
 DMY = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})(\s.*)?$")
 MAJORITY = 0.5
@@ -40,3 +40,26 @@ def detect(frame: Frame) -> list[Finding]:
                 examples(text[matched].tolist()), {"kind": "ambiguous"},
             ))
     return findings
+
+
+def needs_order(issue: dict) -> bool:
+    """A column every date of which reads both ways (kind `ambiguous`): no reading of the data settles
+    the order, so the Cleaner doesn't guess one."""
+    return (issue.get("details") or {}).get("kind") == "ambiguous"
+
+
+def plan_extras(issue: dict) -> dict:
+    """The plan item's date order (picked by the user, null until then), up to three of its values read
+    both ways, and whether it is cleaned only with an order (TRD §4.4)."""
+    from sherlock.cleaning.plan import both_ways
+
+    pairs = both_ways(list(issue.get("examples") or [])[:MAX_EXAMPLES])
+    return {"date_order": None, "both_ways": [{"value": v, "day_first": d, "month_first": m} for v, d, m in pairs],
+            "needs_order": needs_order(issue)}
+
+
+SPEC = DetectorSpec(
+    "ambiguous_dates", "ambiguous dates", "Dates that could be read day-first or month-first.",
+    group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
+    vote=True, plan_extras=plan_extras,
+)

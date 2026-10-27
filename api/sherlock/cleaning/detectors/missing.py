@@ -1,6 +1,6 @@
 """Missing values and missingness patterns: per column, plus columns that go missing together."""
 
-from sherlock.cleaning.detectors.base import Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
 
 TOGETHER = 0.9  # Jaccard overlap of two columns' missing masks
 
@@ -28,3 +28,9 @@ def detect(frame: Frame) -> list[Finding]:
             details={"missing_with": together} if together else {},
         ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "missing", "missing values", "Missing values per column, and columns that go missing together.",
+    group="missing", weight=0.5, default_level="check", scope="column", detect=detect,
+)

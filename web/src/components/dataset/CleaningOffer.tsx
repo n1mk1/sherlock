@@ -2,7 +2,7 @@
 // the three most severe issues. The full list is the cleaning plan's (Clean with AI).
 import { AlertTriangle, CircleDashed, Flag } from "lucide-react";
 import type { ReactNode } from "react";
-import { useDatacard } from "@/api/queries";
+import { useDatacard, useDetectorLabel } from "@/api/queries";
 import type { DataCard, Dataset, Issue } from "@/api/types";
 import { issueLine } from "./CleanPlanPanel";
 
@@ -12,6 +12,7 @@ export function summaryLines(card: DataCard): Issue[] {
 
 export function CleaningOffer({ dataset, actions }: { dataset: Dataset; actions?: ReactNode }) {
   const { data: card } = useDatacard(dataset.id);
+  const label = useDetectorLabel();
   const top = card ? summaryLines(card) : [];
   return (
     <div className="mx-auto mt-[8vh] w-full max-w-[640px] px-4">
@@ -33,7 +34,7 @@ export function CleaningOffer({ dataset, actions }: { dataset: Dataset; actions?
               ) : (
                 <AlertTriangle className="size-4 text-muted-foreground" aria-hidden />
               )}
-              {issueLine(i)}
+              {issueLine(i, label)}
             </li>
           ))}
           {card && !card.issues.length && <li className="text-muted-foreground">Nothing that needs cleaning.</li>}

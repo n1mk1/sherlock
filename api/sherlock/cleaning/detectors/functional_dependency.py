@@ -3,7 +3,7 @@ disagree. Only checked between categorical columns, and only where A's groups ca
 
 from itertools import permutations
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 
 AGREEMENT = 0.95
 MAX_DISTINCT = 1000
@@ -43,3 +43,10 @@ def detect(frame: Frame) -> list[Finding]:
                 {"determinant": a, "agreement": round(float(agreement), 4)},
             ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "functional_dependency", "rows breaking a dependency",
+    "Rows that disagree with a value another column almost always determines.",
+    group="records", weight=0.5, default_level="check", scope="columns", detect=detect,
+)

@@ -1,6 +1,6 @@
 """Whitespace and case variants: stray spaces, and spellings that differ only by case or spacing."""
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 
 TEXT_TYPES = ("category", "text", "id", "bool")
 
@@ -33,3 +33,10 @@ def detect(frame: Frame) -> list[Finding]:
                 {"stray_whitespace": int(stray.sum()), "case_variants": int(case_mask.sum())},
             ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "whitespace_case", "spacing or case variants",
+    "Stray spaces, and spellings of one value that differ only by case or spacing.",
+    group="text", weight=0.4, default_level="splits", scope="column", detect=detect,
+)

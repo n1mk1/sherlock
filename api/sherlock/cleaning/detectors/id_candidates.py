@@ -4,7 +4,7 @@ Amounts aren't IDs however unique (TRD §7.1): a float column, or text that most
 ("36.74", "$4.20", `infer.measure_like`), is a measure, unless its role is already `id` (its name).
 """
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
 from sherlock.profile.infer import measure_like
 
 UNIQUE = 0.98
@@ -26,3 +26,10 @@ def detect(frame: Frame) -> list[Finding]:
                 examples(col.text.tolist()), {"unique_ratio": round(float(unique_ratio), 4)},
             ))
     return findings
+
+
+SPEC = DetectorSpec(
+    "id_candidates", "looks like an ID", "Columns that identify rows: almost every value distinct and present.",
+    group="other", weight=0.2, default_level=None, scope="column", detect=detect,
+    never_change="Looks like an ID column, so it is left as is", skip_text="left as is",
+)

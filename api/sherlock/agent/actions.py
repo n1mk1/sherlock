@@ -16,6 +16,7 @@ from sherlock.agent import prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
 from sherlock.agent.compose import fmt, fmt_kind
 from sherlock.cleaning import plan as plans
+from sherlock.cleaning import registry
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.jobs.events import emit
@@ -194,7 +195,7 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
     items = json.loads(row["items_json"])
     columns = [c for c in ws.user_types(kit.env, dataset, dataset["current_version"])]
     refs = {f"f{n}": i for n, i in enumerate(items, 1)}
-    lines = [" · ".join([ref, i["module"], i["column"] or "rows", plans.LABELS.get(i["detector"], i["detector"].replace("_", " ")),
+    lines = [" · ".join([ref, i["module"], i["column"] or "rows", registry.label(i["detector"]),
                          ("ticked" if i["ticked"] else "unticked") if i["change"] else "kept",
                          f"source {i['source']}", i["instruction"] or i["action"]]) for ref, i in refs.items()]
 

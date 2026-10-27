@@ -11,7 +11,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from sherlock.cleaning.detectors import Frame, run_all
+from sherlock.cleaning import registry
+from sherlock.cleaning.detectors import Frame
 from sherlock.cleaning.detectors.unit_mixes import WITH_UNIT
 from sherlock.db.util import new_id
 from sherlock.profile import stats
@@ -78,8 +79,9 @@ def build_datacard(conn: duckdb.DuckDBPyConnection, version: int) -> tuple[dict,
     df, types, quarantined = load_frame(conn)
     frame = build_frame(df, types)
     issues = []
-    leakage = []
-    for finding, severity in run_all(frame):
+    # The column lists the specs' `marks_column` fill (`leakage_candidates`), each present when empty.
+    marked: dict[str, list] = {s.marks_column: [] for s in registry.all() if s.marks_column}
+    for finding, severity in registry.run_all(frame):
         issue = {
             "id": new_id("iss"),
             "detector": finding.detector,
@@ -91,9 +93,10 @@ def build_datacard(conn: duckdb.DuckDBPyConnection, version: int) -> tuple[dict,
             "details": finding.details,
         }
         issues.append(issue)
-        if finding.detector == "leakage":
-            leakage.append({"column": finding.column, "target": finding.details["target"],
-                            "reason": finding.details["reason"]})
+        marks = registry.get(finding.detector).marks_column
+        if marks:
+            marked[marks].append({"column": finding.column, "target": finding.details["target"],
+                                  "reason": finding.details["reason"]})
     card = {
         "version": version,
         "row_count": frame.rows,
@@ -104,7 +107,7 @@ def build_datacard(conn: duckdb.DuckDBPyConnection, version: int) -> tuple[dict,
         "target_candidates": frame.target_candidates,
         "time_columns": [n for n, c in frame.columns.items() if c.role == "time"],
         "id_columns": [n for n, c in frame.columns.items() if c.role == "id"],
-        "leakage_candidates": leakage,
+        **marked,
     }
     return json.loads(json.dumps(card, default=_plain)), frame
 

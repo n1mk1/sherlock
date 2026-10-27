@@ -3,14 +3,15 @@ outside 0–100, and dates in the future or before 1800. Quantities are recognis
 
 `details` carries the column's domain rule and its plain words (`rule`): `low`/`high` for numbers;
 `earliest`, and `after`, the first instant too late, for dates. The Cleaner builds the rule's own
-quarantine from it (`loop.rule_candidate`, TRD §7.2).
+quarantine from it (`rule_candidate`, the spec's `code_fix`, TRD §7.2).
 """
 
 import re
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES
 
 NON_NEGATIVE = re.compile(
@@ -67,3 +68,34 @@ def detect(frame: Frame) -> list[Finding]:
                      "after": after.date().isoformat()},
                 ))
     return findings
+
+
+RULE_LABEL = "Quarantine impossible values"
+
+
+def rule_candidate(issue: dict) -> Candidate | None:
+    """The domain rule's own fix: quarantine the rows it names, built by code from the detector's
+    `details`, so a value outside the column's domain has a fix whatever the model proposes. None
+    for a rule the details don't give."""
+    column, d = issue.get("column"), issue.get("details") or {}
+    if column is None:
+        return None
+    if d.get("earliest") and d.get("after"):
+        load = f"values = pd.to_datetime(df[{column!r}], errors='coerce')"
+        tests = [f"(values < pd.Timestamp({d['earliest']!r}))", f"(values > pd.Timestamp({d['after']!r}))"]
+    else:
+        load = f"values = pd.to_numeric(df[{column!r}], errors='coerce')"
+        tests = [f"(values {op} {d[k]!r})" for k, op in (("low", "<"), ("high", ">")) if d.get(k) is not None]
+    if not tests:
+        return None
+    code = f"{load}\nbad = {' | '.join(tests)}\nresult = quarantine_rows(df, bad, {'impossible: ' + column!r})"
+    return Candidate(label=RULE_LABEL, code=code,
+                     expected_effect="Sets aside the rows whose value breaks the column's domain rule.")
+
+
+SPEC = DetectorSpec(
+    "impossible_values", "impossible values",
+    "Values outside the plausible domain the column's name gives it, such as a negative quantity or a future date.",
+    group="records", weight=0.7, default_level="skews", scope="column", detect=detect,
+    domain_rule=True, code_fix=rule_candidate,
+)

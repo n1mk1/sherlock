@@ -6,8 +6,8 @@ from statistics import NormalDist
 import pandas as pd
 import pytest
 
+from sherlock.cleaning import registry
 from sherlock.cleaning.detectors import (
-    WEIGHTS,
     ambiguous_dates,
     cross_column,
     duplicates,
@@ -21,7 +21,6 @@ from sherlock.cleaning.detectors import (
     near_duplicate_categories,
     numbers_as_text,
     outliers,
-    run_all,
     sentinels,
     unit_mixes,
     whitespace_case,
@@ -43,8 +42,9 @@ def counts(module, f, column=None):
 
 
 def test_weights_cover_the_sixteen_detectors():
-    assert len(WEIGHTS) == 16
-    assert WEIGHTS["leakage"] == 1.0 and WEIGHTS["id_candidates"] == 0.2
+    weights = {s.id: s.weight for s in registry.all()}
+    assert len(weights) == 16
+    assert weights["leakage"] == 1.0 and weights["id_candidates"] == 0.2
 
 
 def test_missing_and_columns_missing_together():
@@ -189,7 +189,7 @@ def test_leakage_by_values_and_by_presence():
 
 def test_run_all_sorts_by_severity():
     f = frame(a=["1", None] * 10, b=["x"] * 20)
-    results = run_all(f)
+    results = registry.run_all(f)
     assert results == sorted(results, key=lambda r: r[1], reverse=True)
     assert all(0 <= sev <= 1 for _, sev in results)
 
