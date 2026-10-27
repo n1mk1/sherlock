@@ -97,6 +97,14 @@ def test_near_duplicate_categories():
     assert finding.count == 2 and finding.details["pairs"] == [["new yrok", "new york"]]
 
 
+def test_near_duplicate_pairs_never_join_two_typos():
+    # "srocket" is close to the typo "sproket" too: it still goes to "sprocket", once.
+    values = ["Sprocket"] * 30 + ["Sproket"] * 2 + ["Srocket"] + ["Widget"] * 30
+    (finding,) = near_duplicate_categories.detect(frame(product=values))
+    assert sorted(finding.details["pairs"]) == [["sproket", "sprocket"], ["srocket", "sprocket"]]
+    assert finding.count == 3
+
+
 def test_exact_and_near_duplicates():
     f = frame(a=["x", "x", "X ", "y"], b=["1", "1", "1", "2"])
     found = {x.details["kind"]: x for x in duplicates.detect(f)}

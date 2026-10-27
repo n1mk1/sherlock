@@ -4,8 +4,10 @@ A pair the merge rule refuses isn't one (`helpers._merge_refusal`): values that 
 only in their numbers ("Region 1" / "Region 2") or that are both common (each on 5% of the rows or
 more, "Austria" / "Australia") are categories of their own, unless one is the other with an inner
 letter left out ("Wst" / "West", `helpers._dropped_letter`). `details.pairs` lists the pairs that
-may merge, [rare, common], and goes to the diagnose and propose prompts; `details.review_pairs` lists
-those of them that are both common, and the step that merges them is flagged for review (TRD §7.2).
+may merge, [rare, common], one per rare value: its most common neighbour, followed on to a value that
+isn't itself a rare spelling ("srocket" goes to "sprocket", not to the typo "sproket"). It goes to the
+diagnose and propose prompts; `details.review_pairs` lists those of them that are both common, and the
+step that merges them is flagged for review (TRD §7.2).
 Values need four characters, or three letters ("Wst").
 """
 
@@ -32,16 +34,26 @@ def detect(frame: Frame) -> list[Finding]:
                   and not v.replace(".", "").isdigit()]
         keys = col.text.map(_merge_key).value_counts().to_dict()
         often = max(2, _COMMON_SHARE * frame.rows)  # `_merge_refusal`'s "common"
-        pairs, review, minority = [], [], set()
+        nearest: dict[str, str] = {}  # rare value -> its most common neighbour
         for i, a in enumerate(values):
             for b in values[i + 1:]:
                 if fuzz.ratio(a, b) >= SIMILARITY and _merge_refusal(a, b, keys, frame.rows) is None:
                     rare = a if counts[a] < counts[b] else b
                     common = b if rare == a else a
-                    pairs.append([rare, common])
-                    minority.add(rare)
-                    if min(keys.get(_merge_key(a), 0), keys.get(_merge_key(b), 0)) >= often:
-                        review.append(pairs[-1])
+                    if rare not in nearest or counts[common] > counts[nearest[rare]]:
+                        nearest[rare] = common
+        pairs, review = [], []
+        for rare, common in nearest.items():
+            seen = {rare}
+            while common in nearest and common not in seen:  # a neighbour that is a rare spelling itself
+                seen.add(common)
+                common = nearest[common]
+            if common == rare:
+                continue
+            pairs.append([rare, common])
+            if min(keys.get(_merge_key(rare), 0), keys.get(_merge_key(common), 0)) >= often:
+                review.append(pairs[-1])
+        minority = {rare for rare, _ in pairs}
         if minority:
             mask = col.text.str.casefold().isin(minority)
             findings.append(Finding(
