@@ -58,6 +58,11 @@ export function MenuCheck({ checked, children, onSelect }: { checked: boolean; c
 
 export const MenuSeparator = () => <Menu.Separator className="my-1 h-px bg-border" />;
 
+/** An item's keyboard shortcut (or the reason it's blocked), right-aligned in mono. */
+export const MenuShortcut = ({ children }: { children: ReactNode }) => (
+  <span className="ml-auto pl-4 font-mono text-[11px] text-muted-foreground">{children}</span>
+);
+
 /** A group's overline inside a menu (the analysis dropdown's Explain · Predict · …). */
 export const MenuLabel = ({ children }: { children: ReactNode }) => (
   <Menu.Label className="px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{children}</Menu.Label>

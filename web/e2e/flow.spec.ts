@@ -79,6 +79,31 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   await expect(page.getByText("summarized in").first()).toBeVisible();
   await expectNoAxeViolations(page, "the Flow canvas");
 
+  // Every canvas action has a control on screen (App Flow §12.2): a node's ⋯ menu by keyboard, the
+  // status row's Remove, then Ctrl+Z puts the card back; Shift-drag draws a selection box.
+  const menu = nodes.nth(0).getByRole("button", { name: /^Menu for/ });
+  await menu.focus();
+  await menu.press("Enter");
+  await expect(page.getByRole("menuitem", { name: /Remove from canvas/ })).toBeVisible();
+  await page.keyboard.press("Escape"); // closes the menu
+  await page.keyboard.press("Escape"); // clears the selection
+  await expect(page.getByRole("status").filter({ hasText: "Story canvas" })).toHaveText("Story canvas · 3 nodes");
+  await nodes.nth(0).click({ position: { x: 20, y: 12 } });
+  await page.getByRole("button", { name: "Remove 1 node from the canvas" }).click();
+  await expect(page.getByText("Removed 1 item from the canvas")).toBeVisible();
+  await expect(page.locator(".react-flow__node-card")).toHaveCount(2);
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".react-flow__node-card")).toHaveCount(3);
+  const pane = (await page.locator(".react-flow__pane").boundingBox())!;
+  await page.keyboard.down("Shift");
+  await page.mouse.move(pane.x + pane.width - 12, pane.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + 12, pane.y + pane.height - 90, { steps: 8 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  await expect(page.getByRole("status").filter({ hasText: "Story canvas" })).toContainText("3 nodes and");
+  await page.keyboard.press("Escape");
+
   // Export the notebook: it downloads.
   await page.getByRole("button", { name: "Dataset menu" }).click();
   await page.getByRole("menuitem", { name: /Export notebook/ }).click();

@@ -128,7 +128,7 @@ Where the screens step off the scale:
 - Panel padding 16px; widget padding 12px 16px; card padding 20px 22px. Dashboard gap 20px.
 - `--radius: 10px` (Bklit's `.625rem`). Chips and badges 999px (`--radius-chip`), except inline number chips at 6px (`--radius-number-chip`). Inputs and buttons 8px (`--radius-control`). Widgets, cards and dialogs 16px (`--radius-surface`).
 - Elevation is almost never used. Drawers, menus and the chat thread use `--shadow-overlay`: `0 12px 32px rgba(46,48,53,0.10)` in Light, `0 12px 32px rgba(0,0,0,0.35)` in Dark. Nothing else has a shadow.
-  - Not built yet: dialogs, popovers (job tray, the card editor's number picker), the custom charts' readout and the narrow-screen slide-overs also use `--shadow-overlay`; the column-note tooltip has Tailwind's `shadow-md`, Bklit's chart tooltip its own soft shadow, and canvas card nodes a hard-coded `0 1px 2px rgba(0,0,0,0.04)`.
+  - Not built yet: dialogs, popovers (job tray, the card editor's number picker), the custom charts' readout and the narrow-screen slide-overs also use `--shadow-overlay`; the column-note tooltip has Tailwind's `shadow-md`, and Bklit's chart tooltip its own soft shadow.
 - The spotlight is the only glow, `--spotlight-shadow`: `0 0 0 1px var(--accent), 0 0 14px var(--spotlight)` at Full, a 7px blur at Subtle (the default), the 1px ring alone at Off. The Spotlight setting is removed by cut 1, so the app shows Subtle unless a saved setting says otherwise (§9).
 
 ### 2.4 Motion
@@ -144,7 +144,7 @@ Motion (the library) is for: widget enter (fade + 4px rise), card stream-in, spo
 
 - Not built yet: only the Bklit charts use Motion. Widgets, cards, the thread and canvas nodes appear with no enter animation, drawers don't slide in, and the spotlight fades over `--duration-fast`.
 - The Reduce motion setting is removed by cut 1, so the OS preference decides unless a saved setting says otherwise (§9).
-- Not built yet: reduced motion in full. Bklit's line and area animations follow the OS preference but not a saved setting; its bar and pie entry animations, Tailwind's pulse and spin, smooth scrolling to a widget or card, the canvas's zoom and fit animations, the number chip's 400ms pulse and the analysis progress bar's 500ms transition ignore both.
+- Not built yet: reduced motion in full. Bklit's line and area animations follow the OS preference but not a saved setting; its bar and pie entry animations, Tailwind's pulse and spin, smooth scrolling to a widget or card, the number chip's 400ms pulse and the analysis progress bar's 500ms transition ignore both.
 
 ### 2.5 Iconography
 
@@ -399,7 +399,8 @@ sonner, bottom-right, `--popover`, 1px `--border`. 10 s for Undo toasts, 4 s oth
 ### 4.11 Tooltips
 
 `--popover` surface, body-sm, 6px 10px padding, 200ms delay, at most two lines.
-- Not built yet: outside the charts' own tooltips (§4.4) and the column-note tooltip (§4.7), every tooltip is the browser's native `title`, so this styling doesn't apply.
+- `ui/tooltip.tsx` (`Tip`, Radix Tooltip) draws it, with an optional keyboard shortcut on the right in mono 11px muted, and a `--shadow-overlay`. The Flow canvas's controls use it.
+- Not built yet: everywhere else (outside the charts' own tooltips, §4.4, and the column-note tooltip, §4.7) the tooltip is still the browser's native `title`.
 - Cell provenance tooltip (three lines with an Undo link): removed by cut 5.
 
 ### 4.12 Segmented control (settings, tabs)
@@ -409,7 +410,7 @@ sonner, bottom-right, `--popover`, 1px `--border`. 10 s for Undo toasts, 4 s oth
 ### 4.13 Empty states
 
 Centred, max 420px wide: a 24px lucide icon in `--muted-foreground`, a title (title size), one sentence (body, muted), one primary action. Never more than one action, except the library empty state (Upload and Try with sample).
-- Not built yet: the dashboard's ("No widgets yet") has no icon and its Add widget button is secondary; the canvas's ("The canvas is empty") has no icon or action.
+- Not built yet: the dashboard's ("No widgets yet") has no icon and its Add widget button is secondary.
 
 ---
 
@@ -595,20 +596,22 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 
 `flow/FlowTab.tsx`, `FlowPalette.tsx`. React Flow (`@xyflow/react` 12.11.3) with its structural `base.css` only; every colour comes from the tokens (`.flow-canvas` rules in `index.css`).
 - **Canvas**: `--background` with a dot grid (`--border-strong` dots, 1.2px, 22px spacing).
-- **Card nodes**: 240px wide in the §4.5 style; the headline serif 15px at 600, the body 13px clamped to six lines (except on a synthesis). "Open widget" when it has one; small `--warning` chips for "changed", "outdated" and "sources changed"; the user-text badges at 10px (§4.5).
+- **Card nodes**: 240px wide (widened up to 480px) in the §4.5 style with no shadow; the headline serif 15px at 600, the body 13px clamped to six lines (except on a synthesis). "Open widget" when it has one; small `--warning` chips for "changed", "outdated" and "sources changed"; the user-text badges at 10px (§4.5).
 - **Synthesis node**: `--accent` overline, `--border-strong` border, "Cites n cards" in its footer.
-- **Notes**: 220px, radius 14, a fill of 5% foreground over the background.
+- **Notes**: 220px (160–480px), radius 14, a fill of 5% foreground over the background.
+- **Node menu**: a 28px ghost ⋯ (`ui/menu.tsx`, as the widget menu) at the top right of a card's overline row or a note's corner, hidden until the node is hovered, focused or selected (as library rows). Right-click opens the same items at the pointer. Remove from canvas uses ×, because the card stays in the palette; Delete note, Delete card and Delete connection use `trash-2` and the destructive item style. Shortcuts show on the right of each item (`MenuShortcut`, mono 11px muted).
+- **Resize grip**: the right edge of a selected node, 8px wide, showing a 2px `--accent` line while hovered or dragged.
 - Direction node (dashed `--accent` border): removed by cut 3.
 - **Handles**: 9px side handles with an `--accent` ring, shown on hover and selection.
 - **Selected node**: 2px `--accent` outline offset 2px; dashed for the first node picked in connect mode.
 - **Edges**: 1.5px bezier curves with a closed arrowhead; `--muted-foreground` for the user's, `--accent` for the AI's; 2.25px and `--accent` when selected. Suggested edges (P1, dashed) aren't built.
-- **Labels**: pill chips at the midpoint, `--card` fill, edited in place.
-- **Zoom control**: bottom-left, two 32px ghost buttons in a `--card` pill.
+- **Labels**: pill chips at the midpoint, `--card` fill, edited in place. A selected connection's pill (an empty one when it has no label) carries its ⋯.
+- **View control**: bottom-left, a `--card` pill of 32px ghost icon buttons (`ui/button.tsx`): Undo and Redo (dimmed when there's nothing to undo or redo), a hairline, then zoom out, the zoom level in mono 12px (a ghost button that resets to 100%) and zoom in. Each has a tooltip with its key. Zoom, fit and centring animate over `--duration-base`, so reduced motion makes them instant.
 - **Minimap**: bottom-right, 132 × 84, `--card`, the viewport mask stroked in `--info`.
-- **"Make sense of this"**: a primary button at the canvas's top left, next to the node count ("Story canvas · 6 nodes · 3 selected", 13px muted), shown while two or more cards are selected.
-- **Context row**: Add note (secondary), Connect (a toggle, `--accent` text while on) and Fit view, all 28px. While connecting, an `--accent`-bordered pill at the top centre says what to click next.
+- **Status row**: the node count at the canvas's top left ("Story canvas · 6 nodes · 3 selected", 13px muted), then the selection's `sm` buttons: **Make sense of this** (primary, two or more cards), **Connect** (ghost, `spline`, exactly two nodes) and **Remove** (ghost, ×, anything selected; its name says what: "Remove 2 nodes from the canvas").
+- **Context row**: `Button size="sm"`: Add note (secondary, `plus`), Connect (ghost, `spline`, `aria-pressed` with a `--secondary` fill while on, as Edit layout) and Fit view (ghost, `maximize`), each with a tooltip. While connecting, an `--accent`-bordered pill at the top centre says what to click next.
 - Deleting nodes or edges gives a toast with Undo for 10 s.
-- **Empty canvas**: "The canvas is empty" with one muted sentence on how to fill it.
+- **Empty canvas**: as §4.13: a 24px muted `workflow` icon, "The canvas is empty", one muted sentence on how to fill it, and **Add note** (primary).
 
 **Palette** (right panel): a "Story cards" overline; a "Search cards" input; rows (drag handle · name · "on canvas" / "not placed" in muted; Enter or a double-click places one in the middle); a "Try asking" card; then Export: Notebook (.ipynb) (P0, a link) and "Obsidian (.canvas) · P1" (muted, not built).
 
@@ -669,6 +672,7 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 - **Keyboard**:
   - Tab order: left panel → tabs → context row → grid (widgets are focusable; Enter opens the menu) → right panel → chat bar. Arrow keys move between widgets when the grid has focus.
   - Global shortcuts: `/` focuses the chat bar; Ctrl+Shift+E opens Export notebook. Single-key shortcuts fire only when no cell, input or editor has focus.
+  - Canvas keys (Ctrl+Z, Ctrl+A, Ctrl+D, Shift+1, …) are listed in App Flow §12.2. They follow canvas tools (Figma, Miro, tldraw), act only on the Flow tab while no input, note, editor, menu or dialog has focus, and show in the tooltip or menu item of the control that does the same thing.
   - Every menu action having a shortcut listed on `?`: removed with the `?` sheet by cut 9.
   - Not built yet: widgets aren't focusable, so the widget tab stop, Enter and arrow keys don't work.
 - **Focus**: 2px `--ring` with 2px offset everywhere, including grid cells and canvas nodes.
@@ -704,7 +708,7 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 - Nothing is dimmed with opacity when its text must stay readable: a faded state uses a muted color or a dashed border instead (§5.7).
 - The end-to-end flow (`web/e2e/axe.ts`, called from `flow.spec.ts`) runs axe-core 4.10 with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` and `wcag22aa` tags on five screens: the empty library, the dashboard with stories, the CSV tab with the thread open, the Flow canvas, and the Changes panel with an undone step. Any violation fails it.
 - Charts have an accessible alternative: "Show as table" in the widget menu, and an `aria-label` summarizing the chart from its fact sheet. Not built yet: the Bklit charts' SVGs are `aria-hidden` with no summary; only the custom charts carry one.
-- Grid cells and canvas nodes are keyboard reachable. Canvas nodes are focusable (React Flow's default) but have no accessible name (not built yet). Cell provenance by keyboard (Ctrl+I) is removed with cell provenance by cut 5.
+- Grid cells and canvas nodes are keyboard reachable. Canvas nodes and connections are named ("Story card: Survival rate. Overall survival rate was 38.2%.", "Note: …", "Connection from Survival rate to Synthesis, labelled summarized in"), and React Flow's own descriptions and movement announcements are in Sherlock's words (`ariaLabelConfig`). Cell provenance by keyboard (Ctrl+I) is removed with cell provenance by cut 5.
 - Drawers and dialogs trap focus and restore it; Esc closes.
 - `prefers-reduced-motion` and the setting disable animation, and the spotlight becomes a 1px ring (the setting is removed by cut 1). Not built yet in full (§2.4).
 - Nothing relies on hover alone: every hover reveal (card linking, column notes) has a click or keyboard path. Not built yet: card linking has a click path but no keyboard path, and column notes are hover-only.

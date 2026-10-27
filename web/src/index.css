@@ -161,6 +161,25 @@
   background: var(--accent-soft);
   border: 1px solid var(--accent);
 }
+/* A selected node's right edge widens it: an 8px grip, an --accent line while hovered or dragged. */
+.flow-canvas .react-flow__resize-control.line.right.flow-resize {
+  width: 8px;
+  border: 0;
+  background: transparent;
+}
+.flow-canvas .react-flow__resize-control.line.right.flow-resize::after {
+  content: "";
+  position: absolute;
+  inset: 12px 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+.flow-canvas .react-flow__resize-control.line.right.flow-resize:hover::after,
+.flow-canvas .react-flow__resize-control.line.right.flow-resize:active::after {
+  opacity: 1;
+}
 .flow-canvas .react-flow__minimap {
   background: var(--card);
   border: 1px solid var(--border);

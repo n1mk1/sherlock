@@ -8,7 +8,7 @@ import { useDeleteDataset, useRenameDataset, useRestoreDataset } from "@/api/que
 import type { Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuShortcut, MenuTrigger } from "@/components/ui/menu";
 import { useUi } from "@/state/ui";
 import { exportBlocked } from "./ExportDialog";
 
@@ -108,7 +108,7 @@ export function DatasetMenu({ dataset }: { dataset: Dataset }) {
         </MenuTrigger>
         <MenuContent>
           <MenuItem onSelect={() => setExportOpen(true)} disabled={!!blocked}>
-            <BookOpen /> Export notebook<span className="ml-auto pl-4 font-mono text-[11px] text-muted-foreground">{blocked ?? "Ctrl+Shift+E"}</span>
+            <BookOpen /> Export notebook<MenuShortcut>{blocked ?? "Ctrl+Shift+E"}</MenuShortcut>
           </MenuItem>
           <MenuItem onSelect={cmd.downloadCsv} disabled={dataset.current_version === 0}><Download /> Download CSV</MenuItem>
           <MenuItem onSelect={() => setRenaming(true)}><Pencil /> Rename</MenuItem>

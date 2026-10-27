@@ -1,13 +1,16 @@
 // The Flow palette (App Flow §12.1, UI/UX brief §5.10): the right panel on the Flow tab. Search, then
 // every story card as a row to drag onto the canvas (or press Enter to place it in the middle), each
 // marked "on canvas" or "not placed"; then "Try asking"; then Export.
-import { GripVertical } from "lucide-react";
+import { GripVertical, Maximize, Plus, Spline, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMatch } from "react-router-dom";
 import { useCanvas } from "@/api/canvas";
 import { useWidgets } from "@/api/queries";
 import { plainText, useCards } from "@/api/stories";
 import type { Card } from "@/api/types";
+import { Button } from "@/components/ui/button";
+import { Tip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { CARD_DRAG, useFlow } from "@/state/flow";
 import { useUi } from "@/state/ui";
 
@@ -86,21 +89,36 @@ export function FlowPalette() {
   );
 }
 
-/** "Story canvas · 6 nodes · 3 selected" and, with two or more cards selected, "Make sense of this",
- * at the canvas's top left so the header never changes width. */
+/** "Story canvas · 6 nodes · 2 selected" and the selection's actions (App Flow §12.1): Make sense of
+ * this (two or more cards), Connect (exactly two nodes) and Remove, at the canvas's top left so the
+ * header never changes width. */
 export function FlowStatus() {
-  const { selectedCount, nodeCount, selectedCardIds } = useFlow();
+  const { selectedCount, selectedEdgeCount, nodeCount, selectedCardIds, commands } = useFlow();
   const sendChat = useUi((s) => s.sendChat);
+  const plural = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+  const items = [selectedCount ? plural(selectedCount, "node") : "", selectedEdgeCount ? plural(selectedEdgeCount, "connection") : ""]
+    .filter(Boolean).join(" and ");
+  // "2 selected" for nodes alone, as before; connections are named.
+  const picked = selectedEdgeCount ? items : selectedCount ? String(selectedCount) : "";
   return (
-    <div className="absolute left-4 top-3 z-10 flex items-center gap-3">
-      <p role="status" className="text-[13px] text-muted-foreground">
-        Story canvas · {nodeCount} {nodeCount === 1 ? "node" : "nodes"}{selectedCount ? ` · ${selectedCount} selected` : ""}
+    <div className="absolute left-4 top-3 z-10 flex items-center gap-2">
+      <p role="status" className="mr-1 text-[13px] text-muted-foreground">
+        Story canvas · {nodeCount} {nodeCount === 1 ? "node" : "nodes"}{picked ? ` · ${picked} selected` : ""}
       </p>
       {selectedCardIds.length >= 2 && (
-        <button type="button" onClick={() => sendChat("Make sense of this")}
-          className="inline-flex h-7 items-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:brightness-110">
-          Make sense of this
-        </button>
+        <Button size="sm" variant="primary" onClick={() => sendChat("Make sense of this")}>Make sense of this</Button>
+      )}
+      {selectedCount === 2 && (
+        <Tip label="Connect the first node picked to the second">
+          <Button size="sm" variant="ghost" onClick={() => commands?.connectSelected()}><Spline /> Connect</Button>
+        </Tip>
+      )}
+      {(selectedCount > 0 || selectedEdgeCount > 0) && (
+        <Tip label={selectedCardIds.length ? "Remove from the canvas. Cards stay in the palette." : "Remove from the canvas"} shortcut="Del">
+          <Button size="sm" variant="ghost" aria-label={`Remove ${items} from the canvas`} onClick={() => commands?.removeSelected()}>
+            <X /> Remove
+          </Button>
+        </Tip>
       )}
     </div>
   );
@@ -110,14 +128,18 @@ export function FlowActions() {
   const { commands, connecting, setConnecting } = useFlow();
   return (
     <>
-      <button type="button" onClick={() => commands?.addNote()}
-        className="inline-flex h-7 items-center rounded-md border border-border bg-secondary px-3 text-[13px] font-medium hover:bg-muted">Add note</button>
-      <button type="button" aria-pressed={connecting} onClick={() => setConnecting(!connecting)}
-        className={`inline-flex h-7 items-center rounded-md px-3 text-[13px] font-medium hover:bg-secondary ${connecting ? "bg-secondary text-accent" : ""}`}>
-        Connect
-      </button>
-      <button type="button" onClick={() => commands?.fitView()}
-        className="inline-flex h-7 items-center rounded-md px-3 text-[13px] font-medium hover:bg-secondary">Fit view</button>
+      <Tip label="Add a note in the middle of the view" shortcut="Double-click">
+        <Button size="sm" onClick={() => commands?.addNote()}><Plus /> Add note</Button>
+      </Tip>
+      <Tip label="Click one node, then another, to connect them">
+        <Button size="sm" variant="ghost" aria-pressed={connecting} className={cn(connecting && "bg-secondary")}
+          onClick={() => setConnecting(!connecting)}>
+          <Spline /> Connect
+        </Button>
+      </Tip>
+      <Tip label="Fit every node in view" shortcut="Shift+1">
+        <Button size="sm" variant="ghost" onClick={() => commands?.fitView()}><Maximize /> Fit view</Button>
+      </Tip>
     </>
   );
 }

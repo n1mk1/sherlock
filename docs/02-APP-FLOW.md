@@ -498,7 +498,7 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 ### 12.1 Layout
 
 - **Header**: **Add note**, **Connect** (pressed while on) and **Fit view**, then the job tray and the ⋯ menu.
-- **The canvas** (dot grid). At its top left, "Story canvas · 6 nodes · 3 selected", with **Make sense of this** beside it whenever two or more cards are selected (there, not in the header, so the header never changes width). Zoom buttons bottom-left, minimap bottom-right.
+- **The canvas** (dot grid). At its top left, "Story canvas · 6 nodes · 3 selected" ("2 nodes and 1 connection selected" once a connection is in it), then the selection's actions (there, not in the header, so the header never changes width): **Make sense of this** with two or more cards selected, **Connect** with exactly two nodes (from the first picked to the second, then its label input), and **Remove** with anything selected. Bottom-left, Undo and Redo, then zoom out, the zoom level ("73%"; a click resets it to 100%) and zoom in; the minimap bottom-right.
 - **Right panel, the palette**: "Story cards", a search box ("Search cards"), every story card as a draggable row marked "on canvas" or "not placed", then "Try asking" ("Make sense of this", "What do these cards say about <a column>?"; a click fills the chat bar), then Export: **Notebook (.ipynb)** and "Obsidian (.canvas) · P1" (not built). With no cards: "Story cards appear here once the dashboard's stories are written."
 - The chat bar with the context chip ("3 cards selected" / "Whole canvas").
 
@@ -509,13 +509,24 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 | Drag a palette row onto the canvas | Places that card as a node at the drop point. The row becomes "on canvas". |
 | Enter or Space on a focused row, or double-click it | Places the card in the middle of the view, below any card already there. The row's accessible name is the card's title and "on canvas" or "not placed". Synthesis and answer cards are listed by their headline. A card already on the canvas isn't placed twice: it's selected and the view centres on it. |
 | Drag a node | Moves it. |
-| Click a node | Selects it; Shift-, Ctrl- or Cmd-click adds. There is no box selection. Selection is the chat context. |
-| Keyboard | Tab reaches each node (and the chips and "Open widget" inside it); Enter selects the focused node, and Shift, Ctrl or Cmd with Enter adds it (React Flow's keyboard selection). Then `/` and "Make sense of this" in the chat bar. |
+| Click a node | Selects it; Shift-, Ctrl- or Cmd-click adds. Selection is the chat context. |
+| Shift-drag on the background | Draws a selection box; every node it touches, and the connections between them, are selected. |
+| Keyboard | Tab reaches each node (and the chips, ⋯ and "Open widget" inside it); Enter selects the focused node, and Shift, Ctrl or Cmd with Enter adds it (React Flow's keyboard selection); the arrow keys move a selected, focused node (Shift moves faster). Then `/` and "Make sense of this" in the chat bar. |
+| Canvas keys | Ctrl+A selects every node, Esc clears the selection (or leaves Connect mode), Ctrl+Z undoes, Ctrl+Shift+Z or Ctrl+Y redoes, Ctrl+D duplicates the selected notes, Ctrl+C and Ctrl+V copy and paste. Shift+1 fits every node in view, Shift+2 zooms to the selection, Ctrl+0 goes to 100%, Ctrl+= and Ctrl+− zoom. They act only while no input, note, editor, menu or dialog has focus. |
+| ⋯ on a node (shown on hover, focus or selection), or right-click it | A card: Edit, Ask why (fills the chat with "Why …?" and makes this card the context), Open widget, Connect from here, then Remove from canvas and Delete card (the story card's own delete: "Card deleted" with Undo for 10 s). A note: Edit, Duplicate, Connect from here, then Delete note. Each item shows its key on the right. |
+| ⋯ on a selected connection's label, or right-click the connection | Edit label, Reverse direction, Remove label, then Delete connection. |
+| Right-click the background | Add note here, Paste (this tab's last copy), Select all, Fit view. |
+| Double-click the background | Adds a note there in edit mode. |
+| Drag from a node's side handle into empty space | Adds a note there in edit mode, connected from that node (or to it, from its left handle). Left empty, the note and the connection go. |
+| Drag the right edge of a selected note or card | Widens it: notes 160–480px, cards 240–480px; the height follows the content. Nodes snap to the 22px dot grid as they move. |
+| Drag an end of a selected connection to another node | Reconnects it. |
+| Undo and Redo (bottom-left, or the keys) | Steps back and forward through this tab's changes to the canvas (up to 50): placing, adding, moving, resizing, connecting, editing a note or label, removing, pasting. The tooltip names the step ("Undo move"). Undo applies only that change to the current canvas, so a synthesis the AI or another tab added since stays. The history is this tab's and is gone on reload; a card's own text keeps its versions (§11). |
+| Copy, paste, duplicate | Ctrl+C copies the selected nodes and the connections among them (and their text, for other apps). Ctrl+V pastes them two grid steps down and right; text copied elsewhere becomes a note. Duplicate copies notes only. A card is on the canvas once: pasting one that's already there selects it. |
 | Double-click a card node | Edits it in place with the card editor (§11), the same object as in the stories panel. |
 | Connect, then click A then B | A hint reads "Click the first node, then the second", then "Now click the node to connect it to". The second click makes the edge, opens its label input, and turns Connect off. Enter saves the label, Esc leaves it as it was. Dragging from a node's side handle to another node also connects them. |
-| Click an edge | Selects it; Delete removes it; double-click edits the label. |
-| Add note | Places a note at the viewport centre in edit mode. Ctrl+Enter or clicking away saves it, Esc cancels; a new note left empty is removed. Double-clicking a note edits it again. |
-| Delete or Backspace with nodes or edges selected | Removes them, with a toast "Removed 2 items from the canvas" ("Cards stay in the palette.") and Undo for 10 s. Notes are deleted; cards stay in the palette. |
+| Click an edge, or its label | Selects it; Delete removes it; double-click edits the label. |
+| Add note | Places a note at the viewport centre in edit mode (also the empty canvas's button). Ctrl+Enter or clicking away saves it, Esc cancels; a new note left empty is removed. Double-clicking a note edits it again. |
+| Delete or Backspace with nodes or edges selected, or Remove | Removes them, with a toast "Removed 2 items from the canvas" ("Cards stay in the palette.") and Undo for 10 s, the same step as Ctrl+Z. Notes are deleted; cards stay in the palette. Removing the node picked first in Connect mode cancels that pick. |
 | "Open widget" on a card node | Navigates to `?widget=:id` on the Dashboard tab. |
 | Scroll / pinch | Zoom; drag the background to pan. |
 
@@ -525,7 +536,7 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 
 **Remember where I was.** Pan and zoom are kept per dataset in this browser. A canvas opened for the first time with nodes fits them in view; an empty one opens at 100%.
 
-**Empty canvas.** "The canvas is empty", then "Drag story cards here from the palette, or add a note. Select two or more cards and ask Sherlock to make sense of them."
+**Empty canvas.** "The canvas is empty", then "Drag story cards here from the palette, or add a note. Select two or more cards and ask Sherlock to make sense of them.", and **Add note**.
 
 ### 12.3 AI actions on the canvas
 

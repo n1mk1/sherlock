@@ -288,11 +288,17 @@ Mixed types · sentinels (`-999`, `N/A`, `null`, `?`, empty) · whitespace and c
 |---|---|---|
 | FLOW-1 (P0) | One infinite canvas per dataset with pan, zoom, minimap, "fit view". | Saved automatically within 1 s of any change. |
 | FLOW-2 (P0) | Story cards can be dragged from the palette onto the canvas. A card on the canvas is the same object as in the panel (live). The palette marks cards already placed. | Editing the card in either place updates both. |
-| FLOW-3 (P0) | Notes (free text) can be added, edited and deleted. | — |
-| FLOW-4 (P0) | Edges can be drawn between any two nodes, labeled with free text, and deleted. | Labels render at the edge midpoint. |
+| FLOW-3 (P0) | Notes (free text) can be added, edited and deleted. | A note can be added from the header, by double-clicking empty canvas, or by dragging a connection into empty space. |
+| FLOW-4 (P0) | Edges can be drawn between any two nodes, labeled with free text, and deleted. | Labels render at the edge midpoint. A click on a label selects its edge. An edge can be reversed and its ends dragged to other nodes. |
 | FLOW-5 (P0) | Chat on the canvas uses the selected nodes as context (or the whole canvas). "Make sense of this" adds a synthesis card connected to its sources. "Take the story toward X" creates the needed widget(s) and places their cards connected to the selection. "Rewrite this card" proposes an edit to accept or reject. | A synthesis card cites its source cards; numbers in it are chips from those cards' fact sheets. "Rewrite this card" and "Take the story toward X": removed by cuts 2 and 3; "Make sense of this" stays. |
 | FLOW-6 (P0) | The canvas is stored as JSON Canvas. | A valid `.canvas` document is produced. |
-| FLOW-7 (P1) | Groups, chart thumbnails on cards, AI-suggested connections, "Argue against this", "Order this into a story", Markdown and `.canvas` export, auto-layout. | — |
+| FLOW-7 (P1) | Groups, align and distribute, Markdown in notes, chart thumbnails on cards, AI-suggested connections, "Argue against this", "Order this into a story", Markdown and `.canvas` export, auto-layout. | — |
+| FLOW-8 (P0) | Every canvas action has a control on screen, not only a key. The selection's actions sit in the status row; every node and a selected edge have a ⋯ menu; right-click opens the same menu. | Removing works with a mouse alone. A card node offers what its story card offers (Edit, Ask why, Open widget, Delete card) plus Remove from canvas. |
+| FLOW-9 (P0) | Box selection (Shift-drag), Select all and Escape. | A plain drag still pans. |
+| FLOW-10 (P0) | Undo and redo of this tab's canvas changes, by key and by button. | Undoing never takes back what the AI or another tab did since. The removal toast's Undo and Ctrl+Z agree. |
+| FLOW-11 (P0) | Duplicate notes; copy and paste nodes; pasting text makes a note. | A card is never placed twice. |
+| FLOW-12 (P0) | Nodes snap to the dot grid; a selected note or card can be widened. | The width is saved. |
+| FLOW-13 (P0) | A zoom readout that resets to 100%, and keys to fit all, zoom to the selection and zoom in and out. | Zoom and fit animations follow reduced motion. |
 
 ### 7.9 Ask anything (chat)
 
