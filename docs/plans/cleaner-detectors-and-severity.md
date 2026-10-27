@@ -1,6 +1,6 @@
 # Plan: an extensible, severity-ranked Cleaner
 
-**Status:** proposal for after the hackathon, not built. Nothing here is a spec until the PRD and TRD say it (CLAUDE.md Rule 1). Items marked **Owner** need a decision before the build; they are collected in §15.
+**Status:** built, slices 1–10 (§14). The specs are PRD CLEAN-8c, CLEAN-12, CLEAN-13 and CLEAN-14 and the TRD sections they cite; this plan keeps the design's reasoning and the decisions still open (§15). Owner decisions 1–7 were taken as proposed.
 
 **In one line:** the Cleaner's checks become a registry that can grow without limit: code detectors, installable packs, rules you write, and rules Sherlock suggests. Every finding is rated on a five-level severity scale with a one-line reason, and the plan and the queue follow that scale. Two things never change: code finds and counts every issue, and code runs and checks every fix.
 
@@ -933,6 +933,13 @@ Slices 2 and 3 only need slice 1, so they can be built in parallel, as can slice
 | 5 | Are model-suggested thresholds compatible with Rule 2? | Yes, as with SQL literals: a threshold is a rule parameter you see and can edit, and the count is code's. |
 | 6 | Add the `regex` package for timed matching? | Yes, so a pattern can't hang the profile job. Otherwise, drop the `pattern` kind. |
 | 7 | When the model says `likely_real` on the target, which wins? | The floor (§5.3): the item stays at the spec's default level and ticked. The Cleaner's own diagnosis can still leave the values as they are, which the report counts as "checked and kept". |
+
+### 15.1a Open after the live benchmark
+
+| # | Question | What the live run showed |
+|---|---|---|
+| 8 | The floor (§5.3) is the spec's own default, so on the target the model may lower a level by one step; the live rating check (§13) expects `breaks` or `skews` there. Which is right? | Super rated case variants in a target column `splits`, which the floor allows and the check counts as a miss. Either raise the floor to the adjusted default, or relax the check to "at or above the spec's default". |
+| 9 | The same version reviewed twice gave a different level for at least one finding at temperature 0. Accept it, or rate twice and keep the more severe? | One live set, one difference; the queue and the report don't depend on it, only the plan's grouping. |
 
 ### 15.2 Risks
 
