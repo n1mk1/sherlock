@@ -1,7 +1,9 @@
 """The Cleaner gaps of the live test on 2026-10-26 (findings 5, 6, 18, 19 and 20), with recorded
 replies: impossible values are quarantined whatever the diagnosis and the review say, a column of
 prices isn't taken for an ID, step titles name their column once, the progress total holds still,
-and a region with a letter left out ("Wst") merges into its neighbour as a flagged step."""
+and a region with a letter left out ("Wst") merges into its neighbour as a flagged step. And the two
+gaps the re-run found: a price column stored as text is parsed even when the propose reply is cut
+off at its token cap, and no step title names its column twice ("... on units (units)")."""
 
 from pathlib import Path
 
@@ -11,7 +13,8 @@ import pytest
 from sherlock.cleaning import gate
 from sherlock.cleaning.detectors import id_candidates, impossible_values, near_duplicate_categories
 from sherlock.cleaning.helpers import _merge_refusal, canonicalize_categories
-from sherlock.cleaning.loop import RULE_LABEL, queue, rule_candidate, rule_only, step_summary
+from sherlock.cleaning.helpers import parse_failures, parse_numbers, quarantine_rows
+from sherlock.cleaning.loop import RULE_LABEL, code_fix, queue, rule_candidate, rule_only, step_summary
 from sherlock.cleaning.plan import never_change
 from sherlock.cleaning.verifiers import Report
 from sherlock.config import get_settings
@@ -151,6 +154,51 @@ def test_a_step_title_names_its_column_once():
         "Convert sentinels to NaN using strip_sentinels (units)"
     assert step_summary("Parse numbers", "units") == "Parse numbers (units)"
     assert step_summary("Quarantine duplicate rows", None) == "Quarantine duplicate rows"
+    # The live re-run's shape: the label names the column without brackets.
+    assert step_summary("Parse numbers (handles commas, currency, %) on units", "units") == \
+        "Parse numbers (handles commas, currency, %) on units"
+    assert step_summary("Parse the Unit Price values", "unit_price") == "Parse the Unit Price values"
+    assert step_summary("Parse unit_price as numbers", "unit_price") == "Parse unit_price as numbers"
+    # A word that only contains the column's name doesn't count.
+    assert step_summary("Strip unitsep characters", "units") == "Strip unitsep characters (units)"
+    assert step_summary("Fill price_eur gaps", "price") == "Fill price_eur gaps (price)"
+
+
+# --- numbers stored as text: the code's own parse ------------------------------------------------
+
+PRICE_TEXT = [f"{10 + i * 1.37:.2f}" for i in range(40)] + ["$4.20", "$12.95", "$30.10"]
+
+
+def test_numbers_as_text_has_a_code_fix():
+    fix = code_fix({"detector": "numbers_as_text", "column": "unit_price"})
+    assert fix.label == "Parse numbers"
+    df = pd.DataFrame({"_row_id": [1, 2, 3, 4], "_quarantine_reason": [None] * 4,
+                       "unit_price": ["36.74", "$4.20", "-1,250.50", "ask"]})
+    scope = {"df": df, "pd": pd, "parse_numbers": parse_numbers, "parse_failures": parse_failures,
+             "quarantine_rows": quarantine_rows}
+    exec(fix.code, scope)
+    out = scope["result"]
+    assert out["unit_price"].tolist()[:3] == [36.74, 4.2, -1250.5]  # a minus sign is kept
+    assert out["_quarantine_reason"].tolist() == [None, None, None, "unparsed: unit_price"]
+    assert code_fix({"detector": "outliers", "column": "unit_price"}) is None
+    assert code_fix({"detector": "numbers_as_text", "column": "x", "user": True}) is None
+
+
+def test_a_price_column_is_parsed_though_the_propose_reply_is_cut_off(client):
+    # The recorded diagnosis says "leave as is" and both propose attempts (6,000 tokens, then the
+    # client's retry at twice the cap) come back cut off: the code's own parse is the step.
+    csv = ("order_id,unit_price\n" + "".join(f"O{i:04d},{p}\n" for i, p in enumerate(PRICE_TEXT))).encode()
+    ds, job = clean(client, csv, "orders.csv")
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    (step,) = report["steps"]
+    assert step["summary"] == "Parse numbers (unit_price)"
+    assert step["gate"] in ("commit", "flag") and step["impact"]["quarantined"] == 0
+    card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()
+    price = next(c for c in card["columns"] if c["name"] == "unit_price")
+    assert price["type"] == "float" and price["role"] == "measure" and price["stats"]["min"] == 4.2
+    calls = db_rows("SELECT purpose, ok, error FROM llm_calls WHERE job_id = ? ORDER BY id", job["id"])
+    assert [c["purpose"] for c in calls] == ["diagnose", "propose", "propose", "critic"]
+    assert all(not c["ok"] and "finish_reason length" in c["error"] for c in calls[1:3])
 
 
 # --- 20: a letter left out ----------------------------------------------------------------------

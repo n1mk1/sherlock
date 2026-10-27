@@ -14,5 +14,13 @@
    "content": {"candidates": [{"label": "Merge the listed pairs (region)", "code": "result = df.copy()\nresult['region'] = canonicalize_categories(df['region'], mapping={'Wst': 'West'})",
                                "expected_effect": "Merges the misspelt region into its neighbour."}]}},
   {"purpose": "critic", "match": ["Column: region", "Merge the listed pairs"],
+   "content": {"changed_something_it_shouldnt": false, "concerns": []}},
+  {"purpose": "diagnose", "match": ["Column: unit_price", "numbers_as_text"],
+   "content": {"cause": "These prices look fine as they are.", "approach_options": ["Leave them", "Parse them"],
+               "preferred_option": 0, "risk": "low", "leave_as_is": true}},
+  {"purpose": "propose", "match": ["Column: unit_price", "numbers as text"],
+   "content": "{\"candidates\": [{\"label\": \"Parse numbers on unit_price\", \"code\": \"result = df.copy()\\nresult['unit_pr",
+   "finish_reason": "length", "completion_tokens": 6000},
+  {"purpose": "critic", "match": ["Column: unit_price", "Parse numbers"],
    "content": {"changed_something_it_shouldnt": false, "concerns": []}}
 ]

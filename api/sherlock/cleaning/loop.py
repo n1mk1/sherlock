@@ -67,6 +67,11 @@ VOTES = 3
 # (TRD §7.2).
 DOMAIN_RULES = ("impossible_values",)
 RULE_LABEL = "Quarantine impossible values"
+# A detector whose fix the code can write without the model (TRD §7.2, "Code fixes"): numbers stored
+# as text are parsed with `parse_numbers` and the values it can't read are quarantined. The code fix
+# is tried when the model's proposal fails (a reply cut off at its token cap) or none of its
+# candidates passes the checks, and on a measure column the diagnosis' "leave as is" doesn't end it.
+CODE_FIXES = {"numbers_as_text": "Parse numbers"}
 
 
 @dataclass
@@ -147,6 +152,23 @@ def rule_candidate(issue: dict) -> Candidate | None:
                      expected_effect="Sets aside the rows whose value breaks the column's domain rule.")
 
 
+def code_fix(issue: dict) -> Candidate | None:
+    """The code's own fix for an issue in `CODE_FIXES`, built without the model; None for others."""
+    column = issue.get("column")
+    if issue.get("user") or issue["detector"] not in CODE_FIXES or column is None:
+        return None
+    code = (f"parsed = parse_numbers(df[{column!r}])\nresult = df.copy()\nresult[{column!r}] = parsed\n"
+            f"result = quarantine_rows(result, parse_failures(df[{column!r}], parsed), {'unparsed: ' + column!r})")
+    return Candidate(label=CODE_FIXES[issue["detector"]], code=code,
+                     expected_effect="Reads the column as numbers; values that aren't numbers are set aside.")
+
+
+def measure_column(issue: dict, card: dict) -> bool:
+    """The issue's column is a measure on the DataCard (numbers stored as text, say "$4.20")."""
+    entry = next((c for c in card.get("columns", []) if c["name"] == issue.get("column")), None)
+    return bool(entry and entry.get("role") == "measure")
+
+
 def queue(issues: list[dict]) -> list[dict]:
     """The card's issues in the order the Cleaner attempts them: most severe first, except that a
     column's placeholders go just before its domain rule, so a "-999" age becomes a missing value
@@ -170,8 +192,12 @@ def rule_only(report: verifiers.Report) -> bool:
 
 
 def step_summary(label: str, column: str | None) -> str:
-    """"<label> (<column>)", without naming the column twice when the label already does ("(units)")."""
-    if not column or f"({column})" in label:
+    """"<label> (<column>)", without naming the column twice: a label that already names it as a word
+    ("... (units)", "... on units", "... unit price" for unit_price) is the title as it is."""
+    if not column:
+        return label
+    names = {column, column.replace("_", " ")}
+    if any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", label, re.I) for n in names):
         return label
     return f"{label} ({column})"
 
@@ -490,12 +516,14 @@ class Cleaner:
             diagnosis = self._diagnose(issue, card, before)
         except StructuredOutputError:
             return self._skip(issue, "model output invalid")
-        if diagnosis.leave_as_is and not requested and rule is None:  # asked for, or a domain rule: not ended here
+        fallback = code_fix(issue)  # numbers stored as text: the code's own parse when the model's fixes fail
+        # Asked for, a domain rule, or numbers stored as text in a measure: "leave as is" doesn't end it.
+        if diagnosis.leave_as_is and not requested and rule is None and not (fallback and measure_column(issue, card)):
             return self._skip(issue, f"Left as is: {prose(diagnosis.cause) or LEFT_AS_IS}")
         try:
             proposed = list(self._propose(issue, diagnosis, before).candidates)
-        except StructuredOutputError:
-            if rule is None:
+        except StructuredOutputError:  # a reply cut off at its token cap too (TRD §3.5)
+            if rule is None and fallback is None:
                 return self._skip(issue, "model output invalid")
             proposed = []
         if rule is not None:
@@ -505,7 +533,8 @@ class Cleaner:
         sample = self._read(sample_path)
         scored = []
         results: list[pd.DataFrame | None] = []  # each candidate's result on the sample, None when it failed
-        for cand in proposed:
+
+        def score(cand: Candidate) -> None:
             self.ctx.check_cancel()
             out = self.work / f"cand_{uuid.uuid4().hex}.parquet"
             r = sandbox.execute(self.settings, cand.code, sample_path, out, db=self.db,
@@ -517,16 +546,21 @@ class Cleaner:
                 why = r.error or "the code failed"
                 scored.append((cand, 0.0, None, f"{why} ({r.violations[0]})" if r.violations else why))
                 results.append(None)
-                continue
+                return
             try:
                 after = self._restrict(sample, self._read(out))
             except ScopeError as exc:
                 scored.append((cand, 0.0, None, str(exc)))
                 results.append(None)
-                continue
+                return
             report = verifiers.verify(sample, after, detector, column, requested=requested)
             scored.append((cand, report.score, report, None if report.passed else _first_failure(report)))
             results.append(after if report.passed else None)
+
+        for cand in proposed:
+            score(cand)
+        if fallback is not None and not any(s > 0.0 for _, s, *_ in scored):
+            score(fallback)  # the model gave no fix that passes (or none at all): the code's own parse
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         best_i = best_candidate(scored, len([c for c in sample.columns if c not in verifiers.SYSTEM]))
         if rule is not None and scored[-1][1] > 0.0:  # the domain rule's quarantine (last) beats a guessed value
