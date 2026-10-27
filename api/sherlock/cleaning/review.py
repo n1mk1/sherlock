@@ -159,9 +159,21 @@ def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, ca
             continue
         reason = s.reason.strip()
         ok = reason and not has_digits(reason) and wording_problem(reason) is None
-        rule = store.create(db, dataset["user_id"], dataset["id"], {**spec, **({"reason": reason} if ok else {})},
-                            source="suggested", status="suggested")
+        store.create(db, dataset["user_id"], dataset["id"], {**spec, **({"reason": reason} if ok else {})},
+                     source="suggested", status="suggested")
         taken.add((spec["kind"], spec["column"]))
+    return suggested_findings(settings, db, dataset, card, frame)
+
+
+def suggested_findings(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, frame) -> list[dict]:
+    """The dataset's suggested checks run on the frame, as findings for the rating: a review of a version
+    rates them with the rest, the first time and any time it's reviewed again."""
+    from sherlock.cleaning.rules import interpreter, store
+
+    out = []
+    for rule in store.all_for(db, dataset["id"]):
+        if rule["status"] != "suggested":
+            continue
         finding, _ = interpreter.run(rule, frame, settings.rule_max_s)
         if finding is not None:
             out.append({"id": None, "detector": finding.detector, "column": finding.column, "count": finding.count,

@@ -317,7 +317,11 @@ def _review_checks(client, ds_id: str, case: Case, version: int | None, timeout_
             if rating and rating["sev_source"] == "model":
                 default = registry.get(damage.split(":")[0]).default_level
                 out.append((column, damage, rating["sev"], expected(levels.role(column, card), rating["sev"], default)))
-        review.review(settings, db, dataset, card, CallScope(user_id=dataset["user_id"], dataset_id=ds_id))
+        from sherlock.cleaning.rules import service as rule_service
+
+        frame = rule_service.frame_for(settings, client.app.state.duckdb, db, dataset, version)
+        review.review(settings, db, dataset, card, CallScope(user_id=dataset["user_id"], dataset_id=ds_id),
+                      extra=review.suggested_findings(settings, db, dataset, card, frame))  # the same review again
         second = review.stored(db, ds_id, version) or {}
         stable = all(second.get(k, {}).get("sev") == r["sev"] for k, r in first.items() if r["sev_source"] == "model")
         return out, stable

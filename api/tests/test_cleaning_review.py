@@ -289,6 +289,7 @@ def test_two_ratings_keep_the_more_severe_level_of_each_finding(monkeypatch):
 
 @pytest.mark.usefixtures("reviews_on")
 def test_a_second_review_reuses_the_ratings_of_identical_findings(client):
+    ScriptedLLM.suggestions = [draft("range", "parch", max=5.0, action="quarantine")]
     ds, plan = _reviewed_plan(client)
     from sherlock.db.connection import connect
     from sherlock.profile import service as profile_service
@@ -298,8 +299,11 @@ def test_a_second_review_reuses_the_ratings_of_identical_findings(client):
         dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds["id"],)).fetchone()
         card = profile_service.get_or_build(get_settings(), db, client.app.state.duckdb, dataset, plan["version"])
         first = review.stored(db, ds["id"], plan["version"])
+        assert any(k.startswith("rule:") for k in first)  # the suggested check was rated too
         rated = ScriptedLLM.calls.count("rate")
-        assert review.review(get_settings(), db, dataset, card, None, llm=ScriptedLLM()) == "ready"
+        frame = review_rules.frame_for(get_settings(), client.app.state.duckdb, db, dataset, plan["version"])
+        extra = review.suggested_findings(get_settings(), db, dataset, card, frame)
+        assert review.review(get_settings(), db, dataset, card, None, llm=ScriptedLLM(), extra=extra) == "ready"
         assert ScriptedLLM.calls.count("rate") == rated  # every finding was rated before: no model call
         assert review.stored(db, ds["id"], plan["version"]) == first
     finally:
