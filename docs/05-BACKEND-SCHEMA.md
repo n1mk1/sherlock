@@ -735,7 +735,7 @@ CREATE TABLE issue_reviews (
 ```
 
 - Versions never change (CLAUDE.md Rule 3), so a rating holds until its detector's `version` changes: a row whose `detector_version` isn't the detector's current one is ignored.
-- Not built yet: the review that writes it; until then every plan item keeps its default level.
+- Written by the `review_issues` job (TRD §7.2), one row per issue key it sent, model or default, replacing the version's rows.
 - Deleted with the dataset by the foreign key cascade (§6).
 
 ---

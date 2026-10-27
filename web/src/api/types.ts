@@ -11,7 +11,8 @@ export type Detector = components["schemas"]["Detector"];
 export type Tab = "csv" | "dashboard" | "flow";
 
 export type JobKind =
-  | "profile" | "clean" | "build_dashboard" | "stories" | "ml_run" | "cascade" | "undo" | "export_notebook" | "purge";
+  | "profile" | "clean" | "build_dashboard" | "stories" | "ml_run" | "cascade" | "undo" | "export_notebook" | "purge"
+  | "review_issues";
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Progress {
@@ -113,6 +114,8 @@ export interface CleanPlan {
   created_at: string;
   updated_at: string;
   notes?: string[];   // what a merge onto a newer version changed
+  // The version's severity review: rated, still running, or every item on code's default level.
+  review?: "ready" | "running" | "default";
   summary?: string;   // what a PATCH changed, written by code
 }
 

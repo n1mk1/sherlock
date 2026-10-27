@@ -35,7 +35,8 @@ from sherlock.storage import VersionConnections
 
 log = logging.getLogger("sherlock.jobs")
 
-KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "export_notebook", "purge")
+KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "export_notebook", "purge",
+         "review_issues")
 # At most one of these runs per dataset at a time: each writes the dataset's widgets and story cards.
 SERIAL_KINDS = ("cascade", "stories", "build_dashboard")
 _SERIAL = ", ".join(f"'{k}'" for k in SERIAL_KINDS)

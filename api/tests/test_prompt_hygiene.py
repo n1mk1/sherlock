@@ -65,6 +65,7 @@ def script(monkeypatch, tmp_path):
     s = Script()
     monkeypatch.setenv("LLM_MOCK", str(tmp_path / "unused.json"))
     monkeypatch.setenv("CLEAN_MAX_STEPS", "3")
+    monkeypatch.setenv("CLEAN_REVIEW", "on")  # the severity review's rating prompt too
     monkeypatch.setattr(fixtures.FixtureTransport, "load", classmethod(lambda cls, path: s))
     monkeypatch.setitem(ratelimit.LIMITS_PER_MINUTE, "llm", 100)  # a dozen chat messages in a few seconds
     get_settings.cache_clear()
@@ -158,7 +159,8 @@ def test_every_prompt_keeps_the_files_text_inside_data_blocks(script, client):  
 
     purposes = {p for p, _ in s.prompts}
     expected = {"curate", "narrate", "overview", "route", "sql", "sql_check", "compose", "predicate", "widget", "update_widget", "stats",
-                "meaning", "plan", "edits", "plan_edits", "summary", "synthesis", "ask_story", "diagnose", "propose", "critic"}
+                "meaning", "plan", "edits", "plan_edits", "summary", "synthesis", "ask_story", "diagnose", "propose", "critic",
+                "rate"}
     assert expected <= purposes, expected - purposes
     for purpose, prompt in s.prompts:
         assert MARK not in outside(prompt), (purpose, outside(prompt)[:2000])

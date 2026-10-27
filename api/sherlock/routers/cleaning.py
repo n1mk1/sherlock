@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from sherlock.cleaning import plan as plans
-from sherlock.cleaning import registry
+from sherlock.cleaning import registry, review
 from sherlock.cleaning.report import build_report
 from sherlock.db.connection import get_db
 from sherlock.errors import ApiError, not_found
@@ -117,7 +117,7 @@ def start_clean(
             merged, notes = plans.current(db, row, dataset, lambda d: _card(request, db, d))
             _plan_event(request, db, dataset, row["id"])
             raise ApiError(409, "conflict", "The data changed since the plan was made, so it was checked again. "
-                           "Look it over, then start.", extra={"plan": plans.to_plan(merged, notes)})
+                           "Look it over, then start.", extra={"plan": _out(request.app, db, merged, notes)})
         items = json.loads(row["items_json"])
         if not plans.ticked(items):
             raise ApiError(422, "invalid", "Nothing in the plan is ticked, so there's nothing to clean.")
@@ -130,6 +130,11 @@ def start_clean(
 
 
 # --- the cleaning plan (PRD CLEAN-8a, CLEAN-8b) ----------------------------------------------------
+
+
+def _out(app, db: sqlite3.Connection, row: sqlite3.Row, notes: list[str] | None = None) -> dict:
+    """The `CleanPlan` with its version's review status (TRD §4.4)."""
+    return plans.to_plan(row, notes, review.status(app.state.settings, db, row["dataset_id"], row["version"]))
 
 
 def _card(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row) -> dict:
@@ -171,7 +176,9 @@ def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanSco
         row, changed = plans.set_scope(db, row["id"], stored), True
     if changed:
         emit(db, app.state.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]})
-    return plans.to_plan(row, notes), existing is None
+    if review.queue(app.state.settings, db, dataset, row["version"]):  # a version never reviewed (TRD §7.2)
+        app.state.jobs.wake()
+    return _out(app, db, row, notes), existing is None
 
 
 def _owned_plan(owned_plan: Owned, db: sqlite3.Connection) -> tuple[sqlite3.Row, sqlite3.Row]:
@@ -202,7 +209,7 @@ def get_plan(request: Request, owned_plan: Owned = Depends(owned("clean_plan")),
     """The plan; a draft made on an older version is merged onto the current one first."""
     row, dataset = _owned_plan(owned_plan, db)
     row, notes = plans.current(db, row, dataset, lambda d: _card(request, db, d))
-    return plans.to_plan(row, notes)
+    return _out(request.app, db, row, notes)
 
 
 @router.patch("/clean-plans/{pid}")
@@ -225,7 +232,7 @@ def patch_plan(
         raise ApiError(422, "invalid", str(exc)) from None
     row = plans.save(db, row["id"], items)
     _plan_event(request, db, dataset, row["id"])
-    return {**plans.to_plan(row, notes), "summary": summary}
+    return {**_out(request.app, db, row, notes), "summary": summary}
 
 
 @router.delete("/clean-plans/{pid}", status_code=status.HTTP_204_NO_CONTENT)

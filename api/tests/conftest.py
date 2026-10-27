@@ -16,6 +16,8 @@ TEST_MODELS = {
     "JOB_WORKERS": "0",
     # The sample goes through the live pipeline in tests; test_sample_seed.py turns the seed on.
     "SAMPLE_SEED_DIR": "off",
+    # The background severity review would add a model call after every profile; test_cleaning_review.py turns it on.
+    "CLEAN_REVIEW": "off",
 }
 
 

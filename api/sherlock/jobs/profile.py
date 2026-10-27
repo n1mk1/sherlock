@@ -12,6 +12,7 @@ import asyncio
 import sqlite3
 
 from sherlock.cleaning import plan as plans
+from sherlock.cleaning import review
 from sherlock.db import users
 from sherlock.jobs.events import EventBus, emit, set_dataset_status
 from sherlock.jobs.runner import JobContext, register
@@ -35,6 +36,8 @@ def _profile(ctx: JobContext) -> dict:
     dataset = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (ctx.dataset_id,)).fetchone()
     card = profile_service.get_or_build(ctx.settings, ctx.db, ctx.cache, dataset)
     ctx.check_cancel()
+    if review.queue(ctx.settings, ctx.db, dataset, card["version"]):  # rate the findings in the background
+        ctx.runner.wake()
     _after_upload(ctx, dataset, card)
     return {"version": card["version"], "issues": len(card["issues"]), "typing_step_id": step["id"] if step else None}
 

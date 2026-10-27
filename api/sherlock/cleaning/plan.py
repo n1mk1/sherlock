@@ -99,7 +99,7 @@ def fix_name(item: dict) -> str:
     return f"{what} in {item['column']}" if item["column"] else what
 
 
-def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
+def _item(issue: dict, card: dict, item_id: str | None = None, rating: dict | None = None) -> dict:
     kept = never_change(issue, card)
     spec = registry.get(issue["detector"])
     module = "kept" if kept else spec.group
@@ -114,22 +114,41 @@ def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
     }
     if kept:
         item["reason"] = kept[0]
+    if rating and not kept:  # the review's level and reason (TRD §7.2)
+        item.update(rating)
     if spec.plan_extras and not kept:
         item.update(spec.plan_extras(issue))
     return item
 
 
-def diagnose(card: dict) -> list[dict]:
+def reviewed(items: list[dict], reviews: dict[str, dict]) -> list[dict]:
+    """The items with a review's levels and reasons by key. Only the level fields change: a tick or an
+    instruction stays as it is."""
+    out = []
+    for i in items:
+        rating = reviews.get(i["key"]) if i["key"] and i["change"] else None
+        out.append({**i, **rating} if rating else i)
+    return out
+
+
+def _reviews(db: sqlite3.Connection, dataset_id: str, version: int) -> dict[str, dict]:
+    from sherlock.cleaning import review
+
+    return review.stored(db, dataset_id, version) or {}
+
+
+def diagnose(card: dict, reviews: dict[str, dict] | None = None) -> list[dict]:
     """The plan's items for a DataCard in module order, most severe first within a module, every
-    changeable fix ticked."""
+    changeable fix ticked, with the version's review (`reviews` by key) where it has one."""
     items: dict[str, dict] = {}
+    reviews = reviews or {}
     for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
         if key(issue) not in items:  # a shared key: the most severe finding is the one attempted
-            items[key(issue)] = _item(issue, card)
+            items[key(issue)] = _item(issue, card, rating=reviews.get(key(issue)))
     return _ordered(list(items.values()))
 
 
-def merge(old: list[dict], card: dict) -> tuple[list[dict], list[str]]:
+def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
     """A plan carried onto a newer version: ticks and instructions kept by key, keys that went away
     dropped, new keys ticked; the user's steps kept while their column exists. Returns the items and
     what changed, in code-written sentences."""
@@ -143,7 +162,7 @@ def merge(old: list[dict], card: dict) -> tuple[list[dict], list[str]]:
             items.append(i)
         else:
             notes.append(f"Dropped your step on {i['column']}: the column is no longer in the file.")
-    fresh = diagnose(card)
+    fresh = diagnose(card, reviews)
     added = 0
     for item in fresh:
         before = by_key.get(item["key"])
@@ -321,14 +340,16 @@ def run_params(items: list[dict]) -> dict:
 # --- storage (Schema §2.21) -----------------------------------------------------------------------
 
 
-def to_plan(row: sqlite3.Row, notes: list[str] | None = None) -> dict:
-    """The TRD §4.4 `CleanPlan`."""
+def to_plan(row: sqlite3.Row, notes: list[str] | None = None, review: str | None = None) -> dict:
+    """The TRD §4.4 `CleanPlan`; `review` is the version's review status (`review.status`)."""
     out = {"id": row["id"], "dataset_id": row["dataset_id"], "version": row["version"], "status": row["status"],
            "source": row["source"], "job_id": row["job_id"], "items": json.loads(row["items_json"]),
            "scope": json.loads(row["scope_json"]) if row["scope_json"] else None,
            "created_at": row["created_at"], "updated_at": row["updated_at"]}
     if notes:
         out["notes"] = notes
+    if review:
+        out["review"] = review
     return out
 
 
@@ -346,7 +367,8 @@ def create(db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, source: str
     pid, now = new_id("pln"), now_iso()
     db.execute("INSERT INTO clean_plans (id, dataset_id, version, items_json, status, source, job_id, created_at, updated_at) "
                "VALUES (?, ?, ?, ?, 'draft', ?, NULL, ?, ?)",
-               (pid, dataset["id"], card["version"], json.dumps(diagnose(card), default=str), source, now, now))
+               (pid, dataset["id"], card["version"], json.dumps(diagnose(card, _reviews(db, dataset["id"], card["version"])),
+                                                                 default=str), source, now, now))
     return get(db, pid)
 
 
@@ -366,7 +388,7 @@ def current(db: sqlite3.Connection, row: sqlite3.Row, dataset: sqlite3.Row, card
     if row["status"] != "draft" or row["version"] == dataset["current_version"]:
         return row, []
     card = card_for(dataset)
-    items, notes = merge(json.loads(row["items_json"]), card)
+    items, notes = merge(json.loads(row["items_json"]), card, _reviews(db, dataset["id"], card["version"]))
     return save(db, row["id"], items, card["version"]), notes or ["The data changed, so the plan was checked again."]
 
 

@@ -43,6 +43,18 @@ class Critique(Strict):
     concerns: list[str] = Field(max_length=5)
 
 
+class Rating(Strict):
+    ref: str = Field(description="the finding's ref, as given (f1, f2, …)")
+    level: Literal["breaks", "skews", "splits", "check", "cosmetic"]
+    reason: str = Field(description="one sentence on what the finding does to an analysis, no digits")
+    likely_real: bool = Field(description="true when the values look real rather than errors")
+
+
+class Ratings(Strict):
+    """The review's rating call (TRD §7.2, PRD CLEAN-8c): a level and a reason for each finding of a chunk."""
+    ratings: list[Rating] = Field(min_length=1, max_length=40)
+
+
 # --- Dashboard curation (TRD §7.3 step 3) -----------------------------------------------------
 
 
