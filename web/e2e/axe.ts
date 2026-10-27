@@ -1,5 +1,5 @@
 // axe-core in the end-to-end flow (UI brief §8): each screen the flow reaches is checked against WCAG 2.2
-// AA, so the live test's findings (separators without a value, a role-less drag handle, 22px story chips,
+// AA, so the live test's findings (separators without a value, a role-less drag handle, 22px chips,
 // faded undone steps) stay fixed. axe runs through page.evaluate, which the app's CSP doesn't apply to, so
 // the same run also proves the CSP lets the app work.
 import { readFileSync } from "node:fs";

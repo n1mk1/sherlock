@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useDataset } from "@/api/queries";
 import type { CleanPlan, CleanPlanItem, Dataset, JobLogEntry } from "@/api/types";
 import { SaveActions } from "@/components/csv/SaveActions";
 import { CsvSidePanel } from "@/components/shell/AppShell";
@@ -70,7 +70,7 @@ describe("cleaning screens", () => {
     expect(mergeLog([second], [first, second]).map((e) => e.text)).toEqual(["Trimmed spaces in name", "Filled age by title"]);
     const fetchMock = mockApi({
       "GET /api/v1/jobs": [{ id: "job_1", dataset_id: "ds_1", kind: "clean", status: "running", created_at: "",
-                             started_at: "2026-10-24T00:00:00Z", finished_at: null, error: null, result: null, automatic: false,
+                             started_at: "2026-10-24T00:00:00Z", finished_at: null, error: null, result: null,
                              progress: { step: 2, of: 5, label: "Fixing age", pct: 20 } }],
       "GET /api/v1/jobs/job_1/log": { entries: [first, second] },
       "GET /api/v1/datasets/ds_1/report": new Response(JSON.stringify({ error: { code: "not_found", message: "none" } }), { status: 404 }),
@@ -99,16 +99,17 @@ describe("cleaning screens", () => {
     expect(screen.getByText("· You can change this in Settings")).toBeInTheDocument();
   });
 
-  it("Clean it myself builds without cleaning and opens the CSV tab", async () => {
-    const calls = mockApi({ "POST /api/v1/datasets/ds_1/use-as-is": { id: "job_2", kind: "build_dashboard", status: "queued" } });
-    renderAt(
-      <Routes>
-        <Route path="/" element={<OfferActions dataset={DS} />} />
-        <Route path="/d/ds_1/csv" element={<p>the CSV tab</p>} />
-      </Routes>,
-    );
+  it("Clean it myself makes the dataset ready as it is, so its page shows the grid", async () => {
+    const calls = mockApi({
+      "GET /api/v1/datasets/ds_1": DS,
+      "POST /api/v1/datasets/ds_1/use-as-is": { ...DS, status: "ready" },
+    });
+    function Status() {
+      return <p>status: {useDataset("ds_1").data?.status}</p>;
+    }
+    renderAt(<><OfferActions dataset={DS} /><Status /></>);
     fireEvent.click(screen.getByRole("button", { name: "Clean it myself" }));
-    expect(await screen.findByText("the CSV tab")).toBeInTheDocument();
+    expect(await screen.findByText("status: ready")).toBeInTheDocument(); // the answer is the dataset, cached at once
     expect(sent(calls).map((c) => c.path)).toContain("/api/v1/datasets/ds_1/use-as-is");
   });
 
@@ -127,7 +128,7 @@ describe("cleaning screens", () => {
     renderAt(<OfferActions dataset={{ ...DS, error: "Cleaning stopped: model unavailable" }} />);
     expect(screen.getByRole("alert")).toHaveTextContent("Cleaning stopped: model unavailable");
     expect(screen.getByRole("button", { name: "Try cleaning again" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Build dashboard without cleaning" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use as is" })).toBeInTheDocument();
   });
 
   it("summarizes the report", async () => {
@@ -396,7 +397,7 @@ describe("the cleaning plan", () => {
     expect(screen.getByRole("button", { name: "Change" })).toBeInTheDocument();
   });
 
-  it("takes the CSV tab's right panel while a draft is open, and gives it back", async () => {
+  it("takes a ready dataset's right panel while a draft is open, and gives it back", async () => {
     mockApi({
       "GET /api/v1/datasets/ds_1": { ...DS, status: "ready", clean_plan_id: "pln_1" },
       "GET /api/v1/clean-plans/pln_1": PLAN,
@@ -412,6 +413,18 @@ describe("the cleaning plan", () => {
     });
     renderAt(<CsvSidePanel datasetId="ds_1" />);
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
+  });
+
+  it("keeps Changes while the offer's plan fills the centre, so the plan shows once", async () => {
+    mockApi({
+      "GET /api/v1/datasets/ds_1": { ...DS, status: "offer", clean_plan_id: "pln_1" },
+      "GET /api/v1/clean-plans/pln_1": PLAN,
+      "GET /api/v1/datasets/ds_1/steps": [],
+      "GET /api/v1/jobs": [],
+    });
+    renderAt(<CsvSidePanel datasetId="ds_1" />);
+    expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cleaning plan · v2" })).toBeNull();
   });
 });
 

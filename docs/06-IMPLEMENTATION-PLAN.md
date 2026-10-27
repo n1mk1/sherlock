@@ -2,7 +2,7 @@
 
 Version 1.3 · 2026-10-26 · Build order from an empty folder to a submitted project. Deadline 2026-10-30 13:00 EDT; internal deadline 2026-10-29.
 
-**Status, 2026-10-26.** Days 1–9 are built within the nine cuts (§2.0), merged to `main` and deployed (https://sherlock-anw3.onrender.com). After the Day 8 freeze the owner approved two exceptions: the cleaning plan (PRD CLEAN-8a, CLEAN-8b) and the agent-layer and Tavily work (route guards, chat checks, receipts, web retrieval with Tavily, the data dictionary). Day 10 (submission) is left.
+**Status, 2026-10-27.** Days 1–9 are built within the cuts (§2.0, §5), merged to `main` and deployed (https://sherlock-anw3.onrender.com). After the Day 8 freeze the owner approved two exceptions: the cleaning plan (PRD CLEAN-8a, CLEAN-8b) and the agent-layer and Tavily work (route guards, chat checks, receipts, web retrieval with Tavily, the data dictionary). On 2026-10-27 the owner applied cuts 10–12 (§5): Sherlock is a cleaning and query agent, and the auto-dashboard, story cards and Flow canvas are removed from the code. Day 10 (submission) is left.
 
 ---
 
@@ -15,7 +15,7 @@ Version 1.3 · 2026-10-26 · Build order from an empty folder to a submitted pro
 - **Cut, don't slip.** Each day has a "must" and a "stretch". If a must isn't done by the end of the day, the cut order in §5 applies the next morning.
 - **Keep `FEEDBACK.md` open.** Every surprise with Token Factory, Nemotron, hosting or Bklit goes in it when it happens.
 
-Two-person split, if available: **Backend** owns `api/` (pipelines, agent, ML, data), **Frontend** owns `web/` (shell, grid, charts, Flow, chat UI). The TRD's API contract is the handshake. The team is solo, and the frontend builds against the real API (§2.0).
+Two-person split, if available: **Backend** owns `api/` (pipelines, agent, ML, data), **Frontend** owns `web/` (shell, grid, chat charts, chat UI). The TRD's API contract is the handshake. The team is solo, and the frontend builds against the real API (§2.0).
 
 ---
 
@@ -25,11 +25,11 @@ Two-person split, if available: **Backend** owns `api/` (pipelines, agent, ML, d
 
 Nothing was built Oct 20–23, so the build started on Oct 24, five days late, with a solo team. Approved by As Wasti on 2026-10-24:
 
-- **Cuts applied:** all nine rows of the cut order in §5. The table below says what each removes. The never-cut list in §5 is unchanged.
+- **Cuts applied:** all nine rows of the cut order in §5 on 2026-10-24, and cuts 10–12 on 2026-10-27 (the owner's decision to focus on cleaning and querying, with the never-cut list edited to match). The table below says what each removes.
 - **Dates:** the schedule below replaces the dates of Days 1–9. The days keep their item numbers as references ("D2.3" is Day 2, item 3). Each item keeps its definition of done (§1); an item narrowed by a cut is done when what remains is done. Days 1–9 finished on 2026-10-25, ahead of this schedule.
 - **Process changes (no scope dropped):**
   - The frontend builds against the real API, not an OpenAPI mock server (this replaces D2.9's mock handler). Recorded LLM fixtures (§1) are still used.
-  - The three Day 1 spikes (D1.5) became 1-hour checks at the start of the work that uses them: Bklit before the dashboard (D4.7), Glide before the CSV tab (D5.1), react-grid-layout with the dashboard grid. All three passed; the results are in `FEEDBACK.md`.
+  - The three Day 1 spikes (D1.5) became 1-hour checks at the start of the work that uses them: Bklit before the charts (D4.7), Glide before the CSV tab (D5.1), react-grid-layout (its grid removed by cut 10). All three passed; the results are in `FEEDBACK.md`.
 
 | Date | Work (day.item) |
 |---|---|
@@ -54,10 +54,12 @@ What each cut removes:
 | 7 | D7.2, D7.4, D7.5: the `predict` recipe, the predictions table, predicted cells, explain-row; `samples/titanic_blanks.csv` | `driver_analysis` |
 | 8 | D4.7: brushing and the brush → selection chip (no spike ran first, so brushing was the safe cut) | click-to-filter; ML scope comes from a filter or the whole dataset; §9 moment 6 filters instead of brushing |
 | 9 | D4.3: the suggested-questions endpoint and UI; D4.4, D8.3: the `?` shortcuts sheet | chat; the `/` shortcut |
+| 10 | D4.1, D4.2, D4.6, D4.7, D7.2's driver widget, D7.4's analysis dropdown and setup form: the auto-dashboard, widgets, layout, global filters, Add widget, chat's widget intents, Pin to dashboard, the `default_tab` setting | chat chart blocks (`ChartSpec`, TRD §6.3), the SQL validation (`query/`), `POST /selections`; ML through chat and the model card |
+| 11 | D6.1–D6.4, D6.6: story cards, narration, overview, synthesis, trust badges, the cascade, the `story_updates` and `spotlight` settings, the grounding eval | the wording rules for chat (`llm/wording.py`, PRD ASK-3); run fact sheets; a new version outdates the runs it changes (TRD §7.5) |
+| 12 | D8.1, D8.2: the Flow canvas, `add_to_flow`, "make sense of this", canvas notes in the notebook | |
 
 **Hosting change (owner's decision):** D1.3 deploys to Render (`render.yaml`, PRD §9) instead of a Nebius Serverless Endpoint, because the account's Nebius AI Cloud tenant is suspended and the rules don't require Nebius hosting. The exit check is unchanged. The Nebius steps in D1.3 and D9.2 stay valid as the alternative (`scripts/deploy.sh`).
 
-If a Must from this table slips, §5 has nothing left to cut, so any further drop needs a PRD change by the owner.
 
 ### Day 0 · Oct 19 (evening): decisions locked
 
@@ -83,34 +85,39 @@ Items: 1 `cleaning/verifiers.py`, `gate.py`, `helpers/` · 2 `cleaning/loop.py`,
 ### Day 4 · Oct 23: shell, dashboard builder, widgets, chat v1
 
 Done within cuts 1, 8 and 9. Widgets with SQL compile and validation, the dashboard builder, chat v1 with eval v0, the rail, job tray and four-setting dialog, the react-grid-layout dashboard with the Bklit adapter and click-to-filter, and the chat thread. Not built: suggested questions and the shortcuts sheet (cut 9), brushing (cut 8); the dashboard's Filter button and filter builder are not built yet.
+Removed by cut 10: items 1 (all but `POST /datasets/{id}/selections`, now `routers/selections.py`), 2, 6, 7 and the widget parts of 3.
 Items: 1 `widgets/`, widget CRUD, `/data`, `/explain`, `PUT layout`, `POST /datasets/{id}/selections` · 2 `dashboard/` candidates, scoring, curation, layout, `build_dashboard` job · 3 `agent/` v1 (route → `ask_data` / `find_rows` / `explain_widget` / `ask_history` → compose → verify; `create_widget`), `POST /datasets/{id}/chat`, eval v0 in `samples/eval/ask_questions.yaml` · 4 shell completion: rail, settings dialog, shortcuts sheet, job tray with Cancel and Retry · 5 Library rename and delete with Undo · 6 widget menu and the 20-widget warning · 7 dashboard grid, widget shell, Bklit adapter, "How do you know?", click-to-filter, brush, Add widget drawer · 8 chat bar and thread, blocks, sources, suggested questions, `/` shortcut.
 
 ### Day 5 · Oct 24: CSV tab
 
 Done within cut 5. The paged Glide grid with marks, cell edits, add/delete row, Save with conflicts and Discard, Find, Clean with AI, the Changes panel with Undo and replay, cascade v0, Restore for quarantined rows, and notebook export v0 with its execution test. Code in the Changes panel is a plain mono block (no Shiki). Not built yet: the type-aware cell editors (PRD CSV-5, not covered by cut 5) and the export dialog's Save and export button.
+Removed by cut 11: cascade v0 in item 5 (a new version now outdates the runs it changes, TRD §7.5).
 Items: 1 Glide grid, header metadata, cell marks, provenance tooltip · 2 editing buffer and Save → `POST /edits` · 3 toolbar: Find, Download, Clean with AI popover · 4 Changes panel with Undo and the replay confirmation · 5 undo with replay, `user_edited_cells`, "run cleaning on new rows", cascade v0 · 6 notebook export v0 (`notebook/`, `POST /datasets/{id}/exports/notebook`, `GET /exports/{id}`, the export dialog, Ctrl+Shift+E) · 7 right-click menus, jump to row, Ctrl+arrow (PRD CSV-3, CSV-14) and Restore for quarantined rows.
 
 ### Day 6 · Oct 25: stories and the cascade
 
 Done within cut 6. Fact sheets, the narrator with chip-only output (on `medium`, TRD §7.4), `verify`, the overview, the column-level cascade (every affected card re-narrated; no material hash), the story panel with two-way hover linking and the TipTap editor, the custom visx charts, and story cards in the notebook. The exit ran with a `fare` edit, since no widget on the sample dashboard read `age`.
+Removed by cuts 10 and 11: all but item 5 (the custom visx charts, used by chat).
 Items: 1 `stories/` fact sheets, significance helpers, relations, narrator, `verify_claim`, overview, `stories` job, `card.updated` · 2 cascade (TRD §7.6) · 3 story panel, chips and evidence drawer, hover linking with the spotlight, badges, TipTap editor with the `/` picker, the suggestion side by side, Ask why → chat · 4 cascade UI · 5 visx histogram, heatmap, box plot, scatter (gauges render as a KPI tile) · 6 story cards in the notebook.
 
 ### Day 7 · Oct 26: ML
 
 Done within cuts 4 and 7. `driver_analysis` with Auto (`ml/plan.py`, `ml/core.py`, `ml/analysis.py`), planted-truth tests (`sherlock eval ml`), the runs API, the chat answerers `ask_why`, `ask_stats`, `ask_model`, `ask_meaning` and `app_help`, the analysis UI with importance, partial dependence, confusion, ROC and "Who did it get wrong?", and `repro.py` (`ml/repro.py`, embedded by `notebook/cells.py`) whose metrics match the model card. Not built: predictions, OOD, calibration and explain-row (cut 7), and the `TimeSeriesSplit` choice (TRD §7.5).
+Removed by cut 10: the builder's driver widget (item 2), the analysis dropdown and setup form (item 4); ML is reached through chat.
 Items: 1 scope, framing, leakage, split, preprocessing, baselines, explain · 2 recipes, registry, manifests, `GET /recipes`, runs API, caching, `run.updated`, the builder's driver widget · 3 answerers and tool exposure by tab (TRD §8.2) · 4 analysis dropdown, setup form from the manifest, progress, result views, model card drawer, `?rows=` to the CSV tab, Outdated with Re-run · 5 `repro.py`, `GET /runs/{rid}/code`, run cells in the notebook (metrics within 0.5 pp).
 
 ### Day 8 · Oct 27: Flow, polish, freeze
 
 Done within cuts 2, 3 and 9. The Flow canvas (JSON Canvas with an etag) on React Flow with "make sense of this" synthesis cards, error boundaries and the offline banner, export entry points from Flow and chat, eval ask at 50 questions plus the grounding eval, chat proposals and multi-step plans, job checkpoints, the purge job and the Playwright flow test. The feature freeze applies from here (the owner's two exceptions are in the status line).
+Removed by cuts 10–12: items 1 and 2, the Flow and card parts of 3, the grounding eval in 4, `update_widget` and Add to Flow in 5.
 Items: 1 `canvas/`, `add_canvas_node`, `add_canvas_edge`, `ask_story`, "make sense", "take it toward X", rewrites · 2 Flow tab: nodes, labeled edges, connect mode, palette, minimap, selection → chat context, direction checklist, "Open widget" · 3 toasts with Undo, `?` sheet, remember-where-I-was, empty states, error boundaries, offline banner, notebook export from Flow and chat, canvas notes in the notebook · 4 eval ask ≈ 50 and the grounding eval · 5 chat completion: value-index resolve, clarifications, multi-step plans, follow-up focus, `update_widget`, `edit_cells` and `clean_selection` proposals, Add to Flow · 6 checkpoints and resume, the purge job, the Playwright flow test (`corepack pnpm e2e`) · 7 feature freeze.
-Results (D8.4, live): eval ask 49 of 50, 0 unsourced; grounding 69 of 69 chips matching their facts, no digits or causal words.
+Results (D8.4, live): eval ask 49 of 50, 0 unsourced.
 
 ### Day 9 · Oct 28: ship
 
 Done. The cached sample (built once with the real models, cloned per user with fresh IDs; it ships in the image at `api/samples/seed/titanic3/`, TRD §4.2), the deploy with the five-file set checked on the public URL and every notebook executed in a fresh venv, the README, `THIRD_PARTY.md`, and the isolation and rate-limit checks (`scripts/live_check.py`). The sample's notebook is `docs/examples/titanic3-v4.ipynb` (the cached sample is v4). Still the owner's: the cold-start user tests and the by-hand baseline (§7).
 Items: 1 `scripts/seed_sample.py` and the sample clone · 2 final deploy, the five-file end-to-end set on the public URL, the example notebook in `docs/examples/` · 3 README in the §7 order, with latency, tokens and cost per role · 4 `THIRD_PARTY.md`, Bklit Studio absent, the sample's license note · 5 rate limits, budgets and isolation on the public URL.
-Results (D9.2, public URL, 2026-10-25): 31 of 31 checks; titanic3 built in 54 s, sales_dated 48 s, reviews_text 46 s, broken_latin1 cleaned and built in 61 s, wide_messy cleaned in four steps and built in 685 s; all five notebooks passed `sherlock eval notebook --sets all` in fresh venvs.
+Results (D9.2, public URL, 2026-10-25, before cuts 10–12): 31 of 31 checks; titanic3 ready in 54 s, sales_dated 48 s, reviews_text 46 s, broken_latin1 cleaned and ready in 61 s, wide_messy cleaned in four steps and ready in 685 s; all five notebooks passed `sherlock eval notebook --sets all` in fresh venvs.
 
 ### Day 10 · Oct 29: submit
 
@@ -132,7 +139,7 @@ A box is ticked when everything on its line is built except what a cut removed (
 ### Backend
 
 - [ ] `config.py`, `main.py` lifespan (migrations, job runner), `/healthz`, `/metrics`: all but `/metrics`
-- [x] `db/` migrations 001–008 (`db/migrate.py` applies each file it hasn't, by number); repositories for users and datasets (`db/users.py`, `db/datasets.py`); every other table is read and written by the module that owns it
+- [x] `db/` migrations 001–013 (`db/migrate.py` applies each file it hasn't, by number); repositories for users and datasets (`db/users.py`, `db/datasets.py`); every other table is read and written by the module that owns it
 - [x] identity middleware, ownership dependency, rate limiter
 - [x] `storage.py` folder layout, locks, byte accounting (`folder_bytes`)
 - [x] `ingest/` sniff, import, `_row_id`, sample loader (`sample_seed.py`)
@@ -141,40 +148,38 @@ A box is ticked when everything on its line is built except what a cut removed (
 - [x] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts (D3.1, D3.2); `plan.py` (CLEAN-8a, CLEAN-8b)
 - [x] The detector registry, severity levels and review, checks you write, packs and suggested checks (CLEAN-8c, CLEAN-12, CLEAN-13, CLEAN-14): built in the ten slices of `docs/plans/cleaner-detectors-and-severity.md` §14; §16 there maps each requirement to its code and tests
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
-- [x] `steps/` commit, undo latest, undo with replay (D5.5), lineage queries, user-edited cells
+- [x] `steps/` commit, undo latest, undo with replay (D5.5), lineage queries and `changes()`, user-edited cells, the new-version hook that outdates runs
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job: the Nebius Serverless Jobs backend isn't built
-- [x] `widgets/` spec, compile, validate, execute, cache, explain; SQL and analysis widgets (D4.1, D7)
-- [x] `dashboard/` candidates, scoring, curation, validation, layout, job; custom-chart candidates (D6.5) and the driver widget (D7.2)
-- [x] `stories/` fact sheets, stats helpers, relations, narrator, verify, overview, cascade (D6); no material hash (cut 6)
+- [x] `query/` compile, validate, execute (10 s, 2,000 rows), context, scope; `routers/selections.py`
+- `widgets/`, `dashboard/`, `stories/`: removed by cuts 10 and 11
 - [x] `ml/` plan, core, analysis, registry, runner, repro: `driver_analysis` with Auto (D7). Explain-row and predictions (cut 7) and compare-auto (cut 4) are cut
-- [x] `agent/` loop, router, resolve, 11 answerers (`ask_data`, `find_rows`, `explain_widget`, `ask_history`, `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, `web_context` on every tab, `ask_story` on Flow), actions, verify, compose, focus, summaries, the planner, `edit_plan` (CLEAN-8b); suggestions are cut 9
-- [x] `llm/` client, schemas, repair, budgets, logging (D2.7)
-- [x] `web/` Tavily client and cache, `agent/web.py` (`web_context`, column meanings from the web, the data dictionary, the web eval). Web context on anomaly cards (PRD STORY-9) isn't built
-- [x] `canvas/` model, persistence, pruning (D8.1)
-- [x] `notebook/` exporter job (`jobs/export.py`), cell renderers (load, helpers, step, edit batch, widget, chart, run, card, note), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test (D5.6, D6.6, D7.5, D8.3)
-- [x] chat threads, messages, pin and proposals (`routers/chat.py`, `agent/loop.py`, `agent/actions.py`, `routers/proposals.py`; there is no `chat/` package)
-- [ ] `routers/*` for every endpoint in TRD §4: all but the cut ones and the `{ prompt }` form of `PATCH /widgets/{wid}`, which answers `422` (TRD §4.5)
-- [x] `eval/` corruption benchmark, planted-truth, grounding, ask-anything, notebook, web (§4)
+- [x] `agent/` loop, router, resolve, 9 answerers (`ask_data`, `find_rows`, `ask_history`, `ask_why`, `ask_stats`, `ask_model`, `ask_meaning`, `app_help`, `web_context`), actions, verify, compose, focus, summaries, the planner, `edit_plan` (CLEAN-8b); suggestions are cut 9
+- [x] `llm/` client, schemas, repair, budgets, logging (D2.7), `wording.py`
+- [x] `web/` Tavily client and cache, `agent/web.py` (`web_context`, column meanings from the web, the data dictionary, the web eval). Web context on anomaly cards (PRD STORY-9) is removed by cut 11
+- `canvas/`: removed by cut 12
+- [x] `notebook/` exporter job (`jobs/export.py`), cell renderers (load, helpers, step, edit batch, run), repro code, embedded outputs, allowlist scan, cache, `exports` table, download endpoint, nbconvert execution test (D5.6, D6.6, D7.5, D8.3)
+- [x] chat threads, messages and proposals (`routers/chat.py`, `agent/loop.py`, `agent/actions.py`, `routers/proposals.py`; there is no `chat/` package)
+- [x] `routers/*` for every endpoint in TRD §4 but the cut ones
+- [x] `eval/` corruption benchmark, planted-truth, ask-anything, notebook, web (§4); grounding removed by cut 11
 - [x] `scripts/` `seed_sample.py`, `deploy.sh`, `live_check.py`, `example_notebook.py`, `dump_openapi.py` (§4)
-- [ ] tests: unit, integration (mocked LLM), fixtures: all but the mocked clean → build → stories run on all five files of the end-to-end set (TRD §14); the five files are only imported and profiled (`api/tests/test_samples_and_eval.py`)
+- [ ] tests: unit, integration (mocked LLM), fixtures: all but the mocked clean → `ready` run on all five files of the end-to-end set (TRD §14); the five files are only imported and profiled (`api/tests/test_samples_and_eval.py`)
 
 ### Frontend
 
 - [x] theme tokens (light and dark, five accents, `app/theme.css`), fonts, mode, accent and reduce-motion applied by `app/ThemeSync.tsx`. The Bklit charts' Motion animations don't follow the reduce-motion setting (no `MotionConfig`; some follow only the OS preference)
 - [x] API client (generated), SSE hook with resume, TanStack Query, error boundaries (`components/shell/ErrorBoundary.tsx`)
-- [x] stores (`src/state/`): `ui` (panels, rail, Edit layout, focused widget, the chat thread's state), `filters` (global filter), `edits` (the buffer), `flow`; settings live in the `me` query; the selection is cut 8
-- [x] shell: panels, rail, tabs, header rows, job tray, settings dialog (the four cut-1 settings), toasts; the shortcuts sheet is cut 9
+- [x] stores (`src/state/`): `ui` (panels, rail, the chat thread's state), `edits` (the buffer); settings live in the `me` query; the selection is cut 8
+- [x] shell: panels, rail, one dataset view, header rows, job tray, settings dialog (the four cut-1 settings), toasts; the shortcuts sheet is cut 9
 - [x] library: list, status badges, upload, dropzone overlay, import preview, sample, rename/delete with Undo
 - [x] cleaning: offer, in-progress (log, so-far, checks), report view, the cleaning plan panel (`components/dataset/`)
-- [ ] dashboard: grid, widget shell (all states, Outdated), filter bar, add-widget drawer, explain drawer, KPI tile: all but the Filter button and filter builder
-- [ ] charts: Bklit components, adapter, custom heatmap/histogram/box/scatter, highlight/point, click-to-filter, table view, accessible summary: all but the Bklit charts' accessible summary (the custom visx charts have one); brushing is cut 8
+- dashboard: removed by cut 10
+- [ ] charts (chat chart blocks): Bklit components, adapter, custom heatmap/histogram/box/scatter, table view, accessible summary: all but the Bklit charts' accessible summary (the custom visx charts have one); click-to-filter removed by cut 10, brushing by cut 8
 - [ ] csv: grid data source, theme bridge, marks, editors, buffer UI, toolbar, find bar, changes panel, clean-with-AI popover, status bar (row count, cell count, position): built within cut 5, except the type-aware editors (PRD CSV-5, P0)
-- [x] ml: dropdown, setup form from the manifest, progress, result views (importance with partial dependence, confusion, ROC; `MlResult.tsx`), model card drawer; predicted cells are cut 7
-- [x] stories: panel, card, chip, evidence drawer, badges, editor, suggestion view, hover linking, spotlight
-- [x] flow: canvas, node types, edges and labels, connect mode, palette, minimap, context chip; the direction checklist is cut 3
-- [x] chat: bar, thread, renderers (number, table, chart, text, proposal, clarification, plan), sources, Pin, Add to Flow; suggested questions are cut 9
-- [ ] export: dataset menu (⋯), Download menu, export dialog, progress toast with Download again, Ctrl+Shift+E, Flow palette and chat entry points: all but the dialog's Save and export button
-- [x] Playwright flow test (`web/e2e/flow.spec.ts`, `corepack pnpm e2e`): sample → dashboard and stories → ask → a cell edit from chat → its stories update → Flow "make sense" → Export notebook → file downloaded → a chart changed from chat and undone → the cell edit undone, with axe checks and the production CSP
+- [x] ml: model card drawer with Re-run; the dropdown and setup form removed by cut 10; predicted cells are cut 7
+- stories, flow: removed by cuts 11 and 12
+- [x] chat: bar, thread, renderers (number, table, chart, text, proposal, clarification, plan), sources; suggested questions are cut 9
+- [ ] export: dataset menu (⋯), Download menu, export dialog, progress toast with Download again, Ctrl+Shift+E, chat entry point: all but the dialog's Save and export button
+- [x] Playwright flow test (`web/e2e/flow.spec.ts`, `corepack pnpm e2e`): the flow in TRD §14, with axe checks and the production CSP
 
 ---
 
@@ -187,14 +192,14 @@ A box is ticked when everything on its line is built except what a cut removed (
 | Install | `uv sync` (in `api/`) · `corepack pnpm install` (in `web/`) |
 | Run locally | `docker compose up` (API on :8000, web on :5173), or `uv run uvicorn sherlock.main:app --reload` plus `corepack pnpm dev` (Vite proxies the API to `VITE_API_TARGET`, default `http://localhost:8000`) |
 | Tests | `uv run pytest` (the `live` Token Factory tests are deselected; `-m live` runs them) · `corepack pnpm test` (vitest) · `corepack pnpm typecheck` (`tsc -b`; vitest and e2e don't type-check) · `corepack pnpm build` (`tsc -b`, then `vite build`) · `corepack pnpm e2e` (`vite build`, then the Playwright flow) |
-| Evals | `uv run sherlock eval corruption` · `… eval ask` · `… eval ml` · `… eval grounding` · `… eval notebook` (export and execute in a fresh venv) · `… eval web` (offline on recorded fixtures; `--live` needs `TAVILY_API_KEY`, `--record` rewrites the Nemotron fixtures). Every eval but `ml` takes `--sets a,b`; `notebook --sets all` is the five-file end-to-end set (TRD §14) |
+| Evals | `uv run sherlock eval corruption` · `… eval ask` · `… eval ml` · `… eval notebook` (export and execute in a fresh venv) · `… eval web` (offline on recorded fixtures; `--live` needs `TAVILY_API_KEY`, `--record` rewrites the Nemotron fixtures). Every eval but `ml` takes `--sets a,b`; `notebook --sets all` is the five-file end-to-end set (TRD §14) |
 | Clean a file headless | `uv run sherlock clean <file.csv or sample> [--timeout 900]`: imports it, prints the live log and the report |
 | Model-call stats | `uv run sherlock llm stats [--days N] [--json]`: per purpose and role, p50/p95 latency, tokens, repair, fail and fallback rates, read-only from `llm_calls` (TRD §14) |
 | Check the detectors | `uv run sherlock detectors check [--rows N]`: every registered detector, installed packs included, against the contract; exits 1 on a failure (TRD §14) |
 | Export a notebook | `uv run sherlock export notebook <dataset_id> --out out.ipynb` |
-| Seed the sample | `uv run --project api python scripts/seed_sample.py [--out DIR] [--keep-data]`: writes `api/samples/seed/titanic3/`. `--keep-data` keeps the seed's cleaned data and reruns its analyses and stories (TRD §4.2) |
+| Seed the sample | `uv run --project api python scripts/seed_sample.py [--out DIR] [--keep-data]`: writes `api/samples/seed/titanic3/`. `--keep-data` keeps the seed's cleaned data and reruns its analyses (TRD §4.2) |
 | Deploy | Render (prod): push to `main`, then a Manual Deploy in the Render dashboard. CI is blocked, so `autoDeployTrigger: checksPass` never fires (README "Deploy", TRD §11). Then check that `/healthz` reports the new `commit`. Nebius alternative: `./scripts/deploy.sh setup` once, then `./scripts/deploy.sh` (build, push, restart), `./scripts/deploy.sh check` (the `/data` exit check), `./scripts/deploy.sh url` |
-| Check the deployed site | `uv run --project api python scripts/live_check.py [--url …] [--files all\|none]`: health, the instant sample, isolation, rate limits, a sourced answer, the cascade; `--files all` also uploads the five-file set and executes each exported notebook here |
+| Check the deployed site | `uv run --project api python scripts/live_check.py [--url …] [--files all\|none]`: health, the instant sample, isolation, rate limits, a sourced answer, a cell edit outdating a run; `--files all` also uploads the five-file set and executes each exported notebook here |
 | Refresh the example notebook | `uv run --project api python scripts/example_notebook.py` (writes `docs/examples/titanic3-v<N>.ipynb` and its raw file from the cached sample) |
 | Generate the API client | `uv run --project api python scripts/dump_openapi.py`, then `corepack pnpm openapi` (reads `web/src/api/openapi.json`, TRD §3.1) |
 
@@ -208,7 +213,7 @@ Environments:
 
 If the team is solo on Oct 20, cuts 1, 2, 3, 4 and 7 apply from Day 1. This table is the only way a P0 item may be dropped (PRD §5).
 
-**Applied 2026-10-24: all nine cuts.** §2.0 lists what each removes.
+**Applied: cuts 1–9 on 2026-10-24, cuts 10–12 on 2026-10-27 (owner's decision).** §2.0 lists what each removes.
 
 | Order | Cut | What remains |
 |---|---|---|
@@ -221,8 +226,11 @@ If the team is solo on Oct 20, cuts 1, 2, 3, 4 and 7 apply from Day 1. This tabl
 | 7 | `predict` recipe | `driver_analysis` only |
 | 8 | Brushing if the Day 1 spike found Bklit lacks it, otherwise click-to-filter | The other interaction |
 | 9 | Suggested questions, `?` sheet | Chat works without them |
+| 10 | Auto-dashboard and widgets (PRD DASH-1 to DASH-11, P0-04) | Chat answers with charts and tables; ML through chat |
+| 11 | Story cards (PRD STORY-*, P0-07) | Chip-only chat answers with sources |
+| 12 | Flow canvas (PRD FLOW-*, P0-08) | The chat thread |
 
-Never cut: headless cleaning with a report, the auto-dashboard, grounded story cards with linking, ask-anything with sources, the deploy, the cached sample, **and notebook export** (at minimum: load, steps, widgets, cards; if ML runs slip, their cells are omitted with a note).
+Never cut: headless cleaning with a report, ask-anything with sources, the deploy, the cached sample, **and notebook export** (load, steps, ML runs).
 
 ---
 
@@ -259,7 +267,7 @@ The corruption benchmark's clean sets come from `sherlock/eval/synthetic.py` (se
 What each artifact must contain is set by PRD §12 (the official rules and the judges' rubric). The owner of every artifact is As Wasti.
 
 - **Repo:** `README.md`, `LICENSE`, `FEEDBACK.md`, `THIRD_PARTY.md`, `docs/` (these), the architecture diagram (the README's Mermaid flow), a screenshot, and `docs/examples/titanic3-v4.ipynb` (the sample's exported notebook, viewable on GitHub, with its raw file). Public and readable without a login; `LICENSE` (MIT) at the root so it shows at the top of the repo page; no secrets in the history (`.env` ignored, a secret scan before making it public). `FEEDBACK.md` is kept from Day 1 and finalized on Day 10.
-- **README sections, in order:** what Sherlock is in two sentences and the hosted URL · a screenshot · try it (sample, then your own CSV) · **NVIDIA models and Nebius** (a table per role: model ID, what it does, median latency, tokens and cost per sample run; the Nebius services the deployed app uses; the request/data-flow diagram) · how trust works (sources, chips, verifiers, quarantine) · results (cleaning benchmark, ML planted-truth tests, grounding test, ask-anything eval, user test and baseline comparison) · **known limitations** (failed eval questions, cleaning cases the benchmark misses, files that fail, anonymous identity with no recovery, 7-day expiry, anything not shipped from P0) · accessibility · local setup and run (`.env.example`, a Token Factory key, `docker compose up`) · deploy · tests and evals · license and third-party notices.
+- **README sections, in order:** what Sherlock is in two sentences and the hosted URL · a screenshot · try it (sample, then your own CSV) · **NVIDIA models and Nebius** (a table per role: model ID, what it does, median latency, tokens and cost per sample run; the Nebius services the deployed app uses; the request/data-flow diagram) · how trust works (sources, chips, verifiers, quarantine) · results (cleaning benchmark, ML planted-truth tests, ask-anything eval with its unsourced-number count, user test and baseline comparison) · **known limitations** (failed eval questions, cleaning cases the benchmark misses, files that fail, anonymous identity with no recovery, 7-day expiry, anything not shipped from P0) · accessibility · local setup and run (`.env.example`, a Token Factory key, `docker compose up`) · deploy · tests and evals · license and third-party notices.
 - **User tests and baseline:** for each tester (at least 3, none who has seen Sherlock): who they are, the CSV, the task, time to first sourced answer, where they hesitated, what they said, what was changed because of it. Plus the baseline comparison: the same 3 questions on the same file by hand and with Sherlock (time, steps, and how many answers could be traced to their source). Results go in the README's Results.
 - **Public URL** on Render (or the Nebius alternative), live through the judging period and the winner announcement (PRD §9, TRD §11).
 - **YouTube video** under 3:00, public, from the §9 script. Day 10.
@@ -281,12 +289,12 @@ The live rules ask for *less than* three minutes (Day 10 item 1), so the script 
 
 The hero moments the PRD's video metric refers to, in recording order. Every moment that uses a model carries a small caption naming the NVIDIA model and the Nebius service behind it (for example "Nemotron 3 Ultra on Nebius Token Factory plans each fix"), so the integration shows throughout.
 
-1. 0:00 to 0:15. The problem and who has it in one line (PRD §3.1), then Try with sample: the dashboard and its stories appear in seconds.
-2. 0:15 to 0:40. Upload a messy CSV: the import preview, the cleaning plan (untick one fix, ask the chat to add a step), the headless cleaning log, the report with "rows deleted: 0".
-3. 0:40 to 1:00. Hover a widget to light up its story card, then click a number chip: "How do you know?" shows the SQL.
-4. 1:00 to 1:25. Ask a question in chat and get a sourced answer; pin it to the dashboard. Pin to dashboard shows only under a chart block (`agent/loop.py`), so use a question whose answer has a chart.
-5. 1:25 to 1:45. Edit a cell in the CSV tab and save: only the dependent cards update. Undo the step.
-6. 1:45 to 2:10. Click a bar to filter (cut 8 removed brushing), run "What drives this?", and read the model card against its baselines, with the leakage column excluded.
-7. 2:10 to 2:30. On the Flow canvas, select three cards and run "Make sense of this": a synthesis card with chips appears.
+1. 0:00 to 0:15. The problem and who has it in one line (PRD §3.1), then upload a messy CSV: the import preview and the offer.
+2. 0:15 to 0:45. The cleaning plan (untick one fix, ask the chat to add a step), then the headless cleaning log as it runs.
+3. 0:45 to 1:05. The report with "rows deleted: 0", then the quarantined rows in the grid and why each was set aside.
+4. 1:05 to 1:20. Undo one step in the Changes panel: a new version, nothing changed in place.
+5. 1:20 to 1:55. Ask three questions in chat: a number, a chart, and "what drives survived?", read against its baselines in the model card with the leakage column excluded.
+6. 1:55 to 2:10. Click a number chip: "How do you know?" shows the SQL.
+7. 2:10 to 2:30. Ask chat to edit a cell: the proposal, Approve, the grid shows the new value, and the driver answer's run is marked outdated.
 8. 2:30 to 2:50. Export the notebook and run it in Jupyter: it rebuilds the current version.
 9. 2:50 to 2:55. Close on the architecture: which Nemotron model does what on Nebius Token Factory, hosting on Render, and one result against its baseline.

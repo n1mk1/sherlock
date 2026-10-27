@@ -1,6 +1,6 @@
 """Chat completion (Implementation Plan D8.5; TRD §8.1 step 4, §8.2 actions; PRD ASK-7, ASK-10): proposals
-for cell edits and cleaning with approve and reject, `update_widget`, a multi-step plan, and "export a
-notebook" from chat. Recorded model replies (`chat_titanic.json` plus `chat_actions.json`)."""
+for cell edits and cleaning with approve and reject, a multi-step plan, changes to the open cleaning plan, and
+"export a notebook" from chat. Recorded model replies (`chat_titanic.json` plus `chat_actions.json`)."""
 
 import shutil
 from pathlib import Path
@@ -93,42 +93,18 @@ def test_a_clean_proposal_opens_the_cleaning_plan_on_the_selected_rows(client, r
     assert '"kind": "selection"' in params
 
 
-def test_an_unknown_row_is_refused_and_actions_stay_on_their_tab(client, ready):
+def test_an_unknown_row_is_refused_and_a_clean_without_a_selection_covers_the_file(client, ready):
     ds = ready["id"]
     _, msg = send(client, ds, "set the fare of row 999999 to 5", **csv())
     assert "proposal" not in msg and "isn't in this version" in msg["text"]
-    # A cell edit is a proposal on every tab (live, 2026-10-26: the Dashboard asked "Which widget?")…
-    _, msg = send(client, ds, "set the fare of row 1 to 100")
+    # A cell edit is a proposal without any context too…
+    _, msg = send(client, ds, "set the fare of row 1 to 100", context={})
     assert msg["proposal"]["kind"] == "edit_cells" and msg["proposal"]["edits"][0]["row_id"] == 1
-    # …and cleaning the selection stays on the CSV tab, where the rows are selected.
-    _, msg = send(client, ds, "clean these rows")
-    assert "proposal" not in msg and "CSV tab" in msg["text"]
-
-
-def test_update_widget_changes_the_focused_widget_with_undo(client, ready):
-    ds = ready["id"]
-    w = client.post(f"{API}/datasets/{ds}/widgets", json={
-        "op": {"type": "sql", "sql": "SELECT sex, AVG(fare) AS avg_fare FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1"},
-        "view": {"type": "bar", "options": {"x": "sex", "y": "avg_fare"}}, "title": "Fare by sex"})
-    assert w.status_code == 201, w.text
-    wid = w.json()["widget"]["id"]
-    _, msg = send(client, ds, "make it a pie chart", context={"tab": "dashboard", "focused_widget_id": wid})
-    after = next(x for x in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if x["id"] == wid)
-    assert after["spec"]["view"]["type"] == "pie" and after["title"] == "Average fare by sex"
-    assert {"kind": "undo_widget", "widget_id": wid} in msg["actions"]
-    assert any(b["type"] == "chart" and b["widget_id"] == wid for b in msg["blocks"])
-    undone = client.post(f"{API}/widgets/{wid}/undo").json()
-    assert undone["spec"]["view"]["type"] == "bar"
-    assert undone["title"] == "Fare by sex"  # the title chat gave it goes too, not just the query
-    redone = client.post(f"{API}/widgets/{wid}/undo").json()  # a second undo puts both back
-    assert redone["spec"]["view"]["type"] == "pie" and redone["title"] == "Average fare by sex"
-    # A change that keeps the title (the menu's Change view, which sends the options it has) is undone
-    # without touching the title.
-    client.patch(f"{API}/widgets/{wid}", json={"title": "My pie"})
-    view = {"type": "bar", "options": redone["spec"]["view"]["options"]}
-    assert client.patch(f"{API}/widgets/{wid}", json={"view": view}).status_code == 200
-    back = client.post(f"{API}/widgets/{wid}/undo").json()
-    assert back["spec"]["view"]["type"] == "pie" and back["title"] == "My pie"
+    # …and a clean with no rows selected proposes Clean with AI on the whole file.
+    _, msg = send(client, ds, "clean these rows", context={})
+    p = msg["proposal"]
+    assert p["kind"] == "clean_selection" and p["summary"] == "Clean with AI on the whole file"
+    assert p["scope"]["kind"] == "all" and p["impact"]["rows_affected"] == ready["row_count"]
 
 
 def test_a_two_part_question_runs_as_a_plan(client, ready):
@@ -142,11 +118,11 @@ def test_a_two_part_question_runs_as_a_plan(client, ready):
 
 
 def test_export_a_notebook_from_chat_opens_the_dialog_with_options(client, ready):
-    events, msg = send(client, ready["id"], "export a notebook without the data, with the canvas notes")
+    events, msg = send(client, ready["id"], "export a notebook without the data, and skip the analyses")
     assert not any(e == "status" and d["text"] == "Thinking…" and False for e, d in events)
     action = next(a for a in msg["actions"] if a["kind"] == "open_export")
-    assert action["options"] == {"include_data": False, "include_notes": True}
-    assert "without the data and with the canvas notes" in msg["text"]
+    assert action["options"] == {"include_data": False, "include_runs": False}
+    assert "without the data and without the analyses" in msg["text"]
     assert not db_rows("SELECT 1 FROM llm_calls WHERE purpose = 'route' AND dataset_id = ?", ready["id"])
 
 
@@ -160,7 +136,7 @@ def test_chat_changes_the_open_cleaning_plan_at_once(client, ready):
 
     # Missing values start unticked (worth a look); the user ticks cabin's, then tells chat to leave it.
     client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "tick", "item_id": cabin["id"]}]})
-    events, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
+    events, msg = send(client, ds, "don't touch cabin", **csv(plan_id=plan["id"]))
     assert msg["text"] == "Unticked 1 fix: missing values in cabin." and "proposal" not in msg
     after = client.get(f"{API}/clean-plans/{plan['id']}").json()
     assert not next(i for i in after["items"] if i["id"] == cabin["id"])["ticked"]
@@ -172,18 +148,18 @@ def test_chat_changes_the_open_cleaning_plan_at_once(client, ready):
     assert client.get(f"{API}/datasets/{ds}").json()["current_version"] == ready["current_version"]
 
     # A reply naming an item the plan doesn't have gets the one repair, then a plain answer.
-    _, msg = send(client, ds, "leave the twelfth fix out", context={"tab": "dashboard", "plan_id": plan["id"]})
+    _, msg = send(client, ds, "leave the twelfth fix out", **csv(plan_id=plan["id"]))
     assert msg["text"].startswith("I couldn't change the plan:") and "f99" in msg["text"]
 
 
 def test_without_an_open_plan_chat_doesnt_edit_one(client, ready):
     ds = ready["id"]
     plan = client.post(f"{API}/datasets/{ds}/clean/plan").json()
-    _, msg = send(client, ds, "don't touch cabin")  # no plan_id: edit_plan isn't one of the tab's tools
+    _, msg = send(client, ds, "don't touch cabin")  # no plan_id: edit_plan isn't one of the tools
     assert "press Clean with AI to open one" in msg["text"]
     assert client.get(f"{API}/clean-plans/{plan['id']}").json()["items"] == plan["items"]  # nothing changed
     client.delete(f"{API}/clean-plans/{plan['id']}")
-    _, msg = send(client, ds, "don't touch cabin", context={"tab": "dashboard", "plan_id": plan["id"]})
+    _, msg = send(client, ds, "don't touch cabin", **csv(plan_id=plan["id"]))
     assert "isn't open any more" in msg["text"]  # a discarded plan
 
 

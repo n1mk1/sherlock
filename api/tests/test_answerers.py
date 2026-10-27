@@ -1,12 +1,11 @@
 """The D7.3 answerers (TRD §8.2) on the sample, with model replies recorded live on 2026-10-25:
-`ask_stats`, `ask_why`, `ask_model` (with "who did it get wrong?"), `ask_meaning`, `app_help`, and
-tool exposure by tab. Every number in these answers is a chip filled in by code."""
+`ask_stats`, `ask_why`, `ask_model` (with "who did it get wrong?"), `ask_meaning` and `app_help`.
+Every number in these answers is a chip filled in by code."""
 
 import pytest
 
 from sherlock.agent import insight
 from sherlock.agent.answerers import CantAnswer
-from sherlock.agent.loop import TOOLS
 from tests.test_chat import FIXTURE, blocks_of, send  # noqa: F401 - the fixture file and helpers
 from tests.test_chat import mocked, ready  # noqa: F401 - pytest fixtures
 from tests.test_jobs import wait_for
@@ -20,9 +19,12 @@ def chips(message):
 
 
 def driver_done(client, ds):
-    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-    driver = next(w for w in widgets if w["spec"]["op"]["type"] == "ml")
-    return wait_for(lambda: (r := client.get(f"{API}/runs/{driver['run_id']}").json())["status"] == "done" and r, timeout=120)
+    """What drives survived, started as `ask_why` starts it (so its answer finds this run in the cache), once done."""
+    r = client.post(f"{API}/datasets/{ds}/runs", json={
+        "recipe": "driver_analysis", "scope": {"columns": {"target": "survived"}, "rows": {"selection_id": None}}})
+    assert r.status_code == 200, r.text
+    run_id = r.json()["id"]
+    return wait_for(lambda: (r := client.get(f"{API}/runs/{run_id}").json())["status"] == "done" and r, timeout=120)
 
 
 def test_ask_stats_picks_the_test_by_the_column_types(client, ready):
@@ -48,7 +50,7 @@ def test_ask_why_answers_from_the_cached_driver_run(client, ready):
     assert "The strongest factors are sex" in msg["text"] and "not causes" in msg["text"]
     assert {"kind": "open_model_card", "run_id": run["id"]} in msg["actions"]
     jobs = [j for j in client.get(f"{API}/jobs?dataset_id={ready['id']}").json() if j["kind"] == "ml_run"]
-    assert len(jobs) == 1  # the builder's run, from the cache
+    assert len(jobs) == 1  # the run above, from the cache
 
 
 def test_ask_model_and_who_it_got_wrong(client, ready):
@@ -57,7 +59,7 @@ def test_ask_model_and_who_it_got_wrong(client, ready):
     number = blocks_of(msg, "number")[0]
     assert number["formatted"] == f"{run['model_card']['model']['value'] * 100:.1f}%" and number["label"] == "model accuracy"
     assert {"kind": "open_model_card", "run_id": run["id"]} in msg["actions"]
-    assert not blocks_of(msg, "chart") and not any(a["kind"] == "pin" for a in msg["actions"])
+    assert not blocks_of(msg, "chart")
 
     _, msg = send(client, ready["id"], "who did the model get wrong?")
     wrong = run["model_card"]["misclassified"]
@@ -95,15 +97,9 @@ def test_ask_meaning_keeps_general_knowledge_apart(client, ready):
     assert msg["sources"][-1]["kind"] == "general"
 
 
-def test_app_help_and_tool_exposure_by_tab(client, ready):
+def test_app_help(client, ready):
     _, msg = send(client, ready["id"], "how do I undo a step?")
     assert msg["text"].startswith("Undo a step: Open the CSV tab") and msg["sources"][0]["kind"] == "help"
-
-    before = len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"])
-    events, msg = send(client, ready["id"], "add a chart of fare by sex to the dashboard", context={"tab": "csv"})
-    assert blocks_of(msg, "chart") and not any(a["kind"] == "open_widget" for a in msg["actions"])
-    assert len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"]) == before
-    assert "create_widget" in TOOLS["dashboard"] and "create_widget" not in TOOLS["csv"] and "ask_story" in TOOLS["flow"]
 
 
 def test_help_retrieval_and_its_limits():

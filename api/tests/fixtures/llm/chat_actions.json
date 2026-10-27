@@ -84,35 +84,6 @@
   {
     "purpose": "route",
     "match": [
-      "<data>\nmake it a pie chart\n</data>"
-    ],
-    "content": {
-      "intents": [
-        "update_widget"
-      ],
-      "ambiguous": false,
-      "clarification": null,
-      "multi_step": false,
-      "entities": []
-    }
-  },
-  {
-    "purpose": "update_widget",
-    "match": [
-      "make it a pie chart"
-    ],
-    "content": {
-      "reading": "same query, shown as a pie",
-      "title": "Average fare by sex",
-      "sql": "SELECT sex, AVG(fare) AS avg_fare FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1",
-      "view": "pie",
-      "x": "sex",
-      "y": "avg_fare"
-    }
-  },
-  {
-    "purpose": "route",
-    "match": [
       "<data>\naverage fare by class, and what does pclass mean?\n</data>"
     ],
     "content": {

@@ -1,6 +1,5 @@
 """A version on every chat message (TRD §8.1, §4.9, Schema §2.15–2.16): history lines say the version
-they were written on, Add to Flow refuses an answer from an older version, `update_widget` keeps the rest of
-the widget's spec, and a selection is counted on the current version. Recorded replies: `chat_titanic.json`
+they were written on, and a selection is counted on the current version. Recorded replies: `chat_titanic.json`
 and `chat_actions.json`."""
 
 import shutil
@@ -9,11 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from sherlock.agent.answerers import merged_spec
 from sherlock.config import get_settings
 from sherlock.db import migrate as mig
 from sherlock.llm import fixtures
-from sherlock.llm.schemas import WidgetDraft
 from tests.test_chat import blocks_of, send
 from tests.test_jobs import wait_status
 
@@ -64,54 +61,20 @@ def edit(client, ds: dict, row_id: int, column: str, value: str) -> int:
     return r.json()["version"]
 
 
-def test_an_answer_keeps_its_version_and_an_older_one_stays_off_the_canvas(client, ready, prompts):
+def test_an_answer_keeps_its_version_and_the_history_says_it(client, ready, prompts):
     ds, v = ready["id"], ready["current_version"]
     _, msg = send(client, ds, "average fare by class")
     assert msg["version"] == v
-    flow = next(a for a in msg["actions"] if a["kind"] == "add_to_flow")
     assert edit(client, ready, 1, "fare", "100") == v + 1
 
     thread = client.get(f"{API}/datasets/{ds}/chat").json()
     assert [m["version"] for m in thread] == [v, v]
-    assert not any(a["kind"] == "add_to_flow" for a in thread[1]["actions"])  # Add to Flow isn't offered any more
-    r = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": flow["block_index"]})
-    assert r.status_code == 409 and f"worked out on version {v}" in r.json()["error"]["message"]
 
     # The next message's history says which version each line was written on.
     _, follow = send(client, ds, "and for women only?")
     assert follow["version"] == v + 1
     route = next(p["prompt"] for t in prompts for p in t.calls if p["purpose"] == "route" and "women only" in p["prompt"])
     assert f"[v{v}] user: average fare by class" in route and f"[v{v}] assistant: First class paid" in route
-    flow = next(a for a in follow["actions"] if a["kind"] == "add_to_flow")
-    assert client.post(f"{API}/messages/{follow['id']}/pin", json={"target": "flow", "block_index": flow["block_index"]}).status_code == 201
-
-
-def test_update_widget_keeps_the_rest_of_the_spec(client, ready):
-    ds = ready["id"]
-    w = client.post(f"{API}/datasets/{ds}/widgets", json={
-        "scope": {"rows": {"predicate": "pclass = 1", "inherit_global_filters": False}},
-        "op": {"type": "sql", "sql": "SELECT sex, AVG(fare) AS avg_fare FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1"},
-        "view": {"type": "bar", "options": {"x": "sex", "y": "avg_fare", "sort": "desc"}}, "title": "Fare by sex"})
-    assert w.status_code == 201, w.text
-    wid = w.json()["widget"]["id"]
-    send(client, ds, "make it a pie chart", context={"tab": "dashboard", "focused_widget_id": wid})
-    spec = next(x for x in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if x["id"] == wid)["spec"]
-    options = {k: v for k, v in spec["view"]["options"].items() if k != "undo_title"}  # the service's own, for Undo
-    assert spec["view"]["type"] == "pie" and options == {"x": "sex", "y": "avg_fare", "sort": "desc"}
-    assert spec["scope"]["rows"]["predicate"] == "pclass = 1" and spec["scope"]["rows"]["inherit_global_filters"] is False
-    data = client.get(f"{API}/widgets/{wid}/data").json()
-    assert sum(r[1] > 0 for r in data["rows"]) == 2  # first class only: the predicate still applies
-
-
-def test_merged_spec():
-    old = {"scope": {"columns": {"x": "a", "y": "b", "series": "s"}, "rows": {"predicate": "p", "selection_id": "sel_1",
-                                                                              "inherit_global_filters": False}},
-           "op": {"type": "sql", "sql": "old"}, "view": {"type": "bar", "options": {"x": "a", "y": "b", "colors": ["c"]}}}
-    kpi = WidgetDraft(reading="", title="", sql="new", view="kpi", x=None, y="total")
-    new = merged_spec(old, kpi)
-    assert new["op"] == {"type": "sql", "sql": "new"} and new["view"] == {"type": "kpi", "options": {"colors": ["c"], "value": "total"}}
-    assert new["scope"]["rows"] == old["scope"]["rows"] and new["scope"]["columns"] == {"x": None, "y": "total", "series": "s"}
-    assert old["op"]["sql"] == "old"  # the widget's own spec isn't changed in place
 
 
 def test_a_selection_is_counted_on_the_current_version(client, ready):

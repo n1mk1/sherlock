@@ -11,9 +11,9 @@ function Boom(): never {
 describe("quality of life (D8.3)", () => {
   it("contains a crash to its view and offers Try again", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    render(<ErrorBoundary label="dashboard"><Boom /></ErrorBoundary>);
+    render(<ErrorBoundary label="grid"><Boom /></ErrorBoundary>);
     const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("Something went wrong showing the dashboard");
+    expect(alert).toHaveTextContent("Something went wrong showing the grid");
     expect(alert).toHaveTextContent("kaboom");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });

@@ -1,14 +1,13 @@
-// Web state follows the version: what a tab shows is re-checked when the data moves on,
+// Web state follows the version: what the page shows is re-checked when the data moves on,
 // and a change made in another tab reaches this one.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useRun } from "@/api/ml";
 import { applyStatus, keys, useCleanPlan, useDatasetEvents, useThread } from "@/api/queries";
-import type { CleanPlan, DataCard, Dataset } from "@/api/types";
-import { useFilterCheck } from "@/components/dashboard/Dashboard";
+import type { CleanPlan, Dataset } from "@/api/types";
 import { CleanPlanPanel } from "@/components/dataset/CleanPlanPanel";
-import { filterGone, useFilters } from "@/state/filters";
 import { stubEventSource } from "@/test/eventsource";
 import { mockApi, renderAt } from "@/test/render";
 
@@ -18,15 +17,6 @@ const DS = {
   id: "ds_1", name: "messy.csv", status: "ready", current_version: 3, row_count: 120, column_count: 4,
   created_at: "", last_opened_at: null, last_tab: null, error: null, clean_plan_id: "pln_1",
 } as Dataset;
-
-const card = (version: number, values: string[]): DataCard => ({
-  version, row_count: 120, column_count: 2, quarantined: 0, issues: [], target_candidates: [], leakage_candidates: [],
-  columns: [
-    { name: "region", type: "category", role: "dimension", missing: 0, missing_pct: 0, distinct: values.length,
-      top_values: values.map((value) => ({ value, count: 10 })) },
-    { name: "units", type: "integer", role: "measure", missing: 0, missing_pct: 0, distinct: 40, top_values: null },
-  ],
-});
 
 function wrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -43,7 +33,7 @@ describe("the dataset stream", () => {
     });
     const { wrapper: w } = wrapper();
     const { result } = renderHook(() => {
-      useDatasetEvents("ds_1", () => {});
+      useDatasetEvents("ds_1");
       return { plan: useCleanPlan("pln_1"), thread: useThread("ds_1") };
     }, { wrapper: w });
     await waitFor(() => expect(result.current.plan.data?.version).toBe(2));
@@ -54,38 +44,27 @@ describe("the dataset stream", () => {
     await waitFor(() => expect(result.current.thread.data).toHaveLength(1));
   });
 
-  it("reads the cards, steps and report again when the library stream says the status changed", () => {
+  it("reads the steps and report again when the library stream says the status changed", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyStatus(qc, { dataset_id: "ds_1", status: "ready", current_version: 3 } as Parameters<typeof applyStatus>[1]);
     const invalidated = spy.mock.calls.map(([f]) => JSON.stringify(f?.queryKey));
-    for (const key of [["cards", "ds_1"], keys.steps("ds_1"), ["report", "ds_1"]]) expect(invalidated).toContain(JSON.stringify(key));
-  });
-});
-
-describe("the dashboard filter on a new version", () => {
-  it("is gone when its column or its value is", () => {
-    const clause = { col: "region", op: "eq", value: "North" } as const;
-    expect(filterGone(clause, card(3, ["North", "South"]))).toBeNull();
-    expect(filterGone(clause, card(3, ["South"]))).toBe("no row of v3 has region = North");
-    expect(filterGone({ ...clause, col: "area" }, card(3, ["North"]))).toBe("v3 has no column area");
-    // A value typed by the click (1, true) matches the card's text ("1", "True").
-    expect(filterGone({ ...clause, value: 1 }, card(3, ["1", "2"]))).toBeNull();
-    expect(filterGone({ ...clause, value: true }, card(3, ["True", "False"]))).toBeNull();
-    // A card that doesn't list every value can't say a value is gone.
-    expect(filterGone(clause, { ...card(3, ["South"]), columns: [{ ...card(3, ["South"]).columns[0], distinct: 30 }] })).toBeNull();
+    for (const key of [keys.steps("ds_1"), ["report", "ds_1"]]) expect(invalidated).toContain(JSON.stringify(key));
   });
 
-  it("is cleared when the new version's data card no longer has its value", () => {
-    useFilters.getState().toggle("ds_1", { col: "region", op: "eq", value: "North" });
-    const { rerender } = renderHook(({ ds, dc }: { ds: Dataset; dc: DataCard }) => useFilterCheck(ds, dc), {
-      initialProps: { ds: { ...DS, current_version: 2 }, dc: card(2, ["North", "South"]) },
-    });
-    expect(useFilters.getState().byDataset.ds_1).not.toBeNull();
-    rerender({ ds: { ...DS, current_version: 3 }, dc: card(2, ["North", "South"]) }); // the card of v3 isn't in yet
-    expect(useFilters.getState().byDataset.ds_1).not.toBeNull();
-    rerender({ ds: { ...DS, current_version: 3 }, dc: card(3, ["South"]) });
-    expect(useFilters.getState().byDataset.ds_1).toBeNull();
+  it("reads an open model card again on version.created, since the new version can outdate its run", async () => {
+    const ES = stubEventSource();
+    let status = "done";
+    mockApi({ "GET /api/v1/runs/run_1": () => ({ id: "run_1", status }) });
+    const { wrapper: w } = wrapper();
+    const { result } = renderHook(() => {
+      useDatasetEvents("ds_1");
+      return useRun("run_1");
+    }, { wrapper: w });
+    await waitFor(() => expect(result.current.data?.status).toBe("done"));
+    status = "outdated";
+    act(() => ES.last().emit("version.created", { version: 4 }, 3));
+    await waitFor(() => expect(result.current.data?.status).toBe("outdated"));
   });
 });
 

@@ -11,11 +11,9 @@ export type Detector = components["schemas"]["Detector"];
 // A check of your own as you save it (`POST /datasets/{id}/rules`, PRD CLEAN-13).
 export type RuleIn = components["schemas"]["RuleIn"];
 export type RuleKind = RuleIn["kind"];
-export type Tab = "csv" | "dashboard" | "flow";
 
 export type JobKind =
-  | "profile" | "clean" | "build_dashboard" | "stories" | "ml_run" | "cascade" | "undo" | "export_notebook" | "purge"
-  | "review_issues";
+  | "profile" | "clean" | "ml_run" | "undo" | "export_notebook" | "purge" | "review_issues";
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Progress {
@@ -36,7 +34,6 @@ export interface Job {
   finished_at: string | null;
   error: string | null;
   result: Record<string, unknown> | null;
-  automatic?: boolean; // queued by the After upload setting, not a click (App Flow §4)
 }
 
 export interface Issue {
@@ -226,10 +223,11 @@ export interface CleaningReport {
   }[];
 }
 
-// Widgets (TRD §4.5, §6.3).
+// A chat chart block's spec and result (TRD §6.3 ChartSpec): the view the chart adapter draws and the
+// query's rows. `scope` and `op` say what was asked, for "How do you know?".
 export type ViewType = "bar" | "line" | "area" | "pie" | "ring" | "kpi" | "table" | string;
 
-export interface WidgetSpec {
+export interface ChartSpec {
   scope: {
     columns: { x?: string | null; y?: string | null; agg?: string | null; [k: string]: unknown };
     rows: { predicate?: string | null; selection_id?: string | null; inherit_global_filters?: boolean };
@@ -243,65 +241,18 @@ export interface Highlight {
   key: string;
 }
 
-export interface Widget {
-  id: string;
-  dataset_id: string;
-  spec: WidgetSpec;
-  title: string;
-  status: "ready" | "outdated" | "error" | "building";
-  error: string | null;
-  run_id?: string | null; // an analysis widget's run (op.type = ml)
-  created_by: "builder" | "user" | "chat";
-  version_built: number;
-  score: number | null;
-  point: Highlight | null;
-  created_at?: string;
-  updated_at: string; // every spec, title or status write moves it; the data and explain keys carry it
-  deleted_at: string | null;
-}
-
 export interface Column {
   name: string;
   type: string;
 }
 
-export interface WidgetData {
+export interface ChartData {
   version: number;
   columns: Column[];
   rows: unknown[][];
   row_count: number;
   truncated: boolean;
   highlight?: Highlight;
-}
-
-export interface LayoutItem {
-  i: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  collapsed?: boolean;
-}
-
-export interface Layout {
-  lg: LayoutItem[];
-  md?: LayoutItem[];
-  sm?: LayoutItem[];
-}
-
-export interface Explain {
-  op: string;
-  sql?: string;
-  scope: WidgetSpec["scope"];
-  version: number;
-  recipe?: string;
-}
-
-/** The global filter (PRD DASH-5), in the rows API's filter JSON. */
-export interface FilterClause {
-  col: string;
-  op: "eq";
-  value: unknown;
 }
 
 // Chat (TRD §4.9, §5.3).
@@ -311,7 +262,7 @@ export type Run =
   | { type: "label"; ref: string; text?: string };
 
 /** A citation of a web source in a chat answer (TRD §8.2 web_context): its number is the source's, not
- * data. Only chat answers have it; a web answer added to Flow keeps it as a label. */
+ * data. Only chat answers have it. */
 export type CiteRun = { type: "cite"; n: number; url: string; title: string };
 export type AnswerRun = Run | CiteRun;
 
@@ -319,14 +270,10 @@ export interface AnswerBody {
   blocks: { type: "paragraph" | "bullets"; runs: AnswerRun[] }[];
 }
 
-export interface CardBody {
-  blocks: { type: "paragraph" | "bullets"; runs: Run[] }[];
-}
-
 export type AnswerBlock =
   | { type: "number"; value: unknown; formatted: string; format: string; label: string; result?: string }
-  | { type: "table"; columns: Column[]; rows: unknown[][]; total: number; selection_id?: string | null; result?: string; widget_id?: string }
-  | { type: "chart"; spec: WidgetSpec; data: WidgetData; result?: string; widget_id?: string }
+  | { type: "table"; columns: Column[]; rows: unknown[][]; total: number; selection_id?: string | null; result?: string }
+  | { type: "chart"; spec: ChartSpec; data: ChartData; result?: string }
   | { type: "text"; body: AnswerBody; labeled?: "general" | "web"; web?: "context" | "meaning" }
   | { type: "web_sources"; query: string; cached: boolean; results: WebResult[] };
 
@@ -341,7 +288,7 @@ export interface WebResult {
 }
 
 export interface Source {
-  kind: "sql" | "run" | "step" | "card" | "help" | "general" | "web";
+  kind: "sql" | "run" | "step" | "help" | "general" | "web";
   run_id?: string;
   url?: string; // a web source's address
   title?: string;
@@ -351,18 +298,17 @@ export interface Source {
 }
 
 export interface MessageAction {
-  kind: "pin" | "add_to_flow" | "open_rows" | "open_widget" | "open_export" | "open_model_card" | "undo_widget";
+  kind: "open_rows" | "open_export" | "open_model_card";
   block_index?: number;
   run_id?: string;
-  widget_id?: string;
   selection_id?: string;
-  options?: Partial<Record<"include_data" | "include_cards" | "include_notes" | "include_runs", boolean>>;
+  options?: Partial<Record<"include_data" | "include_runs", boolean>>;
 }
 
 /** A change chat proposed (TRD §6.8): nothing applies until it's approved. */
 export interface Proposal {
   id: string;
-  kind: "edit_cells" | "clean_selection" | "clean_step" | "card_edit" | "computed_column";
+  kind: "edit_cells" | "clean_selection" | "clean_step" | "computed_column";
   base_version: number;
   status: "pending" | "approved" | "rejected" | "expired";
   summary: string;
@@ -405,39 +351,4 @@ export interface JobProgressEvent extends Progress {
   dataset_id: string;
   job_id: string;
   kind: JobKind;
-}
-
-// Story cards (TRD §4.6). `facts` carries the latest fact sheet's values, so chips render from it.
-export interface Card {
-  id: string;
-  dataset_id: string;
-  kind: "overview" | "widget" | "synthesis" | "direction" | "answer";
-  widget_id: string | null;
-  source_card_ids: string[] | null;
-  headline: CardBody;
-  body: CardBody;
-  fact_sheet_id: string | null;
-  status: "ready" | "updating" | "outdated" | "sources_changed" | "building" | "failed";
-  edited_by_user: boolean;
-  changed_badge: boolean;
-  suggestion: { headline: CardBody; body: CardBody } | null;
-  version: number;
-  narrated_by: string | null;
-  updated_at: string;
-  facts: Record<string, { formatted: string; label: string }>;
-  related: { widget_id: string; title: string }[];
-}
-
-export interface Evidence {
-  key?: string;
-  value: unknown;
-  formatted?: string;
-  label: string;
-  sql?: string | null;
-  formula?: string | null;
-  method?: string | null;
-  from?: string[] | null;
-  version: number;
-  computed_at?: string;
-  unverified?: boolean;
 }

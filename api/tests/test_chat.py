@@ -36,7 +36,7 @@ def ready(client):
 def send(client, ds_id, text, **extra):
     """(events, final message) from the chat stream."""
     events, event = [], None
-    with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}, **extra}) as r:
+    with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "csv"}, **extra}) as r:
         assert r.status_code == 200, r.read()
         assert r.headers["content-type"].startswith("text/event-stream")
         for line in r.iter_lines():
@@ -70,7 +70,6 @@ def test_ask_data_streams_a_table_then_a_grounded_answer(client, ready):
     _, follow = send(client, ready["id"], "and for women only?")
     chart = blocks_of(follow, "chart")[0]
     assert chart["spec"]["view"]["type"] == "bar" and chart["spec"]["op"]["sql"].count("{{rows}}") == 1
-    assert {"kind": "pin", "block_index": follow["blocks"].index(chart)} in follow["actions"]
 
     thread = client.get(f"{API}/datasets/{ready['id']}/chat").json()
     assert [m["role"] for m in thread] == ["user", "assistant", "user", "assistant"]
@@ -103,30 +102,6 @@ def test_find_rows_saves_a_selection(client, ready):
     assert rows["total"] == 4 and all(r["cells"]["fare"] > 500 for r in rows["rows"])
 
 
-def test_create_widget_from_chat_and_from_the_add_drawer(client, ready):
-    before = len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"])
-    _, msg = send(client, ready["id"], "add a chart of fare by port to the dashboard")
-    action = next(a for a in msg["actions"] if a["kind"] == "open_widget")
-    widgets = client.get(f"{API}/datasets/{ready['id']}/widgets").json()
-    assert len(widgets["widgets"]) == before + 1
-    made = next(w for w in widgets["widgets"] if w["id"] == action["widget_id"])
-    assert made["created_by"] == "chat" and made["title"] == "Average fare by port"
-    assert widgets["layout"]["lg"][-1]["i"] == made["id"]
-    assert "reading port → embarked" in msg["sources"][0]["label"]
-
-    r = client.post(f"{API}/datasets/{ready['id']}/widgets", json={"prompt": "a KPI of the average age"})
-    assert r.status_code == 201, r.text
-    assert r.json()["widget"]["spec"]["view"]["type"] == "kpi" and r.json()["widget"]["created_by"] == "user"
-
-
-def test_a_chart_answer_doesnt_add_a_widget_unasked(client, ready):
-    before = len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"])
-    _, msg = send(client, ready["id"], "survival rate by sex as a chart")  # routed to ask_data and create_widget
-    assert blocks_of(msg, "chart") and not any(a["kind"] == "open_widget" for a in msg["actions"])
-    assert len(client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"]) == before
-    assert not db_rows("SELECT 1 FROM llm_calls WHERE dataset_id = ? AND purpose = 'widget'", ready["id"])
-
-
 def test_clarification_then_the_choice(client, ready):
     _, ask = send(client, ready["id"], "compare the groups")
     assert ask["clarification"] == {"question": "Which groups?", "options": ["men and women", "the passenger classes"]}
@@ -136,28 +111,11 @@ def test_clarification_then_the_choice(client, ready):
 
 
 def test_honest_limits(client, ready):
-    _, msg = send(client, ready["id"], "make this a line chart")  # update_widget (D8.5) with no widget in view
-    assert msg["text"].startswith("Which widget?")
-    titles = {w["title"] for w in client.get(f"{API}/datasets/{ready['id']}/widgets").json()["widgets"]}
-    assert 2 <= len(msg["clarification"]["options"]) <= 3 and set(msg["clarification"]["options"]) <= titles  # ASK-6
     _, msg = send(client, ready["id"], "nationality breakdown")
     assert msg["text"].startswith("This file has no column that answers that.")
     assert "passengers by home destination" in msg["text"]
     _, msg = send(client, ready["id"], "what did cleaning change?")
     assert "Step 1: Typed" in msg["text"] and msg["sources"][0]["kind"] == "step"
-
-
-def test_pin_a_chart_answer(client, ready):
-    send(client, ready["id"], "average fare by class")
-    _, msg = send(client, ready["id"], "and for women only?")
-    index = next(a["block_index"] for a in msg["actions"] if a["kind"] == "pin")
-    r = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "dashboard", "block_index": index})
-    assert r.status_code == 201, r.text
-    w = r.json()
-    assert w["created_by"] == "chat" and w["title"] == "and for women only?"
-    data = client.get(f"{API}/widgets/{w['id']}/data").json()
-    assert data["rows"][0][1] == pytest.approx(109.41, rel=1e-3)
-    assert client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": index}).status_code == 422
 
 
 def test_model_unavailable_and_not_ready(client):
@@ -202,7 +160,7 @@ def test_a_value_label_must_be_a_value_the_answer_or_the_data_has():
     for label in ("value:fare:512.33", "value:sex:three quarters", "value:embarked:female"):
         with pytest.raises(ValueError, match="no result shows"):
             shown(label)
-    # Plan 2.9 (PRD STORY-8): a number column's cells are chips, never labels, so an average can't pass as a name.
+    # Plan 2.9 (PRD ASK-3): a number column's cells are chips, never labels, so an average can't pass as a name.
     for label in ("value:fare:87.51", "value:pclass:1"):
         with pytest.raises(ValueError, match="no result shows"):
             shown(label)
@@ -238,51 +196,3 @@ def test_a_message_past_its_time_budget_makes_no_model_call(client, ready, monke
     assert ("error", {"code": "llm_unavailable", "message": "This answer ran out of time."}) in events
     assert len(db_rows("SELECT id FROM llm_calls WHERE dataset_id = ?", ready["id"])) == before
 
-
-def test_an_answer_card_reruns_its_queries_when_its_columns_change(client, ready):
-    """Plan 2b.2 (TRD §7.6 `rerun_fact_sql`): an answer card added to Flow is checked by the cascade. A
-    change it doesn't read leaves it alone; one it reads re-runs its stored query, and numbers that moved
-    make it outdated, since its words were written about the old ones. Refresh takes the new numbers."""
-    from tests.test_jobs import wait_for
-
-    ds = ready["id"]
-
-    def settled():
-        return wait_for(lambda: (js := client.get(f"{API}/jobs?dataset_id={ds}").json())
-                        and all(j["status"] in ("done", "failed", "cancelled") for j in js) and js, timeout=120)
-
-    def edit(column, value, row=1):
-        v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
-        r = client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": row, "column": column,
-                                                                                           "value": value}]})
-        assert r.status_code == 201, r.text
-        return r.json()["version"]
-
-    settled()
-    _, msg = send(client, ds, "average fare by class")
-    action = next(a for a in msg["actions"] if a["kind"] == "add_to_flow")
-    added = client.post(f"{API}/messages/{msg['id']}/pin", json={"target": "flow", "block_index": action["block_index"]})
-    assert added.status_code == 201, added.text
-    answer = added.json()
-    sheet = client.get(f"{API}/fact-sheets/{answer['fact_sheet_id']}").json()
-    assert "fare" in sheet["depends_columns"]
-
-    edit("embarked", "Q", row=2)  # a column its query doesn't read
-    jobs = settled()
-    cascade = next(j for j in jobs if j["kind"] == "cascade")
-    assert cascade["result"]["answers"]["checked"] == 0
-    assert client.get(f"{API}/cards/{answer['id']}").json()["status"] == "ready"
-
-    edit("fare", "999")  # one it reads: an average moves
-    jobs = settled()
-    cascade = next(j for j in jobs if j["kind"] == "cascade")
-    assert cascade["result"]["answers"] == {"checked": 1, "kept": 0, "outdated": 1}, cascade["result"]
-    stale = client.get(f"{API}/cards/{answer['id']}").json()
-    assert stale["status"] == "outdated" and stale["facts"] == answer["facts"]  # the old numbers beside the old words
-
-    job = client.post(f"{API}/cards/{answer['id']}/refresh")
-    assert job.status_code == 201, job.text
-    settled()
-    fresh = client.get(f"{API}/cards/{answer['id']}").json()
-    assert fresh["status"] == "ready" and fresh["changed_badge"] and fresh["facts"] != answer["facts"]
-    assert fresh["version"] == client.get(f"{API}/datasets/{ds}").json()["current_version"]

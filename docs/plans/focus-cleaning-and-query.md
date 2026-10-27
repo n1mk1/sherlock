@@ -1,6 +1,6 @@
 # Plan: focus on cleaning and querying, decouple the dashboard and the Flow canvas
 
-**Status:** owner decision taken (drop the auto-dashboard, focus on cleaning and querying); plan not built. Nothing here is a spec until the PRD and TRD say it (CLAUDE.md Rule 1). Items marked **Owner** need a decision before the phase that uses them; they are collected in §11.
+**Status:** superseded in part. The owner chose to delete the surfaces directly (cuts 10–12, Implementation Plan §5) rather than phase them out, with these decisions over §11: O1 delete; O2 no manual dashboard; O3 ML through chat only (no column-header menu); O4 no Keep in notebook and no NB-13, the notebook holds load, steps and ML runs; O5 the cached sample keeps its cleaned data, steps and analysis; O6 a stopped clean ends `ready` with its steps; O7 doesn't apply. One migration, `013_drop_surfaces.sql`, replaces `009_focus.sql` and `010_drop_surfaces.sql`. The PRD, TRD, App Flow, UI/UX brief and schema are the spec; this plan is background.
 
 **In one line:** Sherlock becomes "clean a messy CSV you can defend, then ask it anything, with every number sourced". The dashboard builder, the widgets, the story cards and the Flow canvas leave the core path first, then leave the codebase. Cleaning, the CSV tab, chat, ML through chat and the notebook export stay and stop depending on them.
 

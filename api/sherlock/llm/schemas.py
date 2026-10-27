@@ -1,9 +1,7 @@
 """JSON schemas for structured calls (TRD §3.5): one pydantic model per call shape. The client sends
 `model_json_schema()` as a strict `response_format` and validates the reply against the model.
 
-The Cleaner's three calls (TRD §7.2) are here now; the dashboard, story and chat shapes join them
-with the work that uses them (Implementation Plan D4, D6). Route and Story are the shapes the Day 1
-smoke test passed.
+The Cleaner's calls (TRD §7.2), chat's (TRD §8.1–§8.2) and the data dictionary's (TRD §7.1.1).
 """
 
 from typing import Literal
@@ -55,19 +53,6 @@ class Ratings(Strict):
     ratings: list[Rating] = Field(min_length=1, max_length=40)
 
 
-# --- Dashboard curation (TRD §7.3 step 3) -----------------------------------------------------
-
-
-class Pick(Strict):
-    candidate: int = Field(ge=0, description="index of the candidate in the list")
-    title: str = Field(description="plain-words title for the widget, no digits")
-    point: str | None = Field(description="the element to accent, one of the candidate's listed elements, or null")
-
-
-class Curation(Strict):
-    picks: list[Pick] = Field(min_length=1, max_length=10, description="6 to 10 widgets in dashboard order")
-
-
 # --- Chat routing (TRD §8.1) ------------------------------------------------------------------
 
 
@@ -78,13 +63,12 @@ class Clarification(Strict):
 
 class Entity(Strict):
     text: str
-    kind: Literal["column", "value", "widget", "card"]
+    kind: Literal["column", "value"]
 
 
 INTENTS = Literal[
-    "ask_data", "find_rows", "explain_widget", "ask_history", "ask_why", "ask_stats",
-    "ask_model", "ask_meaning", "app_help", "create_widget", "update_widget", "ask_story",
-    "edit_cells", "clean_selection", "edit_plan", "web_context",
+    "ask_data", "find_rows", "ask_history", "ask_why", "ask_stats",
+    "ask_model", "ask_meaning", "app_help", "edit_cells", "clean_selection", "edit_plan", "web_context",
 ]
 
 
@@ -96,7 +80,7 @@ class Route(Strict):
     entities: list[Entity]
 
 
-# --- Story runs (TRD §7.4): numbers are chips, names are labels, prose has no digits ---------
+# --- Answer runs (TRD §8.1): numbers are chips, names are labels, prose has no digits ---------
 
 
 class TextRun(Strict):
@@ -118,11 +102,6 @@ class LabelRun(Strict):
 
 
 Run = TextRun | ChipRun | LabelRun  # a union, so strict decoding enforces one kind per run
-
-
-class Story(Strict):
-    headline: list[Run] = Field(min_length=1)
-    body: list[Run] = Field(min_length=1)
 
 
 # --- Chat answerers and compose (TRD §8.1–§8.2) ---------------------------------------------
@@ -149,15 +128,6 @@ class SqlDraft(Strict):
 class PredicateDraft(Strict):
     predicate: str = Field(description="a DuckDB boolean condition over the columns of t, without WHERE")
     label: str = Field(description="what the rows are, in a few plain words")
-
-
-class WidgetDraft(Strict):
-    reading: str = Field(description="how you read the request's words as columns, e.g. '<their word> → <column>'")
-    title: str = Field(description="plain-words title, at most eight words")
-    sql: str = Field(description="one DuckDB SELECT over table t that filters its rows with WHERE {{rows}}")
-    view: Literal["bar", "line", "area", "pie", "ring", "kpi", "table"]
-    x: str | None = Field(description="the result column for categories or time, null for kpi and table")
-    y: str | None = Field(description="the result column for the value, null for table")
 
 
 class Answer(Strict):

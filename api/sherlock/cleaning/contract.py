@@ -12,7 +12,7 @@ import pandas as pd
 
 from sherlock.cleaning.detectors import fixtures
 from sherlock.cleaning.detectors.base import DetectorSpec, Frame
-from sherlock.stories.wording import wording_problem
+from sherlock.llm.wording import wording_problem
 
 MAX_SECONDS = 2.0
 BIG_ROWS = 200_000

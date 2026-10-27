@@ -5,7 +5,7 @@
 // whole level), rewrites a fix in plain words (✎), adds steps of their own (PRD CLEAN-8b) or asks the chat
 // to do any of that, then starts. Leakage and ID columns are info rows under "Marked, not changed".
 // While it's open, the chat bar sends its `plan_id`, so chat can change it.
-// From the offer it fills the centre (`layout="centre"`); from the CSV tab it replaces Changes in the right
+// From the offer it fills the centre (`layout="centre"`); from the grid it replaces Changes in the right
 // panel (`layout="side"`), with the scope radios, so the grid stays visible. A plan opened for some rows
 // (the new-rows toast's "Clean them", chat's "clean these rows") starts on those rows (PRD CLEAN-1).
 // An ambiguous-dates fix asks which order its dates are written in, with three values read both ways

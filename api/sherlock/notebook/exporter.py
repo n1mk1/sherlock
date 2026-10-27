@@ -2,10 +2,9 @@
 runnable Jupyter notebook that rebuilds it from the raw file.
 
 `build()` assembles the cells; the `export_notebook` job writes the file and the `exports` row. An
-export is cached by sha1(kind, version, state_rev, options): a new version or any widget, card,
-run, layout or canvas change bumps `state_rev`, so a repeat export of the same state is instant. A
-cascade bumps it when it starts and when it ends, and so does a deleted card. A widget that
-fails on the version becomes a Markdown cell saying why, so one widget never fails the export.
+export is cached by sha1(kind, version, state_rev, options): a new version or a run's change bumps
+`state_rev`, so a repeat export of the same state is instant. An analysis that can't be emitted
+becomes a Markdown cell saying why, so one run never fails the export.
 """
 
 import hashlib
@@ -32,13 +31,10 @@ log = logging.getLogger("sherlock.notebook")
 
 
 class NotebookOptions(BaseModel):
-    """TRD §4.2. Defaults `{ true, true, false, true, "steps_dashboard" }`."""
+    """TRD §4.2. Defaults `{ include_data: true, include_runs: true }`."""
     model_config = ConfigDict(extra="forbid")
     include_data: bool = True
-    include_cards: bool = True
-    include_notes: bool = False
     include_runs: bool = True
-    order: str = Field(default="steps_dashboard", pattern="^(steps_dashboard|flow_path)$")
     up_to_step: int | None = Field(default=None, ge=1)
 
 
@@ -79,7 +75,7 @@ def _chain(db, dataset: sqlite3.Row, options: NotebookOptions) -> tuple[list[dic
     current = _version(db, dataset["id"], dataset["current_version"])
     chain = [load_step(db, s) for s in json.loads(current["effective_step_ids_json"])]
     notes = []
-    if dataset["status"] in ("cleaning", "building"):
+    if dataset["status"] == "cleaning":
         notes.append(f"A job was still running when this was exported; it uses version {current['version']}, "
                      "the latest committed version.")
     if options.up_to_step is None:
@@ -97,35 +93,17 @@ def _chain(db, dataset: sqlite3.Row, options: NotebookOptions) -> tuple[list[dic
     return kept, target, notes
 
 
-def _widgets(db, dataset_id: str) -> list[sqlite3.Row]:
-    """Live widgets in dashboard order: the saved layout's reading order, else builder order."""
-    rows = db.execute("SELECT * FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL ORDER BY order_no, created_at",
-                      (dataset_id,)).fetchall()
-    layout = db.execute("SELECT layout_json FROM layouts WHERE dataset_id = ?", (dataset_id,)).fetchone()
-    if layout:
-        pos = {it["i"]: (it["y"], it["x"]) for it in json.loads(layout[0]).get("lg", [])}
-        rows = sorted(rows, key=lambda r: pos.get(r["id"], (10**9, r["order_no"])))
-    return rows
-
-
 def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections, dataset: sqlite3.Row,
-          options: NotebookOptions, progress=lambda *_: None, extra_notes: list[str] | None = None) -> Built:
-    """`extra_notes` go into the first cell with the others (the export job's "cards were updating")."""
-    from sherlock.widgets import service as widgets
-
+          options: NotebookOptions, progress=lambda *_: None) -> Built:
     chain, target, notes = _chain(db, dataset, options)
-    notes += extra_notes or []
     version = target["version"]
     v1 = _version(db, dataset["id"], 1)
     v1_columns = json.loads(v1["columns_json"])
     import_options = json.loads(dataset["import_options_json"])
     used = sorted({h for s in chain for h in _helpers_used(db, s["id"])})
-    rows = _widgets(db, dataset["id"]) if options.up_to_step is None else []
-    if options.up_to_step is not None and _widgets(db, dataset["id"]):
-        notes.append("Widgets are left out: they belong to the current version.")
-    cards = _cards(db, dataset) if options.include_cards and options.up_to_step is None else {}
-    if options.include_cards and not cards and options.up_to_step is None:
-        notes.append("There are no story cards yet, so this notebook has the widgets only.")
+    runs = _runs(db, dataset["id"]) if options.include_runs and options.up_to_step is None else []
+    if options.include_runs and options.up_to_step is not None and _runs(db, dataset["id"]):
+        notes.append("Analyses are left out: they belong to the current version.")
 
     nb = new_notebook(metadata={
         "kernelspec": {"name": "python3", "display_name": "Python 3", "language": "python"},
@@ -135,14 +113,12 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     })
     exported = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     progress(1, 3, "Writing the steps")
-    nb.cells += cells.title(dataset["name"], version, exported, __version__, len(chain), len(rows), notes)
+    nb.cells += cells.title(dataset["name"], version, exported, __version__, len(chain), len(runs), notes)
     nb.cells += cells.parameters(data_file(dataset), options.include_data)
     nb.cells += cells.requirements(settings.notebook_pins)
     nb.cells += cells.helpers(helpers_cell(used))
     nb.cells += cells.load(import_options, [c["name"] for c in v1_columns if c["name"] not in ("_row_id", "_quarantine_reason")],
                            {c["name"]: c["type"] for c in v1_columns})
-    if "overview" in cards:
-        nb.cells += _card(cards["overview"], level="##")
     for s in chain:
         nb.cells += cells.step(s)
     in_chain = {s["id"] for s in chain}
@@ -153,94 +129,40 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
             nb.cells += cells.undo_note(dict(u), undone["no"])
     nb.cells += cells.assertion(version, target["row_count"], {c["name"]: c["type"] for c in json.loads(target["columns_json"])})
 
-    progress(2, 3, f"Writing {len(rows)} widgets")
-    env = widgets.Env(settings, db, cache, None)
-    emitted, emitted_runs = 0, []
-    extra = _extra_runs(db, dataset["id"], rows) if options.include_runs and options.up_to_step is None else []
-    if rows or extra:
-        intro = "## The dashboard\n\nEach widget's query runs on the rebuilt data; each analysis runs its reproduction code."
+    progress(2, 3, f"Writing {len(runs)} analyses")
+    if runs:
+        intro = "## The analyses\n\nEach analysis runs its reproduction code on the rebuilt data."
         nb.cells.append(nbformat.v4.new_markdown_cell(intro))
         nb.cells.append(nbformat.v4.new_code_cell(cells.PLOT_HELPERS))
-    failed = 0
-    for w in rows:
-        spec = json.loads(w["spec_json"])
-        if spec["op"]["type"] != "sql":
-            run = _finished_run(db, w["run_id"])
-            if run is None:
-                nb.cells.append(nbformat.v4.new_markdown_cell(
-                    f"## {w['title']}\n\n*This analysis hadn't finished when the notebook was exported, so it's left out.*"))
-                continue
-            try:
-                made = _run_cells(settings, dataset, run, w["title"])  # an analysis widget is emitted via its run
-            except Exception as exc:  # noqa: BLE001 - one widget never fails the export
-                nb.cells += _failed(w, version, exc)
-                failed += 1
-                continue
-            nb.cells += made
-            emitted_runs.append(run["id"])
-            if w["id"] in cards:
-                nb.cells += _card(cards[w["id"]])
-            continue
+    emitted, failed = 0, 0
+    for run in runs:
+        title = f"What drives {run['target']}?"
         try:
-            sql = widgets.compiled(env, dataset, spec, version, [])
-            data = widgets.data(env, dataset, w, [], version)
-        except Exception as exc:  # noqa: BLE001 - one widget never fails the export
-            nb.cells += _failed(w, version, exc)
+            nb.cells += _run_cells(settings, dataset, run, title)
+        except Exception as exc:  # noqa: BLE001 - one analysis never fails the export
+            nb.cells += _failed(run, title, exc)
             failed += 1
         else:
-            point = json.loads(w["point_json"])["key"] if w["point_json"] else None
-            # The note under a capped table gives the query's real row count, not the cap.
-            total = data.get("total", data["row_count"])
-            nb.cells += cells.widget(widgets.to_widget(w), sql, outputs.table(data["columns"], data["rows"], total), point)
             emitted += 1
-        if w["id"] in cards:
-            nb.cells += _card(cards[w["id"]])
     if failed:  # the first cell says so too
-        notes.append(f"{failed} widget{'s' if failed != 1 else ''} failed on version {version} and "
+        notes.append(f"{failed} analys{'es' if failed != 1 else 'is'} couldn't be emitted and "
                      f"{'are' if failed != 1 else 'is'} left out; {'their cells say' if failed != 1 else 'its cell says'} why.")
-        nb.cells[0] = cells.title(dataset["name"], version, exported, __version__, len(chain), len(rows), notes)[0]
-    for run in extra:  # include_runs: finished runs no widget shows
-        nb.cells += _run_cells(settings, dataset, run, f"What drives {run['target']}?")
-        emitted_runs.append(run["id"])
-    flow_cards = _flow_cards(db, dataset) if options.include_cards and options.up_to_step is None else []
-    flow_notes = _canvas_notes(db, dataset["id"]) if options.include_notes else []
-    if flow_cards or flow_notes:
-        nb.cells += cells.flow_intro(len(flow_cards), len(flow_notes))
-        for entry in flow_cards:
-            nb.cells += _card(entry)
-        for text in flow_notes:
-            nb.cells += cells.note(text)
+        nb.cells[0] = cells.title(dataset["name"], version, exported, __version__, len(chain), emitted, notes)[0]
     nb.cells += cells.closing()
 
     progress(3, 3, "Checking the notebook")
     nbformat.validate(nb)
     scan(nb)
-    counts = {"steps": len(chain), "widgets": emitted, "runs": len(emitted_runs), "cards": len(cards) + len(flow_cards),
-              "notes": len(flow_notes)}
-    return Built(nb, version, counts, notes)
+    return Built(nb, version, {"steps": len(chain), "runs": emitted}, notes)
 
 
-MAX_EXTRA_RUNS = 10
+MAX_RUNS = 10
 
 
-def _finished_run(db, run_id: str | None) -> sqlite3.Row | None:
-    if not run_id:
-        return None
-    return db.execute("SELECT * FROM runs WHERE id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL",
-                      (run_id,)).fetchone()
-
-
-def _extra_runs(db, dataset_id: str, rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
-    """Finished runs that no live widget shows, newest first (at most ten). A widget's earlier runs
-    (before a re-run or a change of settings) are left out: the widget is emitted with its current one.
-    So are the runs of a deleted widget: the user took that analysis off the dashboard."""
-    live = {w["id"] for w in rows}
-    deleted = {r["id"] for r in db.execute("SELECT id FROM widgets WHERE dataset_id = ? AND deleted_at IS NOT NULL",
-                                           (dataset_id,))}
-    shown = {w["run_id"] for w in rows if w["run_id"] and json.loads(w["spec_json"])["op"]["type"] == "ml"}
-    out = db.execute("SELECT * FROM runs WHERE dataset_id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL "
-                     "ORDER BY finished_at DESC", (dataset_id,)).fetchall()
-    return [r for r in out if r["id"] not in shown and r["widget_id"] not in live | deleted][:MAX_EXTRA_RUNS]
+def _runs(db, dataset_id: str) -> list[sqlite3.Row]:
+    """Finished runs, newest first, at most ten; an outdated one says so in its cell (PRD NB-5)."""
+    return db.execute("SELECT * FROM runs WHERE dataset_id = ? AND status IN ('done', 'outdated') AND repro_path IS NOT NULL "
+                      "ORDER BY finished_at DESC LIMIT ?", (dataset_id, MAX_RUNS)).fetchall()
 
 
 def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title: str) -> list:
@@ -261,78 +183,14 @@ def _run_cells(settings: Settings, dataset: sqlite3.Row, run: sqlite3.Row, title
                      outputs.table(imp["columns"], imp["rows"], imp["row_count"]))
 
 
-def _failed(widget: sqlite3.Row, version: int, exc: Exception) -> list:
-    """A widget whose query or run can't be emitted on this version: a Markdown cell with the reason."""
+def _failed(run: sqlite3.Row, title: str, exc: Exception) -> list:
+    """An analysis that can't be emitted: a Markdown cell with the reason."""
     from sherlock.errors import ApiError
 
     reason = exc.message if isinstance(exc, ApiError) else (str(exc).strip().splitlines() or [type(exc).__name__])[0]
-    log.warning("export: widget %s fails on v%s: %s", widget["id"], version, reason)
-    return [nbformat.v4.new_markdown_cell(f"## {widget['title']}\n\n*This widget fails on version {version}: {reason[:300]} "
-                                          "It's left out of the notebook; fix it in Sherlock and export again.*")]
-
-
-def _card(entry: tuple[dict, dict, str | None], level: str = "###") -> list:
-    c, facts, stale = entry
-    return cells.card(c, facts, level=level, stale=stale)
-
-
-def stale_note(why: str | None, card: dict, version: int) -> str | None:
-    """The note under a card that isn't usable: its words may not match the numbers."""
-    if why is None:
-        return None
-    written = f" It was written for version {card['version']}; this notebook rebuilds version {version}."         if card["version"] < version else ""
-    return (f"Out of date ({why}): its words may not match the numbers shown.{written} "
-            "Refresh it in Sherlock to bring it up to date.")
-
-
-def _cards(db, dataset: sqlite3.Row) -> dict:
-    """widget_id (or "overview") → (card, facts, stale note) for the live cards (TRD §7.7)."""
-    from sherlock.stories import service as stories
-    from sherlock.stories import trust
-
-    t = trust.Trust(db, dataset)
-    out = {}
-    for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('overview', 'widget')",
-                        (dataset["id"],)):
-        c = stories.to_card(db, r)
-        sheet = stories.get_sheet(db, c["fact_sheet_id"])
-        why = t.why_not(r)
-        out["overview" if c["kind"] == "overview" else c["widget_id"]] = (
-            c, (sheet or {}).get("facts", {}), stale_note(None if why == trust.WIDGET_DELETED else why, c, dataset["current_version"]))
-    return out
-
-
-def _flow_cards(db, dataset: sqlite3.Row) -> list[tuple[dict, dict, str | None]]:
-    """Synthesis and answer cards (from the Flow canvas and chat), oldest first, each with the facts its
-    chips name (an answer card's own sheet, or for a synthesis each cited card's fact, TRD §7.4.1) and
-    its stale note."""
-    from sherlock.stories import service as stories
-    from sherlock.stories import trust
-
-    t = trust.Trust(db, dataset)
-    dataset_id = dataset["id"]
-    out = []
-    for r in db.execute("SELECT * FROM cards WHERE dataset_id = ? AND deleted_at IS NULL AND kind IN ('synthesis', 'answer') "
-                        "ORDER BY created_at", (dataset_id,)):
-        c = stories.to_card(db, r)
-        sheet = stories.get_sheet(db, c["fact_sheet_id"])
-        if sheet:
-            facts = sheet["facts"]
-        else:
-            keys = [run["key"] for p in (c["headline"], c["body"]) for b in p["blocks"] for run in b["runs"]
-                    if run["type"] == "chip" and run.get("key")]
-            facts = {k: f for k in keys if (f := stories.fact_for(db, dataset_id, k))}
-        out.append((c, facts, stale_note(t.why_not(r), c, dataset["current_version"])))
-    return out
-
-
-def _canvas_notes(db, dataset_id: str) -> list[str]:
-    """The canvas's notes in reading order: top to bottom, then left to right (PRD NB-6)."""
-    from sherlock.canvas import service as canvas
-
-    doc, _ = canvas.read(db, dataset_id)
-    notes = [n for n in doc["nodes"] if not (n.get("sherlock") or {}).get("card_id") and (n.get("text") or "").strip()]
-    return [n["text"] for n in sorted(notes, key=lambda n: (round(n["y"] / 40), n["x"]))]
+    log.warning("export: run %s can't be emitted: %s", run["id"], reason)
+    return [nbformat.v4.new_markdown_cell(f"## {title}\n\n*This analysis can't be emitted: {reason[:300]} "
+                                          "It's left out of the notebook; run it again in Sherlock and export again.*")]
 
 
 def _helpers_used(db, step_id: str) -> list[str]:
@@ -343,16 +201,8 @@ def _helpers_used(db, step_id: str) -> list[str]:
 def preview(db: sqlite3.Connection, dataset: sqlite3.Row, options: NotebookOptions) -> dict:
     """What the dialog's sentence and notes need (TRD §4.2 preview), without building anything."""
     chain, target, notes = _chain(db, dataset, options)
-    rows = _widgets(db, dataset["id"])
-    widgets = [w for w in rows if json.loads(w["spec_json"])["op"]["type"] == "sql"]
-    runs = [w for w in rows if json.loads(w["spec_json"])["op"]["type"] == "ml" and _finished_run(db, w["run_id"])]
-    runs += _extra_runs(db, dataset["id"], rows) if options.include_runs else []
-    return {"version": target["version"], "notes": notes,
-            "counts": {"steps": len(chain), "widgets": len(widgets) if options.up_to_step is None else 0,
-                       "runs": len(runs) if options.up_to_step is None else 0,
-                       "cards": len(_cards(db, dataset)) + len(_flow_cards(db, dataset))
-                       if options.include_cards and options.up_to_step is None else 0,
-                       "notes": len(_canvas_notes(db, dataset["id"])) if options.include_notes else 0}}
+    runs = _runs(db, dataset["id"]) if options.include_runs and options.up_to_step is None else []
+    return {"version": target["version"], "notes": notes, "counts": {"steps": len(chain), "runs": len(runs)}}
 
 
 def export_path(settings: Settings, dataset: sqlite3.Row, key: str) -> tuple[Path, str]:

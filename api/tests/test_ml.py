@@ -1,7 +1,6 @@
 """ML (TRD §7.5, §4.8, §14; PRD ML-1 – ML-10): planted truth through the analysis, then the runs API
 end to end on a planted file: recipes with reasons, the setup preview, a run with its model card,
-results, reproduction code and cache, the builder's driver widget, and runs marked outdated by the
-cascade."""
+results, reproduction code and cache, and runs marked outdated by the edit that changes their columns."""
 
 import time
 
@@ -254,51 +253,44 @@ def test_recipes_preview_run_results_code_and_cache(client):
 
 
 @pytest.mark.usefixtures("run_jobs")
-def test_a_widget_becomes_the_analysis_and_goes_outdated_after_an_edit(client):
+def test_an_edit_to_a_runs_column_outdates_it_at_once_and_it_reruns_only_on_request(client):
+    """PRD ML-9, TRD §7.5: the commit itself marks finished runs whose target or features changed
+    `outdated`, with no job; an edit to a column the run didn't read leaves it done. Asking again
+    for the same analysis runs it on the new version."""
     ds = _planted_dataset(client)
-    client.put(f"{API}/me/settings", json={"story_updates": "ask"})
-    widget = client.post(f"{API}/datasets/{ds}/widgets", json={
-        "scope": {"columns": {"x": "group"}}, "op": {"type": "sql", "sql": "SELECT \"group\", count(*) AS n FROM t WHERE {{rows}} GROUP BY 1"},
-        "view": {"type": "bar"}, "title": "Rows by group"}).json()["widget"]
-    run = client.post(f"{API}/datasets/{ds}/runs", json={"widget_id": widget["id"], "scope": {"columns": {"target": "outcome"}}}).json()
+    request = {"recipe": "driver_analysis", "scope": {"columns": {"target": "outcome"}}}
+    run = client.post(f"{API}/datasets/{ds}/runs", json=request).json()
     assert _wait_run(client, run["id"])["status"] == "done"
-    w = next(x for x in client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"] if x["id"] == widget["id"])
-    assert w["spec"]["op"]["type"] == "ml" and w["run_id"] == run["id"] and w["status"] == "ready"
-    assert w["title"] == "What drives outcome?" and w["spec"]["view"]["options"]["chart_title"] == "Rows by group"
-    data = client.get(f"{API}/widgets/{widget['id']}/data").json()
-    assert data["rows"][0][0] == "strong" and data["run"]["summary"]["verdict"] == "beats_baseline"
 
-    v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
-    client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v, "edits": [{"row_id": 1, "column": "noise", "value": "9"}]})
-    wait_for(lambda: client.get(f"{API}/runs/{run['id']}").json()["status"] == "outdated", timeout=60)
-    w = wait_for(lambda: (x := client.get(f"{API}/widgets/{widget['id']}/data").json()) and x["run"]["status"] == "outdated" and x)
-    assert w["rows"], "an outdated analysis still shows its last result"
-    rerun = client.post(f"{API}/widgets/{widget['id']}/rerun").json()
-    assert rerun["id"] != run["id"] and rerun["version"] == v + 1
+    def edit(column, value):
+        v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+        r = client.post(f"{API}/datasets/{ds}/edits",
+                        json={"base_version": v, "edits": [{"row_id": 1, "column": column, "value": value}]})
+        assert r.status_code == 201, r.text
+        return v + 1
+
+    edit("leak", "maybe")  # left out of the analysis as leakage: the run still holds
+    assert client.get(f"{API}/runs/{run['id']}").json()["status"] == "done"
+    version = edit("noise", "9")  # a feature
+    assert client.get(f"{API}/runs/{run['id']}").json()["status"] == "outdated"
+    ml_jobs = [j for j in client.get(f"{API}/jobs", params={"dataset_id": ds}).json() if j["kind"] == "ml_run"]
+    assert len(ml_jobs) == 1, "an outdated run is re-run only on request"
+
+    rerun = client.post(f"{API}/datasets/{ds}/runs", json=request).json()
+    assert rerun["id"] != run["id"] and rerun["version"] == version
     assert _wait_run(client, rerun["id"])["status"] == "done"
-    undone = client.post(f"{API}/widgets/{widget['id']}/undo").json()
-    assert undone["spec"]["op"]["type"] == "sql" and undone["title"] == "Rows by group"  # "Plain chart" goes back to the bar chart
-
-
-@pytest.mark.usefixtures("run_jobs")
-def test_the_builder_adds_the_driver_widget(client):
-    ds = _planted_dataset(client)
-    client.post(f"{API}/datasets/{ds}/use-as-is")
-    wait_status(client, ds, "ready")
-    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-    driver = next(w for w in widgets if w["spec"]["op"]["type"] == "ml")
-    assert driver["title"] == "What drives outcome?" and driver["spec"]["view"]["type"] == "importance"
-    assert _wait_run(client, driver["run_id"])["status"] == "done"
-    layout = client.get(f"{API}/datasets/{ds}/widgets").json()["layout"]["lg"]
-    assert any(it["i"] == driver["id"] for it in layout)
+    first = client.get(f"{API}/datasets/{ds}/rows", params={"limit": 1}).json()["rows"][0]
+    assert first["_row_id"] == 1
+    edit("outcome", "0" if str(first["cells"]["outcome"]) == "1" else "1")
+    assert client.get(f"{API}/runs/{rerun['id']}").json()["status"] == "outdated"  # the target
+    assert client.get(f"{API}/runs/{run['id']}").json()["status"] == "outdated"
 
 
 def test_free_text_ids_and_many_valued_text_are_never_targets():
     """Live, a `note` column of ten pasted sentences was the last column, so the profile took it for an
-    outcome and the builder made "What drives note?" (live test 2026-10-26, finding 10)."""
+    outcome and offered "What drives note?" (live test 2026-10-26, finding 10)."""
     import duckdb
 
-    from sherlock.dashboard.builder import driver_widget
     from sherlock.ml import registry
     from sherlock.profile.datacard import build_datacard
 
@@ -320,6 +312,5 @@ def test_free_text_ids_and_many_valued_text_are_never_targets():
     assert "order_id" not in registry.targets(card)
     stale = {**card, "target_candidates": ["note"]}  # a DataCard stored before the rule
     assert registry.candidates(stale) == []
-    assert driver_widget(None, None, stale) is None
     wide = {"name": "city", "role": "dimension", "type": "category", "distinct": 35, "stats": {"mean_length": 8}}
     assert not registry.target_ok(wide) and registry.target_ok({**wide, "distinct": 4})

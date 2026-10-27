@@ -98,7 +98,7 @@ def ask(client, ds_id: str, text: str, tries: int = 6) -> tuple[dict | None, lis
     """One question through `POST /chat`: the final message and the error events, if any."""
     for _ in range(tries):
         errors: list[str] = []
-        with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}}) as r:
+        with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "csv"}}) as r:
             if r.status_code == 429:
                 time.sleep(float(r.headers.get("retry-after") or 6))
                 continue
@@ -128,7 +128,7 @@ def web_prose(message: dict) -> list[str]:
 
 def wording(texts: list[str]) -> str | None:
     from sherlock.llm.text import has_digits
-    from sherlock.stories.narrate import CAUSAL, number_in_words
+    from sherlock.llm.wording import CAUSAL, number_in_words
 
     for t in texts:
         if has_digits(t):

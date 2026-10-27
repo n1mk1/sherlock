@@ -1,15 +1,14 @@
-"""Change detection (TRD §7.6, §7.8, §6.4): the gaps through which a change could miss the
-widgets, cards or runs that read it. Each test failed on the code before the fix."""
+"""Change detection (TRD §7.5, §7.8): the gaps through which a change could miss the runs that read
+it. Each test failed on the code before the fix."""
 
 import json
 
 from sherlock.db.connection import connect
 from sherlock.db.util import new_id, now_iso
-from sherlock.jobs.cascade import changes
 from sherlock.ml.runner import depends
 from sherlock.steps.diff import Diff
+from sherlock.steps.lineage import changes
 from sherlock.steps.undo import undo_impact
-from sherlock.stories.facts import depends_on
 from tests.test_jobs import TEXT_CSV, upload
 
 
@@ -33,9 +32,9 @@ def _step(db, ds, no, kind, to_version, *, impact=None, edits=None, undone=None)
 
 
 def test_changes_see_restored_rows_and_an_undone_restore(client):
-    """A3, A19: undoing an edit that restored rows quarantines them again, which affects every widget;
+    """A3, A19: undoing an edit that restored rows quarantines them again, which affects every run;
     `changes()` read `restore_row_ids` on the step but not on the step an undo undid. A step whose impact
-    counts restored rows affects every widget too."""
+    counts restored rows affects every run too."""
     ds = upload(client, TEXT_CSV)["id"]
     db = connect(client.app.state.settings)
     try:
@@ -48,17 +47,6 @@ def test_changes_see_restored_rows_and_an_undone_restore(client):
         assert changes(db, ds, 13, 14) == (set(), False)
     finally:
         db.close()
-
-
-def test_a_star_or_an_aliased_table_reads_its_columns():
-    """A4: `SELECT *` and an aliased `t` named no column, so a pinned chat table never updated."""
-    cols = ["fare", "age", "sex"]
-    assert depends_on({}, "SELECT * FROM t", columns=cols) == sorted(cols)
-    assert depends_on({}, "SELECT * EXCLUDE (age) FROM t", columns=cols) == sorted(cols)
-    assert depends_on({}, "SELECT a.* FROM t AS a", columns=cols) == sorted(cols)
-    assert depends_on({}, "SELECT a.fare FROM t AS a WHERE a.age > 3") == ["age", "fare"]
-    assert depends_on({}, "SELECT COUNT(*) AS n FROM t WHERE sex = 'x'", columns=cols) == ["sex"]
-    assert depends_on({}, "WITH b AS (SELECT fare FROM t) SELECT b.* FROM b", columns=cols) == ["fare"]
 
 
 def test_a_run_reads_its_selections_columns(client):

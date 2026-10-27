@@ -2,7 +2,7 @@
 import { Route, Routes } from "react-router-dom";
 import { useMe } from "@/api/queries";
 import { ThemeSync } from "@/app/ThemeSync";
-import { DatasetPage, DatasetRedirect } from "@/components/dataset/DatasetPage";
+import { DatasetPage } from "@/components/dataset/DatasetPage";
 import { Home } from "@/components/library/Home";
 import { AppShell } from "@/components/shell/AppShell";
 import { StartupError } from "@/components/shell/StartupError";
@@ -20,7 +20,8 @@ export function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route index element={<Home />} />
-          <Route path="d/:datasetId" element={<DatasetRedirect />} />
+          <Route path="d/:datasetId" element={<DatasetPage />} />
+          {/* The old tab routes (csv, dashboard, flow) open the same view. */}
           <Route path="d/:datasetId/:tab" element={<DatasetPage />} />
           <Route path="*" element={<Home />} />
         </Route>

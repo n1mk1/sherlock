@@ -8,15 +8,14 @@
 #          and a percentage of the same value also passes
 #   rows:  {key: value} pairs a table or chart in the answer must contain (keys compared as text)
 #   total: the number of rows a find-rows answer reports
-#   intent: the answer must come from this kind of answer (rows, widget)
-#   source: (D8.4) the answer must cite a source of this kind: sql, run, step, help, card, general
+#   intent: the answer must come from this kind of answer (rows)
+#   source: (D8.4) the answer must cite a source of this kind: sql, run, step, help, general
 #   text_any: (D8.4) the answer's text must hold one of these words (for answers that aren't numbers)
 # tol is relative (default 0.005, i.e. 0.5%).
 #
 # Extended on 2026-10-25 (Implementation Plan D8.4) to 50 questions, so every area of PRD ASK-2 has
 # at least one: data, statistics, drivers, rows, cleaning history, models, column meaning and app
-# help, plus a third file (reviews_text.csv). Widgets and story cards are covered by tests/test_chat.py
-# and tests/test_canvas.py, since their answers depend on the dashboard the builder picked.
+# help, plus a third file (reviews_text.csv).
 
 titanic3.csv:
   - q: How many passengers are there?

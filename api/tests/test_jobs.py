@@ -168,15 +168,15 @@ def test_cancel_running_job_and_log(client, monkeypatch):
             await asyncio.to_thread(ctx.check_cancel)
             await asyncio.sleep(0.02)
 
-    monkeypatch.setitem(HANDLERS, "stories", JobKind(endless))
+    monkeypatch.setitem(HANDLERS, "review_issues", JobKind(endless))
     ds = upload(client)
     wait_status(client, ds["id"], "offer")
-    job_id = _start(client, ds["id"], "stories")
+    job_id = _start(client, ds["id"], "review_issues")
     wait_for(lambda: client.get(f"{API}/jobs/{job_id}").json()["status"] == "running")
     assert client.post(f"{API}/jobs/{job_id}/cancel").status_code == 204
     job = wait_for(lambda: (j := client.get(f"{API}/jobs/{job_id}").json())["status"] == "cancelled" and j)
     assert job["error"] == "Cancelled."
-    # The stories job's failure hook settles its cards; it never touches the dataset's status.
+    # A job with no failure hook never touches the dataset's status.
     assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "offer"
     entries = client.get(f"{API}/jobs/{job_id}/log").json()["entries"]
     assert [(e["text"], e["icon"], e["column"]) for e in entries] == [("looking at age", "search", "age")]
@@ -212,35 +212,9 @@ def test_startup_requeues_orphans(no_workers, monkeypatch):
             assert wait_status(client, ds["id"], "offer", "failed")["status"] == "offer"
 
 
-def test_update_jobs_run_one_at_a_time_per_dataset(client, monkeypatch):
-    """Plan 1.1: a queued cascade, stories or build job waits while another of those runs for its
-    dataset, so an older update can't land after a newer one; another dataset's isn't held up."""
-    spans, lock = {}, threading.Lock()
-
-    async def slow(ctx):
-        start = time.monotonic()
-        await asyncio.sleep(1.0)
-        with lock:
-            spans[ctx.id] = (start, time.monotonic())
-        return {}
-
-    for kind in ("cascade", "stories"):
-        monkeypatch.setitem(HANDLERS, kind, JobKind(slow))
-    a, b = upload(client, TEXT_CSV), upload(client, TEXT_CSV)
-    for ds in (a, b):
-        wait_status(client, ds["id"], "offer")
-    mine = [_start(client, a["id"], "cascade"), _start(client, a["id"], "cascade"), _start(client, a["id"], "stories")]
-    other = _start(client, b["id"], "cascade")
-    wait_for(lambda: len(spans) == 4, timeout=30)
-    assert sorted(mine, key=lambda j: spans[j][0]) == mine  # in the order they were queued
-    for before, after in zip(mine, mine[1:]):
-        assert spans[after][0] >= spans[before][1], "two update jobs of one dataset ran at once"
-    assert spans[other][0] < spans[mine[0]][1], "another dataset's cascade waited"
-
-
 def test_restart_cancels_a_job_cancelled_while_it_ran(no_workers, monkeypatch):
     """A job the user cancelled while it ran, in a process that then died, is cancelled at the next start
-    rather than run again, and its kind's failure hook runs: a card it left updating becomes outdated."""
+    rather than run again, and its kind's failure hook runs: the analysis it left running becomes cancelled."""
     from sherlock.db.util import new_id, now_iso
 
     with TestClient(create_app()) as client:
@@ -249,13 +223,13 @@ def test_restart_cancels_a_job_cancelled_while_it_ran(no_workers, monkeypatch):
     conn = connect(get_settings())
     try:
         user_id = conn.execute("SELECT user_id FROM datasets WHERE id = ?", (ds["id"],)).fetchone()[0]
-        job_id, card_id = new_id("job"), new_id("crd")
+        job_id, run_id = new_id("job"), new_id("run")
         conn.execute("INSERT INTO jobs (id, dataset_id, user_id, kind, status, params_json, cancel_requested, owner_pid, "
-                     "created_at) VALUES (?, ?, ?, 'stories', 'running', '{}', 1, 'gone:1:x', ?)",
-                     (job_id, ds["id"], user_id, now_iso()))
-        conn.execute("INSERT INTO cards (id, dataset_id, kind, headline_json, body_json, status, version, created_at, "
-                     "updated_at) VALUES (?, ?, 'overview', '{\"blocks\": []}', '{\"blocks\": []}', 'updating', 1, ?, ?)",
-                     (card_id, ds["id"], now_iso(), now_iso()))
+                     "created_at) VALUES (?, ?, ?, 'ml_run', 'running', ?, 1, 'gone:1:x', ?)",
+                     (job_id, ds["id"], user_id, json.dumps({"run_id": run_id}), now_iso()))
+        conn.execute("INSERT INTO runs (id, dataset_id, version, recipe, method, scope_json, params_json, cache_key, "
+                     "status, job_id, created_by, created_at) VALUES (?, ?, 1, 'drivers', 'auto', '{}', '{}', 'k', "
+                     "'running', ?, 'user', ?)", (run_id, ds["id"], job_id, now_iso()))
     finally:
         conn.close()
     monkeypatch.setenv("JOB_WORKERS", "2")
@@ -263,7 +237,7 @@ def test_restart_cancels_a_job_cancelled_while_it_ran(no_workers, monkeypatch):
     with TestClient(create_app(), cookies=cookies) as client:
         job = client.get(f"{API}/jobs/{job_id}").json()
         assert job["status"] == "cancelled" and job["error"] == "Cancelled." and job["finished_at"]
-        assert client.get(f"{API}/cards/{card_id}").json()["status"] == "outdated"
+        assert client.get(f"{API}/runs/{run_id}").json()["status"] == "cancelled"
         assert any(t == "job.failed" and d["id"] == job_id for t, d in events_of(ds["id"]))
 
 
@@ -478,26 +452,3 @@ def test_sse_heartbeat(live, monkeypatch):
 
 def test_runner_constants_match_trd():
     assert runner_mod.HEARTBEAT_S == 10 and runner_mod.STALE_S == 60 and streams.HEARTBEAT_S == 15
-
-
-@pytest.mark.usefixtures("run_jobs")
-def test_a_save_cascades_to_every_widget_once(client):
-    """Cascade v0 (TRD §7.6, D5.5): a commit re-queries every widget on the new version; saves
-    within the debounce window share one cascade."""
-    ds = client.post(f"{API}/datasets/sample").json()
-    wait_status(client, ds["id"], "offer")
-    client.post(f"{API}/datasets/{ds['id']}/use-as-is")
-    d = wait_status(client, ds["id"], "ready")
-    v = d["current_version"]
-    a = client.post(f"{API}/datasets/{ds['id']}/edits",
-                    json={"base_version": v, "edits": [{"row_id": 1, "column": "age", "value": "1"}]}).json()
-    client.post(f"{API}/datasets/{ds['id']}/edits",
-                json={"base_version": a["version"], "edits": [{"row_id": 2, "column": "age", "value": "2"}]})
-    jobs = wait_for(lambda: (js := [j for j in client.get(f"{API}/jobs?dataset_id={ds['id']}").json()
-                                    if j["kind"] == "cascade"]) and all(j["status"] == "done" for j in js) and js,
-                    timeout=30)
-    assert len(jobs) == 1 and jobs[0]["result"]["version"] == v + 2
-    widgets = client.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]
-    assert widgets and all(w["version_built"] == v + 2 for w in widgets)
-    types = [r[0] for r in db_rows("SELECT type FROM job_events WHERE dataset_id = ? AND type LIKE 'cascade.%' ORDER BY id", ds["id"])]
-    assert types == ["cascade.started", "cascade.done"]

@@ -1,8 +1,8 @@
 """Notebook export (TRD §7.7, §14; PRD NB-1–NB-11). The execution test runs the exported notebook
 top to bottom with a real kernel (the requirements cell is skipped: this environment already has the
 pinned libraries) and checks that it rebuilds the current version exactly, after edits and an undo
-with replay, that each widget's table equals the app's widget data, and that each analysis's
-reproduction code gives its model card's metrics (within 0.5 points)."""
+with replay, and that each analysis's reproduction code gives its model card's metrics (within 0.5
+points). The notebook is the load, the steps, the assertion, then the analyses and a closing cell."""
 
 import json
 import math
@@ -106,9 +106,8 @@ def _norm(v):
     return str(v)
 
 
-def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame, list, list]:
-    """Run the notebook with a kernel; returns the final `df`, each widget cell's result rows and
-    each run cell's metrics."""
+def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame, list]:
+    """Run the notebook with a kernel; returns the final `df` and each run cell's metrics."""
     from nbclient import NotebookClient
 
     shutil.copyfile(raw, workdir / data_file)
@@ -118,13 +117,11 @@ def execute(nb, workdir: Path, raw: Path, data_file: str) -> tuple[pd.DataFrame,
         if "requirements" in cell.get("metadata", {}).get("tags", []):
             cell.source = "pass  # the test environment has the pinned libraries"
         cells.append(cell)
-        if cell.cell_type == "code" and cell.source.startswith("# The dashboard's global filter"):
-            cells.append(new_code_cell("_results = globals().get('_results', []) + [result.values.tolist()]"))
         if cell.cell_type == "code" and cell.source.startswith("# Reproduces Sherlock run"):
             cells.append(new_code_cell("_runs = globals().get('_runs', []) + [run_result['metrics']]"))
     cells.append(new_code_cell(
         "import pickle\n"
-        "pickle.dump((df, globals().get('_results', []), globals().get('_runs', [])), open('out.pkl', 'wb'))"
+        "pickle.dump((df, globals().get('_runs', [])), open('out.pkl', 'wb'))"
     ))
     run.cells = cells
     NotebookClient(run, timeout=180, kernel_name="python3", resources={"metadata": {"path": str(workdir)}}).execute()
@@ -162,9 +159,7 @@ def clean_step(app, ds, version) -> int:
 def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     ds = client.post(f"{API}/datasets/sample").json()["id"]
     wait_status(client, ds, "offer")
-    client.post(f"{API}/datasets/{ds}/use-as-is")
-    wait_status(client, ds, "ready")
-    v = client.get(f"{API}/datasets/{ds}").json()["current_version"]
+    v = client.post(f"{API}/datasets/{ds}/use-as-is").json()["current_version"]
     v = clean_step(client.app, ds, v)
     a = client.post(f"{API}/datasets/{ds}/edits", json={
         "base_version": v, "edits": [{"row_id": 1, "column": "age", "value": "33"},
@@ -178,11 +173,12 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
                          json={"base_version": b["version"], "confirm": True})
     assert undone.status_code == 200, undone.text
 
-    # The cascade and the stories job change the dataset's state; export once they're done.
-    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled") for j in client.get(f"{API}/jobs?dataset_id={ds}").json()),
-             timeout=60)
+    run = client.post(f"{API}/datasets/{ds}/runs", json={"recipe": "driver_analysis"}).json()
+    assert run["version"] == undone.json()["version"]
+    wait_for(lambda: client.get(f"{API}/runs/{run['id']}").json()["status"] == "done", timeout=120)
     pre = client.get(f"{API}/datasets/{ds}/exports/notebook/preview").json()
-    assert pre["counts"]["steps"] == 3 and pre["options"]["include_data"] is True
+    assert pre["counts"] == {"steps": 3, "runs": 1}
+    assert pre["options"] == {"include_data": True, "include_runs": True, "up_to_step": None}
     out = _export(client, ds)
     again = client.post(f"{API}/datasets/{ds}/exports/notebook", json={}).json()
     assert again["cached"] and again["export_id"] == out["export_id"]
@@ -195,6 +191,9 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     text = "\n".join(c.source for c in nb.cells)
     assert "Step 2 was undone" not in text or "isn't replayed" in text
     assert "was undone" in text
+    headings = [c.source.splitlines()[0] for c in nb.cells if c.cell_type == "markdown" and c.source.startswith("## ")]
+    assert headings[-3:] == ["## The analyses", f"## What drives {run['target']}?", "## How to continue"], headings
+    assert not any(word in text.lower() for word in ("dashboard", "story card", "canvas", "widget"))
 
     settings = get_settings()
     dataset = client.get(f"{API}/datasets/{ds}").json()
@@ -207,7 +206,7 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     folder = dataset_dir(settings, user_id, ds)
     work = tmp_path / "run"
     work.mkdir()
-    df, results, runs = execute(nb, work, folder / "raw.csv", "titanic3-raw.csv")
+    df, runs = execute(nb, work, folder / "raw.csv", "titanic3-raw.csv")
 
     expected = _version_frame(folder / parquet)
     got = df.sort_values("_row_id").reset_index(drop=True)
@@ -215,21 +214,11 @@ def test_export_runs_and_rebuilds_the_version_after_an_undo(client, tmp_path):
     pd.testing.assert_frame_equal(got, expected, check_dtype=True)
     assert dataset["current_version"] == undone.json()["version"]
 
-    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-    order = {it["i"]: (it["y"], it["x"]) for it in client.get(f"{API}/datasets/{ds}/widgets").json()["layout"]["lg"]}
-    widgets = sorted(widgets, key=lambda w: order.get(w["id"], (10**9, 0)))
-    analyses = [w for w in widgets if w["spec"]["op"]["type"] == "ml"]  # emitted via their runs (TRD §7.7)
-    widgets = [w for w in widgets if w not in analyses]
-    assert len(results) == len(widgets) > 0
-    assert len(runs) == len(analyses) == 1 and pre["counts"]["runs"] == 1
-    for w, metrics in zip(analyses, runs):  # PRD NB-5: the notebook reproduces each run's metrics
-        card = client.get(f"{API}/runs/{w['run_id']}/model-card").json()
-        assert metrics["metric"] == card["model"]["metric"]
-        assert abs(metrics["value"] - card["model"]["value"]) <= 0.005, (metrics, card["model"])
-        assert "# Reproduces Sherlock run" in text and card["verdict_text"] in text
-    for w, rows in zip(widgets, results):
-        app_rows = client.get(f"{API}/widgets/{w['id']}/data").json()["rows"]
-        assert [[_norm(v) for v in r] for r in rows] == [[_norm(v) for v in r] for r in app_rows], w["title"]
+    assert len(runs) == 1 and out["counts"] == {"steps": 3, "runs": 1}
+    card = client.get(f"{API}/runs/{run['id']}/model-card").json()  # PRD NB-5: the notebook reproduces its metrics
+    assert runs[0]["metric"] == card["model"]["metric"]
+    assert abs(runs[0]["value"] - card["model"]["value"]) <= 0.005, (runs[0], card["model"])
+    assert "# Reproduces Sherlock run" in text and card["verdict_text"] in text
 
 
 @pytest.mark.usefixtures("run_jobs")
@@ -240,10 +229,7 @@ def test_a_ragged_file_rebuilds_in_the_notebook(client, tmp_path):
     content = ("\n".join(lines[:31] + ["30,extra,1,TOO"] + lines[31:]) + "\n").encode()
     ds = client.post(f"{API}/datasets", files={"file": ("ragged.csv", content, "text/csv")}).json()["id"]
     wait_status(client, ds, "offer")
-    client.post(f"{API}/datasets/{ds}/use-as-is")
-    wait_status(client, ds, "ready")
-    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled") for j in client.get(f"{API}/jobs?dataset_id={ds}").json()),
-             timeout=60)
+    assert client.post(f"{API}/datasets/{ds}/use-as-is").json()["status"] == "ready"
     nb = nbformat.reads(client.get(_export(client, ds)["download_url"]).text, as_version=4)
     load = next(c.source for c in nb.cells if "load" in c.get("metadata", {}).get("tags", []))
     assert "auto_detect=false" in load and "extra fields" in load
@@ -259,106 +245,63 @@ def test_a_ragged_file_rebuilds_in_the_notebook(client, tmp_path):
     data_file = "".join(nb.cells[1].source).split('DATA_PATH = "')[1].split('"')[0]
     work = tmp_path / "run"
     work.mkdir()
-    df, _, _ = execute(nb, work, folder / "raw.csv", data_file)
+    df, _ = execute(nb, work, folder / "raw.csv", data_file)
     expected = _version_frame(folder / parquet)
     pd.testing.assert_frame_equal(df.sort_values("_row_id").reset_index(drop=True), expected, check_dtype=True)
     assert expected["_quarantine_reason"].notna().sum() == 1
 
 
 @pytest.mark.usefixtures("run_jobs")
-def test_one_broken_widget_or_an_update_never_spoils_an_export(client, monkeypatch):
-    """Plan 1.4: a widget whose query fails on the version gets a Markdown cell saying why and the export
-    still succeeds; deleting a card gives the export a new cache key; an export while the cards are being
-    updated waits for them, or says so in its first cell."""
-    import threading
-    import time
-
+def test_an_outdated_or_broken_analysis_never_spoils_an_export(client):
+    """Plan 1.4, PRD NB-5: an outdated run is exported with a note saying so; a run that can't be
+    emitted gets a Markdown cell saying why and the export still succeeds, its first cell saying so.
+    A change to a run gives the export a new cache key."""
     from sherlock.db.connection import connect
-    from sherlock.db.util import new_id, now_iso
-    from sherlock.jobs import export as export_job
+    from sherlock.ml import runner as ml
 
     ds = client.post(f"{API}/datasets/sample").json()["id"]
     wait_status(client, ds, "offer")
     client.post(f"{API}/datasets/{ds}/use-as-is")
-    wait_status(client, ds, "ready")
-    wait_for(lambda: all(j["status"] in ("done", "failed", "cancelled")
-                         for j in client.get(f"{API}/jobs?dataset_id={ds}").json()), timeout=120)
-    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-    sql_widgets = [w for w in widgets if w["spec"]["op"]["type"] == "sql"]
-    broken = sql_widgets[0]
+    run = client.post(f"{API}/datasets/{ds}/runs", json={"recipe": "driver_analysis"}).json()
+    wait_for(lambda: client.get(f"{API}/runs/{run['id']}").json()["status"] == "done", timeout=120)
+    out = _export(client, ds, include_data=False)
+    assert out["counts"]["runs"] == 1
+    same = client.post(f"{API}/datasets/{ds}/exports/notebook", json={"include_data": False}).json()
+    assert same["cached"] and same["export_id"] == out["export_id"]
+
+    # An edit to the run's target outdates it: a new export, whose analysis says it's outdated.
+    first = client.get(f"{API}/datasets/{ds}/rows", params={"limit": 1}).json()
+    target = run["target"]
+    value = "0" if str(first["rows"][0]["cells"][target]) == "1" else "1"
+    assert client.post(f"{API}/datasets/{ds}/edits", json={"base_version": first["version"], "edits": [
+        {"row_id": first["rows"][0]["_row_id"], "column": target, "value": value}]}).status_code == 201
+    assert client.get(f"{API}/runs/{run['id']}").json()["status"] == "outdated"
+    stale = _export(client, ds, include_data=False)
+    assert not stale["cached"] and stale["export_id"] != out["export_id"] and stale["counts"]["runs"] == 1
+    text = "\n".join(c.source for c in nbformat.reads(client.get(stale["download_url"]).text, as_version=4).cells)
+    assert "*Outdated: the data changed after this ran on version" in text
+
+    # Its reproduction file is gone: the analysis becomes a note and the export still succeeds.
     db = connect(client.app.state.settings)
     try:
-        spec = {**broken["spec"], "op": {"type": "sql", "sql": 'SELECT "no_such_column" FROM t WHERE {{rows}}'}}
-        db.execute("UPDATE widgets SET spec_json = ? WHERE id = ?", (json.dumps(spec), broken["id"]))
-        user_id = db.execute("SELECT user_id FROM datasets WHERE id = ?", (ds,)).fetchone()[0]
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
+        (ml.run_folder(client.app.state.settings, dataset, run["id"]) / "repro.py").unlink()
+        db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (ds,))
     finally:
         db.close()
-    out = _export(client, ds)
-    nb = nbformat.reads(client.get(out["download_url"]).text, as_version=4)
+    broken = _export(client, ds, include_data=False)
+    nb = nbformat.reads(client.get(broken["download_url"]).text, as_version=4)
     md = [c.source for c in nb.cells if c.cell_type == "markdown"]
-    assert any(m.startswith(f"## {broken['title']}") and "This widget fails on version" in m for m in md)
-    assert "1 widget failed on version" in nb.cells[0].source
-    assert out["counts"]["widgets"] == len(sql_widgets) - 1
-
-    # A deleted card changes the dataset's state, so the next export isn't the cached one.
-    same = client.post(f"{API}/datasets/{ds}/exports/notebook", json={}).json()
-    assert same["cached"] and same["export_id"] == out["export_id"]
-    card = client.get(f"{API}/datasets/{ds}/cards").json()[0]
-    assert client.delete(f"{API}/cards/{card['id']}").status_code == 204
-    fresh = _export(client, ds)
-    assert not fresh["cached"] and fresh["export_id"] != out["export_id"]
-
-    def updating_job(status="running"):
-        db = connect(client.app.state.settings)
-        try:
-            jid = new_id("job")
-            db.execute("INSERT INTO jobs (id, dataset_id, user_id, kind, status, params_json, owner_pid, created_at) "
-                       "VALUES (?, ?, ?, 'cascade', ?, '{}', 'elsewhere:1:x', ?)", (jid, ds, user_id, status, now_iso()))
-            db.execute("UPDATE datasets SET state_rev = state_rev + 1 WHERE id = ?", (ds,))  # as a cascade's start does
-            return jid
-        finally:
-            db.close()
-
-    def finish(jid):
-        db = connect(client.app.state.settings)
-        try:
-            db.execute("UPDATE jobs SET status = 'done', finished_at = ? WHERE id = ?", (now_iso(), jid))
-        finally:
-            db.close()
-
-    # A cascade still running after the wait: the notebook says the cards were being updated.
-    monkeypatch.setattr(export_job, "WAIT_S", 0.5)
-    stuck = updating_job()
-    out = _export(client, ds)
-    first = nbformat.reads(client.get(out["download_url"]).text, as_version=4).cells[0].source
-    assert "Story cards were still being updated when this was exported" in first
-    finish(stuck)
-
-    # One that ends within the wait: the export waits for it and needs no note.
-    monkeypatch.setattr(export_job, "WAIT_S", 20.0)
-    soon = updating_job()
-    threading.Thread(target=lambda: (time.sleep(1.0), finish(soon))).start()
-    started = time.monotonic()
-    out = _export(client, ds)
-    assert time.monotonic() - started >= 0.9
-    first = nbformat.reads(client.get(out["download_url"]).text, as_version=4).cells[0].source
-    assert "still being updated" not in first
+    assert any(m.startswith(f"## What drives {target}?") and "This analysis can't be emitted" in m for m in md)
+    assert "1 analysis couldn't be emitted" in nb.cells[0].source
+    assert broken["counts"] == {"steps": stale["counts"]["steps"], "runs": 0}
 
 
-def test_a_kpi_prints_its_value_not_the_count_beside_it(capsys):
-    """Live, every KPI printed `n` ("Survival rate: 1309"): `plot` took the second column. It reads the
-    tile's `value` option, else the first column, as the app's KPI does (live test 2026-10-26, finding 7)."""
-    from sherlock.notebook import cells
+def test_notebook_options_are_the_data_runs_and_up_to_step_only():
+    """The dashboard's options are gone (TRD §4.2): asking for one is refused."""
+    from sherlock.notebook.exporter import NotebookOptions
 
-    ns: dict = {}
-    exec(cells.PLOT_HELPERS, ns)  # noqa: S102
-    rate = pd.DataFrame({"rate": [0.382], "n": [1309]})
-    ns["plot"](rate, "kpi", title="Survival rate", value="rate", format="pct")
-    ns["plot"](pd.DataFrame({"value": [33.2762], "n": [1308]}), "kpi", title="Average fare")  # no option: the first column
-    ns["plot"](pd.DataFrame({"n_rows": [1309]}), "kpi", title="Rows", value="n_rows", format="int")
-    assert capsys.readouterr().out.splitlines() == ["Survival rate: 38.2%", "Average fare: 33.28", "Rows: 1,309"]
-    w = {"title": "Survival rate", "spec": {"scope": {"rows": {}}, "view": {"type": "kpi", "options": {
-        "value": "rate", "format": "pct", "sub": "n"}}}}
-    out = nbformat.v4.new_output("execute_result", data={"text/plain": ""}, execution_count=None)
-    chart = cells.widget(w, "SELECT 1", out, None)[2]
-    assert chart.source == "plot(result, 'kpi', value='rate', format='pct', title='Survival rate')\n"
+    assert set(NotebookOptions.model_fields) == {"include_data", "include_runs", "up_to_step"}
+    for old in ({"include_cards": False}, {"include_notes": True}, {"order": "dashboard"}):
+        with pytest.raises(ValueError):
+            NotebookOptions.model_validate(old)

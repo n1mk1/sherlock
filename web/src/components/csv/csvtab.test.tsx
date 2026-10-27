@@ -19,14 +19,11 @@ const DS = {
   created_at: "", last_opened_at: null, last_tab: null, error: null, clean_plan_id: null,
 } as Dataset;
 
-describe("the CSV tab while a job owns the data", () => {
-  it.each([
-    ["building", "Building your dashboard · editing opens when it finishes"],
-    ["cleaning", "Cleaning in progress · editing resumes when it finishes"],
-  ] as const)("is read-only with a banner while %s", (status, banner) => {
+describe("the CSV grid while a clean owns the data", () => {
+  it("is read-only with a banner while cleaning", () => {
     mockApi({});
-    renderAt(<CsvTab dataset={{ ...DS, status }} />);
-    expect(screen.getByRole("status")).toHaveTextContent(banner);
+    renderAt(<CsvTab dataset={{ ...DS, status: "cleaning" }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Cleaning in progress · editing resumes when it finishes");
     expect(screen.getByTestId("grid")).toHaveAttribute("data-readonly", "true");
     expect(screen.getByRole("button", { name: /Add row/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Clean with AI/ })).toBeDisabled();

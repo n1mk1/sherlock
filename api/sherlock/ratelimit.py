@@ -61,5 +61,5 @@ def rate_limit(request: Request, user: User = Depends(current_user)) -> None:
 
 
 def llm_rate_limit(request: Request, user: User = Depends(current_user)) -> None:
-    """Added to routes that call the model (chat, clean, stories…), on top of rate_limit."""
+    """Added to routes that call the model (chat, clean, the data dictionary…), on top of rate_limit."""
     _enforce(request, user, "llm")

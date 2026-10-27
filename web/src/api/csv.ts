@@ -120,6 +120,5 @@ export function useUndo(datasetId: string) {
 export function busyReason(d: Dataset): string | null {
   if (d.status === "profiling") return "The CSV is still being profiled.";
   if (d.status === "cleaning") return "Cleaning is running.";
-  if (d.status === "building") return "The dashboard is being built.";
   return null;
 }

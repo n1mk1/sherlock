@@ -74,57 +74,6 @@
     "title": "CallTotals",
     "type": "object"
    },
-   "CanvasPut": {
-    "additionalProperties": false,
-    "properties": {
-     "canvas": {
-      "additionalProperties": true,
-      "title": "Canvas",
-      "type": "object"
-     },
-     "etag": {
-      "title": "Etag",
-      "type": "string"
-     }
-    },
-    "required": [
-     "canvas",
-     "etag"
-    ],
-    "title": "CanvasPut",
-    "type": "object"
-   },
-   "CardEdit": {
-    "additionalProperties": false,
-    "properties": {
-     "body": {
-      "anyOf": [
-       {
-        "additionalProperties": true,
-        "type": "object"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Body"
-     },
-     "headline": {
-      "anyOf": [
-       {
-        "additionalProperties": true,
-        "type": "object"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Headline"
-     }
-    },
-    "title": "CardEdit",
-    "type": "object"
-   },
    "CellEdit": {
     "additionalProperties": false,
     "properties": {
@@ -166,29 +115,6 @@
    },
    "ChatContext": {
     "properties": {
-     "focused_widget_id": {
-      "anyOf": [
-       {
-        "type": "string"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Focused Widget Id"
-     },
-     "global_filter": {
-      "anyOf": [
-       {
-        "additionalProperties": true,
-        "type": "object"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Global Filter"
-     },
      "plan_id": {
       "anyOf": [
        {
@@ -199,20 +125,6 @@
        }
       ],
       "title": "Plan Id"
-     },
-     "selected_card_ids": {
-      "anyOf": [
-       {
-        "items": {
-         "type": "string"
-        },
-        "type": "array"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Selected Card Ids"
      },
      "selected_cells": {
       "anyOf": [
@@ -238,7 +150,7 @@
       "title": "Selection Id"
      },
      "tab": {
-      "default": "dashboard",
+      "default": "csv",
       "title": "Tab",
       "type": "string"
      }
@@ -558,11 +470,7 @@
      "last_tab": {
       "anyOf": [
        {
-        "enum": [
-         "csv",
-         "dashboard",
-         "flow"
-        ],
+        "const": "csv",
         "type": "string"
        },
        {
@@ -591,7 +499,6 @@
        "profiling",
        "offer",
        "cleaning",
-       "building",
        "ready",
        "failed"
       ],
@@ -624,11 +531,7 @@
      "last_tab": {
       "anyOf": [
        {
-        "enum": [
-         "csv",
-         "dashboard",
-         "flow"
-        ],
+        "const": "csv",
         "type": "string"
        },
        {
@@ -799,95 +702,6 @@
      }
     },
     "title": "HTTPValidationError",
-    "type": "object"
-   },
-   "Item": {
-    "properties": {
-     "collapsed": {
-      "default": false,
-      "title": "Collapsed",
-      "type": "boolean"
-     },
-     "h": {
-      "maximum": 100.0,
-      "minimum": 1.0,
-      "title": "H",
-      "type": "integer"
-     },
-     "i": {
-      "title": "I",
-      "type": "string"
-     },
-     "w": {
-      "maximum": 12.0,
-      "minimum": 1.0,
-      "title": "W",
-      "type": "integer"
-     },
-     "x": {
-      "maximum": 11.0,
-      "minimum": 0.0,
-      "title": "X",
-      "type": "integer"
-     },
-     "y": {
-      "maximum": 10000.0,
-      "minimum": 0.0,
-      "title": "Y",
-      "type": "integer"
-     }
-    },
-    "required": [
-     "i",
-     "x",
-     "y",
-     "w",
-     "h"
-    ],
-    "title": "Item",
-    "type": "object"
-   },
-   "Layout": {
-    "additionalProperties": false,
-    "properties": {
-     "lg": {
-      "items": {
-       "$ref": "#/components/schemas/Item"
-      },
-      "maxItems": 500,
-      "title": "Lg",
-      "type": "array"
-     },
-     "md": {
-      "anyOf": [
-       {
-        "items": {
-         "$ref": "#/components/schemas/Item"
-        },
-        "type": "array"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Md"
-     },
-     "sm": {
-      "anyOf": [
-       {
-        "items": {
-         "$ref": "#/components/schemas/Item"
-        },
-        "type": "array"
-       },
-       {
-        "type": "null"
-       }
-      ],
-      "title": "Sm"
-     }
-    },
-    "title": "Layout",
     "type": "object"
    },
    "Me": {
@@ -1082,33 +896,17 @@
    },
    "NotebookOptions": {
     "additionalProperties": false,
-    "description": "TRD \u00a74.2. Defaults `{ true, true, false, true, \"steps_dashboard\" }`.",
+    "description": "TRD \u00a74.2. Defaults `{ include_data: true, include_runs: true }`.",
     "properties": {
-     "include_cards": {
-      "default": true,
-      "title": "Include Cards",
-      "type": "boolean"
-     },
      "include_data": {
       "default": true,
       "title": "Include Data",
-      "type": "boolean"
-     },
-     "include_notes": {
-      "default": false,
-      "title": "Include Notes",
       "type": "boolean"
      },
      "include_runs": {
       "default": true,
       "title": "Include Runs",
       "type": "boolean"
-     },
-     "order": {
-      "default": "steps_dashboard",
-      "pattern": "^(steps_dashboard|flow_path)$",
-      "title": "Order",
-      "type": "string"
      },
      "up_to_step": {
       "anyOf": [
@@ -1459,16 +1257,6 @@
       "title": "Cleaning Mode",
       "type": "string"
      },
-     "default_tab": {
-      "default": "dashboard",
-      "enum": [
-       "csv",
-       "dashboard",
-       "flow"
-      ],
-      "title": "Default Tab",
-      "type": "string"
-     },
      "reduce_motion": {
       "default": "system",
       "enum": [
@@ -1477,25 +1265,6 @@
        "off"
       ],
       "title": "Reduce Motion",
-      "type": "string"
-     },
-     "spotlight": {
-      "default": "subtle",
-      "enum": [
-       "off",
-       "subtle",
-       "full"
-      ],
-      "title": "Spotlight",
-      "type": "string"
-     },
-     "story_updates": {
-      "default": "auto",
-      "enum": [
-       "auto",
-       "ask"
-      ],
-      "title": "Story Updates",
       "type": "string"
      },
      "theme": {
@@ -1580,410 +1349,6 @@
  },
  "openapi": "3.1.0",
  "paths": {
-  "/api/v1/cards/{cid}": {
-   "delete": {
-    "operationId": "delete_card_api_v1_cards__cid__delete",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Delete Card",
-    "tags": [
-     "cards"
-    ]
-   },
-   "get": {
-    "operationId": "get_card_api_v1_cards__cid__get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Get Card Api V1 Cards  Cid  Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Card",
-    "tags": [
-     "cards"
-    ]
-   },
-   "patch": {
-    "description": "The user's own text. Numbers typed by hand become unverified chips, a chip shows its fact's\nvalue from the sheet (one whose fact isn't there is unverified), and the card is never narrated\nover again, only offered suggestions (PRD STORY-7). Its `version` becomes the one its words were\nwritten on, the version of the sheet its chips read (the web's \"Written on vN\" badge).",
-    "operationId": "edit_card_api_v1_cards__cid__patch",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/CardEdit"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Edit Card Api V1 Cards  Cid  Patch",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Edit Card",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/accept-suggestion": {
-   "post": {
-    "operationId": "accept_suggestion_api_v1_cards__cid__accept_suggestion_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Accept Suggestion Api V1 Cards  Cid  Accept Suggestion Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Accept Suggestion",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/dismiss-badge": {
-   "post": {
-    "operationId": "dismiss_badge_api_v1_cards__cid__dismiss_badge_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Dismiss Badge Api V1 Cards  Cid  Dismiss Badge Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Dismiss Badge",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/dismiss-suggestion": {
-   "post": {
-    "operationId": "dismiss_suggestion_api_v1_cards__cid__dismiss_suggestion_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Dismiss Suggestion Api V1 Cards  Cid  Dismiss Suggestion Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Dismiss Suggestion",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/evidence/{chip_id}": {
-   "get": {
-    "description": "What a chip stands on: the fact's query (or how it was derived), its value and version.",
-    "operationId": "evidence_api_v1_cards__cid__evidence__chip_id__get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     },
-     {
-      "in": "path",
-      "name": "chip_id",
-      "required": true,
-      "schema": {
-       "title": "Chip Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Evidence Api V1 Cards  Cid  Evidence  Chip Id  Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Evidence",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/refresh": {
-   "post": {
-    "operationId": "refresh_card_api_v1_cards__cid__refresh_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "201": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Refresh Card Api V1 Cards  Cid  Refresh Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Refresh Card",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
-  "/api/v1/cards/{cid}/restore": {
-   "post": {
-    "operationId": "restore_card_api_v1_cards__cid__restore_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "cid",
-      "required": true,
-      "schema": {
-       "title": "Cid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Restore Card Api V1 Cards  Cid  Restore Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Restore Card",
-    "tags": [
-     "cards"
-    ]
-   }
-  },
   "/api/v1/chat/messages/{mid}/calls": {
    "get": {
     "description": "\"How I worked it out\": every model call (and web request) made answering this message, oldest\nfirst, with a total. A user's own message made none.",
@@ -2151,7 +1516,7 @@
   },
   "/api/v1/datasets/sample": {
    "post": {
-    "description": "The bundled Titanic file; returns the user's existing sample instead of a duplicate. With the\ncached seed (D9.1) it's a clone, ready at once, with its cleaning, dashboard, stories, analysis\nand canvas; without it, the file is imported and goes through the pipeline live.",
+    "description": "The bundled Titanic file; returns the user's existing sample instead of a duplicate. With the\ncached seed (D9.1) it's a clone, ready at once, with its cleaning and analysis; without it, the file is imported and goes through the pipeline live.",
     "operationId": "sample_dataset_api_v1_datasets_sample_post",
     "responses": {
      "200": {
@@ -2296,150 +1661,6 @@
     "summary": "Patch Dataset",
     "tags": [
      "datasets"
-    ]
-   }
-  },
-  "/api/v1/datasets/{dataset_id}/canvas": {
-   "get": {
-    "operationId": "get_canvas_api_v1_datasets__dataset_id__canvas_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Get Canvas Api V1 Datasets  Dataset Id  Canvas Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Canvas",
-    "tags": [
-     "canvas"
-    ]
-   },
-   "put": {
-    "operationId": "put_canvas_api_v1_datasets__dataset_id__canvas_put",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/CanvasPut"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Put Canvas Api V1 Datasets  Dataset Id  Canvas Put",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Put Canvas",
-    "tags": [
-     "canvas"
-    ]
-   }
-  },
-  "/api/v1/datasets/{dataset_id}/cards": {
-   "get": {
-    "description": "The overview first, then the widget cards in dashboard order, then synthesis and answer cards\noldest first.",
-    "operationId": "list_cards_api_v1_datasets__dataset_id__cards_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "items": {
-          "additionalProperties": true,
-          "type": "object"
-         },
-         "title": "Response List Cards Api V1 Datasets  Dataset Id  Cards Get",
-         "type": "array"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "List Cards",
-    "tags": [
-     "cards"
     ]
    }
   },
@@ -3253,38 +2474,6 @@
      },
      {
       "in": "query",
-      "name": "include_cards",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "boolean"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Include Cards"
-      }
-     },
-     {
-      "in": "query",
-      "name": "include_notes",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "boolean"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Include Notes"
-      }
-     },
-     {
-      "in": "query",
       "name": "include_runs",
       "required": false,
       "schema": {
@@ -3297,22 +2486,6 @@
         }
        ],
        "title": "Include Runs"
-      }
-     },
-     {
-      "in": "query",
-      "name": "order",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Order"
       }
      },
      {
@@ -3471,61 +2644,6 @@
     ]
    }
   },
-  "/api/v1/datasets/{dataset_id}/layout": {
-   "put": {
-    "description": "Saves the grid. Layout changes never start the cascade (PRD DASH-4).",
-    "operationId": "put_layout_api_v1_datasets__dataset_id__layout_put",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "$ref": "#/components/schemas/Layout"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Put Layout Api V1 Datasets  Dataset Id  Layout Put",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Put Layout",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
   "/api/v1/datasets/{dataset_id}/raw.csv": {
    "get": {
     "description": "The original upload, byte for byte (TRD \u00a74.2).",
@@ -3564,50 +2682,6 @@
     "summary": "Raw Csv",
     "tags": [
      "datasets"
-    ]
-   }
-  },
-  "/api/v1/datasets/{dataset_id}/relations": {
-   "get": {
-    "operationId": "get_relations_api_v1_datasets__dataset_id__relations_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Get Relations Api V1 Datasets  Dataset Id  Relations Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Relations",
-    "tags": [
-     "cards"
     ]
    }
   },
@@ -3956,7 +3030,7 @@
   },
   "/api/v1/datasets/{dataset_id}/runs": {
    "post": {
-    "description": "Start a run, or return the cached one (`status: done` at once). With `widget_id` the widget\nbecomes the analysis (its chart is kept for Undo / \"Plain chart\").",
+    "description": "Start a run, or return the cached one (`status: done` at once). An outdated run is run again\nby asking for the same request on the current version.",
     "operationId": "create_run_api_v1_datasets__dataset_id__runs_post",
     "parameters": [
      {
@@ -4070,7 +3144,7 @@
   },
   "/api/v1/datasets/{dataset_id}/selections": {
    "post": {
-    "description": "A row selection on the current version: a validated predicate or explicit `_row_id`s.\n`row_count` counts rows that aren't quarantined, which is what widgets, ML and chat use.",
+    "description": "A row selection on the current version: a validated predicate or explicit `_row_id`s.\n`row_count` counts rows that aren't quarantined, which is what ML and chat use.",
     "operationId": "create_selection_api_v1_datasets__dataset_id__selections_post",
     "parameters": [
      {
@@ -4121,7 +3195,7 @@
     },
     "summary": "Create Selection",
     "tags": [
-     "widgets"
+     "rows"
     ]
    }
   },
@@ -4291,7 +3365,7 @@
   },
   "/api/v1/datasets/{dataset_id}/use-as-is": {
    "post": {
-    "description": "Skip cleaning (\"Clean it myself\"): build the dashboard on the current (typed) version. A draft\ncleaning plan is discarded.",
+    "description": "Skip cleaning (\"Clean it myself\"): the current (typed) version is ready as it is. A draft\ncleaning plan is discarded. Returns the dataset.",
     "operationId": "use_as_is_api_v1_datasets__dataset_id__use_as_is_post",
     "parameters": [
      {
@@ -4305,13 +3379,11 @@
      }
     ],
     "responses": {
-     "201": {
+     "200": {
       "content": {
        "application/json": {
         "schema": {
-         "additionalProperties": true,
-         "title": "Response Use As Is Api V1 Datasets  Dataset Id  Use As Is Post",
-         "type": "object"
+         "$ref": "#/components/schemas/Dataset"
         }
        }
       },
@@ -4331,105 +3403,6 @@
     "summary": "Use As Is",
     "tags": [
      "cleaning"
-    ]
-   }
-  },
-  "/api/v1/datasets/{dataset_id}/widgets": {
-   "get": {
-    "operationId": "list_widgets_api_v1_datasets__dataset_id__widgets_get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response List Widgets Api V1 Datasets  Dataset Id  Widgets Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "List Widgets",
-    "tags": [
-     "widgets"
-    ]
-   },
-   "post": {
-    "description": "A `WidgetSpec` (optionally with a `title`), or `{ prompt }` for the model to design one. The\nquery runs first; a failure is `422`.",
-    "operationId": "create_widget_api_v1_datasets__dataset_id__widgets_post",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "dataset_id",
-      "required": true,
-      "schema": {
-       "title": "Dataset Id",
-       "type": "string"
-      }
-     }
-    ],
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "201": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Create Widget Api V1 Datasets  Dataset Id  Widgets Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Create Widget",
-    "tags": [
-     "widgets"
     ]
    }
   },
@@ -4584,50 +3557,6 @@
     "summary": "Download Export",
     "tags": [
      "exports"
-    ]
-   }
-  },
-  "/api/v1/fact-sheets/{fsid}": {
-   "get": {
-    "operationId": "get_fact_sheet_api_v1_fact_sheets__fsid__get",
-    "parameters": [
-     {
-      "in": "path",
-      "name": "fsid",
-      "required": true,
-      "schema": {
-       "title": "Fsid",
-       "type": "string"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Get Fact Sheet Api V1 Fact Sheets  Fsid  Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Get Fact Sheet",
-    "tags": [
-     "cards"
     ]
    }
   },
@@ -4817,7 +3746,7 @@
   },
   "/api/v1/me/settings": {
    "put": {
-    "description": "Accepts a full or partial Settings; fields left out keep their stored value. Switching \"Story\nupdates\" from Ask first to Automatic queues a cascade for each dataset with an outdated card or run,\nso they're brought up to date without a new edit.",
+    "description": "Accepts a full or partial Settings; fields left out keep their stored value.",
     "operationId": "put_settings_api_v1_me_settings_put",
     "requestBody": {
      "content": {
@@ -4854,52 +3783,6 @@
     "summary": "Put Settings",
     "tags": [
      "me"
-    ]
-   }
-  },
-  "/api/v1/messages/{mid}/pin": {
-   "post": {
-    "description": "Pin a chart or table answer to the dashboard as a widget made by chat, or (`target: \"flow\"`) an\nanswer's text to the canvas as an `answer` card.",
-    "operationId": "pin_api_v1_messages__mid__pin_post",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "201": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Pin Api V1 Messages  Mid  Pin Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Pin",
-    "tags": [
-     "chat"
     ]
    }
   },
@@ -5265,276 +4148,6 @@
     "summary": "Run Wrong Rows",
     "tags": [
      "ml"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}": {
-   "delete": {
-    "operationId": "delete_widget_api_v1_widgets__wid__delete",
-    "responses": {
-     "204": {
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Delete Widget",
-    "tags": [
-     "widgets"
-    ]
-   },
-   "patch": {
-    "description": "A partial `WidgetSpec` (merged over the current one) and/or a `title`.",
-    "operationId": "patch_widget_api_v1_widgets__wid__patch",
-    "requestBody": {
-     "content": {
-      "application/json": {
-       "schema": {
-        "additionalProperties": true,
-        "title": "Body",
-        "type": "object"
-       }
-      }
-     },
-     "required": true
-    },
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Patch Widget Api V1 Widgets  Wid  Patch",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Patch Widget",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/data": {
-   "get": {
-    "operationId": "widget_data_api_v1_widgets__wid__data_get",
-    "parameters": [
-     {
-      "in": "query",
-      "name": "filters",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Filters"
-      }
-     },
-     {
-      "in": "query",
-      "name": "version",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "minimum": 1,
-         "type": "integer"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Version"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Widget Data Api V1 Widgets  Wid  Data Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Widget Data",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/duplicate": {
-   "post": {
-    "operationId": "duplicate_widget_api_v1_widgets__wid__duplicate_post",
-    "responses": {
-     "201": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Duplicate Widget Api V1 Widgets  Wid  Duplicate Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Duplicate Widget",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/explain": {
-   "get": {
-    "operationId": "widget_explain_api_v1_widgets__wid__explain_get",
-    "parameters": [
-     {
-      "in": "query",
-      "name": "filters",
-      "required": false,
-      "schema": {
-       "anyOf": [
-        {
-         "type": "string"
-        },
-        {
-         "type": "null"
-        }
-       ],
-       "title": "Filters"
-      }
-     }
-    ],
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Widget Explain Api V1 Widgets  Wid  Explain Get",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     },
-     "422": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "$ref": "#/components/schemas/HTTPValidationError"
-        }
-       }
-      },
-      "description": "Validation Error"
-     }
-    },
-    "summary": "Widget Explain",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/rerun": {
-   "post": {
-    "description": "Re-run an analysis widget on the current version (its \"Outdated\" footer, App Flow \u00a79 step 6).",
-    "operationId": "rerun_widget_api_v1_widgets__wid__rerun_post",
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Rerun Widget Api V1 Widgets  Wid  Rerun Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Rerun Widget",
-    "tags": [
-     "ml"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/restore": {
-   "post": {
-    "operationId": "restore_widget_api_v1_widgets__wid__restore_post",
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Restore Widget Api V1 Widgets  Wid  Restore Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Restore Widget",
-    "tags": [
-     "widgets"
-    ]
-   }
-  },
-  "/api/v1/widgets/{wid}/undo": {
-   "post": {
-    "operationId": "undo_widget_api_v1_widgets__wid__undo_post",
-    "responses": {
-     "200": {
-      "content": {
-       "application/json": {
-        "schema": {
-         "additionalProperties": true,
-         "title": "Response Undo Widget Api V1 Widgets  Wid  Undo Post",
-         "type": "object"
-        }
-       }
-      },
-      "description": "Successful Response"
-     }
-    },
-    "summary": "Undo Widget",
-    "tags": [
-     "widgets"
     ]
    }
   },

@@ -1,8 +1,7 @@
 """The cached sample (Implementation Plan D9.1, PRD P0-11): "Try with sample" in seconds.
 
 `scripts/seed_sample.py` runs the whole pipeline on Titanic once with the real model (import, the
-Cleaner, the dashboard, stories, the analysis, a canvas with a synthesis) and `snapshot` saves the
-result as a seed: every row of the dataset's tables in `rows.json` and its folder's files. The seed
+Cleaner, an analysis) and `snapshot` saves the result as a seed: every row of the dataset's tables in `rows.json` and its folder's files. The seed
 ships in the image (`api/samples/seed/titanic3/`). `POST /datasets/sample` then `clone`s it for the
 user: every ID gets a fresh one (and every reference to it, in any column or JSON, and in the folder's
 paths and text files), the rows are inserted under the user, and the files copied. Paths in the
@@ -24,7 +23,7 @@ DEFAULT_SEED = REPO_ROOT / "api" / "samples" / "seed" / "titanic3"
 ID = re.compile(r"\b([a-z]{2,4})_([0-9A-Z]{26})\b")
 # Parents before children (foreign keys). `datasets` is the dataset's own row; the rest by dataset_id.
 TABLES = ("datasets", "versions", "datacards", "steps", "lineage", "user_edited_cells", "issues", "selections", "runs",
-          "widgets", "layouts", "fact_sheets", "relations", "cards", "canvases", "jobs", "job_events", "value_index")
+          "fact_sheets", "jobs", "job_events", "value_index")
 SKIP_COLUMNS = {"job_events": ("id",)}  # autoincrement: the database gives the copy its own
 SKIP_FILES = (".lock", "exports")
 TEXT_FILES = (".json", ".py", ".txt", ".md")
@@ -60,8 +59,8 @@ def snapshot(settings: Settings, db: sqlite3.Connection, dataset_id: str, out: P
 
 
 def _remapper(seed: dict, user_id: str):
-    """old ID → new ID for every ID in the seed's rows, in any column or JSON (canvas node and edge IDs
-    live only in the canvas JSON); the seed's user becomes this user."""
+    """old ID → new ID for every ID in the seed's rows, in any column or JSON; the seed's user becomes
+    this user."""
     mapping = {seed["meta"]["user_id"]: user_id}
     for table, rows in seed["rows"].items():
         for r in rows:

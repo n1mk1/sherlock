@@ -1,5 +1,5 @@
 """Name and value resolution (TRD §8.1 step 3): the entities the router found → columns, category
-values and widgets. Columns match exactly, then ignoring case and underscores, then by fuzzy match;
+values. Columns match exactly, then ignoring case and underscores, then by fuzzy match;
 values match through the value index, exactly then fuzzily (rapidfuzz ≥ 90). There is no embedding
 model in the catalog, so the embedding steps are skipped (TRD §3.5)."""
 
@@ -10,7 +10,6 @@ from rapidfuzz import fuzz, process
 
 COLUMN_FUZZ = 85
 VALUE_FUZZ = 90
-WIDGET_FUZZ = 75
 CLOSE_FUZZ = 70   # a name nothing resolved looks like a reference when its best match scores this (clarifications)
 OPTION_FUZZ = 50  # the other options of that clarification
 
@@ -45,15 +44,6 @@ def value(db: sqlite3.Connection, dataset_id: str, text: str) -> tuple[str, str]
     return r["column"], r["value"]
 
 
-def widget(db: sqlite3.Connection, dataset_id: str, text: str) -> sqlite3.Row | None:
-    rows = db.execute("SELECT * FROM widgets WHERE dataset_id = ? AND deleted_at IS NULL", (dataset_id,)).fetchall()
-    if not rows:
-        return None
-    hit = process.extractOne(text.lower(), {i: r["title"].lower() for i, r in enumerate(rows)},
-                             scorer=fuzz.token_set_ratio, score_cutoff=WIDGET_FUZZ)
-    return rows[hit[2]] if hit else None
-
-
 def candidates(db: sqlite3.Connection, dataset_id: str, text: str, kind: str, columns: list[str]) -> list[tuple[str, dict]]:
     """Two or three (option, meaning) pairs for a name nothing resolved (TRD §8.1 step 3, PRD ASK-6),
     or none when the name doesn't look like a reference to this file: its best match scores under
@@ -74,18 +64,6 @@ def candidates(db: sqlite3.Connection, dataset_id: str, text: str, kind: str, co
     close = [(o, m) for o, m, score in found if score >= OPTION_FUZZ]
     out = close if len(close) >= 2 else [(o, m) for o, m, _ in found[:2]]
     return out if len(out) >= 2 else []
-
-
-def widget_options(question: str, rows: list[sqlite3.Row]) -> list[tuple[str, dict]]:
-    """The two or three widgets whose titles best match the message, as (title, meaning) clarification
-    options; dashboard order breaks ties. None with fewer than two widgets."""
-    scored = sorted(enumerate(rows), key=lambda ir: (-fuzz.token_set_ratio(question.lower(), ir[1]["title"].lower()), ir[0]))
-    out, seen = [], set()
-    for _, r in scored:
-        if r["title"] not in seen:  # one button per title
-            seen.add(r["title"])
-            out.append((r["title"], {"widget": r["id"]}))
-    return out[:3] if len(out) >= 2 else []
 
 
 def column_options(question: str, columns: list[str], limit: int = 3) -> list[tuple[str, dict]]:
@@ -113,19 +91,14 @@ def drop_counts(resolved: dict, question: str) -> None:
 
 
 def resolve(db: sqlite3.Connection, dataset_id: str, entities: list[dict], columns: list[str]) -> dict:
-    """`{columns: {text: column}, values: {text: [column, value]}, widgets: {text: widget_id}, unresolved: [text],
+    """`{columns: {text: column}, values: {text: [column, value]}, unresolved: [text],
     unresolved_kinds: {text: kind}}`."""
-    out = {"columns": {}, "values": {}, "widgets": {}, "unresolved": [], "unresolved_kinds": {}}
+    out = {"columns": {}, "values": {}, "unresolved": [], "unresolved_kinds": {}}
     for e in entities:
         text, kind = e["text"].strip(), e["kind"]
         if not text:
             continue
-        if kind == "widget":
-            w = widget(db, dataset_id, text)
-            if w is not None:
-                out["widgets"][text] = w["id"]
-                continue
-        if kind in ("column", "widget", "card"):
+        if kind == "column":
             c = column(text, columns)
             if c is not None:
                 out["columns"][text] = c

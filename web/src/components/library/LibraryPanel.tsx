@@ -192,7 +192,7 @@ function LibraryRow({ dataset, active, progress }: { dataset: Dataset; active: b
   );
 }
 
-/** Status line (App Flow §14): profiling · offer · cleaning n% · building · ready · v7 · failed. */
+/** Status line (App Flow §14): profiling · offer · cleaning n% · ready · v7 · failed. */
 export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?: JobProgressEvent }) {
   const live = progress && progress.pct < 100 ? progress : undefined;
   const pct = Math.round(live?.pct ?? dataset.cleaning_progress?.pct ?? 0);
@@ -210,10 +210,9 @@ export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?
         </span>
       );
     case "cleaning":
-    case "building":
       return (
         <span className="mt-0.5 block text-[12px] text-muted-foreground">
-          {dataset.status} {dataset.status === "cleaning" ? `${pct}%` : ""}
+          cleaning {pct}%
           <span className="mt-1.5 block h-0.5 rounded bg-border" aria-hidden>
             <span className="block h-0.5 rounded bg-accent" style={{ width: `${pct}%` }} />
           </span>

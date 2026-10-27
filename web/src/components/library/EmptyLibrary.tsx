@@ -23,7 +23,7 @@ export function EmptyLibrary() {
         </p>
       </div>
       <p className="max-w-[520px] text-center font-serif text-[18px] leading-snug text-foreground-2">
-        Sherlock cleans it, charts it, models it, and tells you what it means. Every number shows its source.
+        Sherlock cleans it into data you can defend, then answers any question about it. Every number shows its source.
       </p>
       <ChatBar placeholder="Load a CSV to start asking" className="mt-6 px-0 pb-0" />
     </div>

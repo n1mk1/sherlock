@@ -70,7 +70,7 @@ export const Grid = forwardRef<GridHandle, {
   card: ColumnCard[];
   buffer: Buffer | undefined;
   onEdit: (cell: { rowId: number | null; tempId: string | null; column: string; value: string; old: unknown }) => void;
-  readOnly?: boolean; // a job owns the data (cleaning or building): no cell can be edited
+  readOnly?: boolean; // a clean owns the data: no cell can be edited
   onSelection: (info: GridSelectionInfo) => void;
   onLoaded: (info: { total: number; columns: Column[] }) => void;
 }>(function Grid({ datasetId, version, sort, onSort, selectionId, matches, card, buffer, onEdit, readOnly = false, onSelection, onLoaded }, ref) {

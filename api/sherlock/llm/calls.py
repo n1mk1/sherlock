@@ -144,7 +144,7 @@ def stats(db: sqlite3.Connection, days: float | None = None, now: str | None = N
     for r in rows:
         by_purpose.setdefault(r["purpose"], []).append(r)
         by_role.setdefault(r["role"], []).append(r)
-        if r["message_id"]:  # a chat answer's calls (and the Add widget drawer's "Describe it")
+        if r["message_id"]:  # a chat answer's calls
             spent = (r["prompt_tokens"] or 0) + (r["completion_tokens"] or 0)
             per_message[r["message_id"]] = per_message.get(r["message_id"], 0) + spent
     message_tokens = list(per_message.values())

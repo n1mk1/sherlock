@@ -1,7 +1,7 @@
-// The CSV tab (App Flow §8, UI/UX brief §5.6), within cut 5: the paged grid with marks, cell edits,
+// The CSV grid (App Flow §8, UI/UX brief §5.6), within cut 5: the paged grid with marks, cell edits,
 // add and delete row, sort, find, Save (with conflicts) and Discard, Clean with AI (it opens the cleaning
 // plan in the right panel), Restore for quarantined rows, and the Download menu. Toolbar 40px, grid,
-// status bar 28px. While a job owns the data (cleaning or building) the grid is read-only, with a banner.
+// status bar 28px. While a clean owns the data the grid is read-only, with a banner.
 import { BookOpen, Download, Plus, RotateCcw, Search, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -29,7 +29,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   const [found, setFound] = useState<{ q: string; selection: string; count: number; rows: number; matches: Set<string> } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [selection, setSelection] = useState<GridSelectionInfo>(NO_SELECTION);
-  useEffect(() => () => useUi.getState().setCsvSelection(null), []); // leaving the tab clears the chat's context
+  useEffect(() => () => useUi.getState().setCsvSelection(null), []); // leaving the grid clears the chat's context
   const [shape, setShape] = useState<{ total: number; columns: Column[] }>({ total: 0, columns: [] });
   const setExportOpen = useUi((s) => s.setExportOpen);
 
@@ -89,8 +89,8 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   const restoring = selection.quarantined.length;
   const marked = selection.rowIds.length + selection.newRows.length;
   // A job that owns the data: editing waits for it (App Flow §8).
-  const locked = dataset.status === "cleaning" || dataset.status === "building";
-  const lockedWhy = dataset.status === "cleaning" ? "Cleaning in progress" : "The dashboard is being built";
+  const locked = dataset.status === "cleaning";
+  const lockedWhy = "Cleaning in progress";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -102,7 +102,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         </Button>
         {restoring > 0 && (
           <Button size="sm" variant="ghost" disabled={locked} onClick={restoreRows}
-            title={locked ? lockedWhy : "Bring quarantined rows back into charts, models and stories"}>
+            title={locked ? lockedWhy : "Bring quarantined rows back into answers, models and the notebook"}>
             <RotateCcw /> Restore {restoring > 1 ? `${restoring} rows` : "row"}
           </Button>
         )}
@@ -121,9 +121,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
       </div>
       {locked && (
         <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-4 py-1.5 text-[13px]">
-          {dataset.status === "cleaning"
-            ? "Cleaning in progress · editing resumes when it finishes"
-            : "Building your dashboard · editing opens when it finishes"}
+          Cleaning in progress · editing resumes when it finishes
         </div>
       )}
       {(findOpen || found) && (

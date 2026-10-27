@@ -1,8 +1,8 @@
 // The model card drawer (PRD ML-3, ML-5; UI/UX brief §5.9): verdict, data, excluded columns with
 // reasons, method, baselines vs the model with its interval, importance, warnings with suggestions,
 // the confusion matrix and ROC curve for categories, "Who did it get wrong?" (the misclassified rows in
-// the CSV tab), and Re-run when outdated. Compare with Auto is cut (cut 4: Auto is the only method).
-// Opened from an analysis widget's footer, or from a chat answer about a run (no widget: no Re-run).
+// the grid), and Re-run when outdated. Compare with Auto is cut (cut 4: Auto is the only method).
+// Opened from a chat answer about a run (`open_model_card`).
 import { AlertTriangle, Code2, Rows3 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,15 +10,17 @@ import { toast } from "sonner";
 import { fmtMetric, METRIC_LABELS, useRun, useRunActions, useRunCode } from "@/api/ml";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
-import { ConfusionMatrix, RocCurve } from "./MlResult";
 
 const H = ({ children }: { children: React.ReactNode }) => (
   <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{children}</h3>
 );
 
-export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
-  datasetId: string; widgetId?: string; runId: string | null; onClose: () => void;
+export function ModelCardDrawer({ datasetId, runId: opened, onClose }: {
+  datasetId: string; runId: string | null; onClose: () => void;
 }) {
+  // Re-run swaps the card to the new run; reopening from another answer starts from its own run.
+  const [rerunOf, setRerunOf] = useState<{ from: string; to: string } | null>(null);
+  const runId = opened && rerunOf?.from === opened ? rerunOf.to : opened;
   const run = useRun(runId);
   const actions = useRunActions(datasetId);
   const navigate = useNavigate();
@@ -26,7 +28,7 @@ export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
     runId && actions.wrongRows.mutate(runId, {
       onSuccess: (sel) => {
         onClose();
-        navigate(`/d/${datasetId}/csv?rows=${sel.selection_id}`);
+        navigate(`/d/${datasetId}?rows=${sel.selection_id}`);
         toast(`${sel.row_count.toLocaleString("en-US")} rows the model predicted wrong`);
       },
       onError: (e) => toast.error((e as Error).message),
@@ -44,11 +46,14 @@ export function ModelCardDrawer({ datasetId, widgetId, runId, onClose }: {
         <div className="flex flex-col gap-5 text-[13px]">
           <section>
             <p className="font-serif text-[20px] font-semibold leading-snug">{card.verdict_text}</p>
-            {run.data?.status === "outdated" && widgetId && (
+            {run.data?.status === "outdated" && (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-warning p-2 text-warning">
                 <AlertTriangle className="size-4 shrink-0" />
                 <span className="flex-1">Outdated: the data changed after this ran on v{card.version}.</span>
-                <Button size="sm" onClick={() => actions.rerun.mutate(widgetId!)} loading={actions.rerun.isPending}>Re-run</Button>
+                <Button size="sm" loading={actions.rerun.isPending} onClick={() => actions.rerun.mutate(run.data!, {
+                  onSuccess: (next) => opened && setRerunOf({ from: opened, to: next.id }),
+                  onError: (e) => toast.error((e as Error).message),
+                })}>Re-run</Button>
               </div>
             )}
           </section>
@@ -180,3 +185,59 @@ const LABELS: Record<string, string> = {
   logistic_regression: "Logistic regression", ridge: "Ridge regression", gradient_boosting: "Gradient boosting", random_forest: "Random forest",
 };
 const labelOf = (m: string) => LABELS[m] ?? m;
+
+/** Actual × predicted counts; the diagonal (right) in the accent tint. */
+export function ConfusionMatrix({ labels, matrix, target }: { labels: string[]; matrix: number[][]; target?: string | null }) {
+  const max = Math.max(1, ...matrix.flat());
+  return (
+    <table className="w-full max-w-[360px] border-separate border-spacing-1 text-[12px]" aria-label="Confusion matrix: actual by predicted">
+      <thead>
+        <tr>
+          <th className="text-left font-normal text-muted-foreground">{target ?? "actual"} ↓ · predicted →</th>
+          {labels.map((l) => <th key={l} className="font-mono font-normal text-muted-foreground">{l}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {labels.map((a, i) => (
+          <tr key={a}>
+            <th className="text-left font-mono font-normal text-muted-foreground">{a}</th>
+            {labels.map((p, j) => (
+              <td
+                key={p}
+                title={`actual ${a}, predicted ${p}: ${matrix[i][j].toLocaleString("en-US")}`}
+                className="h-8 rounded text-center font-mono"
+                style={{ background: `color-mix(in srgb, ${i === j ? "var(--chart-accent)" : "var(--chart-1)"} ${Math.round(12 + 50 * matrix[i][j] / max)}%, transparent)` }}
+              >
+                {matrix[i][j].toLocaleString("en-US")}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** The ROC curve (two classes): true-positive rate against false-positive rate, the diagonal is chance. */
+export function RocCurve({ points, auc, positive }: { points: { fpr: number; tpr: number }[]; auc: number; positive: string }) {
+  const S = 160;
+  const pad = 22;
+  const x = (v: number) => pad + v * (S - pad - 6);
+  const y = (v: number) => S - pad - v * (S - pad - 6);
+  return (
+    <figure className="flex flex-col gap-1">
+      <svg viewBox={`0 0 ${S} ${S}`} className="size-[170px] max-h-full shrink-0" role="img"
+        aria-label={`ROC curve for ${positive}: area under the curve ${auc.toFixed(3)}`}>
+        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(1)} stroke="var(--chart-grid)" strokeDasharray="3 3" />
+        <line x1={x(0)} y1={y(0)} x2={x(1)} y2={y(0)} stroke="var(--chart-grid)" />
+        <line x1={x(0)} y1={y(0)} x2={x(0)} y2={y(1)} stroke="var(--chart-grid)" />
+        <polyline fill="none" stroke="var(--chart-accent)" strokeWidth={2} points={points.map((p) => `${x(p.fpr)},${y(p.tpr)}`).join(" ")} />
+        <text x={x(0.5)} y={S - 6} textAnchor="middle" fontSize={9} fill="var(--chart-label)">false positives</text>
+        <text x={8} y={y(0.5)} textAnchor="middle" fontSize={9} fill="var(--chart-label)" transform={`rotate(-90 8 ${y(0.5)})`}>true positives</text>
+      </svg>
+      <figcaption className="text-[12px] text-muted-foreground">
+        Predicting {positive}: area under the curve <span className="font-mono">{auc.toFixed(3)}</span> (0.5 is chance).
+      </figcaption>
+    </figure>
+  );
+}

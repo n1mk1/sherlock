@@ -52,7 +52,7 @@ from sherlock.profile import service as profile_service
 from sherlock.sandbox import runner as sandbox
 from sherlock.sandbox.worker import output_select
 from sherlock.steps.commit import Context, StepSpec, commit_step
-from sherlock.stories.narrate import number_in_words
+from sherlock.llm.wording import number_in_words
 from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000

@@ -66,7 +66,7 @@ describe("useDatasetEvents", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client: qc }, children);
     const { result } = renderHook(() => {
-      useDatasetEvents("ds_1", () => {});
+      useDatasetEvents("ds_1");
       return useDataset("ds_1");
     }, { wrapper });
     await waitFor(() => expect(result.current.data?.current_version).toBe(2));

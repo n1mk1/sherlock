@@ -64,15 +64,14 @@ test("the plan groups fixes by level and starts worth-a-look fixes unticked", as
 test("a run from the plan reports what became of each issue", async ({ page }) => {
   // The small messy file the Cleaner's tests use, with their recorded replies (PRD CLEAN-6).
   await page.goto("/");
-  await page.getByTestId("file-input").setInputFiles(path.join(import.meta.dirname, "messy.csv"));
+  await page.getByRole("navigation", { name: "Your CSVs" }).getByTestId("file-input").setInputFiles(path.join(import.meta.dirname, "messy.csv"));
   await page.getByRole("dialog").getByRole("button", { name: /^Import/ }).click();  // the import preview
   await page.getByRole("button", { name: "Clean with AI" }).click({ timeout: 120_000 });
   await expect(page.getByRole("heading", { name: /Cleaning plan · v\d+/ })).toBeVisible({ timeout: 60_000 });
   await page.getByRole("button", { name: /Start cleaning \(\d+\)/ }).click();
-  const csv = page.getByRole("tab", { name: "CSV" });
-  await expect(csv).not.toHaveAttribute("aria-disabled", /.*/, { timeout: 180_000 });
-  await csv.click();
-  await page.getByRole("button", { name: "Full cleaning report" }).click({ timeout: 120_000 });
+  // The run ends in `ready`: the grid opens, with Changes and its report in the right panel.
+  await expect(page.getByRole("toolbar", { name: "CSV tools" })).toBeVisible({ timeout: 180_000 });
+  await page.getByRole("button", { name: "Full cleaning report" }).click();
   const report = page.getByRole("dialog");
   await expect(report).toContainText(/step \d+ /);  // a step the run committed: a real run
   await expect(report.getByRole("term")).toHaveText(["fixed", "flagged", "checked and kept", "couldn't fix", "not attempted"]);

@@ -1,16 +1,14 @@
 // Answer blocks (App Flow §10.2, UI/UX brief §4.8): a number with its label, a table of up to 20 rows
-// with "Open all n rows in CSV", a chart with Pin to dashboard, and text whose numbers are chips. Web
+// with "Open all n rows in CSV", a chart, and text whose numbers are chips. Web
 // answers (TRD §8.2 web_context) are set apart: text with numbered citations, then "Searched the web for"
 // and the sources, each excerpt quoted as the page has it.
-import { Pin } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import type { AnswerBlock, AnswerBody, AnswerRun, WebResult } from "@/api/types";
 import { ResultTable } from "@/components/charts/ResultTable";
-import { Button } from "@/components/ui/button";
 
 // The chart libraries load with the first chart answer, not with the page.
-const WidgetChart = lazy(() => import("@/components/charts/adapter").then((m) => ({ default: m.WidgetChart })));
+const ChartView = lazy(() => import("@/components/charts/adapter").then((m) => ({ default: m.ChartView })));
 
 export function RunsView({ body }: { body: AnswerBody }) {
   return (
@@ -59,9 +57,7 @@ export function RunView({ run }: { run: AnswerRun }) {
   return <>{run.text}</>;
 }
 
-export function BlockView({ block, datasetId, onPin, pinning }: {
-  block: AnswerBlock; datasetId: string; onPin?: () => void; pinning?: boolean;
-}) {
+export function BlockView({ block, datasetId }: { block: AnswerBlock; datasetId: string }) {
   switch (block.type) {
     case "number":
       return (
@@ -77,7 +73,7 @@ export function BlockView({ block, datasetId, onPin, pinning }: {
             <ResultTable data={block} compact limit={20} />
           </div>
           {block.selection_id ? (
-            <Link to={`/d/${datasetId}/csv?rows=${block.selection_id}`} className="text-[13px] text-accent hover:underline">
+            <Link to={`/d/${datasetId}?rows=${block.selection_id}`} className="text-[13px] text-accent hover:underline">
               Open {block.total > 20 ? `all ${block.total.toLocaleString("en-US")}` : "these"} rows in CSV
             </Link>
           ) : block.total > block.rows.length ? (
@@ -87,20 +83,11 @@ export function BlockView({ block, datasetId, onPin, pinning }: {
       );
     case "chart":
       return (
-        <div className="flex flex-col gap-1.5">
-          <div className="h-[220px] overflow-hidden rounded-lg border border-border bg-card p-2">
-            <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
-              <WidgetChart spec={block.spec} data={block.data} compact />
-            </Suspense>
-          </div>
-          {block.widget_id ? (
-            <Link to={`/d/${datasetId}/dashboard?widget=${block.widget_id}`} className="text-[13px] text-accent hover:underline">
-              Open the widget
-            </Link>
-          ) : onPin ? (
-            <Button size="sm" className="self-start" loading={pinning} onClick={onPin}><Pin /> Pin to dashboard</Button>
-          ) : null}
-        </div>
+        <figure aria-label="Chart" className="h-[220px] overflow-hidden rounded-lg border border-border bg-card p-2">
+          <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
+            <ChartView spec={block.spec} data={block.data} compact />
+          </Suspense>
+        </figure>
       );
     case "web_sources":
       return <WebSources query={block.query} results={block.results} cached={block.cached} />;

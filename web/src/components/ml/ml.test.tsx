@@ -1,101 +1,64 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fmtMetric, type Run } from "@/api/ml";
-import type { Widget } from "@/api/types";
-import { BlockView } from "@/components/chat/Blocks";
-import { WidgetShell } from "@/components/dashboard/WidgetShell";
+import { fmtMetric, type ModelCard, type Run } from "@/api/ml";
 import { mockApi, renderAt } from "@/test/render";
+import { ModelCardDrawer } from "./ModelCardDrawer";
 
 afterEach(() => vi.unstubAllGlobals());
 
-const DRIVER: Widget = {
-  id: "wdg_9", dataset_id: "ds_1", title: "What drives survived?", status: "ready", error: null, created_by: "builder",
-  version_built: 2, score: null, point: null, updated_at: "2026-10-26T00:00:00Z", deleted_at: null, run_id: "run_1",
-  spec: {
-    scope: { columns: { target: "survived" }, rows: { inherit_global_filters: false } },
-    op: { type: "ml", recipe: "driver_analysis", method: "auto", params: { cv_folds: 5, time_budget_s: 60 } },
-    view: { type: "importance", options: {} },
-  },
+const SCOPE = { columns: { target: "survived" }, rows: { inherit_global_filters: false } };
+
+const CARD: ModelCard = {
+  run_id: "run_1", recipe: "driver_analysis", method: "auto", chosen_model: "gradient_boosting", task: "classification",
+  target: "survived", features_used: ["sex", "age"], excluded: [{ column: "boat", reason: "records the outcome" }],
+  rows: { total: 1309, with_target: 1309, blank_target: 0, used: 1309, train: 1309 },
+  split: { kind: "stratified_kfold", folds: 5, seed: 0 },
+  baselines: [{ name: "best one-column rule: sex", metric: "accuracy", value: 0.78, column: "sex" }],
+  model: { metric: "accuracy", value: 0.804, ci: [0.78, 0.83], folds: [0.8, 0.81], lift_over_best_baseline: 0.024 },
+  alternatives: [], verdict: "beats_baseline", verdict_text: "Beats the best simple rule by 2.4 points.",
+  importance: [{ column: "sex", value: 1 }, { column: "age", value: 0.22 }], warnings: [], limits: ["observational data"],
+  sample: null, version: 2, scope: SCOPE, params: { cv_folds: 5, time_budget_s: 60 },
+  repro: { libraries: {}, code_path: "repro.py" },
+  confusion: { labels: ["0", "1"], matrix: [[710, 99], [157, 343]] }, misclassified: 256,
 };
 
 const RUN: Run = {
-  id: "run_1", dataset_id: "ds_1", widget_id: "wdg_9", version: 2, recipe: "driver_analysis", method: "auto",
-  scope: DRIVER.spec.scope, params: { cv_folds: 5, time_budget_s: 60 }, status: "done", job_id: "job_1", target: "survived",
-  error: null, progress: null,
-  summary: {
-    verdict: "beats_baseline", verdict_text: "Beats the best simple rule by 2.4 points.", metric: "accuracy", value: 0.804,
-    best_baseline: { name: "best one-column rule: sex", metric: "accuracy", value: 0.78, column: "sex" },
-    chosen_model: "gradient_boosting", chosen_label: "Gradient boosting", rows: 1309, excluded: 3,
-    task: "classification", misclassified: 256, views: ["importance", "confusion", "roc"],
-  },
-  model_card: null,
+  id: "run_1", dataset_id: "ds_1", version: 2, recipe: "driver_analysis", method: "auto",
+  scope: SCOPE, params: { cv_folds: 5, time_budget_s: 60 }, status: "done", job_id: "job_1", target: "survived",
+  error: null, progress: null, summary: null, model_card: CARD,
 };
 
-const shell = (widget: Widget) => (
-  <WidgetShell widget={widget} version={2} columns={["sex", "survived"]} collapsed={false} onToggleCollapse={() => {}} onExplain={() => {}} />
-);
-
-describe("analysis widgets", () => {
+describe("the model card", () => {
   it("formats metrics as the model card does", () => {
     expect(fmtMetric("accuracy", 0.8044)).toBe("80.4%");
     expect(fmtMetric("r2", 0.4567)).toBe("0.46");
   });
 
-  it("shows the verdict and the importance bars of a finished run", async () => {
-    mockApi({
-      "GET /api/v1/runs/run_1": RUN,
-      "GET /api/v1/runs/run_1/results": {
-        version: 2, columns: [{ name: "feature", type: "VARCHAR" }, { name: "importance", type: "DOUBLE" }],
-        rows: [["sex", 1], ["age", 0.22]], row_count: 2, truncated: false,
-      },
-      "GET /api/v1/recipes": [],
-      "GET /api/v1/datasets/ds_1/cards": [],
-    });
-    renderAt(shell(DRIVER));
-    expect(await screen.findByText("Beats the best simple rule by 2.4 points.")).toBeTruthy();
-    expect(await screen.findByLabelText("Factors by importance: sex, age")).toBeTruthy();
-    expect(screen.getByText("0.22")).toBeTruthy();
+  it("shows the verdict, the importance and the confusion matrix with who it got wrong", async () => {
+    mockApi({ "GET /api/v1/runs/run_1": RUN });
+    renderAt(<ModelCardDrawer datasetId="ds_1" runId="run_1" onClose={() => {}} />);
+    expect(await screen.findByText("Beats the best simple rule by 2.4 points.")).toBeInTheDocument();
+    expect(screen.getByText("0.22")).toBeInTheDocument();
+    expect(screen.getByLabelText("Confusion matrix: actual by predicted")).toBeInTheDocument();
+    expect(screen.getByTitle("actual 1, predicted 0: 157")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Who did it get wrong\? \(256 rows\)/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Re-run" })).toBeNull(); // only an outdated run offers it
   });
 
-  it("draws the confusion matrix with the misclassified count", async () => {
-    mockApi({
-      "GET /api/v1/runs/run_1": RUN,
-      "GET /api/v1/runs/run_1/results": (url: URL) => url.searchParams.get("view") === "confusion"
-        ? { version: 2, columns: [], rows: [["0", "0", 710], ["0", "1", 99], ["1", "0", 157], ["1", "1", 343]], row_count: 4, truncated: false }
-        : { version: 2, columns: [], rows: [["sex", 1]], row_count: 1, truncated: false },
-      "GET /api/v1/recipes": [],
-      "GET /api/v1/datasets/ds_1/cards": [],
+  it("runs an outdated analysis again with the same recipe, scope and params, then shows the new run", async () => {
+    const calls = mockApi({
+      "GET /api/v1/runs/run_1": { ...RUN, status: "outdated" },
+      "POST /api/v1/datasets/ds_1/runs": { ...RUN, id: "run_2", version: 3, status: "running", model_card: null },
+      "GET /api/v1/runs/run_2": { ...RUN, id: "run_2", version: 3, status: "running", model_card: null },
     });
-    renderAt(shell({ ...DRIVER, spec: { ...DRIVER.spec, view: { type: "confusion", options: {} } } }));
-    expect(await screen.findByLabelText("Confusion matrix: actual by predicted")).toBeTruthy();
-    expect(screen.getByTitle("actual 1, predicted 0: 157")).toBeTruthy();
-    expect(screen.getByText("256")).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "ROC" })).toBeTruthy();
-  });
-
-  it("sets general knowledge apart in a chat answer", () => {
-    renderAt(<BlockView datasetId="ds_1" block={{ type: "text", labeled: "general", body: { blocks: [{ type: "paragraph", runs: [
-      { type: "text", text: "In general (not from your data): " }, { type: "text", text: "Siblings or spouses aboard." }] }] } }} />);
-    expect(screen.getByTitle("From the model's general knowledge, not computed from your data").textContent)
-      .toContain("Siblings or spouses aboard.");
-  });
-
-  it("shows plain-language progress while it runs, and Outdated with Re-run after the data changed", async () => {
-    let status: Run["status"] = "running";
-    mockApi({
-      "GET /api/v1/runs/run_1": () => ({ ...RUN, status, summary: status === "running" ? null : RUN.summary,
-                                         progress: { step: 4, of: 6, label: "testing models", pct: 50 } }),
-      "GET /api/v1/runs/run_1/results": { version: 2, columns: [], rows: [["sex", 1]], row_count: 1, truncated: false },
-      "GET /api/v1/recipes": [],
-      "GET /api/v1/datasets/ds_1/cards": [],
+    renderAt(<ModelCardDrawer datasetId="ds_1" runId="run_1" onClose={() => {}} />);
+    expect(await screen.findByText(/Outdated: the data changed after this ran on v2/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Re-run" }));
+    expect(await screen.findByText("The model card is written when the analysis finishes.")).toBeInTheDocument();
+    const post = calls.mock.calls.find(([u, i]) => String(u).endsWith("/datasets/ds_1/runs") && i?.method === "POST");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      recipe: "driver_analysis", method: "auto", scope: SCOPE, params: { cv_folds: 5, time_budget_s: 60 },
     });
-    const view = renderAt(shell(DRIVER));
-    expect(await screen.findByText(/testing models…/)).toBeTruthy(); // past the loading skeleton, also a status
-    expect(screen.getByRole("status")).toBeTruthy();
-    view.unmount();
-    status = "outdated";
-    renderAt(shell({ ...DRIVER, status: "outdated" }));
-    await waitFor(() => expect(screen.getByText("Outdated")).toBeTruthy());
-    expect(screen.getByRole("button", { name: "Re-run" })).toBeTruthy();
+    await waitFor(() => expect(calls.mock.calls.some(([u]) => String(u).endsWith("/runs/run_2"))).toBe(true));
   });
 });

@@ -1,4 +1,4 @@
-// The dataset menu (⋯, UI/UX brief §5.14), on every tab: Export notebook, Download CSV, Rename,
+// The dataset menu (⋯, UI/UX brief §5.14), in the dataset's header: Export notebook, Download CSV, Rename,
 // Delete. Delete confirms, then offers Undo for 10 s.
 import { BookOpen, Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -47,7 +47,7 @@ export function ConfirmDelete({ dataset, open, onOpenChange, onConfirm }: {
       <DialogContent className="max-w-[420px] gap-4 p-6">
         <DialogTitle className="text-[17px] font-semibold">Delete {dataset.name}?</DialogTitle>
         <DialogDescription className="text-[14px] text-muted-foreground">
-          Its versions, dashboard and chat go with it. You can undo for 10 seconds.
+          Its versions, steps and chat go with it. You can undo for 10 seconds.
         </DialogDescription>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

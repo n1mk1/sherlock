@@ -66,7 +66,7 @@
   {"purpose": "predicate", "match": ["Request:\n<data>\ndelete all the male passengers\n</data>"],
    "content": {"predicate": "sex = 'male'", "label": "male passengers"}},
   {"purpose": "route", "match": ["<data>\nset the age of row 5 to 200\n</data>"],
-   "content": {"intents": ["update_widget"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "age", "kind": "column"}]}},
+   "content": {"intents": ["edit_cells"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "age", "kind": "column"}]}},
   {"purpose": "edits", "match": ["Request:\n<data>\nset the age of row 5 to 200\n</data>"],
    "content": {"reading": "row 5, age, the new value", "edits": [{"row_id": 5, "column": "age", "value": "200"}]}}
 ]

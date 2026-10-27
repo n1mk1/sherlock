@@ -9,7 +9,7 @@ export const ME = {
   created_at: "2026-10-24T00:00:00Z",
   settings: {
     theme: "light", accent: "verdigris", chatbar: "pinned", after_upload: "ask", cleaning_mode: "auto",
-    story_updates: "auto", spotlight: "subtle", reduce_motion: "system", default_tab: "dashboard",
+    reduce_motion: "system",
   },
 };
 

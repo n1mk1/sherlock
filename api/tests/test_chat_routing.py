@@ -82,7 +82,7 @@ def test_a_number_that_counts_rows_is_never_a_filter_value(client, ready):
 
 def test_drop_counts_keeps_a_number_used_as_a_value():
     def names(question, texts):
-        resolved = {"columns": {}, "values": {t: ["boat", t] for t in texts}, "widgets": {}, "unresolved": ["3"],
+        resolved = {"columns": {}, "values": {t: ["boat", t] for t in texts}, "unresolved": ["3"],
                     "unresolved_kinds": {"3": "value"}}
         drop_counts(resolved, question)
         return sorted(resolved["values"]), resolved["unresolved"]
@@ -198,7 +198,7 @@ def test_quarantined_counts_the_rows_by_reason(monkeypatch):
     conn = duckdb.connect()
     conn.execute("CREATE TABLE t AS SELECT * FROM (VALUES (1, 'age not a number'), (2, NULL), (3, 'age not a number'), "
                  "(4, 'extra fields')) v(_row_id, _quarantine_reason)")
-    monkeypatch.setattr(insight.ws, "connection", lambda *a: contextlib.nullcontext(conn))
+    monkeypatch.setattr(insight.qx, "connection", lambda *a: contextlib.nullcontext(conn))
     k = SimpleNamespace(env=None, dataset={"current_version": 2})
     reply = insight.quarantined(k, "r1")
     runs = reply.blocks[0]["body"]["blocks"][0]["runs"]
@@ -257,9 +257,9 @@ def test_delete_requests_say_chat_cant_delete_and_list_the_rows(client, ready):
     assert not loop.DELETE_ASK.search("remove the filter") and not loop.DELETE_ASK.search("what did cleaning remove?")
 
 
-def test_a_cell_edit_from_the_dashboard_is_a_proposal_with_a_range_check(client, ready):
+def test_a_cell_edit_is_a_proposal_with_a_range_check(client, ready):
     q = "set the age of row 5 to 200"
-    _, msg = send(client, ready["id"], q)  # the Dashboard tab
+    _, msg = send(client, ready["id"], q)
     p = msg["proposal"]
     assert p["kind"] == "edit_cells" and p["edits"][0]["row_id"] == 5 and p["edits"][0]["value"] == "200"
     assert p["warnings"] == ["Check row 5 before you approve: 200 is outside the range age holds in this version "

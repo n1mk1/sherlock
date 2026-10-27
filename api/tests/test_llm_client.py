@@ -10,7 +10,7 @@ from sherlock.llm.client import (
     StructuredOutputError, TransientError, Transport,
 )
 from sherlock.llm.fixtures import FixtureMiss, FixtureTransport, RecordingTransport
-from sherlock.llm.schemas import Critique, Diagnosis, SqlDraft, Story
+from sherlock.llm.schemas import Answer, Critique, Diagnosis, SqlDraft
 
 DIAG = {"cause": "typed by hand", "approach_options": ["parse", "leave"], "preferred_option": 0,
         "risk": "low", "leave_as_is": False}
@@ -77,15 +77,16 @@ def test_one_repair_call_then_structured_output_error(db):
         client.structured("large", [{"role": "user", "content": "x"}], Diagnosis, purpose="diagnose")
 
 
-def test_story_prose_may_not_contain_digits(db):
-    story = {"headline": [{"text": "First class paid "}, {"chip": "ratio"}, {"text": " times more"}],
-             "body": [{"label": "column:fare"}, {"text": " is skewed."}]}
-    client, _ = llm([{"purpose": "narrate", "content": json.dumps(story)}])
-    assert client.structured("small", [], Story, purpose="narrate").value.headline[1].chip == "ratio"
-    story["body"] = [{"text": "Fares rose 6 times."}]
-    client, _ = llm([{"purpose": "narrate", "content": json.dumps(story)}])
+def test_answer_prose_may_not_contain_digits(db):
+    """TRD §8.1: numbers are chips and names are labels; a text run with a digit fails validation."""
+    answer = {"prose": [{"text": "First class paid "}, {"chip": "ratio"}, {"text": " times more for "}, {"label": "column:fare"}],
+              "shape": "number", "number": "ratio", "label": "how many times more", "chart": None}
+    client, _ = llm([{"purpose": "compose", "content": json.dumps(answer)}])
+    assert client.structured("small", [], Answer, purpose="compose").value.prose[1].chip == "ratio"
+    answer["prose"] = [{"text": "Fares rose 6 times."}]
+    client, _ = llm([{"purpose": "compose", "content": json.dumps(answer)}])
     with pytest.raises(StructuredOutputError):
-        client.structured("small", [], Story, purpose="narrate")
+        client.structured("small", [], Answer, purpose="compose")
 
 
 def test_an_empty_sql_draft_gets_the_repair_not_unanswerable(db):

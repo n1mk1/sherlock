@@ -5,7 +5,7 @@
 import { ParentSize } from "@visx/responsive";
 import { scaleBand, scaleLinear } from "@visx/scale";
 import { useState } from "react";
-import type { WidgetData } from "@/api/types";
+import type { ChartData } from "@/api/types";
 import { formatCell, isPctColumn } from "@/lib/format";
 
 const SERIES = "var(--chart-1)";
@@ -14,9 +14,9 @@ const GRID = "var(--chart-grid)";
 const LABEL = "var(--chart-label)";
 const M = { top: 10, right: 12, bottom: 26, left: 44 };
 
-type Props = { data: WidgetData; x: string; y: string; series?: string; point?: string | null };
+type Props = { data: ChartData; x: string; y: string; series?: string; point?: string | null };
 
-const col = (d: WidgetData, name: string) => d.columns.findIndex((c) => c.name === name);
+const col = (d: ChartData, name: string) => d.columns.findIndex((c) => c.name === name);
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v));
 
 function Frame({ label, children }: { label: string; children: (w: number, h: number) => React.ReactNode }) {

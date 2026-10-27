@@ -15,12 +15,12 @@ from sherlock.agent.answerers import Result
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Answer, ChipRun, LabelRun, TextRun
 from sherlock.llm.text import has_digits
-from sherlock.stories.wording import wording_problem
+from sherlock.llm.wording import wording_problem
 
 from sherlock.agent import prompts
 
 CHIP = re.compile(r"^(r\d+):(?:(\d+):(\d+)|total)$")
-# A value label shows a result cell as written, so a number type's cells are chips, never labels (PRD STORY-8).
+# A value label shows a result cell as written, so a number type's cells are chips, never labels (PRD ASK-3).
 NUMBER_TYPE = re.compile(r"^(U?(TINY|SMALL|BIG|HUGE)?INT(EGER)?|FLOAT|DOUBLE|REAL|DECIMAL|NUMERIC)\b", re.I)
 PCT_NAME = re.compile(r"(rate|share|pct|percent|ratio|proportion|fraction)", re.I)
 INLINE_ROWS = 20
@@ -93,7 +93,7 @@ def label_text(ref: str, columns: list[str], values: set[str] | None = None) -> 
 
 def label_values(results: dict[str, Result], known: dict[str, list] | None = None) -> set[str]:
     """The values a `value:` label may show (Day 6 review F2): a cell of one of the answer's result columns
-    that isn't a number type (text, a date, a yes/no; PRD STORY-8), and `<column>:<value>` for
+    that isn't a number type (text, a date, a yes/no; PRD ASK-3), and `<column>:<value>` for
     the values the DataCard knows (its top values). A count or an average is a chip, never a label."""
     out = {str(row[i]) for res in results.values() for i, c in enumerate(res.columns)
            if not NUMBER_TYPE.match(str(c.get("type") or "")) for row in res.rows if row[i] is not None}

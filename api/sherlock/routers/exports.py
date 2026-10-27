@@ -28,7 +28,8 @@ def _check_status(dataset: sqlite3.Row) -> None:
 
 def remembered(user: User) -> NotebookOptions:
     try:
-        return NotebookOptions.model_validate(user.settings.get("notebook") or {})
+        stored = user.settings.get("notebook") or {}
+        return NotebookOptions.model_validate({k: v for k, v in stored.items() if k in NotebookOptions.model_fields})
     except ValueError:
         return NotebookOptions()
 
@@ -76,10 +77,7 @@ def start_export(
 @router.get("/datasets/{dataset_id}/exports/notebook/preview")
 def export_preview(
     include_data: bool | None = Query(default=None),
-    include_cards: bool | None = Query(default=None),
-    include_notes: bool | None = Query(default=None),
     include_runs: bool | None = Query(default=None),
-    order: str | None = Query(default=None),
     up_to_step: int | None = Query(default=None, ge=1),
     dataset: sqlite3.Row = Depends(owned_dataset),
     user: User = Depends(current_user),
@@ -88,8 +86,7 @@ def export_preview(
     """The dialog's sentence and notes; options not given come from the user's remembered ones,
     which the answer repeats as `options`."""
     _check_status(dataset)
-    given = {k: v for k, v in {"include_data": include_data, "include_cards": include_cards,
-                               "include_notes": include_notes, "include_runs": include_runs, "order": order,
+    given = {k: v for k, v in {"include_data": include_data, "include_runs": include_runs,
                                "up_to_step": up_to_step}.items() if v is not None}
     options = NotebookOptions.model_validate(remembered(user).model_dump() | given)
     try:

@@ -1,4 +1,4 @@
-// Menus (the widget menu, the library row menu, the dataset menu): Radix dropdown on --popover.
+// Menus (the library row menu, the dataset menu, the Download menu): Radix dropdown on --popover.
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";

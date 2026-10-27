@@ -27,7 +27,7 @@ from sherlock.llm.client import StructuredOutputError, fence
 from sherlock.llm.schemas import EditsDraft, PlanEdits
 from sherlock.profile import service as profile_service
 from sherlock.rows.query import ident
-from sherlock.widgets import service as ws
+from sherlock.query import context as qx
 
 NUMERIC = re.compile(r"^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|FLOAT|DOUBLE|REAL|DECIMAL)", re.I)
 EXPORT = re.compile(r"\b(export|download|save|give me)\b.*\b(notebook|ipynb|jupyter)\b|\b(notebook|ipynb|jupyter)\b.*\b(export|download)\b", re.I)
@@ -43,10 +43,6 @@ def export_options(text: str) -> dict:
     out = {}
     if re.search(r"\b(without|no|minus|skip)\s+(the\s+)?(raw\s+)?(data|csv|file)\b", t):
         out["include_data"] = False
-    if re.search(r"\b(without|no|skip)\s+(the\s+)?(story\s+)?(cards|stories)\b", t):
-        out["include_cards"] = False
-    if re.search(r"\b(with|include|including|plus|and)\s+(the\s+|my\s+)?(canvas\s+|flow\s+)?notes\b", t):
-        out["include_notes"] = True
     if re.search(r"\b(without|no|skip)\s+(the\s+)?(ml|models?|runs?|analys[ie]s)\b", t):
         out["include_runs"] = False
     return out
@@ -82,7 +78,7 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
     rows, cols = _selected(context)
     cols = [c for c in cols if c in types] or list(types)[:6]
     cells_text = ""
-    with ws.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
+    with qx.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
         if rows:
             shown = rows[:max(1, MAX_PROMPT_CELLS // max(1, len(cols)))]
             got = conn.execute(f"SELECT _row_id, {', '.join(ident(c) for c in cols)} FROM t WHERE _row_id IN "  # noqa: S608
@@ -158,7 +154,7 @@ def _same(before, value: str | None) -> bool:
     return str(before) == value
 
 
-def propose_clean(env: ws.Env, dataset: sqlite3.Row, context: dict, message_id: str) -> dict:
+def propose_clean(env: qx.Env, dataset: sqlite3.Row, context: dict, message_id: str) -> dict:
     """`clean_selection`: Clean with AI on the selection (the context's, or the selected cells' rows),
     else on the whole file. No model call until it's approved. The selection's rows are counted on the
     current version."""
@@ -171,7 +167,7 @@ def propose_clean(env: ws.Env, dataset: sqlite3.Row, context: dict, message_id: 
                    "VALUES (?, ?, ?, NULL, ?, ?, 'Selected in CSV', ?)",
                    (selection_id, dataset["id"], dataset["current_version"], json.dumps(rows), len(rows), now_iso()))
     if selection_id:
-        n = ws.selection_rows(env, dataset, selection_id)
+        n = qx.selection_rows(env, dataset, selection_id)
         if n is None:
             raise CantAnswer("That selection is gone; select the rows again.")
         payload = {"summary": f"Clean with AI on the {n:,} selected {'row' if n == 1 else 'rows'}",
@@ -197,7 +193,7 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
     row, _ = plans.current(db, row, dataset, lambda d: profile_service.get_or_build(kit.env.settings, db, kit.env.cache, d))
     card = profile_service.get_or_build(kit.env.settings, db, kit.env.cache, dataset)
     items = json.loads(row["items_json"])
-    columns = [c for c in ws.user_types(kit.env, dataset, dataset["current_version"])]
+    columns = [c for c in qx.user_types(kit.env, dataset, dataset["current_version"])]
     refs = {f"f{n}": i for n, i in enumerate(items, 1)}
     lines = [" · ".join([ref, i["module"], f"level {i.get('sev') or 'none'}", i["column"] or "rows",
                          registry.label(i["detector"]), ("ticked" if i["ticked"] else "unticked") if i["change"] else "kept",

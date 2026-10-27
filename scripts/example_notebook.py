@@ -31,7 +31,7 @@ def main() -> int:
         with TestClient(create_app()) as client:
             ds = client.post(f"{API}/datasets/sample").json()
             out = client.post(f"{API}/datasets/{ds['id']}/exports/notebook",
-                              json={"include_data": True, "include_cards": True, "include_notes": True, "include_runs": True}).json()
+                              json={"include_data": True, "include_runs": True}).json()
             end = time.monotonic() + 120
             while out["status"] not in ("done", "failed") and time.monotonic() < end:
                 time.sleep(0.5)

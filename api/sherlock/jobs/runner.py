@@ -10,10 +10,6 @@ A job kind can checkpoint (`ctx.checkpoint(state)` writes `state_json`); a re-qu
 state back as `ctx.state` and resumes from it (D8.6). Kinds without checkpoints start over, which is
 safe because job kinds are idempotent. The sweeper also queues the `purge` job every
 `PURGE_INTERVAL_S` (Schema §6).
-
-The kinds that write a dataset's widgets and cards (`SERIAL_KINDS`) run one at a time per dataset:
-the claim skips a queued one while another of them runs for its dataset, so an older update can't
-land after a newer one.
 """
 
 import asyncio
@@ -35,11 +31,7 @@ from sherlock.storage import VersionConnections
 
 log = logging.getLogger("sherlock.jobs")
 
-KINDS = ("profile", "clean", "build_dashboard", "stories", "ml_run", "cascade", "export_notebook", "purge",
-         "review_issues")
-# At most one of these runs per dataset at a time: each writes the dataset's widgets and story cards.
-SERIAL_KINDS = ("cascade", "stories", "build_dashboard")
-_SERIAL = ", ".join(f"'{k}'" for k in SERIAL_KINDS)
+KINDS = ("profile", "clean", "ml_run", "export_notebook", "purge", "review_issues")
 FINISHED = ("done", "failed", "cancelled")
 HEARTBEAT_S = 10.0
 STALE_S = 60.0
@@ -85,8 +77,6 @@ def to_job(row: sqlite3.Row) -> dict:
         "progress": _progress(row), "created_at": row["created_at"], "started_at": row["started_at"],
         "finished_at": row["finished_at"], "error": row["error"],
         "result": json.loads(row["result_json"]) if row["result_json"] else None,
-        # Queued by the "After upload" setting rather than a click (App Flow §4).
-        "automatic": bool(json.loads(row["params_json"] or "{}").get("automatic")),
     }
     return job
 
@@ -349,13 +339,10 @@ class JobRunner:
         db = connect(self.settings)
         try:
             now = now_iso()
-            # One statement, so no job runs twice; a queued cascade, stories or build waits while one of
-            # those runs for its dataset (SERIAL_KINDS).
+            # One statement, so no job runs twice.
             rows = db.execute(
                 "UPDATE jobs SET status = 'running', owner_pid = ?, heartbeat_at = ?, started_at = coalesce(started_at, ?) "
-                "WHERE id = (SELECT q.id FROM jobs q WHERE q.status = 'queued' AND NOT ("
-                f"q.kind IN ({_SERIAL}) AND q.dataset_id IS NOT NULL AND EXISTS (SELECT 1 FROM jobs r WHERE "
-                f"r.dataset_id = q.dataset_id AND r.status = 'running' AND r.kind IN ({_SERIAL}))) "
+                "WHERE id = (SELECT q.id FROM jobs q WHERE q.status = 'queued' "
                 "ORDER BY q.created_at, q.id LIMIT 1) RETURNING *",
                 (self.owner, now, now),
             ).fetchall()

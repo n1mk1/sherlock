@@ -7,6 +7,10 @@ changes drop out and a replayed step is not counted twice.
 Marks: a cell whose lineage flag is `quarantined` or `invalid` (its value didn't parse; the text is
 kept in lineage) is `invalid`; a cell of a flagged step is `flagged`; any other changed cell is
 `changed`. The latest step that touched the cell decides.
+
+`changes` reads the other way, from steps to columns: what the steps after one version touched, and
+whether they changed which rows or columns there are. ML outdating uses it on every new version
+(TRD §7.5, PRD ML-9).
 """
 
 import json
@@ -14,6 +18,8 @@ import sqlite3
 from dataclasses import dataclass
 
 INVALID_FLAGS = ("quarantined", "invalid")
+# Impact fields that mean a step changed which rows there are, so everything is affected.
+ROWS_CHANGED = ("rows_added", "rows_deleted", "quarantined", "rows_restored")
 
 
 @dataclass(frozen=True)
@@ -108,3 +114,36 @@ def cell_history(db: sqlite3.Connection, dataset_id: str, steps: list[ChainStep]
         {"step_id": r[0], "step_no": r[1], "old": r[2], "new": r[3], "summary": summaries[r[0]], "flag": r[4]}
         for r in rows
     ]
+
+
+def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -> tuple[set[str], bool]:
+    """(changed columns, everything affected) for the steps after `since` up to `version`."""
+    cols: set[str] = set()
+    everything = False
+    steps = db.execute("SELECT * FROM steps WHERE dataset_id = ? AND to_version > ? AND to_version <= ?",
+                       (dataset_id, since, version)).fetchall()
+    for s in steps:
+        ids = [s["id"]] + (json.loads(s["replayed_step_ids_json"]) if s["replayed_step_ids_json"] else [])
+        for sid in ids:
+            r = db.execute("SELECT * FROM steps WHERE id = ?", (sid,)).fetchone()
+            cols.update(json.loads(r["column_targets_json"]))
+            if json.loads(r["columns_added_json"]) or json.loads(r["columns_removed_json"]):
+                everything = True
+            if r["kind"] == "clean" and r["created_by"] == "system":
+                everything = True  # typing (or undoing it) changes column types
+            impact = json.loads(r["impact_json"])
+            if any(impact.get(k) for k in ROWS_CHANGED):
+                everything = True
+            if r["edits_json"] and json.loads(r["edits_json"]).get("restore_row_ids"):
+                everything = True
+        if s["kind"] == "undo" and s["undone_step_id"]:
+            u = db.execute("SELECT * FROM steps WHERE id = ?", (s["undone_step_id"],)).fetchone()
+            cols.update(json.loads(u["column_targets_json"]))
+            impact = json.loads(u["impact_json"])
+            # Undoing a restore quarantines those rows again, like undoing any change of rows.
+            restored = bool(u["edits_json"] and json.loads(u["edits_json"]).get("restore_row_ids"))
+            if any(impact.get(k) for k in ROWS_CHANGED) or restored \
+                    or json.loads(u["columns_added_json"]) or json.loads(u["columns_removed_json"]) \
+                    or (u["kind"] == "clean" and u["created_by"] == "system"):
+                everything = True
+    return cols, everything

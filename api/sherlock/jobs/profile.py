@@ -5,7 +5,7 @@ job builds or reads the current version's DataCard (issues and value index inclu
 dataset's status, which follows the user's "After upload" setting (step 6, App Flow §4): `ask`
 ends in `offer`; `always` ("Open the cleaning plan") makes a draft cleaning plan and ends in
 `offer`, so the plan screen opens by itself and nothing is cleaned without a click; `never` ("I'll
-clean it myself") queues the dashboard build (status `building`) with `automatic: true`.
+clean it myself") ends in `ready`.
 """
 
 import asyncio
@@ -43,13 +43,13 @@ def _profile(ctx: JobContext) -> dict:
 
 
 def _after_upload(ctx: JobContext, dataset: sqlite3.Row, card: dict) -> None:
-    from sherlock.jobs.clean import queue_build
+    from sherlock.jobs.clean import mark_ready
     from sherlock.routers.me import effective_settings
 
     user = users.get(ctx.db, dataset["user_id"])
     choice = effective_settings(user.settings if user else {}).after_upload
     if choice == "never":
-        queue_build(ctx.db, ctx.bus, dataset["user_id"], dataset["id"], ctx.runner, {"automatic": True})
+        mark_ready(ctx.db, ctx.bus, dataset["id"])
         return
     if choice == "always" and plans.draft_id(ctx.db, dataset["id"]) is None:
         row = plans.create(ctx.db, dataset, card, source="after_upload")

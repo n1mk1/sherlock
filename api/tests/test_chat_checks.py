@@ -1,4 +1,4 @@
-"""Chat checks (TRD §8.1 steps 3 and 5, PRD ASK-6, STORY-3, STORY-8): every `ask_data` result
+"""Chat checks (TRD §8.1 steps 3 and 5, PRD ASK-3, ASK-6): every `ask_data` result
 checked in code with one repair, clarifications with buttons for names nothing resolved, and one wording
 check for the chat's model-written text. Recorded model replies: `chat_titanic.json` plus `chat_checks.json`."""
 
@@ -10,14 +10,14 @@ from types import SimpleNamespace
 import pytest
 
 from sherlock.agent import compose as comp
-from sherlock.agent.answerers import Result, Scope, Toolkit, reading_text, widget_title
+from sherlock.agent.answerers import Result, Scope, Toolkit, reading_text
 from sherlock.agent.insight import pair_options
 from sherlock.agent.loop import checked_clarification
 from sherlock.agent.resolve import candidates
 from sherlock.config import get_settings
 from sherlock.llm.client import StructuredOutputError
 from sherlock.llm.schemas import Route
-from sherlock.stories.wording import title_problem, wording_problem
+from sherlock.llm.wording import wording_problem
 from tests.test_answerers import driver_done
 from tests.test_chat import blocks_of, send
 from tests.test_jobs import db_rows, wait_status
@@ -65,7 +65,7 @@ def kit(types: dict, resolved: dict | None = None, values: dict | None = None, r
     db.execute("CREATE TABLE value_index (dataset_id TEXT, column TEXT, value TEXT, count INTEGER)")
     for col, vals in (values or {}).items():
         db.executemany("INSERT INTO value_index VALUES ('d', ?, ?, ?)", [(col, v, 100 - i) for i, v in enumerate(vals)])
-    resolved = {"columns": {}, "values": {}, "widgets": {}, "unresolved": [], "unresolved_kinds": {}, **(resolved or {})}
+    resolved = {"columns": {}, "values": {}, "unresolved": [], "unresolved_kinds": {}, **(resolved or {})}
     return Toolkit(SimpleNamespace(db=db), None, None, {"id": "d"}, "", Scope(), resolved=resolved, types=types,
                    roles=roles or {c: "dimension" for c in types}, example="the average fare by pclass")
 
@@ -156,15 +156,6 @@ def test_the_wording_check():
     assert "because" in wording_problem("Fares are higher because of class")
     assert wording_problem("value:sex:female is higher") and wording_problem("see [the table]")
     assert wording_problem("First class paid the most on average") is None
-    assert title_problem("Top 10 fares") and title_problem("Fares rise because of class") and title_problem(" ")
-    assert title_problem("Average fare by port") is None
-
-
-def test_a_widget_title_that_fails_falls_back_to_the_templated_one():
-    spec = {"scope": {"columns": {"x": "embarked", "y": "avg_fare"}}, "view": {"type": "bar"}}
-    assert widget_title("Average fare by port", spec) == "Average fare by port"
-    assert widget_title("Top 10 fares by port", spec) == "Average avg_fare by embarked"
-    assert widget_title("How the port drives fares", spec) == "Average avg_fare by embarked"
 
 
 def test_reading_and_closest():

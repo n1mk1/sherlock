@@ -1,4 +1,4 @@
-// Number formatting for widgets and tables, the same rules as the server's chat chips
+// Number formatting for charts and tables, the same rules as the server's chat chips
 // (sherlock/agent/compose.py): rates and shares between 0 and 1 as percentages, integers with
 // separators, other numbers to two decimals (none past 1,000, three significant figures under 1).
 const PCT_NAME = /(rate|share|pct|percent|ratio|proportion|fraction)/i;

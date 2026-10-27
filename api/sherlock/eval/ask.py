@@ -79,7 +79,7 @@ def _key(v) -> str:
 
 def check(message: dict, expect: dict) -> tuple[bool, str]:
     """Every criterion the expectation names must hold: a value, rows or a total (numbers), and since
-    D8.4 `source` (a source of that kind: sql, run, step, help, card, general) and `text_any` (the
+    D8.4 `source` (a source of that kind: sql, run, step, help, general) and `text_any` (the
     answer's text holds one of these words), for answers that aren't numbers."""
     if "source" in expect and not any(s.get("kind") == expect["source"] for s in message.get("sources") or []):
         return False, f"no {expect['source']} source: " + ", ".join(s.get("kind", "?") for s in message.get("sources") or [])
@@ -110,16 +110,16 @@ def check(message: dict, expect: dict) -> tuple[bool, str]:
 
 
 def unsourced(message: dict) -> bool:
-    """Data shown with nothing to trace it to: no query, model run, step or card behind it (PRD ASK-3)."""
+    """Data shown with nothing to trace it to: no query, model run or step behind it (PRD ASK-3)."""
     shows_data = any(b["type"] in ("number", "table", "chart") for b in message.get("blocks") or [])
-    return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step", "card") for s in message.get("sources") or [])
+    return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step") for s in message.get("sources") or [])
 
 
 def ask(client, ds_id: str, text: str, tries: int = 6) -> dict:
     """One question through `POST /chat`. The eval asks faster than a person types, so a `429` (ten
     model requests a minute per user, TRD §15) waits its `Retry-After` and asks again."""
     for _ in range(tries):
-        with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "dashboard"}}) as r:
+        with client.stream("POST", f"{API}/datasets/{ds_id}/chat", json={"text": text, "context": {"tab": "csv"}}) as r:
             if r.status_code == 429:
                 time.sleep(float(r.headers.get("retry-after") or 6))
                 continue

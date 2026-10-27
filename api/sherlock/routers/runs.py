@@ -8,19 +8,19 @@ from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
 
 from sherlock.db.connection import get_db
 from sherlock.db.users import User
-from sherlock.errors import ApiError, not_found
+from sherlock.errors import ApiError
 from sherlock.identity import current_user
 from sherlock.jobs.runner import cancel_job
 from sherlock.ml import registry
 from sherlock.ml import runner as ml
 from sherlock.ownership import Owned, check_dataset, owned, owned_dataset
-from sherlock.widgets import service as ws
+from sherlock.query import context as qx
 
 router = APIRouter(tags=["ml"])
 
 
-def _env(request: Request, db: sqlite3.Connection) -> ws.Env:
-    return ws.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
+def _env(request: Request, db: sqlite3.Connection) -> qx.Env:
+    return qx.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
 
 
 def _run(owned_run: Owned, user: User, db: sqlite3.Connection) -> tuple[sqlite3.Row, sqlite3.Row]:
@@ -48,7 +48,7 @@ def recipes(
         raise ApiError(422, "invalid", "scope: not valid JSON") from None
     parsed = ml.parse_request({"scope": raw})
     where = ml.rows_sql(env, dataset, parsed["scope"], version)
-    with ws.connection(env, dataset, version) as conn:
+    with qx.connection(env, dataset, version) as conn:
         rows = conn.execute(f"SELECT count(*) FROM t WHERE {where}").fetchone()[0]  # noqa: S608
     return registry.manifests(card, rows)
 
@@ -61,20 +61,11 @@ def create_run(
     user: User = Depends(current_user),
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
-    """Start a run, or return the cached one (`status: done` at once). With `widget_id` the widget
-    becomes the analysis (its chart is kept for Undo / "Plain chart")."""
+    """Start a run, or return the cached one (`status: done` at once). An outdated run is run again
+    by asking for the same request on the current version."""
     req = ml.parse_request(body)
     env = _env(request, db)
-    if req["widget_id"]:
-        row = ws.get_row(db, req["widget_id"])
-        if row["dataset_id"] != dataset["id"] or row["deleted_at"]:
-            raise not_found("Widget not found")
-        p = ml.prepare(env, dataset, req)
-        view = json.loads(row["spec_json"])["view"]["type"] if json.loads(row["spec_json"])["op"]["type"] == "ml" else "importance"
-        new = ws.update(env, dataset, row, ml.ml_spec(p, view), None)
-        run = ml.get_run(db, new["run_id"])
-    else:
-        run = ml.launch(env, dataset, ml.prepare(env, dataset, req), "user")
+    run = ml.launch(env, dataset, ml.prepare(env, dataset, req), "user")
     request.app.state.jobs.wake()
     return ml.to_run(db, run, full=True)
 
@@ -147,18 +138,3 @@ def run_wrong_rows(request: Request, owned_run: Owned = Depends(owned("run")), u
     tab with `?rows=<selection_id>`."""
     dataset, run = _run(owned_run, user, db)
     return ml.wrong_rows(db, request.app.state.settings, dataset, run)
-
-
-@router.post("/widgets/{wid}/rerun")
-def rerun_widget(request: Request, owned_widget: Owned = Depends(owned("widget")), user: User = Depends(current_user),
-                 db: sqlite3.Connection = Depends(get_db)) -> dict:
-    """Re-run an analysis widget on the current version (its "Outdated" footer, App Flow §9 step 6)."""
-    dataset = check_dataset(db, user.id, owned_widget.dataset_id)
-    row = ws.get_row(db, owned_widget.id)
-    if row["deleted_at"] or json.loads(row["spec_json"])["op"]["type"] != "ml":
-        raise ApiError(422, "invalid", "Only an analysis widget can be re-run.")
-    env = _env(request, db)
-    run = ml.rerun_widget(env, dataset, row)
-    ws._emit(env, dataset, ws.get_row(db, row["id"]))
-    request.app.state.jobs.wake()
-    return ml.to_run(db, run, full=True)

@@ -1,12 +1,11 @@
 // TanStack Query hooks over the API, and the user-level event stream that keeps the library live.
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
-import { canvasKey, ownEtags } from "./canvas";
 import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  Card, CleaningReport, CleanPlan, DataCard, Dataset, Detector, RuleIn, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
-  Me, Message, PlanOp, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
+  CleaningReport, CleanPlan, DataCard, Dataset, Detector, RuleIn, DatasetStatusEvent, Job, JobProgressEvent,
+  Me, Message, PlanOp, Settings, Step,
 } from "./types";
 
 export const keys = {
@@ -18,11 +17,6 @@ export const keys = {
   jobs: (id: string) => ["jobs", id] as const,
   steps: (id: string) => ["steps", id] as const,
   report: (id: string, jobId?: string) => ["report", id, jobId ?? "latest"] as const,
-  widgets: (id: string) => ["widgets", id] as const,
-  // A widget's data and "How do you know?" carry its updated_at: a new spec is a new key, so it redraws.
-  widgetData: (wid: string, filter: string, version: number, updatedAt: string) =>
-    ["widget-data", wid, filter, version, updatedAt] as const,
-  explain: (wid: string, filter: string, updatedAt: string) => ["explain", wid, filter, updatedAt] as const,
   allJobs: ["jobs", "all"] as const,
   chat: (id: string) => ["chat", id] as const,
   plan: (pid: string) => ["clean-plan", pid] as const,
@@ -258,7 +252,7 @@ export function useCreatePlan(datasetId: string) {
   });
 }
 
-/** Put a plan the server answered with on screen: the CSV tab's right panel shows a dataset's draft. */
+/** Put a plan the server answered with on screen: the right panel shows a ready dataset's draft. */
 export function showPlan(qc: QueryClient, datasetId: string, plan: CleanPlan) {
   qc.setQueryData(keys.plan(plan.id), plan);
   setDatasetPlan(qc, datasetId, plan.id);
@@ -316,11 +310,12 @@ export function useDiscardPlan(datasetId: string) {
   });
 }
 
+/** Clean it myself (App Flow §4): the dataset is ready at once, as it is. */
 export function useUseAsIs(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => request<Job>("POST", `/api/v1/datasets/${datasetId}/use-as-is`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.dataset(datasetId) }),
+    mutationFn: () => request<Dataset>("POST", `/api/v1/datasets/${datasetId}/use-as-is`),
+    onSuccess: (ds) => patchDatasetCaches(qc, ds),
   });
 }
 
@@ -344,17 +339,14 @@ export function applyStatus(qc: QueryClient, e: DatasetStatusEvent) {
   qc.setQueryData<Dataset>(keys.dataset(e.dataset_id), (d) => (d ? patch(d) : d));
   qc.invalidateQueries({ queryKey: ["datacard", e.dataset_id] });
   qc.invalidateQueries({ queryKey: keys.jobs(e.dataset_id) });
-  // Becoming ready means the builder has just made the widgets.
-  qc.invalidateQueries({ queryKey: ["widgets", e.dataset_id] });
-  // A status change also ends a clean or a build: its steps, its report and the cards it wrote.
+  // A status change also ends a clean: its steps and its report.
   qc.invalidateQueries({ queryKey: keys.steps(e.dataset_id) });
   qc.invalidateQueries({ queryKey: ["report", e.dataset_id] });
-  qc.invalidateQueries({ queryKey: ["cards", e.dataset_id] });
   // A status change can mean a new dataset row count (after typing or cleaning).
   qc.invalidateQueries({ queryKey: keys.datasets });
 }
 
-// --- datasets: rename, delete, restore, last tab (TRD §4.2) ---------------------------------
+// --- datasets: rename, delete, restore (TRD §4.2) -------------------------------------------
 
 function patchDatasetCaches(qc: QueryClient, ds: Dataset) {
   qc.setQueryData<Dataset[]>(keys.datasets, (list) => list?.map((d) => (d.id === ds.id ? ds : d)));
@@ -367,10 +359,6 @@ export function useRenameDataset() {
     mutationFn: ({ id, name }: { id: string; name: string }) => request<Dataset>("PATCH", `/api/v1/datasets/${id}`, { name }),
     onSuccess: (ds) => patchDatasetCaches(qc, ds),
   });
-}
-
-export function rememberTab(id: string, tab: Tab) {
-  return request<Dataset>("PATCH", `/api/v1/datasets/${id}`, { last_tab: tab }).catch(() => undefined);
 }
 
 export function useDeleteDataset() {
@@ -410,101 +398,14 @@ export function useRetryJob() {
   });
 }
 
-// --- widgets (TRD §4.5) -----------------------------------------------------------------------
-
-export const filterParam = (f: FilterClause | null) => (f ? JSON.stringify({ and: [f] }) : "");
-
-export function useWidgets(datasetId: string) {
-  return useQuery({
-    queryKey: keys.widgets(datasetId),
-    enabled: !!datasetId, // the stories panel has no dataset off a dataset route
-    queryFn: () => request<{ widgets: Widget[]; layout: Layout }>("GET", `/api/v1/datasets/${datasetId}/widgets`),
-  });
-}
-
-export function useWidgetData(widget: Widget, filter: string, version: number, enabled = true) {
-  return useQuery({
-    queryKey: keys.widgetData(widget.id, filter, version, widget.updated_at),
-    enabled,
-    queryFn: () =>
-      request<WidgetData>("GET", `/api/v1/widgets/${widget.id}/data${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
-    placeholderData: (prev) => prev, // keep the old chart while a filter re-queries ("updating")
-    retry: false,
-  });
-}
-
-export function useExplain(widget: Widget | null, filter: string) {
-  return useQuery({
-    queryKey: keys.explain(widget?.id ?? "", filter, widget?.updated_at ?? ""),
-    enabled: !!widget,
-    queryFn: () =>
-      request<Explain>("GET", `/api/v1/widgets/${widget!.id}/explain${filter ? `?filters=${encodeURIComponent(filter)}` : ""}`),
-  });
-}
-
-/** After `widget.updated`: the widget list is read again, and so are this widget's data and explain
- * queries that are already on its new `updated_at`. Older keys aren't re-read; the list's new
- * `updated_at` replaces them (TRD §5.1 "In the web app"). */
-export function invalidateWidget(qc: QueryClient, datasetId: string, widget: { id: string; updated_at?: string }) {
-  qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
-  for (const prefix of ["widget-data", "explain"]) {
-    qc.invalidateQueries({
-      queryKey: [prefix, widget.id],
-      predicate: (q) => widget.updated_at === undefined || q.queryKey[q.queryKey.length - 1] === widget.updated_at,
-    });
-  }
-}
-
-export function useWidgetActions(datasetId: string) {
-  const qc = useQueryClient();
-  const refresh = () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
-  return {
-    create: useMutation({
-      mutationFn: (body: (WidgetSpec & { title?: string }) | { prompt: string }) =>
-        request<{ widget: Widget; warning?: string }>("POST", `/api/v1/datasets/${datasetId}/widgets`, body),
-      onSuccess: refresh,
-    }),
-    patch: useMutation({
-      mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => request<Widget>("PATCH", `/api/v1/widgets/${id}`, body),
-      onSuccess: refresh,
-    }),
-    remove: useMutation({
-      mutationFn: (id: string) => request<void>("DELETE", `/api/v1/widgets/${id}`),
-      onSuccess: refresh,
-    }),
-    restore: useMutation({
-      mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/restore`),
-      onSuccess: refresh,
-    }),
-    duplicate: useMutation({
-      mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/duplicate`),
-      onSuccess: refresh,
-    }),
-    undo: useMutation({
-      mutationFn: (id: string) => request<Widget>("POST", `/api/v1/widgets/${id}/undo`),
-      onSuccess: (widget) => invalidateWidget(qc, datasetId, widget),
-    }),
-    saveLayout: useMutation({
-      mutationFn: (layout: Layout) => request<Layout>("PUT", `/api/v1/datasets/${datasetId}/layout`, layout),
-      onSuccess: (layout) =>
-        qc.setQueryData<{ widgets: Widget[]; layout: Layout }>(keys.widgets(datasetId), (d) => (d ? { ...d, layout } : d)),
-    }),
-  };
-}
-
 /** The dataset stream (GET /datasets/{id}/events), one per open dataset: new versions refresh the
- * dataset, its steps, rows and data card; widget and layout changes refresh the dashboard; the
- * cascade (TRD §7.6) drives the "Updating n widgets" line and its summary toast. */
-export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "started" | "done"; data: Record<string, unknown> }) => void) {
+ * dataset, its steps, rows, data card and analyses (a new version can outdate a run, PRD ML-9). */
+export function useDatasetEvents(datasetId: string) {
   const qc = useQueryClient();
-  // A reopened stream may have missed any event (TRD §5.2): every query on screen is read again, the
-  // dataset's, its widgets' data, its cards and the canvas included.
+  // A reopened stream may have missed any event (TRD §5.2): every query on screen is read again.
   const onReopen = () => qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "me" });
   useEventStream(`/api/v1/datasets/${datasetId}/events`, {
-    "widget.updated": (data) => invalidateWidget(qc, datasetId, data as Widget),
-    "layout.updated": () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
     "version.created": () => {
-      qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
       qc.invalidateQueries({ queryKey: keys.datasets, exact: true }); // the library row's "v3"
       qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
@@ -512,8 +413,10 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
       // An open cleaning plan was made on the version before: read again, it's merged onto this one.
       qc.invalidateQueries({ queryKey: ["clean-plan"] });
+      // The new version may have outdated a finished run: its model card reads it again.
+      qc.invalidateQueries({ queryKey: ["run"] });
+      qc.invalidateQueries({ queryKey: ["model-card"] });
     },
-    "card.updated": () => qc.invalidateQueries({ queryKey: ["cards", datasetId] }),
     // A message was answered in another tab (or this one): the thread is read again.
     "chat.updated": () => qc.invalidateQueries({ queryKey: keys.chat(datasetId) }),
     // A cleaning plan was made, changed (in another tab, or by chat), started or discarded.
@@ -521,11 +424,7 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
       qc.invalidateQueries({ queryKey: keys.plan(String((data as { plan_id?: string }).plan_id)) });
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
     },
-    // The canvas changed in another tab or by the AI; this tab's own saves come back with known etags.
-    "canvas.updated": (data) => {
-      if (!ownEtags.has(String((data as { etag?: string }).etag))) qc.invalidateQueries({ queryKey: canvasKey(datasetId) });
-    },
-    // A run's status (TRD §5): its widget re-reads the run; ML progress refreshes the running ones.
+    // A run's status (TRD §5): its model card re-reads the run; ML progress refreshes the running ones.
     "run.updated": (data) => {
       const run = data as { id: string };
       qc.invalidateQueries({ queryKey: ["run", run.id] });
@@ -533,12 +432,6 @@ export function useDatasetEvents(datasetId: string, onCascade: (e: { type: "star
     },
     "job.progress": (data) => {
       if ((data as { kind?: string }).kind === "ml_run") qc.invalidateQueries({ queryKey: ["run"] });
-    },
-    "cascade.started": (data) => onCascade({ type: "started", data: data as Record<string, unknown> }),
-    "cascade.done": (data) => {
-      onCascade({ type: "done", data: data as Record<string, unknown> });
-      qc.invalidateQueries({ queryKey: keys.widgets(datasetId) });
-      qc.invalidateQueries({ queryKey: ["widget-data"] });
     },
   }, undefined, onReopen);
 }
@@ -592,28 +485,6 @@ export async function sendChat(datasetId: string, body: Record<string, unknown>,
       if (data) onEvent({ type, data: JSON.parse(data) });
     }
   }
-}
-
-export function usePin(datasetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ messageId, blockIndex }: { messageId: string; blockIndex: number }) =>
-      request<Widget>("POST", `/api/v1/messages/${messageId}/pin`, { target: "dashboard", block_index: blockIndex }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.widgets(datasetId) }),
-  });
-}
-
-/** Add to Flow (TRD §4.9): an answer's text becomes an `answer` card placed on the canvas. */
-export function useAddToFlow(datasetId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ messageId, blockIndex }: { messageId: string; blockIndex: number }) =>
-      request<Card>("POST", `/api/v1/messages/${messageId}/pin`, { target: "flow", block_index: blockIndex }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["cards", datasetId] });
-      qc.invalidateQueries({ queryKey: canvasKey(datasetId) });
-    },
-  });
 }
 
 /** The user-level stream (GET /events): dataset.status and job.progress for the whole library. */

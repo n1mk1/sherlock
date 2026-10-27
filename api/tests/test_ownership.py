@@ -19,10 +19,9 @@ def seed_dataset(user_id: str, dataset_id: str, deleted: bool = False) -> None:
         (dataset_id, user_id, now, now, now if deleted else None),
     )
     conn.execute(
-        "INSERT INTO widgets (id, dataset_id, title, spec_json, spec_hash, status, version_built, "
-        "created_by, order_no, created_at, updated_at) "
-        "VALUES (?, ?, 't', '{}', 'h', 'ready', 1, 'user', 1, ?, ?)",
-        (f"wdg_{dataset_id}", dataset_id, now, now),
+        "INSERT INTO runs (id, dataset_id, version, recipe, method, scope_json, params_json, cache_key, status, "
+        "created_by, created_at) VALUES (?, ?, 1, 'driver_analysis', 'auto', '{}', '{}', 'k', 'done', 'user', ?)",
+        (f"run_{dataset_id}", dataset_id, now),
     )
     conn.execute(
         "INSERT INTO jobs (id, dataset_id, user_id, kind, status, created_at) "
@@ -40,8 +39,8 @@ def owned_app(app):
     def dataset_probe(row: sqlite3.Row = Depends(owned_dataset)):
         return {"id": row["id"]}
 
-    @router.get("/widgets/{wid}/probe")
-    def widget_probe(o: Owned = Depends(owned("widget"))):
+    @router.get("/runs/{rid}/probe")
+    def run_probe(o: Owned = Depends(owned("run"))):
         return {"id": o.id, "dataset_id": o.dataset_id}
 
     @router.get("/jobs/{jid}/probe")
@@ -59,14 +58,14 @@ def test_owner_sees_their_objects_and_others_get_404(owned_app):
         seed_dataset(alice_id, "ds_alice")
 
         assert alice.get("/api/v1/datasets/ds_alice/probe").json() == {"id": "ds_alice"}
-        assert alice.get("/api/v1/widgets/wdg_ds_alice/probe").json() == {
-            "id": "wdg_ds_alice", "dataset_id": "ds_alice",
+        assert alice.get("/api/v1/runs/run_ds_alice/probe").json() == {
+            "id": "run_ds_alice", "dataset_id": "ds_alice",
         }
         assert alice.get("/api/v1/jobs/job_ds_alice/probe").status_code == 200
 
         for path in (
             "/api/v1/datasets/ds_alice/probe",
-            "/api/v1/widgets/wdg_ds_alice/probe",
+            "/api/v1/runs/run_ds_alice/probe",
             "/api/v1/jobs/job_ds_alice/probe",
             "/api/v1/datasets/ds_missing/probe",
         ):
@@ -80,8 +79,12 @@ def test_deleted_dataset_hides_its_children(owned_app):
         alice_id = alice.get("/api/v1/me").json()["user_id"]
         seed_dataset(alice_id, "ds_gone", deleted=True)
         assert alice.get("/api/v1/datasets/ds_gone/probe").status_code == 404
-        assert alice.get("/api/v1/widgets/wdg_ds_gone/probe").status_code == 404
+        assert alice.get("/api/v1/runs/run_ds_gone/probe").status_code == 404
         assert alice.get("/api/v1/jobs/job_ds_gone/probe").status_code == 404
+
+
+def test_the_removed_surfaces_have_no_bare_id_kind():
+    assert not {"widget", "card", "fact_sheet"} & set(BARE_ID_KINDS)
 
 
 def test_every_bare_id_kind_maps_to_a_real_table():

@@ -1,17 +1,14 @@
-// The Bklit adapter (UI/UX brief §4.4): a widget's view and result → a Bklit chart, a KPI tile or a
-// table. Series use --chart-1; the builder's "point" gets --chart-accent; while a global filter is
-// active on this chart, the clicked element keeps the accent and the others fade. Clicking a bar or a
-// slice reports its category (click-to-filter, PRD DASH-5).
-import { useRef, useState } from "react";
-import type { WidgetData, WidgetSpec } from "@/api/types";
+// The Bklit adapter (UI/UX brief §4.4): a chat chart block's view and result (TRD §6.3 ChartSpec) → a
+// Bklit chart, a KPI tile or a table. Series use --chart-1; the result's highlighted point gets
+// --chart-accent.
+import { useState } from "react";
+import type { ChartData, ChartSpec } from "@/api/types";
 import { formatCell, isPctColumn } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import { AreaChart, Area } from "./area-chart";
 import { Bar } from "./bar";
 import { BarChart } from "./bar-chart";
 import { BarXAxis } from "./bar-x-axis";
 import { BoxPlot, Heatmap, Histogram, Scatter } from "./custom";
-import { useChartHover } from "./chart-context";
 import { Grid } from "./grid";
 import { LineChart, Line } from "./line-chart";
 import { PieChart } from "./pie-chart";
@@ -23,21 +20,15 @@ import { ResultTable } from "./ResultTable";
 export { ResultTable };
 
 export interface ChartProps {
-  spec: WidgetSpec;
-  data: WidgetData;
-  /** Draw as a table whatever the view (the widget menu's "Show as table"). */
-  asTable?: boolean;
-  /** The active global filter's value when it is on this chart's category column. */
-  selected?: string | null;
-  /** Called with the clicked category; undefined when the chart can't filter. */
-  onSelect?: (value: unknown) => void;
+  spec: ChartSpec;
+  data: ChartData;
   compact?: boolean;
 }
 
 const ACCENT = "var(--chart-accent)";
 const SERIES = "var(--chart-1)";
 
-function axes(spec: WidgetSpec, data: WidgetData) {
+function axes(spec: ChartSpec, data: ChartData) {
   const names = data.columns.map((c) => c.name);
   const opt = spec.view.options as { x?: string; y?: string; value?: string };
   const x = opt.x && names.includes(opt.x) ? opt.x : names[0];
@@ -46,16 +37,16 @@ function axes(spec: WidgetSpec, data: WidgetData) {
   return { x, y, xi: names.indexOf(x), yi: names.indexOf(y) };
 }
 
-export function WidgetChart({ spec, data, asTable, selected, onSelect, compact }: ChartProps) {
-  const view = asTable ? "table" : spec.view.type;
+export function ChartView({ spec, data, compact }: ChartProps) {
+  const view = spec.view.type;
   if (data.rows.length === 0) {
-    return <p className="flex h-full items-center justify-center text-[13px] text-muted-foreground">No rows match the current filter</p>;
+    return <p className="flex h-full items-center justify-center text-[13px] text-muted-foreground">No rows match</p>;
   }
   if (view === "kpi") return <Kpi spec={spec} data={data} />;
   if (view === "table" || data.columns.length < 2) return <ResultTable data={data} highlight={data.highlight} compact={compact} />;
   const { x, y, xi, yi } = axes(spec, data);
   const pct = isPctColumn(y, data.rows.map((r) => r[yi]));
-  const rows = data.rows.map((r) => ({ [x]: r[xi] == null ? "(empty)" : String(r[xi]), [y]: r[yi] as number, raw: r[xi] }));
+  const rows = data.rows.map((r) => ({ [x]: r[xi] == null ? "(empty)" : String(r[xi]), [y]: r[yi] as number }));
   const point = data.highlight?.key ?? null;
   const fmt = (v: unknown) => formatCell(v, pct);
 
@@ -90,73 +81,48 @@ export function WidgetChart({ spec, data, asTable, selected, onSelect, compact }
   if (view === "gauge") return <Kpi spec={spec} data={data} />; // gauges render as a KPI tile in P0 (D6.5)
 
   if (view === "pie" || view === "ring") {
-    return <Pie rows={rows} x={x} y={y} donut={view === "ring"} point={point} selected={selected} onSelect={onSelect} fmt={fmt} />;
+    return <Pie rows={rows} x={x} y={y} donut={view === "ring"} point={point} fmt={fmt} />;
   }
 
-  return <Bars rows={rows} x={x} y={y} point={point} selected={selected} onSelect={onSelect} fmt={fmt} />;
+  return <Bars rows={rows} x={x} y={y} point={point} fmt={fmt} />;
 }
 
 type Row = Record<string, unknown>;
 
-/** Reads the hovered bar from inside the chart, so a click on the wrapper knows which bar it was. */
-function HoverProbe({ into }: { into: React.MutableRefObject<number | null> }) {
-  const { tooltipData } = useChartHover();
-  into.current = tooltipData?.index ?? null;
-  return null;
-}
-HoverProbe.displayName = "HoverProbe";
-
-function Bars({ rows, x, y, point, selected, onSelect, fmt }: {
-  rows: Row[]; x: string; y: string; point: string | null; selected?: string | null; onSelect?: (v: unknown) => void;
-  fmt: (v: unknown) => string;
+function Bars({ rows, x, y, point, fmt }: {
+  rows: Row[]; x: string; y: string; point: string | null; fmt: (v: unknown) => string;
 }) {
-  const hovered = useRef<number | null>(null);
-  const accentKey = selected ?? point;
   return (
-    <div
-      className={cn("h-full w-full", onSelect && "cursor-pointer")}
-      onClick={() => {
-        const i = hovered.current;
-        if (onSelect && i !== null && rows[i]) onSelect(rows[i].raw);
-      }}
-    >
+    <div className="h-full w-full">
       <BarChart data={rows} xDataKey={x} aspectRatio="auto" className="h-full" margin={{ top: 12, right: 12, bottom: 28, left: 12 }}>
         <Grid horizontal />
         <Bar
           dataKey={y}
           fill={SERIES}
           lineCap={4}
-          getFill={(d) => (accentKey !== null && String(d[x]) === accentKey ? ACCENT : undefined)}
-          isDimmed={(d) => selected != null && String(d[x]) !== selected}
-          fadedOpacity={0.4}
+          getFill={(d) => (point !== null && String(d[x]) === point ? ACCENT : undefined)}
         />
         <BarXAxis />
         <ChartTooltip rows={(p) => [{ color: SERIES, label: y, value: fmt(p[y]) }]} />
-        <HoverProbe into={hovered} />
       </BarChart>
     </div>
   );
 }
 
-function Pie({ rows, x, y, donut, point, selected, onSelect, fmt }: {
-  rows: Row[]; x: string; y: string; donut: boolean; point: string | null; selected?: string | null;
-  onSelect?: (v: unknown) => void; fmt: (v: unknown) => string;
+function Pie({ rows, x, y, donut, point, fmt }: {
+  rows: Row[]; x: string; y: string; donut: boolean; point: string | null; fmt: (v: unknown) => string;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
-  const accentKey = selected ?? point;
   const shades = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
   const slices = rows.map((r, i) => ({
     label: String(r[x]),
     value: Math.max(0, Number(r[y]) || 0),
-    color: accentKey !== null && String(r[x]) === accentKey ? ACCENT : shades[i % shades.length],
+    color: point !== null && String(r[x]) === point ? ACCENT : shades[i % shades.length],
   }));
   const shown = hovered !== null ? rows[hovered] : null;
   return (
     <div className="flex h-full w-full items-center gap-4">
-      <div
-        className={cn("relative h-full min-h-0 flex-1", onSelect && "cursor-pointer")}
-        onClick={() => onSelect && hovered !== null && onSelect(rows[hovered].raw)}
-      >
+      <div className="relative h-full min-h-0 flex-1">
         {/* Square on the box's height: the chart's own `w-full` square overflowed a wide, short box (a chat
             answer's pie spilled over the buttons under it). */}
         <PieChart className="mx-auto h-full w-auto max-w-full" data={slices} innerRadius={donut ? 48 : 0} padAngle={0.01}
@@ -166,7 +132,7 @@ function Pie({ rows, x, y, donut, point, selected, onSelect, fmt }: {
       </div>
       <ul className="flex max-w-[45%] flex-col gap-1 text-[12px]">
         {rows.map((r, i) => (
-          <li key={i} className={cn("flex items-center gap-2", selected != null && String(r[x]) !== selected && "opacity-40")}>
+          <li key={i} className="flex items-center gap-2">
             <span className="size-2 shrink-0 rounded-full" style={{ background: slices[i].color }} aria-hidden />
             <span className="truncate text-muted-foreground">{String(r[x])}</span>
             <span className="ml-auto font-mono">{fmt(r[y])}</span>
@@ -178,7 +144,7 @@ function Pie({ rows, x, y, donut, point, selected, onSelect, fmt }: {
   );
 }
 
-function Kpi({ spec, data }: { spec: WidgetSpec; data: WidgetData }) {
+function Kpi({ spec, data }: { spec: ChartSpec; data: ChartData }) {
   const opt = spec.view.options as { value?: string; sub?: string; format?: string };
   const names = data.columns.map((c) => c.name);
   const vi = opt.value && names.includes(opt.value) ? names.indexOf(opt.value) : 0;

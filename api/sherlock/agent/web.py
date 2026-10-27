@@ -158,8 +158,8 @@ def results_text(found: list[dict]) -> str:
 
 
 def _check_prose(answer: WebAnswer, n: int) -> None:
-    """The chat wording check on web prose (TRD §7.4): text runs already have no digits (`TextRun`)."""
-    from sherlock.stories.wording import wording_problem
+    """The chat wording check on web prose (TRD §8.1): text runs already have no digits (`TextRun`)."""
+    from sherlock.llm.wording import wording_problem
 
     cites = [r.cite for r in answer.prose if isinstance(r, CiteRun)]
     for c in cites:
@@ -196,8 +196,8 @@ def to_runs(answer: WebAnswer, found: list[dict]) -> list[dict]:
 
 
 def web_block(lead: str, runs: list[dict], kind: str = "context") -> dict:
-    """A text block from the web. `web` says which answerer wrote it: `context` (an outside-world answer, which
-    can go on the canvas) or `meaning`."""
+    """A text block from the web. `web` says which answerer wrote it: `context` (an outside-world answer)
+    or `meaning`."""
     block = text_block([{"type": "text", "text": lead}, *runs])
     block["labeled"] = "web"
     block["web"] = kind
@@ -384,7 +384,7 @@ def excerpts(resp: WebResponse) -> list[dict]:
 
 
 def _check_notes(notes, columns: list[str], n: int) -> None:
-    from sherlock.stories.wording import wording_problem
+    from sherlock.llm.wording import wording_problem
 
     seen = set()
     for note in notes.notes:

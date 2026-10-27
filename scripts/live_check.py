@@ -3,10 +3,10 @@ fresh browser: its own cookie, so its own anonymous user.
 
     uv run --project api python scripts/live_check.py [--url https://sherlock-anw3.onrender.com] [--files all|none]
 
-It checks: /healthz; "Try with sample" is ready at once with its dashboard, stories, analysis and canvas;
-a second user can't see the first's data; the per-user rate limits answer 429; a chat answer is sourced;
-a cell edit re-tells only the stories that read it. With `--files all` it also uploads the five-file
-end-to-end set (Implementation Plan §6), builds each, exports each notebook and runs it here top to
+It checks: /healthz; "Try with sample" is ready at once, already cleaned; a second user can't see the
+first's data; the per-user rate limits answer 429; a chat answer is sourced; a cell edit saves as a new
+version. With `--files all` it also uploads the five-file end-to-end set (Implementation Plan §6),
+cleans or takes each as it is, exports each notebook and runs it here top to
 bottom (the `%pip` cell skipped: this venv has the pins), checking it rebuilds the version.
 """
 
@@ -50,7 +50,7 @@ def wait(fn, timeout: float, every: float = 2):
 
 
 def chat(c: httpx.Client, ds: str, text: str, **context) -> dict:
-    with c.stream("POST", f"{API}/datasets/{ds}/chat", json={"text": text, "context": {"tab": "dashboard", **context}}) as r:
+    with c.stream("POST", f"{API}/datasets/{ds}/chat", json={"text": text, "context": {"tab": "csv", **context}}) as r:
         event = None
         for line in r.iter_lines():
             if line.startswith("event: "):
@@ -69,16 +69,11 @@ def sample_checks(url: str) -> None:
     ds = r.json()
     check("Try with sample is ready at once", r.status_code == 201 and ds["status"] == "ready",
           f"{time.monotonic() - t0:.1f} s, v{ds.get('current_version')}")
-    widgets = a.get(f"{API}/datasets/{ds['id']}/widgets").json()["widgets"]
-    cards = a.get(f"{API}/datasets/{ds['id']}/cards").json()
-    canvas = a.get(f"{API}/datasets/{ds['id']}/canvas").json()["canvas"]
-    check("the sample's dashboard, stories, analysis and canvas", len(widgets) >= 6 and len(cards) >= len(widgets)
-          and any(w["spec"]["op"]["type"] == "ml" for w in widgets) and len(canvas["nodes"]) >= 3,
-          f"{len(widgets)} widgets, {len(cards)} cards, {len(canvas['nodes'])} canvas nodes")
+    check("the sample arrives cleaned", ds.get("step_count", 0) >= 2, f"{ds.get('step_count')} steps")
     check("a second browser can't see the first's dataset", b.get(f"{API}/datasets/{ds['id']}").status_code == 404
           and b.get(f"{API}/datasets").json() == [])
-    check("nor its widgets, cards or canvas", all(b.get(p).status_code == 404 for p in (
-        f"{API}/datasets/{ds['id']}/widgets", f"{API}/datasets/{ds['id']}/canvas", f"{API}/cards/{cards[0]['id']}")))
+    check("nor its rows or report", all(b.get(p).status_code == 404 for p in (
+        f"{API}/datasets/{ds['id']}/rows", f"{API}/datasets/{ds['id']}/report")))
     b2 = b.post(f"{API}/datasets/sample").json()
     check("the second browser gets its own copy", b2["id"] != ds["id"])
 
@@ -95,16 +90,10 @@ def sample_checks(url: str) -> None:
     check("a chat answer is sourced", bool(msg.get("blocks")) and bool(sql), f"{time.monotonic() - t0:.1f} s: {msg.get('text', '')[:80]}")
 
     rows = a.get(f"{API}/datasets/{ds['id']}/rows?limit=1").json()
-    before = {c["id"]: c["updated_at"] for c in a.get(f"{API}/datasets/{ds['id']}/cards").json()}
     saved = a.post(f"{API}/datasets/{ds['id']}/edits", json={"base_version": rows["version"], "edits": [
         {"row_id": rows["rows"][0]["_row_id"], "column": "fare", "value": "500"}]})
-    check("a cell edit saves as a new version", saved.status_code == 201)
-    done = wait(lambda: next((j for j in a.get(f"{API}/jobs?dataset_id={ds['id']}").json()
-                              if j["kind"] == "cascade" and j["status"] in ("done", "failed")), None), 300)
-    after = {c["id"]: c["updated_at"] for c in a.get(f"{API}/datasets/{ds['id']}/cards").json()}
-    changed = [cid for cid in after if before.get(cid) != after[cid]]
-    check("only the stories that read fare were rewritten", bool(done) and done["status"] == "done" and 0 < len(changed) < len(after),
-          f"cascade {done and done['status']}, {len(changed)} of {len(after)} cards changed, result {done and done['result']}")
+    check("a cell edit saves as a new version", saved.status_code == 201
+          and a.get(f"{API}/datasets/{ds['id']}").json()["current_version"] == rows["version"] + 1)
 
 
 def file_checks(url: str) -> None:
@@ -127,10 +116,8 @@ def file_checks(url: str) -> None:
         st = wait(lambda: (s := c.get(f"{API}/datasets/{ds}").json()["status"]) in ("ready", "failed") and s, 1200)
         wait(lambda: all(j["status"] in ("done", "failed", "cancelled") for j in c.get(f"{API}/jobs?dataset_id={ds}").json()), 900)
         d = c.get(f"{API}/datasets/{ds}").json()
-        widgets = c.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-        cards = c.get(f"{API}/datasets/{ds}/cards").json()
-        check(f"{name}: {'cleaned and ' if how.get('clean') else ''}built", st == "ready" and len(widgets) >= 3 and len(cards) > 1,
-              f"{time.monotonic() - t0:.0f} s, v{d['current_version']}, {d['step_count']} steps, {len(widgets)} widgets, {len(cards)} cards")
+        check(f"{name}: {'cleaned and ' if how.get('clean') else ''}ready", st == "ready",
+              f"{time.monotonic() - t0:.0f} s, v{d['current_version']}, {d['step_count']} steps")
         out = c.post(f"{API}/datasets/{ds}/exports/notebook", json={"include_data": False}).json()
         out = wait(lambda: (e := c.get(f"{API}/exports/{out['export_id']}").json())["status"] in ("done", "failed") and e, 300, 1)
         if not check(f"{name}: notebook exports", bool(out) and out["status"] == "done", str(out and out.get("error"))):

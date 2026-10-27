@@ -2,7 +2,7 @@
 
 ## Why
 
-Sherlock is an AI data analyst for people who own a messy CSV and need answers they can defend. It cleans the data, builds a dashboard, runs honest models and writes story cards. Every number comes from executed code and can be traced to its source, and the whole analysis exports as a runnable Jupyter notebook. It is our entry for the Nebius x NVIDIA Global AI Hackathon (Best Apps and Agents track), so the hackathon rules are hard constraints.
+Sherlock is an AI cleaning and query agent for people who own a messy CSV and need answers they can defend. It profiles and cleans the data (a plan, a live log, a report, quarantined rows, undoable steps), shows it in a CSV grid, and answers questions in chat with sourced numbers, tables, charts, cell-edit proposals and honest models. Every number comes from executed code and can be traced to its source, and the whole analysis exports as a runnable Jupyter notebook. It is our entry for the Nebius x NVIDIA Global AI Hackathon (Best Apps and Agents track), so the hackathon rules are hard constraints.
 
 ## What
 
@@ -16,7 +16,7 @@ The tech stack is planned in `docs/04-TRD.md` §2. Pinned versions are in TRD §
   - ML: scikit-learn (permutation importance and partial dependence; no SHAP, TRD §7.5).
   - Notebooks: nbformat and matplotlib.
 - **`web/`:** Vite, React 18, TypeScript and pnpm.
-  - UI: Tailwind and shadcn/ui, Bklit charts (visx, plus custom visx charts), react-grid-layout, Glide Data Grid, React Flow, TipTap, Motion, sonner, lucide-react.
+  - UI: Tailwind and shadcn/ui, Bklit charts (visx, plus custom visx charts) for chat chart answers, Glide Data Grid, Motion, sonner, lucide-react.
   - Data and state: TanStack Query, Zustand, Papa Parse, and an API client generated from OpenAPI.
 - **Deploy:** one Docker image serves the API and the built web app from one origin. It runs on Render as a web service with a persistent disk at `/data` (`render.yaml`). A Nebius Serverless Endpoint or AI Cloud VM is the documented alternative (`scripts/deploy.sh`).
 - **CI:** GitHub Actions.
@@ -43,7 +43,7 @@ Verify your work (plan §4):
 uv run pytest            # in api/
 pnpm test                # in web/
 pnpm e2e                 # in web/: builds the app, then the Playwright end-to-end flow
-uv run sherlock eval ask # also: corruption, ml, grounding, notebook, web (offline; --live with TAVILY_API_KEY)
+uv run sherlock eval ask # also: corruption, ml, notebook, web (offline; --live with TAVILY_API_KEY)
 ```
 
 ## Rules
@@ -52,7 +52,7 @@ uv run sherlock eval ask # also: corruption, ml, grounding, notebook, web (offli
    - Any change to behaviour, the API, the schema, config, UI or dependencies updates the doc that specifies it, in the same commit.
    - If code has to differ from a doc, change the doc first or ask.
    - Never leave a doc describing something the code doesn't do, or code doing something no doc describes.
-2. **No model outside NVIDIA on Token Factory.** The model never computes a number. Numbers come from code, and generated text shows them only as chips bound to fact sheets.
+2. **No model outside NVIDIA on Token Factory.** The model never computes a number. Numbers come from code, and generated text shows them only as chips bound to the query result or model run that produced them.
 3. **Data is never changed in place.** Every change is a step that creates a new version and can be undone. Cleaning quarantines rows; it never deletes them.
 4. **Keep it generic.** No code, tuning or prep that is specific to one dataset. Titanic is only the sample file.
 5. **Keep docs lean; never cut scope.**

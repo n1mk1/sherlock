@@ -58,10 +58,6 @@ non-NVIDIA model writes, are never called. Search results are shown as quoted ex
 | @radix-ui/react-popover | 1.1.15 | MIT |
 | @radix-ui/react-slot | 1.5.0 | MIT |
 | @tanstack/react-query | 5.104.5 | MIT |
-| @tiptap/core | 3.32.0 | MIT |
-| @tiptap/pm | 3.32.0 | MIT |
-| @tiptap/react | 3.32.0 | MIT |
-| @tiptap/starter-kit | 3.32.0 | MIT |
 | @visx/curve | 4.0.0 | MIT |
 | @visx/event | 4.0.0 | MIT |
 | @visx/grid | 4.0.0 | MIT |
@@ -69,21 +65,16 @@ non-NVIDIA model writes, are never called. Search results are shown as quoted ex
 | @visx/responsive | 4.0.0 | MIT |
 | @visx/scale | 4.0.0 | MIT |
 | @visx/shape | 4.0.0 | MIT |
-| @xyflow/react | 12.11.3 | MIT |
 | class-variance-authority | 0.7.1 | Apache-2.0 |
 | clsx | 2.1.1 | MIT |
 | d3-array | 3.2.4 | ISC |
 | d3-shape | 3.2.0 | ISC |
-| lodash | 4.17.21 | MIT |
 | lucide-react | 1.61.0 | ISC |
-| marked | 4.3.0 | MIT |
 | motion | 14.6.0 | MIT |
 | openapi-fetch | 0.17.0 | MIT |
 | papaparse | 5.7.0 | MIT |
 | react | 18.3.1 | MIT |
 | react-dom | 18.3.1 | MIT |
-| react-grid-layout | 1.5.2 | MIT |
-| react-responsive-carousel | 3.2.23 | MIT |
 | react-router-dom | 7.18.4 | MIT |
 | sonner | 2.0.8 | MIT |
 | tailwind-merge | 3.7.0 | MIT |
@@ -91,16 +82,15 @@ non-NVIDIA model writes, are never called. Search results are shown as quoted ex
 
 ### Web app: what those dependencies install
 
-From `corepack pnpm licenses list --prod` (2026-10-26). It's a superset of the bundle: some of these are
+From `corepack pnpm licenses list --prod` (2026-10-27). It's a superset of the bundle: some of these are
 build-time helpers of a dependency (Babel and browserslist through Glide's styling library, for example)
 and never reach the browser.
 
 | License | Packages |
 |---|---|
-| MIT | 187 packages, among them the Radix, TipTap, ProseMirror, Floating UI, Linaria and Babel parts, `framer-motion`, `react-router`, `react-draggable`, `react-resizable` and `@visx/point` |
-| ISC | `d3-color`, `d3-delaunay`, `d3-dispatch`, `d3-drag`, `d3-format`, `d3-geo`, `d3-interpolate`, `d3-path`, `d3-scale`, `d3-selection`, `d3-time`, `d3-time-format`, `d3-timer`, `d3-transition`, `d3-zoom`, `delaunator`, `internmap`, `electron-to-chromium`, `lru-cache`, `minimatch`, `picocolors`, `semver`, `yallist` |
+| MIT | 133 packages, among them the Radix, Floating UI, Linaria and Babel parts, `framer-motion`, `react-router` and `@visx/point` |
+| ISC | `d3-color`, `d3-delaunay`, `d3-format`, `d3-geo`, `d3-interpolate`, `d3-path`, `d3-scale`, `d3-time`, `d3-time-format`, `delaunator`, `internmap`, `electron-to-chromium`, `lru-cache`, `minimatch`, `picocolors`, `semver`, `yallist` |
 | MIT and ISC | `@visx/vendor` 4.0.0 |
-| BSD-3-Clause | `d3-ease` 3.0.1 |
 | Apache-2.0 | `baseline-browser-mapping` 2.11.32 |
 | 0BSD | `tslib` 2.8.1 |
 | Unlicense | `robust-predicates` 3.0.3 |

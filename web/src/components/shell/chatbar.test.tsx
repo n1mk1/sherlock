@@ -31,7 +31,6 @@ describe("the chat stream's hand-over", () => {
     const fetchMock = mockApi({
       "GET /api/v1/me": ME,
       "GET /api/v1/datasets/ds_1/chat": [],
-      "GET /api/v1/datasets/ds_1/widgets": { widgets: [], layout: {} },
       "POST /api/v1/datasets/ds_1/chat": () => new Response(new ReadableStream({
         start(c) {
           c.enqueue(enc.encode(`event: block\ndata: ${JSON.stringify(ANSWER.blocks[0])}\n\n`));
@@ -40,7 +39,7 @@ describe("the chat stream's hand-over", () => {
         },
       }), { status: 200, headers: { "Content-Type": "text/event-stream" } }),
     });
-    renderAt(<ChatBar dataset={DS} tab="dashboard" placeholder="Ask" />);
+    renderAt(<ChatBar dataset={DS} placeholder="Ask" />);
     const input = await screen.findByLabelText("Ask Sherlock");
     fireEvent.change(input, { target: { value: "which group is highest?" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -67,12 +66,11 @@ describe("the chat stream's hand-over", () => {
     mockApi({
       "GET /api/v1/me": ME,
       "GET /api/v1/datasets/ds_1/chat": [],
-      "GET /api/v1/datasets/ds_1/widgets": { widgets: [], layout: {} },
       "POST /api/v1/datasets/ds_1/chat": () => new Response(new ReadableStream({ start() {} }), {
         status: 200, headers: { "Content-Type": "text/event-stream" },
       }), // never ends
     });
-    renderAt(<ChatBar dataset={DS} tab="dashboard" placeholder="Ask" />);
+    renderAt(<ChatBar dataset={DS} placeholder="Ask" />);
     const input = await screen.findByLabelText("Ask Sherlock");
     fireEvent.change(input, { target: { value: "first" } });
     fireEvent.keyDown(input, { key: "Enter" });

@@ -15,14 +15,16 @@ from sherlock.cleaning.rules import service as rule_service
 from sherlock.cleaning.rules.kinds import RuleError
 from sherlock.db.connection import get_db
 from sherlock.errors import ApiError, not_found
-from sherlock.jobs.clean import queue_build
+from sherlock.db import datasets as datasets_repo
+from sherlock.jobs.clean import mark_ready
 from sherlock.jobs.events import emit
 from sherlock.jobs.runner import to_job
 from sherlock.ownership import Owned, owned, owned_dataset
 from sherlock.profile import service as profile_service
 from sherlock.ratelimit import llm_rate_limit
+from sherlock.routers.datasets import Dataset, to_dataset
 from sherlock.routers.rules import RuleIn
-from sherlock.widgets import service as ws
+from sherlock.query import context as qx
 
 router = APIRouter(tags=["cleaning"])
 STARTABLE = ("offer", "ready")
@@ -89,7 +91,7 @@ def list_detectors() -> Detectors:
 
 def _busy(db: sqlite3.Connection, dataset_id: str) -> bool:
     return db.execute(
-        "SELECT 1 FROM jobs WHERE dataset_id = ? AND kind IN ('profile', 'clean', 'build_dashboard') "
+        "SELECT 1 FROM jobs WHERE dataset_id = ? AND kind IN ('profile', 'clean') "
         "AND status IN ('queued', 'running') LIMIT 1", (dataset_id,),
     ).fetchone() is not None
 
@@ -155,13 +157,13 @@ def _plan_event(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row, 
     emit(db, request.app.state.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": plan_id})
 
 
-def plan_scope(env: ws.Env, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
+def plan_scope(env: qx.Env, dataset: sqlite3.Row, scope: CleanScope | None) -> dict | None:
     """A plan's stored scope with its row count (a selection's counted on the current version),
     or None for the whole dataset."""
     if scope is None or scope.kind == "all":
         return None
     if scope.kind == "selection":
-        rows = ws.selection_rows(env, dataset, scope.selection_id or "")
+        rows = qx.selection_rows(env, dataset, scope.selection_id or "")
         if rows is None:
             raise ApiError(422, "invalid", "scope: that selection isn't one of this CSV's")
         return {"kind": "selection", "selection_id": scope.selection_id, "row_ids": None, "rows": rows}
@@ -174,7 +176,7 @@ def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanSco
     given. Returns the `CleanPlan` and whether it was made now. Nothing is cleaned until Start."""
     if dataset["status"] not in PLANNABLE:
         raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; a cleaning plan can be made once that finishes.")
-    stored = plan_scope(ws.Env(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, scope)
+    stored = plan_scope(qx.Env(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, scope)
     card = lambda d: profile_service.get_or_build(app.state.settings, db, app.state.duckdb, d)  # noqa: E731
     existing = plans.draft_id(db, dataset["id"])
     if existing:
@@ -234,8 +236,8 @@ def patch_plan(
     if row["status"] != "draft":
         raise ApiError(409, "conflict", f"This plan was already {row['status']}.")
     row, notes = plans.current(db, row, dataset, lambda d: _card(request, db, d))
-    env = ws.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
-    columns = list(ws.user_types(env, dataset, dataset["current_version"]))
+    env = qx.Env(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
+    columns = list(qx.user_types(env, dataset, dataset["current_version"]))
     try:
         row, summary = rule_service.apply(env.settings, db, env.cache, env.bus, dataset, row,
                                           [o.model_dump() for o in body.ops], columns)
@@ -257,21 +259,21 @@ def discard_plan(request: Request, owned_plan: Owned = Depends(owned("clean_plan
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/datasets/{dataset_id}/use-as-is", status_code=status.HTTP_201_CREATED)
+@router.post("/datasets/{dataset_id}/use-as-is", response_model=Dataset)
 def use_as_is(
     request: Request,
     dataset: sqlite3.Row = Depends(owned_dataset),
     db: sqlite3.Connection = Depends(get_db),
-) -> dict:
-    """Skip cleaning ("Clean it myself"): build the dashboard on the current (typed) version. A draft
-    cleaning plan is discarded."""
+) -> Dataset:
+    """Skip cleaning ("Clean it myself"): the current (typed) version is ready as it is. A draft
+    cleaning plan is discarded. Returns the dataset."""
     if dataset["status"] != "offer":
         raise ApiError(409, "conflict", f"This CSV is {dataset['status']}, not waiting for a choice.")
     if _busy(db, dataset["id"]):
         raise ApiError(409, "conflict", "A job is already running on this CSV.")
     plans.discard_drafts(db, dataset["id"])
-    job = queue_build(db, request.app.state.bus, dataset["user_id"], dataset["id"], request.app.state.jobs)
-    return to_job(job)
+    mark_ready(db, request.app.state.bus, dataset["id"])
+    return to_dataset(datasets_repo.get(db, dataset["user_id"], dataset["id"]), db)
 
 
 @router.get("/datasets/{dataset_id}/report")

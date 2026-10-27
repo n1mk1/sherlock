@@ -1,6 +1,6 @@
 """Ownership checks (TRD §3.1): every dataset-scoped route resolves to a dataset the user owns.
 
-Bare IDs (`/widgets/{wid}`, `/cards/{cid}`, …) are first resolved to their dataset. Anything
+Bare IDs (`/runs/{rid}`, `/exports/{export_id}`, …) are first resolved to their dataset. Anything
 not owned, missing or belonging to a deleted dataset is a plain 404, never 403, so IDs from
 other users are indistinguishable from IDs that don't exist.
 """
@@ -18,14 +18,11 @@ from sherlock.identity import current_user
 
 # kind → (table, path parameter name in TRD §4)
 BARE_ID_KINDS: dict[str, tuple[str, str]] = {
-    "widget": ("widgets", "wid"),
-    "card": ("cards", "cid"),
     "run": ("runs", "rid"),
     "export": ("exports", "export_id"),
     "job": ("jobs", "jid"),
     "proposal": ("proposals", "id"),
     "message": ("messages", "mid"),
-    "fact_sheet": ("fact_sheets", "fsid"),
     "clean_plan": ("clean_plans", "pid"),
     "rule": ("detector_rules", "rid"),
 }
@@ -90,7 +87,7 @@ def owned_dataset(
 
 
 def owned(kind: str) -> Callable[..., Owned]:
-    """Dependency factory for bare-ID routes, e.g. `Depends(owned("widget"))` on `/widgets/{wid}`."""
+    """Dependency factory for bare-ID routes, e.g. `Depends(owned("run"))` on `/runs/{rid}`."""
     _, param = BARE_ID_KINDS[kind]
 
     def dependency(

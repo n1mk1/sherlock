@@ -464,7 +464,7 @@ stateDiagram-v2
 
 - **Validation** (code):
   - every ref of the chunk appears exactly once, with no unknown refs;
-  - `reason` passes `stories.wording.wording_problem` and `llm.text.has_digits` is false, so every number in the plan comes from code;
+  - `reason` passes `llm.wording.wording_problem` and `llm.text.has_digits` is false, so every number in the plan comes from code;
   - `likely_real` and the floor apply as in §5.3.
 
   A failing reply gets the client's one repair call, then the defaults. A reason that fails on its own is dropped, and the item keeps the model's level.

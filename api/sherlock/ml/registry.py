@@ -46,8 +46,8 @@ def targets(card: dict) -> list[str]:
 
 
 def candidates(card: dict) -> list[str]:
-    """The DataCard's target candidates that a driver analysis can explain, best first: what the builder
-    and the stories take as the file's outcome. A card stored before `target_ok` may still list a text column."""
+    """The DataCard's target candidates that a driver analysis can explain, best first: what chat takes
+    as the file's outcome. A card stored before `target_ok` may still list a text column."""
     ok = {c["name"] for c in card["columns"] if target_ok(c)}
     return [t for t in card.get("target_candidates") or [] if t in ok]
 

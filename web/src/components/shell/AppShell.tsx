@@ -1,5 +1,5 @@
 // The three-panel frame (UI brief §3.1): library left (240px, 200–320, or a 56px rail), the screen in
-// the centre, stories right (340px, 300–480). The dividers drag to resize, and sizes persist per
+// the centre, the cleaning side panel right (340px, 300–480). The dividers drag to resize, and sizes persist per
 // browser. Below 1024px the side panels become slide-overs opened from the header.
 import { useIsMutating } from "@tanstack/react-query";
 import { Menu, PanelRight } from "lucide-react";
@@ -8,8 +8,8 @@ import { Outlet, useLocation, useMatch } from "react-router-dom";
 import { useDataset, useLibraryEvents } from "@/api/queries";
 import { ChangesPanel } from "@/components/csv/ChangesPanel";
 import { CleanPlanPanel } from "@/components/dataset/CleanPlanPanel";
-import { FlowPalette } from "@/components/flow/FlowPalette";
 import { DropOverlay } from "@/components/library/DropOverlay";
+import { HomeTips } from "@/components/library/HomeTips";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
 import { cn } from "@/lib/utils";
@@ -17,17 +17,15 @@ import { LEFT, RIGHT, useUi } from "@/state/ui";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { OfflineBanner } from "./OfflineBanner";
 import { SettingsDialog } from "./SettingsDialog";
-import { StoriesPanel } from "@/components/stories/StoriesPanel";
 
 const RAIL = 56;
 
 export function AppShell() {
   const { leftOpen, rightOpen, setLeftOpen, setRightOpen, setProgress, railed, leftWidth, rightWidth, setPanelWidth } = useUi();
   useLibraryEvents(setProgress);
-  // The right panel is Changes on the CSV tab (App Flow §8.1), or the cleaning plan while one is open
-  // (§8.4); the palette on the Flow tab; stories elsewhere.
-  const csv = useMatch("/d/:datasetId/csv");
-  const flow = useMatch("/d/:datasetId/flow"); // the palette on the Flow tab (App Flow §12.1)
+  // On a dataset the right panel is Changes (App Flow §8.1), or the cleaning plan while one is open on a
+  // ready dataset (§8.4); on `/`, what Sherlock does.
+  const dataset = useMatch("/d/:datasetId/*");
   const { pathname } = useLocation();
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
@@ -40,7 +38,7 @@ export function AppShell() {
           <IconButton label="Show your CSVs" onClick={() => setLeftOpen(true)}><Menu /></IconButton>
         </div>
         <div className="absolute right-2 top-3 z-20 flex gap-1 lg:hidden">
-          <IconButton label="Show stories" onClick={() => setRightOpen(true)}><PanelRight /></IconButton>
+          <IconButton label="Show the side panel" onClick={() => setRightOpen(true)}><PanelRight /></IconButton>
         </div>
         <OfflineBanner />
         <ErrorBoundary label="page" resetKey={pathname}><Outlet /></ErrorBoundary>
@@ -48,7 +46,7 @@ export function AppShell() {
       <SidePanel side="right" open={rightOpen} onClose={() => setRightOpen(false)} width={rightWidth}
         onResize={(w) => setPanelWidth("right", w)}>
         <ErrorBoundary label="side panel" resetKey={pathname}>
-          {csv?.params.datasetId ? <CsvSidePanel datasetId={csv.params.datasetId} /> : flow ? <FlowPalette /> : <StoriesPanel />}
+          {dataset?.params.datasetId ? <CsvSidePanel datasetId={dataset.params.datasetId} /> : <HomeTips />}
         </ErrorBoundary>
       </SidePanel>
       <DropOverlay />
@@ -58,10 +56,11 @@ export function AppShell() {
   );
 }
 
+/** Before a dataset is ready its plan fills the centre (the offer's Clean with AI), so the panel keeps Changes. */
 export function CsvSidePanel({ datasetId }: { datasetId: string }) {
   const { data: dataset } = useDataset(datasetId);
   const creating = useIsMutating({ mutationKey: ["create-plan", datasetId] }) > 0;
-  if (dataset && (dataset.clean_plan_id || creating)) return <CleanPlanPanel dataset={dataset} layout="side" />;
+  if (dataset?.status === "ready" && (dataset.clean_plan_id || creating)) return <CleanPlanPanel dataset={dataset} layout="side" />;
   return <ChangesPanel datasetId={datasetId} />;
 }
 
@@ -96,7 +95,7 @@ function Divider({ side, width, onResize }: { side: "left" | "right"; width: num
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={side === "left" ? "Resize the library panel" : "Resize the stories panel"}
+      aria-label={side === "left" ? "Resize the library panel" : "Resize the side panel"}
       aria-valuenow={width}
       aria-valuemin={bounds.min}
       aria-valuemax={bounds.max}

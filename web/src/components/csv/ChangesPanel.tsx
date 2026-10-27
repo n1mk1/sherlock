@@ -1,4 +1,4 @@
-// The Changes panel (App Flow §8.5, UI/UX brief §5.7): the right panel on the CSV tab. "Unsaved
+// The Changes panel (App Flow §8.5, UI/UX brief §5.7): the right panel on a dataset. "Unsaved
 // (yours)" lists the pending edits, each removable; "Steps" lists every step newest first, with
 // Undo on the ones in the current data. Expanding a step shows its code (cleaning) or its edit list,
 // its impact and its decisions. Undo of an earlier step asks first and replays the later steps;

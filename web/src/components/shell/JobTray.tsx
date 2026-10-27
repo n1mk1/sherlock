@@ -10,9 +10,8 @@ import type { Job } from "@/api/types";
 import { Button } from "@/components/ui/button";
 
 const LABEL: Record<string, string> = {
-  profile: "Profiling", clean: "Cleaning", build_dashboard: "Building the dashboard", stories: "Writing stories",
-  ml_run: "Analysis", cascade: "Updating", undo: "Undoing", export_notebook: "Exporting a notebook", purge: "Cleaning up",
-  review_issues: "Rating the findings",
+  profile: "Profiling", clean: "Cleaning", ml_run: "Analysis", undo: "Undoing", export_notebook: "Exporting a notebook",
+  purge: "Cleaning up", review_issues: "Rating the findings",
 };
 const RECENT_MS = 60_000;
 

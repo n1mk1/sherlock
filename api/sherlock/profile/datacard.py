@@ -1,6 +1,6 @@
 """Build a version's DataCard (TRD §6.1, §7.1 steps 3–4): types, roles, stats, issues.
 
-Quarantined rows are left out: the card describes the rows that widgets, ML and stories use,
+Quarantined rows are left out: the card describes the rows that chat and ML use,
 and reports how many were set aside.
 """
 

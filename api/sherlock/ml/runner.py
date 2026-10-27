@@ -9,10 +9,8 @@ a run's artifacts and fact sheet, and the reads behind the runs API.
   progress labels) and writes `runs/<id>/`: `repro.py`, `model.joblib`, `model_card.json` and
   `results/` (`importance.json`, `partial_dependence.json`). The model card's numbers come from executing
   `repro.py`, so the exported notebook reports the same ones.
-- **Widgets.** A widget with an ML op points at its run (`widgets.run_id`); its status follows the
-  run's, and every `run.updated` is followed by `widget.updated` for the widgets showing that run.
-- **Outdated.** `outdate` marks finished runs whose columns changed in a new version (the cascade,
-  TRD §7.6); their widgets show "Outdated" with Re-run, or re-run by themselves.
+- **Outdated.** `outdate` marks finished runs whose columns changed in a new version (every commit,
+  TRD §7.5); an outdated run is run again only when the user asks (chat or its model card).
 """
 
 import hashlib
@@ -34,16 +32,15 @@ from sherlock.jobs.runner import JobContext, insert_job, register
 from sherlock.ml import core, registry
 from sherlock.ml.plan import MIN_ROWS, SEED, make_plan
 from sherlock.rows.query import ident
+from sherlock.steps.lineage import changes
 from sherlock.storage import dataset_dir
-from sherlock.widgets import compile as wc
-from sherlock.widgets import service as ws
-from sherlock.widgets.spec import Scope
+from sherlock.query import compile as qc
+from sherlock.query import context as qx
+from sherlock.query.scope import Scope
 
 RUNNING = ("queued", "running")
 FINISHED_OK = ("done", "outdated")
 VIEWS = ("importance", "partial_dependence", "baselines", "confusion", "roc")
-WIDGET_STATUS = {"queued": "building", "running": "building", "done": "ready", "outdated": "outdated",
-                 "failed": "error", "cancelled": "error"}
 PREVIEW_ROWS = 5000
 
 
@@ -62,7 +59,7 @@ class Prepared:
 # --- requests --------------------------------------------------------------------------------------
 
 def parse_request(raw: dict) -> dict:
-    """`RunRequest` (TRD §4.8) → `{recipe, method, scope, params, filters, widget_id}`, checked
+    """`RunRequest` (TRD §4.8) → `{recipe, method, scope, params, filters}`, checked
     against the recipe's manifest; unknown or disabled recipes and methods are `422`."""
     if not isinstance(raw, dict):
         raise ApiError(422, "invalid", "Send a run request.")
@@ -83,9 +80,8 @@ def parse_request(raw: dict) -> dict:
     filters = raw.get("filters") or []
     if not isinstance(filters, list):
         raise ApiError(422, "invalid", "filters: must be a list")
-    widget_id = raw.get("widget_id")
     return {"recipe": recipe, "method": method, "scope": scope, "params": check_params(raw.get("params") or {}),
-            "filters": filters, "widget_id": widget_id if isinstance(widget_id, str) else None}
+            "filters": filters}
 
 
 def check_params(params: dict) -> dict:
@@ -106,29 +102,29 @@ def cache_key(version: int, scope: dict, recipe: str, method: str, params: dict)
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
-def rows_sql(env: ws.Env, dataset: sqlite3.Row, scope: dict, version: int) -> str:
+def rows_sql(env: qx.Env, dataset: sqlite3.Row, scope: dict, version: int) -> str:
     """The run's rows as a WHERE clause: quarantine excluded, the scope's predicate and selection.
-    ML runs never inherit the dashboard's filter; `filters` are folded into the predicate instead."""
-    types = ws.user_types(env, dataset, version)
+    `filters` are folded into the predicate."""
+    types = qx.user_types(env, dataset, version)
     rows = scope["rows"]
-    predicate = wc.validate_predicate(rows["predicate"], list(types)) if rows.get("predicate") else None
-    selection = ws.selection_sql(env.db, dataset["id"], rows["selection_id"]) if rows.get("selection_id") else None
-    return wc.rows_clause(predicate, selection, None)
+    predicate = qc.validate_predicate(rows["predicate"], list(types)) if rows.get("predicate") else None
+    selection = qx.selection_sql(env.db, dataset["id"], rows["selection_id"]) if rows.get("selection_id") else None
+    return qc.rows_clause(predicate, selection, None)
 
 
-def datacard(env: ws.Env, dataset: sqlite3.Row, version: int) -> dict:
+def datacard(env: qx.Env, dataset: sqlite3.Row, version: int) -> dict:
     from sherlock.profile import service as profile_service
 
     return profile_service.get_or_build(env.settings, env.db, env.cache, dataset, version)
 
 
-def prepare(env: ws.Env, dataset: sqlite3.Row, req: dict) -> Prepared:
+def prepare(env: qx.Env, dataset: sqlite3.Row, req: dict) -> Prepared:
     """Fill in the target, fold `filters` into the predicate, enforce the minimum rows (PRD ML-10)."""
     version = dataset["current_version"]
     scope = json.loads(json.dumps(req["scope"]))
-    types = ws.user_types(env, dataset, version)
+    types = qx.user_types(env, dataset, version)
     if req.get("filters"):
-        folded = wc.filter_sql(wc.parse_filter({"and": req["filters"]}), types)
+        folded = qc.filter_sql(qc.parse_filter({"and": req["filters"]}), types)
         if folded:
             old = scope["rows"].get("predicate")
             scope["rows"]["predicate"] = f"({old}) AND ({folded})" if old else folded
@@ -150,7 +146,7 @@ def prepare(env: ws.Env, dataset: sqlite3.Row, req: dict) -> Prepared:
             raise ApiError(422, "invalid", f"There's no column {unknown[0]!r} to use.")
         cols["features"] = [f for f in cols["features"] if f != target]
     where = rows_sql(env, dataset, scope, version)
-    with ws.connection(env, dataset, version) as conn:
+    with qx.connection(env, dataset, version) as conn:
         n = conn.execute(f"SELECT count(*) FROM t WHERE {where} AND {ident(target)} IS NOT NULL").fetchone()[0]  # noqa: S608
     if n < MIN_ROWS:
         raise ApiError(422, "invalid", f"This needs at least {MIN_ROWS} rows with {target} filled in; these rows have {n}.")
@@ -158,50 +154,30 @@ def prepare(env: ws.Env, dataset: sqlite3.Row, req: dict) -> Prepared:
     return Prepared(req["recipe"], req["method"], scope, req["params"], version, key, where)
 
 
-def launch(env: ws.Env, dataset: sqlite3.Row, p: Prepared, created_by: str, widget_id: str | None = None) -> sqlite3.Row:
+def launch(env: qx.Env, dataset: sqlite3.Row, p: Prepared, created_by: str) -> sqlite3.Row:
     """The cached run for this request, or a new one with its `ml_run` job queued."""
     db = env.db
     row = db.execute("SELECT * FROM runs WHERE dataset_id = ? AND cache_key = ?", (dataset["id"], p.key)).fetchone()
     if row is not None and row["status"] in ("done", *RUNNING):
-        if widget_id and row["widget_id"] != widget_id:
-            db.execute("UPDATE runs SET widget_id = ? WHERE id = ?", (widget_id, row["id"]))
         return get_run(db, row["id"])
     if row is None:
         run_id = new_id("run")
         db.execute(
-            "INSERT INTO runs (id, dataset_id, widget_id, version, recipe, method, scope_json, params_json, cache_key, "
-            "status, target, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
-            (run_id, dataset["id"], widget_id, p.version, p.recipe, p.method, json.dumps(p.scope), json.dumps(p.params),
+            "INSERT INTO runs (id, dataset_id, version, recipe, method, scope_json, params_json, cache_key, "
+            "status, target, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)",
+            (run_id, dataset["id"], p.version, p.recipe, p.method, json.dumps(p.scope), json.dumps(p.params),
              p.key, p.scope["columns"]["target"], created_by, now_iso()),
         )
     else:  # a failed or cancelled run of the same request starts again under the same id
         run_id = row["id"]
-        db.execute("UPDATE runs SET status = 'queued', error = NULL, model_card_json = NULL, finished_at = NULL, "
-                   "widget_id = coalesce(?, widget_id) WHERE id = ?", (widget_id, run_id))
+        db.execute("UPDATE runs SET status = 'queued', error = NULL, model_card_json = NULL, finished_at = NULL "
+                   "WHERE id = ?", (run_id,))
     job = insert_job(db, dataset["user_id"], dataset["id"], "ml_run", {"run_id": run_id})
     db.execute("UPDATE runs SET job_id = ? WHERE id = ?", (job["id"], run_id))
-    ws.bump_state(db, dataset["id"])
+    qx.bump_state(db, dataset["id"])
     run = get_run(db, run_id)
     emit(db, env.bus, dataset["id"], dataset["user_id"], "run.updated", to_run(db, run))
     return run
-
-
-def ml_spec(p: Prepared, view: str = "importance") -> dict:
-    return {"scope": p.scope, "op": {"type": "ml", "recipe": p.recipe, "method": p.method, "params": p.params},
-            "view": {"type": view}}
-
-
-def request_from_spec(spec: dict) -> dict:
-    op = spec["op"]
-    return {"recipe": op["recipe"], "method": op.get("method") or "auto", "scope": spec["scope"],
-            "params": check_params(op.get("params") or {}), "filters": []}
-
-
-def link(db: sqlite3.Connection, widget_id: str, run: sqlite3.Row) -> None:
-    """Point a widget at a run; its status follows the run's."""
-    db.execute("UPDATE widgets SET run_id = ?, status = ?, error = ?, version_built = ?, updated_at = ? WHERE id = ?",
-               (run["id"], WIDGET_STATUS[run["status"]], run["error"] if run["status"] in ("failed", "cancelled") else None,
-                run["version"], now_iso(), widget_id))
 
 
 # --- reads -----------------------------------------------------------------------------------------
@@ -214,11 +190,11 @@ def get_run(db: sqlite3.Connection, run_id: str) -> sqlite3.Row:
 
 
 def to_run(db: sqlite3.Connection, row: sqlite3.Row, full: bool = False) -> dict:
-    """`Run` (TRD §6.8). `summary` carries what a widget shows without the whole model card;
+    """`Run` (TRD §6.8). `summary` carries what chat shows without the whole model card;
     `progress` is the job's while it runs. `full` adds the `model_card`."""
     card = json.loads(row["model_card_json"]) if row["model_card_json"] else None
     out = {
-        "id": row["id"], "dataset_id": row["dataset_id"], "widget_id": row["widget_id"], "version": row["version"],
+        "id": row["id"], "dataset_id": row["dataset_id"], "version": row["version"],
         "recipe": row["recipe"], "method": row["method"], "scope": json.loads(row["scope_json"]),
         "params": json.loads(row["params_json"]), "status": row["status"], "job_id": row["job_id"],
         "fact_sheet_id": row["fact_sheet_id"], "target": row["target"], "error": row["error"],
@@ -275,7 +251,7 @@ def _finished(row: sqlite3.Row) -> None:
 
 def results(settings, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row, view: str,
             feature: str | None = None) -> dict:
-    """`WidgetData` for one of a run's views (TRD §4.8)."""
+    """A result table for one of a run's views (TRD §4.8)."""
     _finished(row)
     if view not in VIEWS:
         raise ApiError(422, "invalid", f"view: one of {', '.join(VIEWS)}")
@@ -322,25 +298,13 @@ def results(settings, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3
             "truncated": False}
 
 
-def widget_data(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row) -> dict:
-    """An ML widget's `WidgetData`: its run's importance once it has one, plus the run itself (so the
-    widget can show progress, the verdict line or "Outdated")."""
-    run = env.db.execute("SELECT * FROM runs WHERE id = ?", (widget["run_id"],)).fetchone() if widget["run_id"] else None
-    if run is not None and run["status"] in FINISHED_OK:
-        out = results(env.settings, env.db, dataset, run, "importance")
-    else:
-        out = {"version": dataset["current_version"], "columns": [], "rows": [], "row_count": 0, "truncated": False}
-    out["run"] = to_run(env.db, run) if run is not None else None
-    return out
-
-
-def preview(env: ws.Env, dataset: sqlite3.Row, req: dict) -> dict:
+def preview(env: qx.Env, dataset: sqlite3.Row, req: dict) -> dict:
     """What the setup form shows before Run (TRD §4.8): the task, every column with its exclusion
     reason, the baselines for this scope, and an estimate."""
     p = prepare(env, dataset, req)
     card = datacard(env, dataset, p.version)
     target = p.scope["columns"]["target"]
-    with ws.connection(env, dataset, p.version) as conn:
+    with qx.connection(env, dataset, p.version) as conn:
         data = conn.execute(f"SELECT * FROM t WHERE {p.rows_sql} ORDER BY _row_id").df()  # noqa: S608
     features = p.scope["columns"].get("features")
     plan = make_plan(data, card, p.rows_sql, target, features, features, p.params["cv_folds"])
@@ -375,7 +339,7 @@ def depends(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> set[str]:
     conditions = [rows.get("predicate")]
     if db is not None and rows.get("selection_id"):
         try:
-            conditions.append(ws.selection_sql(db, row["dataset_id"], rows["selection_id"]))
+            conditions.append(qx.selection_sql(db, row["dataset_id"], rows["selection_id"]))
         except ApiError:  # the selection is gone; its rows were fixed when the run started
             pass
     for condition in filter(None, conditions):
@@ -389,9 +353,12 @@ def depends(row: sqlite3.Row, db: sqlite3.Connection | None = None) -> set[str]:
 # --- the job ---------------------------------------------------------------------------------------
 
 def facts_for(run_id: str, card: dict) -> dict:
-    """The run's fact sheet (TRD §6.4): what a story card may say about it, each fact from the model
-    card (whose numbers came from executing `repro.py`)."""
-    from sherlock.stories.facts import fact
+    """The run's fact sheet (TRD §6.4): the numbers the run reports, each fact from the model card
+    (whose numbers came from executing `repro.py`)."""
+    from sherlock.agent.compose import fmt
+
+    def fact(value, kind: str, label: str, **prov) -> dict:
+        return {"value": value, "format": kind, "label": label, "formatted": fmt(value, kind), **prov}
 
     m = card["model"]
     pct = m["metric"] != "r2"
@@ -437,12 +404,8 @@ def classification_checks(oof: pd.DataFrame) -> dict:
 
 
 def _emit_run(db: sqlite3.Connection, bus: EventBus | None, dataset: sqlite3.Row, run_id: str, job_id: str | None = None) -> None:
-    """`run.updated`, then `widget.updated` for every live widget showing the run, with its status."""
-    run = get_run(db, run_id)
-    emit(db, bus, dataset["id"], dataset["user_id"], "run.updated", to_run(db, run), job_id=job_id)
-    for w in db.execute("SELECT * FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run_id,)).fetchall():
-        link(db, w["id"], run)
-        emit(db, bus, dataset["id"], dataset["user_id"], "widget.updated", ws.to_widget(ws.get_row(db, w["id"])), job_id=job_id)
+    """`run.updated` with the run's status."""
+    emit(db, bus, dataset["id"], dataset["user_id"], "run.updated", to_run(db, get_run(db, run_id)), job_id=job_id)
 
 
 def _execute(ctx: JobContext) -> dict:
@@ -457,11 +420,11 @@ def _execute(ctx: JobContext) -> dict:
     ctx.db.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run["id"],))
     _emit_run(ctx.db, ctx.bus, dataset, run["id"], ctx.id)
 
-    env = ws.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
+    env = qx.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus)
     scope, params, version = json.loads(run["scope_json"]), json.loads(run["params_json"]), run["version"]
     try:
         where = rows_sql(env, dataset, scope, version)
-        with ws.connection(env, dataset, version) as conn:
+        with qx.connection(env, dataset, version) as conn:
             df = conn.execute("SELECT * FROM t ORDER BY _row_id").df()
         card = datacard(env, dataset, version)
         features = scope["columns"].get("features")
@@ -489,9 +452,9 @@ def _execute(ctx: JobContext) -> dict:
     sheet_id = new_id("fs")
     deps = sorted({a.plan.target, *a.plan.features})
     ctx.db.execute(
-        "INSERT INTO fact_sheets (id, dataset_id, widget_id, run_id, version, facts_json, depends_columns_json, material_hash, "
-        "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?)",
-        (sheet_id, dataset["id"], run["widget_id"], run["id"], version, json.dumps(facts, default=_plain), json.dumps(deps), now_iso()),
+        "INSERT INTO fact_sheets (id, dataset_id, run_id, version, facts_json, depends_columns_json, material_hash, "
+        "created_at) VALUES (?, ?, ?, ?, ?, ?, '', ?)",
+        (sheet_id, dataset["id"], run["id"], version, json.dumps(facts, default=_plain), json.dumps(deps), now_iso()),
     )
     model_card = {"run_id": run["id"], **a.card, **checks, "version": version, "scope": scope, "params": params,
                   "artifact_path": f"runs/{run['id']}/model.joblib", "fact_sheet_id": sheet_id,
@@ -504,15 +467,10 @@ def _execute(ctx: JobContext) -> dict:
          f"runs/{run['id']}/repro.py", json.dumps(a.plan.sample) if a.plan.sample else None, json.dumps(libraries),
          now_iso(), run["id"]),
     )
-    ws.bump_state(ctx.db, dataset["id"])
+    qx.bump_state(ctx.db, dataset["id"])
     _emit_run(ctx.db, ctx.bus, dataset, run["id"], ctx.id)
     if _settle(env, run["id"], ctx.id):
-        ctx.runner.wake()
         return {"run_id": run["id"], "outdated": True}
-    widget_ids = [w["id"] for w in ctx.db.execute("SELECT id FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run["id"],))]
-    if widget_ids:
-        ws._stories(env, dataset, widget_ids)  # the widget's story card tells the result (App Flow §9 step 4)
-        ctx.runner.wake()
     return {"run_id": run["id"], "verdict": a.card["verdict"], "model": a.model, "metric": a.card["model"]["metric"],
             "value": a.card["model"]["value"]}
 
@@ -544,17 +502,12 @@ def on_failure(db: sqlite3.Connection, bus: EventBus | None, job: sqlite3.Row, m
     dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (row["dataset_id"],)).fetchone()
     if dataset is not None:
         _emit_run(db, bus, dataset, run_id, job["id"])
-        from sherlock.stories import service as stories
-
-        # Its widgets' cards tell an earlier run, or nothing: outdated, not ready or spinning.
-        for w in db.execute("SELECT id FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run_id,)).fetchall():
-            stories.mark_widget_card(db, bus, dataset, w["id"], "outdated", job["id"])
 
 
 register("ml_run", run, on_failure)
 
 
-# --- outdated (the cascade, TRD §7.6) --------------------------------------------------------------
+# --- outdated (every new version, TRD §7.5) --------------------------------------------------------------
 
 def outdate(db: sqlite3.Connection, bus: EventBus | None, dataset: sqlite3.Row, changes_since,
             job_id: str | None = None) -> list[str]:
@@ -571,52 +524,15 @@ def outdate(db: sqlite3.Connection, bus: EventBus | None, dataset: sqlite3.Row, 
     for run_id in out:
         _emit_run(db, bus, dataset, run_id, job_id)
     if out:
-        ws.bump_state(db, dataset["id"])
+        qx.bump_state(db, dataset["id"])
     return out
 
 
-def ask_first(db: sqlite3.Connection, dataset: sqlite3.Row) -> bool:
-    """The user's "Story updates: Ask first" (PRD ML-9): outdated analyses wait for Re-run."""
-    from sherlock.db import users
-    from sherlock.routers.me import effective_settings
-
-    user = users.get(db, dataset["user_id"])
-    return effective_settings(user.settings if user else {}).story_updates == "ask"
-
-
-def _settle(env: ws.Env, run_id: str, job_id: str | None) -> bool:
-    """A run that finished after the data changed (cascades skip runs still going) is checked like the
-    cascade would: outdated when its columns changed since its version, and re-run for its widgets
-    unless the user asked first. True when it went outdated."""
-    from sherlock.jobs.cascade import changes
-
+def _settle(env: qx.Env, run_id: str, job_id: str | None) -> bool:
+    """A run that finished after the data changed (a new version only outdates finished runs) is
+    checked the same way: outdated when its columns changed since its version. True when it went outdated."""
     dataset = env.db.execute("SELECT * FROM datasets WHERE id = ?", (get_run(env.db, run_id)["dataset_id"],)).fetchone()
     current = dataset["current_version"]
     if get_run(env.db, run_id)["version"] >= current:
         return False
-    stale = outdate(env.db, env.bus, dataset, lambda v: changes(env.db, dataset["id"], v, current), job_id)
-    if run_id not in stale:
-        return False
-    if not ask_first(env.db, dataset):
-        for w in env.db.execute("SELECT * FROM widgets WHERE run_id = ? AND deleted_at IS NULL", (run_id,)).fetchall():
-            try:
-                rerun_widget(env, dataset, w)
-            except ApiError as exc:
-                env.db.execute("UPDATE widgets SET status = 'error', error = ? WHERE id = ?", (exc.message, w["id"]))
-            emit(env.db, env.bus, dataset["id"], dataset["user_id"], "widget.updated", ws.to_widget(ws.get_row(env.db, w["id"])),
-                 job_id=job_id)
-    return True
-
-
-def rerun_widget(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, created_by: str = "user") -> sqlite3.Row:
-    """Run a widget's analysis again on the current version (Re-run, or automatic per the
-    story-update setting)."""
-    spec = json.loads(widget["spec_json"])
-    p = prepare(env, dataset, request_from_spec(spec))
-    run = launch(env, dataset, p, created_by, widget["id"])
-    link(env.db, widget["id"], run)
-    if run["status"] in RUNNING:  # its card says so until the run's story is told (or the run fails)
-        from sherlock.stories import service as stories
-
-        stories.mark_widget_card(env.db, env.bus, dataset, widget["id"], "updating")
-    return run
+    return run_id in outdate(env.db, env.bus, dataset, lambda v: changes(env.db, dataset["id"], v, current), job_id)

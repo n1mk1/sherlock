@@ -35,18 +35,7 @@ interface UiState extends Panels {
   rightOpen: boolean;
   importFile: File | null;
   progress: Record<string, JobProgressEvent>; // dataset_id → latest job.progress
-  editLayout: boolean;        // the dashboard's Edit layout toggle (App Flow §7.3)
-  addWidgetOpen: boolean;     // the Add widget drawer
-  focusedWidgetId: string | null; // the widget the chat's context chip names
   chatOpen: boolean;          // the thread above the chat bar
-  hoveredWidget: string | null; // two-way hover linking between widgets and cards (PRD STORY-4)
-  setHoveredWidget: (id: string | null) => void;
-  flashWidget: string | null;   // a card click scrolls to its widget and flashes it
-  setFlashWidget: (id: string | null) => void;
-  chatDraft: string | null;     // text "Ask why" puts in the chat bar
-  setChatDraft: (text: string | null) => void;
-  chatOutbox: string | null;    // a message the chat bar sends as soon as it can ("Make sense of this")
-  sendChat: (text: string | null) => void;
   exportOpen: boolean;        // the Export notebook dialog (App Flow §17)
   setExportOpen: (open: boolean) => void;
   exportPreset: Record<string, boolean> | null; // options chat asked for ("export a notebook without the data")
@@ -55,11 +44,6 @@ interface UiState extends Panels {
   setPlanId: (id: string | null) => void;
   csvSelection: { row_ids: number[]; columns: string[] } | null; // the CSV grid's selection, the chat's context there
   setCsvSelection: (s: { row_ids: number[]; columns: string[] } | null) => void;
-  cascade: Record<string, { version: number; widgetIds: string[]; cardIds: string[] }>; // dataset_id → running cascade
-  setCascade: (datasetId: string, c: { version: number; widgetIds: string[]; cardIds: string[] } | null) => void;
-  setEditLayout: (on: boolean) => void;
-  setAddWidgetOpen: (open: boolean) => void;
-  setFocusedWidget: (id: string | null) => void;
   setChatOpen: (open: boolean) => void;
   setLeftOpen: (open: boolean) => void;
   setRightOpen: (open: boolean) => void;
@@ -83,18 +67,7 @@ export const useUi = create<UiState>((set, get) => ({
   rightOpen: false,
   importFile: null,
   progress: {},
-  editLayout: false,
-  addWidgetOpen: false,
-  focusedWidgetId: null,
   chatOpen: false,
-  hoveredWidget: null,
-  setHoveredWidget: (hoveredWidget) => set({ hoveredWidget }),
-  flashWidget: null,
-  setFlashWidget: (flashWidget) => set({ flashWidget }),
-  chatDraft: null,
-  setChatDraft: (chatDraft) => set({ chatDraft }),
-  chatOutbox: null,
-  sendChat: (chatOutbox) => set({ chatOutbox }),
   exportOpen: false,
   setExportOpen: (exportOpen) => set({ exportOpen }),
   exportPreset: null,
@@ -103,17 +76,6 @@ export const useUi = create<UiState>((set, get) => ({
   setPlanId: (planId) => set({ planId }),
   csvSelection: null,
   setCsvSelection: (csvSelection) => set({ csvSelection }),
-  cascade: {},
-  setCascade: (datasetId, c) =>
-    set((s) => {
-      const cascade = { ...s.cascade };
-      if (c) cascade[datasetId] = c;
-      else delete cascade[datasetId];
-      return { cascade };
-    }),
-  setEditLayout: (editLayout) => set({ editLayout }),
-  setAddWidgetOpen: (addWidgetOpen) => set({ addWidgetOpen }),
-  setFocusedWidget: (focusedWidgetId) => set({ focusedWidgetId }),
   setChatOpen: (chatOpen) => set({ chatOpen }),
   setLeftOpen: (leftOpen) => set({ leftOpen }),
   setRightOpen: (rightOpen) => set({ rightOpen }),

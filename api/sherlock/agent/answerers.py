@@ -1,7 +1,6 @@
-"""Answerers and actions for chat v1 (TRD §8.2, Implementation Plan D4.3): `ask_data`, `find_rows`,
-`explain_widget`, `ask_history`, and the `create_widget` action. Each returns a result the composer
-can cite and the sources that prove it. SQL from the model goes through the same validation as
-widget SQL (TRD §6.3) and runs on the cached connection; a failure gets one repair with the error.
+"""Answerers for chat v1 (TRD §8.2, Implementation Plan D4.3): `ask_data`, `find_rows` and `ask_history`.
+Each returns a result the composer can cite and the sources that prove it. SQL from the model goes
+through the query validation (TRD §6.3) and runs on the cached connection; a failure gets one repair with the error.
 A query that runs is checked in code (`findings`), and what code found goes back for one repair."""
 
 import json
@@ -18,14 +17,13 @@ from sherlock.agent.resolve import CLOSE_FUZZ, _norm, candidates
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, fence
-from sherlock.llm.schemas import PredicateDraft, SqlDraft, WidgetDraft
+from sherlock.llm.schemas import PredicateDraft, SqlDraft
 from sherlock.profile.service import MAX_INDEXED_VALUES
 from sherlock.rows.query import ident
-from sherlock.stories.wording import title_problem, wording_problem
-from sherlock.widgets import compile as wc
-from sherlock.widgets import layout as wl
-from sherlock.widgets import service as ws
-from sherlock.widgets.execute import run_query
+from sherlock.llm.wording import wording_problem
+from sherlock.query import compile as qc
+from sherlock.query import context as qx
+from sherlock.query.execute import run_query
 
 log = logging.getLogger("sherlock.agent")
 TABLE_ROWS = 20
@@ -81,8 +79,7 @@ class CantAnswer(Exception):
 
 class Clarify(CantAnswer):
     """The answerer needs the user to pick one of two or three options first (PRD ASK-6). `means` says
-    what each option stands for (`{"column": c}`, `{"value": [c, v]}`, `{"columns": [a, b]}` or
-    `{"widget": id}`), so the choice resumes with the name resolved. Where a clarification can't be
+    what each option stands for (`{"column": c}`, `{"value": [c, v]}` or `{"columns": [a, b]}`), so the choice resumes with the name resolved. Where a clarification can't be
     asked (the message already answers one, or another step answered), the message is the note."""
 
     def __init__(self, fallback: str, question: str, options: list[tuple[str, dict]], name: str | None = None) -> None:
@@ -103,21 +100,20 @@ def reading_text(reading: str) -> str:
 
 @dataclass
 class Scope:
-    """Which rows a chat answer reads: the quarantine exclusion, the selection and the global filter."""
+    """Which rows a chat answer reads: the quarantine exclusion and the selection."""
     selection: str | None = None
     selection_id: str | None = None
-    global_filter: str | None = None
     words: str = "all usable rows"
 
     def rows(self, extra: str | None = None) -> str:
-        return wc.rows_clause(extra, self.selection, self.global_filter)
+        return qc.rows_clause(extra, self.selection, None)
 
 
 @dataclass
 class Result:
     id: str
     sql: str              # exactly what ran
-    template: str         # the SQL with {{rows}}, for pinning
+    template: str         # the SQL with {{rows}}, for a follow-up (the focus)
     columns: list[dict]
     rows: list[list]
     row_count: int
@@ -144,14 +140,13 @@ class Result:
 
 @dataclass
 class Toolkit:
-    env: ws.Env
+    env: qx.Env
     llm: LLMClient
     scope: CallScope
     dataset: sqlite3.Row
     context: str
     rows: Scope
     calls: list[int] = field(default_factory=lambda: [0])
-    reading: str = ""  # how the last widget request's words were read as columns
     example: str = ""  # a question in this file's own columns, for "try naming the columns" (Rule 4)
     resolved: dict = field(default_factory=dict)  # the message's names (`resolve.resolve`), for the result checks
     types: dict = field(default_factory=dict)     # the file's columns and their DuckDB types
@@ -165,8 +160,8 @@ class Toolkit:
         return [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": user}]
 
     def _run(self, template: str, rid: str) -> Result:
-        sql = wc.compile_sql(template, self.rows.rows())
-        with ws.connection(self.env, self.dataset, self.dataset["current_version"]) as conn:
+        sql = qc.compile_sql(template, self.rows.rows())
+        with qx.connection(self.env, self.dataset, self.dataset["current_version"]) as conn:
             out = run_query(conn, sql)
         return Result(rid, sql, template, out["columns"], out["rows"], out["row_count"], truncated=out["truncated"])
 
@@ -243,7 +238,7 @@ class Toolkit:
             out += [f"The result column {c['name']} is empty (null) in every row." for i, c in enumerate(res.columns)
                     if all(row[i] is None for row in res.rows)]
         try:
-            tree = wc._parse_one(template.replace("{{rows}}", "TRUE"))
+            tree = qc._parse_one(template.replace("{{rows}}", "TRUE"))
         except ApiError:
             return out
         by_lower = {c.lower(): c for c in self.types}
@@ -282,7 +277,7 @@ class Toolkit:
         if not set(asked) - recorded:
             return []
         try:
-            tree = wc._parse_one(template.replace("{{rows}}", "TRUE"))
+            tree = qc._parse_one(template.replace("{{rows}}", "TRUE"))
         except ApiError:
             return []
         by_lower = {c.lower(): c for c in self.types}
@@ -362,21 +357,21 @@ class Toolkit:
         messages = self._messages(prompts.PREDICATE.format(context=self.context, message=fence(question)))
         draft = self.llm.structured("medium", messages, PredicateDraft, purpose="predicate", scope=self.scope).value
         try:
-            predicate = wc.validate_predicate(draft.predicate, columns)
+            predicate = qc.validate_predicate(draft.predicate, columns)
         except ApiError as exc:
             raise CantAnswer(f"I couldn't turn that into a row filter ({exc.message})") from None
         rows_sql = self.rows.rows(predicate)
         cols = ", ".join(["_row_id", *[ident(c) for c in columns[:12]]])
         try:
-            with ws.connection(self.env, self.dataset, self.dataset["current_version"]) as conn:
+            with qx.connection(self.env, self.dataset, self.dataset["current_version"]) as conn:
                 total = conn.execute(f"SELECT count(*) FROM t WHERE {rows_sql}").fetchone()[0]
-                sql = wc.validate_select(f"SELECT {cols} FROM t WHERE {rows_sql} ORDER BY _row_id LIMIT {TABLE_ROWS}")
+                sql = qc.validate_select(f"SELECT {cols} FROM t WHERE {rows_sql} ORDER BY _row_id LIMIT {TABLE_ROWS}")
                 out = run_query(conn, sql)
         except Exception as exc:
             message = exc.message if isinstance(exc, ApiError) else str(exc)
             raise CantAnswer(f"I couldn't run that row filter ({message[:200]})") from None
-        stored = predicate if not (self.rows.selection or self.rows.global_filter) else " AND ".join(
-            f"({p})" for p in (predicate, self.rows.selection, self.rows.global_filter) if p)
+        stored = predicate if not self.rows.selection else " AND ".join(
+            f"({p})" for p in (predicate, self.rows.selection) if p)
         selection_id = new_id("sel")
         self.env.db.execute(
             "INSERT INTO selections (id, dataset_id, version, predicate, row_ids_json, row_count, label, created_at) "
@@ -387,98 +382,11 @@ class Toolkit:
         return Result(rid, sql, template, out["columns"], out["rows"], out["row_count"], total=total,
                       selection_id=selection_id, label=draft.label)
 
-    # --- create_widget ------------------------------------------------------------------------
-
-    def create_widget(self, request: str, created_by: str = "chat") -> sqlite3.Row:
-        messages = self._messages(prompts.WIDGET.format(context=self.context, message=fence(request)))
-        draft = self.llm.structured("medium", messages, WidgetDraft, purpose="widget", scope=self.scope).value
-        try:
-            return self._save_widget(draft, created_by)
-        except ApiError as exc:
-            repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                      {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
-            draft = self.llm.structured("medium", repair, WidgetDraft, purpose="widget", scope=self.scope).value
-            try:
-                return self._save_widget(draft, created_by)
-            except ApiError:
-                raise CantAnswer(self._try_naming("that widget")) from None
-
-    def _spec(self, draft: WidgetDraft, selection_id: str | None) -> dict:
-        options = {k: v for k, v in (("x", draft.x), ("y", draft.y)) if v}
-        if draft.view == "kpi" and draft.y:
-            options = {"value": draft.y}
-        return {
-            "scope": {"columns": {"x": draft.x, "y": draft.y},
-                      "rows": {"predicate": None, "selection_id": selection_id, "inherit_global_filters": True}},
-            "op": {"type": "sql", "sql": draft.sql},
-            "view": {"type": draft.view, "options": options},
-        }
-
-    # --- update_widget (D8.5) ----------------------------------------------------------------
-
-    def update_widget(self, request: str, widget: sqlite3.Row) -> sqlite3.Row:
-        """Change a SQL widget as asked: `medium` returns the whole new widget (schema `WidgetDraft`),
-        applied at once like an edit in the widget's menu, with its old spec kept for Undo."""
-        spec = json.loads(widget["spec_json"])
-        if spec["op"]["type"] != "sql":
-            raise CantAnswer("That widget is an analysis; change it from its settings, or ask for a plain chart.")
-        cols = (spec.get("scope") or {}).get("columns") or {}
-        now = json.dumps({"title": widget["title"], "sql": spec["op"]["sql"], "view": spec["view"]["type"],
-                          "x": cols.get("x"), "y": cols.get("y")})
-        messages = self._messages(prompts.UPDATE_WIDGET.format(widget=fence(now), context=self.context,
-                                                                message=fence(request)))
-        draft = self.llm.structured("medium", messages, WidgetDraft, purpose="update_widget", scope=self.scope).value
-        for attempt in range(2):
-            try:
-                new = merged_spec(spec, draft)
-                row = ws.update(self.env, self.dataset, widget, new, widget_title(draft.title, new))
-                self.reading = reading_text(draft.reading)
-                return row
-            except ApiError as exc:
-                if attempt:
-                    raise CantAnswer("I couldn't build a working query for that change. Try naming the columns.") from None
-                repair = [*messages, {"role": "assistant", "content": json.dumps(draft.model_dump())},
-                          {"role": "user", "content": prompts.SQL_REPAIR.format(error=fence(exc.message))}]
-                draft = self.llm.structured("medium", repair, WidgetDraft, purpose="update_widget", scope=self.scope).value
-        raise AssertionError("unreachable")
-
-    def _save_widget(self, draft: WidgetDraft, created_by: str) -> sqlite3.Row:
-        spec = self._spec(draft, self.rows.selection_id)
-        row = ws.create(self.env, self.dataset, spec, title=widget_title(draft.title, spec), created_by=created_by)
-        self.reading = reading_text(draft.reading)
-        saved = wl.stored(self.env.db, self.dataset["id"])
-        if saved is not None:
-            wl.save(self.env.db, self.dataset["id"], wl.append(saved, row["id"], draft.view))
-        return row
-
-
 def _closest(closest: str | None) -> str:
     text = "This file has no column that answers that."
     if closest:
         text += f" The closest I can answer: “{closest.strip()}”"
     return text
-
-
-def merged_spec(spec: dict, draft: WidgetDraft) -> dict:
-    """`update_widget`'s draft applied to the widget's spec: the query, the view and its x and y
-    (or a KPI's value) change; everything else the widget had stays, such as its row predicate and selection,
-    `inherit_global_filters`, its other columns and its other view options."""
-    new = json.loads(json.dumps(spec))
-    new["op"] = {**(new.get("op") or {}), "type": "sql", "sql": draft.sql}
-    scope = new.setdefault("scope", {})
-    scope["columns"] = {**(scope.get("columns") or {}), "x": draft.x, "y": draft.y}
-    view = new.get("view") or {}
-    options = {k: v for k, v in (view.get("options") or {}).items() if k not in ("x", "y", "value")}
-    options |= {"value": draft.y} if draft.view == "kpi" and draft.y else {k: v for k, v in (("x", draft.x), ("y", draft.y)) if v}
-    new["view"] = {**view, "type": draft.view, "options": options}
-    return new
-
-
-def widget_title(title: str, spec: dict) -> str:
-    """A chat widget's title: the model's when it passes the builder's title check and the wording check
-    (PRD STORY-3), otherwise the templated title from the spec, as the builder falls back."""
-    title = (title or "").strip()
-    return ws.templated_title(spec) if title_problem(title) else title
 
 
 def _hidden_groups(tree: exp.Expression) -> list[str]:
@@ -508,10 +416,6 @@ def _compared_literals(tree: exp.Expression) -> list[tuple[str, str]]:
 
 
 # --- answerers without the model ------------------------------------------------------------
-
-
-def explain_widget(env: ws.Env, dataset: sqlite3.Row, widget: sqlite3.Row, filters: list[dict]) -> dict:
-    return ws.explain(env, dataset, widget, filters)
 
 
 WORD = re.compile(r"[a-z0-9_]+")

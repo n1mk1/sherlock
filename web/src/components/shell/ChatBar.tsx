@@ -1,33 +1,29 @@
 // The chat bar and thread (UI/UX brief §4.8, App Flow §10). The bar is 680px wide and 52px tall, with
-// a context chip on the left when there is one (the global filter or the focused widget), the `/`
-// hint and the send button. Focus or typing opens the thread above it (at most 40% of the centre);
+// the context chip on the left (the grid's selected rows, or all rows), the `/` hint and the send button. Focus or typing opens the thread above it (at most 40% of the centre);
 // Esc closes it. `/` focuses the bar when no input, cell or editor has focus. An answer streams in:
 // a status line, then its blocks, then the final message with its "How do you know?" sources and, inside
 // that, "How I worked it out": the model calls that made it.
 // The "Chat bar" setting pins it, hides it until pointed at, or hides it.
-import { ArrowRight, ChevronDown, Workflow, X } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { request } from "@/api/client";
-import { filterParam, keys, sendChat, showPlan, useAddToFlow, useMe, usePin, useThread, useWidgetActions, useWidgets } from "@/api/queries";
-import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source, Tab } from "@/api/types";
+import { keys, sendChat, showPlan, useMe, useThread } from "@/api/queries";
+import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useFilters, useGlobalFilter } from "@/state/filters";
-import { useFlow } from "@/state/flow";
 import { useUi } from "@/state/ui";
 
 // The empty thread's hint names no column, so it reads right on any file (CLAUDE.md rule 4).
 export const EMPTY_THREAD_HINT =
   "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), " +
-  "or ask for a widget (“add a chart of … by … to the dashboard”).";
+  "ask for a chart (“a chart of … by …”), or ask what drives a column.";
 
-export function ChatBar({ placeholder, className, dataset, tab }: {
-  placeholder: string; className?: string; dataset?: Dataset; tab?: Tab;
+export function ChatBar({ placeholder, className, dataset }: {
+  placeholder: string; className?: string; dataset?: Dataset;
 }) {
   const { data: me } = useMe();
   const mode = me?.settings.chatbar ?? "pinned";
@@ -41,7 +37,7 @@ export function ChatBar({ placeholder, className, dataset, tab }: {
         className,
       )}
     >
-      {usable ? <LiveBar dataset={dataset} tab={tab ?? "dashboard"} placeholder={placeholder} /> : <Bar placeholder={placeholder} />}
+      {usable ? <LiveBar dataset={dataset} placeholder={placeholder} /> : <Bar placeholder={placeholder} />}
     </div>
   );
 }
@@ -77,29 +73,15 @@ export function withAnswer(list: Message[] | undefined, question: string, answer
   return [...(list ?? []), asked, answer];
 }
 
-function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; placeholder: string }) {
+function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: string }) {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
-  const { chatOpen: open, setChatOpen: setOpen, focusedWidgetId, setFocusedWidget } = useUi();
-  const filter = useGlobalFilter(dataset.id);
-  const clearFilter = useFilters((s) => s.clear);
+  const { chatOpen: open, setChatOpen: setOpen } = useUi();
   const thread = useThread(dataset.id);
-  const widgets = useWidgets(dataset.id);
   const [text, setText] = useState("");
-  const { chatDraft, setChatDraft } = useUi();
-  // "Ask why" on a story card fills the bar (App Flow §7.4).
-  useEffect(() => {
-    if (chatDraft === null) return;
-    setText(chatDraft);
-    setChatDraft(null);
-    setOpen(true);
-    input.current?.focus();
-  }, [chatDraft, setChatDraft, setOpen]);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false); // from send until the stream ends, which can be after the answer shows
   const [queued, setQueued] = useState<string[]>([]); // sent while busy: they go one by one once it ends
-  const focused =widgets.data?.widgets.find((w) => w.id === focusedWidgetId);
-  const selectedCards = useFlow((s) => s.selectedCardIds);
   const csvSelection = useUi((s) => s.csvSelection);
   const planId = useUi((s) => s.planId); // a cleaning plan is open: the chat can change it (App Flow §10)
   const openExport = useUi((s) => s.openExport);
@@ -120,14 +102,13 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
   }, [setOpen]);
 
   const send = async (message: string, extra: Record<string, unknown> = {}) => {
+    // The context is the grid's selection and the open plan (`tab` stays in the request's shape; the
+    // server ignores it).
     const body = {
       text: message,
       context: {
-        tab,
-        ...(tab === "dashboard" && filter ? { global_filter: JSON.parse(filterParam(filter)) } : {}),
-        ...(tab === "dashboard" && focused ? { focused_widget_id: focused.id } : {}),
-        ...(tab === "flow" ? { selected_card_ids: selectedCards } : {}),
-        ...(tab === "csv" && csvSelection ? { selected_cells: { ...csvSelection, row_ids: csvSelection.row_ids.slice(0, 500) } } : {}),
+        tab: "csv",
+        ...(csvSelection ? { selected_cells: { ...csvSelection, row_ids: csvSelection.row_ids.slice(0, 500) } } : {}),
         ...(planId ? { plan_id: planId } : {}),
       },
       ...extra,
@@ -147,9 +128,6 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
           const m = data as unknown as Message;
           qc.setQueryData<Message[]>(keys.chat(dataset.id), (list) => withAnswer(list, message, m));
           setPending(null); // the saved answer replaces the streamed one, so it never shows twice
-          if (m.actions?.some((a) => a.kind === "open_widget")) {
-            qc.invalidateQueries({ queryKey: keys.widgets(dataset.id) });
-          }
           // "Export a notebook": the dialog opens with the options the message asked for (App Flow §17.1).
           const exp = m.actions?.find((a) => a.kind === "open_export");
           if (exp) openExport(exp.options ?? null);
@@ -164,19 +142,12 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     }
   };
 
-  // A message another part of the page asked to send (the Flow header's "Make sense of this"), then the
-  // ones typed while an answer was being written, in order. One effect, so two never start together.
-  const { chatOutbox, sendChat: queueChat } = useUi();
+  // The questions typed while an answer was being written, in order, one at a time.
   useEffect(() => {
-    if (busy) return;
-    if (chatOutbox !== null) {
-      queueChat(null);
-      void send(chatOutbox);
-    } else if (queued.length) {
-      setQueued(queued.slice(1));
-      void send(queued[0]);
-    }
-  }, [chatOutbox, busy, queued]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
+    if (busy || !queued.length) return;
+    setQueued(queued.slice(1));
+    void send(queued[0]);
+  }, [busy, queued]); // eslint-disable-line react-hooks/exhaustive-deps -- send reads the latest context
 
   const submit = () => {
     const message = text.trim();
@@ -192,15 +163,8 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
     setQueued((q) => q.filter((_, j) => j !== i));
   };
 
-  const csvChip = tab === "csv" && csvSelection
+  const csvChip = csvSelection
     ? `${csvSelection.row_ids.length.toLocaleString()} ${csvSelection.row_ids.length === 1 ? "row" : "rows"} selected`
-    : null;
-  const chip = tab === "dashboard" && (filter || focused)
-    ? { label: filter ? `${filter.col} = ${String(filter.value)}` : focused!.title, clear: () => (filter ? clearFilter(dataset.id) : setFocusedWidget(null)) }
-    : null;
-  // On the canvas the selected cards are the context (App Flow §12.1).
-  const flowChip = tab === "flow"
-    ? (selectedCards.length ? `${selectedCards.length} ${selectedCards.length === 1 ? "card" : "cards"} selected` : "Whole canvas")
     : null;
 
   return (
@@ -217,22 +181,10 @@ function LiveBar({ dataset, tab, placeholder }: { dataset: Dataset; tab: Tab; pl
         />
       )}
       <div className="flex h-[52px] w-full max-w-[680px] items-center gap-2 rounded-[14px] border border-border bg-card pl-2 pr-1.5 focus-within:border-border-strong">
-        {chip ? (
-          <button
-            type="button"
-            onClick={chip.clear}
-            title="Clear the context"
-            className="ml-1 inline-flex h-7 max-w-[40%] shrink-0 items-center gap-1 truncate rounded-full border border-border bg-secondary px-2.5 text-[12px] text-muted-foreground hover:text-foreground"
-          >
-            <span className="truncate">{chip.label}</span>
-            <X className="size-3 shrink-0" />
-          </button>
-        ) : (
-          <span className={cn("ml-1 inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[12px]",
-            (flowChip && selectedCards.length) || csvChip ? "border-accent text-accent" : "border-border text-muted-foreground")}>
-            {flowChip ?? csvChip ?? "All rows"}
-          </span>
-        )}
+        <span className={cn("ml-1 inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[12px]",
+          csvChip ? "border-accent text-accent" : "border-border text-muted-foreground")}>
+          {csvChip ?? "All rows"}
+        </span>
         <label className="sr-only" htmlFor="chat-input">Ask Sherlock</label>
         <input
           id="chat-input"
@@ -328,14 +280,8 @@ const UserBubble = ({ text }: { text: string }) => (
 function MessageView({ message, dataset, onChoice }: {
   message: Message; dataset: Dataset; onChoice?: (m: Message, choice: string) => void;
 }) {
-  const pin = usePin(dataset.id);
-  const addToFlow = useAddToFlow(dataset.id);
-  const navigate = useNavigate();
   const [card, setCard] = useState<string | null>(null);
   if (message.role === "user") return <UserBubble text={message.text} />;
-  const pinnable = new Set((message.actions ?? []).filter((a) => a.kind === "pin").map((a) => a.block_index));
-  const addable = new Set((message.actions ?? []).filter((a) => a.kind === "add_to_flow").map((a) => a.block_index));
-  const undoWidget = (message.actions ?? []).find((a) => a.kind === "undo_widget");
   const exportAction = (message.actions ?? []).find((a) => a.kind === "open_export");
   const modelCard = (message.actions ?? []).find((a) => a.kind === "open_model_card");
   return (
@@ -351,42 +297,15 @@ function MessageView({ message, dataset, onChoice }: {
         </div>
       )}
       {message.plan && <PlanView steps={message.plan.steps} />}
-      {message.blocks.map((b, i) => (
-        <div key={i} className="flex flex-col gap-1.5">
-          <BlockView
-            block={b}
-            datasetId={dataset.id}
-            pinning={pin.isPending && pin.variables?.blockIndex === i}
-            onPin={pinnable.has(i) ? () => pin.mutate({ messageId: message.id, blockIndex: i }, {
-              onSuccess: (w) => toast(`Pinned “${w.title}” to the dashboard`, { action: { label: "Open", onClick: () => navigate(`/d/${dataset.id}/dashboard`) } }),
-              onError: (e) => toast.error((e as Error).message),
-            }) : undefined}
-          />
-          {addable.has(i) && (
-            <Button size="sm" variant="ghost" className="self-start"
-              loading={addToFlow.isPending && addToFlow.variables?.blockIndex === i}
-              onClick={() => addToFlow.mutate({ messageId: message.id, blockIndex: i }, {
-                onSuccess: () => toast("Added to the canvas", { action: { label: "Open", onClick: () => navigate(`/d/${dataset.id}/flow`) } }),
-                onError: (e) => toast.error((e as Error).message),
-              })}>
-              <Workflow /> Add to Flow
-            </Button>
-          )}
-        </div>
-      ))}
+      {message.blocks.map((b, i) => <BlockView key={i} block={b} datasetId={dataset.id} />)}
       {message.proposal && <ProposalView proposal={message.proposal} dataset={dataset} />}
       {modelCard?.run_id && (
         <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>
       )}
-      {(undoWidget || exportAction) && (
-        <div className="flex gap-2">
-          {undoWidget?.widget_id && <UndoWidget widgetId={undoWidget.widget_id} datasetId={dataset.id} />}
-          {exportAction && (
-            <Button size="sm" className="self-start" onClick={() => useUi.getState().openExport(exportAction.options ?? null)}>
-              Export notebook
-            </Button>
-          )}
-        </div>
+      {exportAction && (
+        <Button size="sm" className="self-start" onClick={() => useUi.getState().openExport(exportAction.options ?? null)}>
+          Export notebook
+        </Button>
       )}
       {message.role === "assistant" && <Sources sources={message.sources} messageId={message.id} />}
       {modelCard && card && (
@@ -469,23 +388,6 @@ export function ProposalView({ proposal, dataset }: { proposal: Proposal; datase
         <p className={cn("text-[12px]", proposal.status === "approved" ? "text-accent" : "text-muted-foreground")}>{label}</p>
       )}
     </div>
-  );
-}
-
-/** The widget's own Undo (`useWidgetActions().undo`), so its chart redraws the way the dashboard's does. */
-function UndoWidget({ widgetId, datasetId }: { widgetId: string; datasetId: string }) {
-  const { undo } = useWidgetActions(datasetId);
-  const [done, setDone] = useState(false);
-  return (
-    <Button size="sm" className="self-start" disabled={done} loading={undo.isPending} onClick={() =>
-      undo.mutate(widgetId, {
-        onSuccess: () => {
-          setDone(true);
-          toast("The widget is back as it was.");
-        },
-        onError: (e) => toast.error((e as Error).message),
-      })
-    }>{done ? "Undone" : "Undo"}</Button>
   );
 }
 

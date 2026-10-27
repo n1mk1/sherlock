@@ -1,7 +1,7 @@
 """Cell renderers for the exported notebook (TRD §7.7, App Flow §17.4): one function per cell kind.
 
 Each returns nbformat cells. Code cells hold only code Sherlock already ran (a step's stored
-`notebook_code`, a widget's compiled SQL) or plain glue; text is written by code, never a model.
+`notebook_code`, a run's `repro.py`) or plain glue; text is written by code, never a model.
 """
 
 import json
@@ -11,7 +11,7 @@ from nbformat.v4 import new_code_cell, new_markdown_cell
 
 from sherlock.steps.replay import TYPING_SQL
 
-PLOT_HELPERS = '''# Charts: one function draws every widget the way the dashboard does (greys, the point in the accent).
+PLOT_HELPERS = '''# Charts: one function draws every chart the way the app does (greys, the point in the accent).
 import matplotlib.pyplot as plt
 from IPython.display import display
 
@@ -74,14 +74,14 @@ def _q(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-def title(dataset_name: str, version: int, exported_at: str, app_version: str, steps: int, widgets: int,
+def title(dataset_name: str, version: int, exported_at: str, app_version: str, steps: int, runs: int,
           notes: list[str]) -> list:
     lines = [
         f"# {dataset_name} · version {version}",
         "",
         f"Exported from Sherlock {app_version} on {exported_at}. This notebook rebuilds version {version} "
-        f"from the raw file ({steps} step{'s' if steps != 1 else ''}), then reruns the dashboard's "
-        f"{widgets} widget{'s' if widgets != 1 else ''}.",
+        f"from the raw file ({steps} step{'s' if steps != 1 else ''})"
+        + (f", then reruns {runs} analys{'es' if runs != 1 else 'is'}." if runs else "."),
         "",
         "Every number below was computed by code. The cleaning steps were written by NVIDIA Nemotron models "
         "on Nebius Token Factory ([models](https://build.nvidia.com/nvidia)) and checked by code before Sherlock "
@@ -209,31 +209,11 @@ def scope_text(spec: dict) -> str:
     return "Rows: all rows"
 
 
-def widget(w: dict, sql: str, output, point: str | None) -> list:
-    """Markdown (title and scope), the SQL with its embedded table, and the chart."""
-    spec = w["spec"]
-    view = spec["view"]
-    opts = view.get("options") or {}
-    md = new_markdown_cell(f"## {w['title']}\n\n{scope_text(spec)} · view: {view['type']}")
-    note = "# The dashboard's global filter isn't applied here; the widget's own rows are (in the WHERE clause).\n"
-    data = new_code_cell(f'{note}t = df\nresult = duckdb.sql("""\n{sql}\n""").df()\nresult\n')
-    data.outputs = [output]
-    args = [f"{view['type']!r}"]
-    for key in ("x", "y", "series") + (("value", "format") if view["type"] in ("kpi", "gauge") else ()):
-        if opts.get(key):
-            args.append(f"{key}={opts[key]!r}")
-    args.append(f"title={w['title']!r}")
-    if point is not None:
-        args.append(f"point={point!r}")
-    chart = new_code_cell(f"plot(result, {', '.join(args)})\n")
-    return [md, data, chart]
-
-
 def closing() -> list:
     return [new_markdown_cell(
         "## How to continue\n\n"
         "- `df` holds the cleaned data and `types` its column types; add cells below to keep exploring.\n"
-        "- Query `df` with SQL as the widgets do: `t = df; duckdb.sql(\"SELECT … FROM t\").df()`.\n"
+        "- Query `df` with SQL as chat does: `t = df; duckdb.sql(\"SELECT … FROM t\").df()`.\n"
         "- The helpers cell near the top holds the cleaning functions the steps used, with docstrings.\n"
         "- Sherlock: https://sherlock-anw3.onrender.com"
     )]
@@ -241,80 +221,6 @@ def closing() -> list:
 
 def safe_name(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", text)
-
-
-def _runs_md(runs: list[dict], facts: dict, notes: list[str]) -> str:
-    out = []
-    for r in runs:
-        if r.get("type") == "chip":
-            if r.get("unverified"):
-                notes.append(r.get("value", ""))
-                out.append(f"{r.get('value', '')}*")
-            else:
-                f = facts.get(r.get("key") or "")
-                out.append(f["formatted"] if f else r.get("value", ""))
-        elif r.get("type") == "label":
-            out.append(r.get("text") or r.get("ref", "").split(":")[-1])
-        else:
-            out.append(r.get("text", ""))
-    return "".join(out).strip()
-
-
-def _lines(runs: list[dict]) -> list[list[dict]]:
-    out: list[list[dict]] = [[]]
-    for r in runs:
-        if r.get("type") == "text" and r.get("text") == "\n":
-            out.append([])
-        else:
-            out[-1].append(r)
-    return out
-
-
-def card(c: dict, facts: dict, level: str = "###", stale: str | None = None) -> list:
-    """A story card as Markdown (PRD NB-6): the headline as a heading, the body with every chip as
-    its number from the fact sheet, related widgets, and the evidence queries in a closed details
-    block. Numbers typed by hand get an asterisk and a footnote. `stale`: why the card isn't current,
-    said in italics under the heading, like an outdated run's note."""
-    notes: list[str] = []
-    lines = [f"{level} {_runs_md([r for b in c['headline']['blocks'] for r in b['runs']], facts, notes)}", ""]
-    if stale:
-        lines += [f"*{stale}*", ""]
-    for b in c["body"]["blocks"]:
-        if b.get("type") == "bullets":  # one item per line ("\n" runs split them, as the app shows them)
-            lines += [f"- {_runs_md(item, facts, notes)}" for item in _lines(b["runs"]) if item]
-            continue
-        lines += [_runs_md(b["runs"], facts, notes), ""]
-    web = any(r.get("type") == "label" and str(r.get("ref", "")).startswith("web:") for b in c["body"]["blocks"] for r in b["runs"])
-    if web:  # a web answer (TRD §8.2 web_context): cited, with its sources above, never computed from the data
-        lines += ["", "*From the web pages cited, retrieved on the dates shown; not computed from the data.*"]
-    if c.get("related"):
-        lines += ["", "Related: " + " · ".join(r["title"] for r in c["related"])]
-    if notes:
-        lines += ["", r"\* Typed by hand in Sherlock, not computed."]
-    sqls = []
-    for b in c["headline"]["blocks"] + c["body"]["blocks"]:
-        for r in b["runs"]:
-            f = facts.get(r.get("key") or "") if r.get("type") == "chip" else None
-            if f and f.get("sql") and f["sql"] not in sqls:
-                sqls.append(f["sql"])
-    if sqls:
-        lines += ["", "<details><summary>Evidence</summary>", ""]
-        for s in sqls:
-            lines += ["```sql", s, "```", ""]
-        lines.append("</details>")
-    return [new_markdown_cell("\n".join(lines).strip())]
-
-
-def flow_intro(cards: int, notes: int) -> list:
-    parts = ([f"{cards} {'card' if cards == 1 else 'cards'} written from other cards or from chat answers"] if cards else []) + \
-            ([f"{notes} {'note' if notes == 1 else 'notes'}"] if notes else [])
-    return [new_markdown_cell("## From the Flow canvas\n\n" + " and ".join(parts).capitalize() + ". "
-                              "Each number in them is a fact computed above, with its query under Evidence.")]
-
-
-def note(text: str) -> list:
-    """A canvas note (PRD NB-6, Include canvas notes): the user's own words, quoted."""
-    return [new_markdown_cell("> **Note**\n>\n" + "\n".join(f"> {line}" if line else ">" for line in text.strip().splitlines()))]
 
 
 def run(title: str, card: dict, code: str, outdated: bool, metrics_output, baselines_output, importance_output) -> list:

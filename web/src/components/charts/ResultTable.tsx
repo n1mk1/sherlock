@@ -1,10 +1,10 @@
-// A result as a table (the "table" view, "Show as table", chat table answers). Kept apart from the
+// A result as a table (the "table" view, chat table answers). Kept apart from the
 // chart adapter so pages that only show tables don't load the chart libraries.
-import type { Highlight, WidgetData } from "@/api/types";
+import type { Highlight, ChartData } from "@/api/types";
 import { formatCell, formatPeriod, isPctColumn } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function ResultTable({ data, highlight, compact, limit }: { data: WidgetData | { columns: WidgetData["columns"]; rows: unknown[][] }; highlight?: Highlight; compact?: boolean; limit?: number }) {
+export function ResultTable({ data, highlight, compact, limit }: { data: ChartData | { columns: ChartData["columns"]; rows: unknown[][] }; highlight?: Highlight; compact?: boolean; limit?: number }) {
   const pct = data.columns.map((c, i) => isPctColumn(c.name, data.rows.map((r) => r[i])));
   const rows = limit ? data.rows.slice(0, limit) : data.rows;
   return (

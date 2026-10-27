@@ -3,17 +3,17 @@ model, then save it as the seed that "Try with sample" clones (`api/samples/seed
 
     uv run --project api python scripts/seed_sample.py [--out DIR] [--keep-data]
 
-The run happens in a throwaway data folder: import, clean it with the Cleaner, the dashboard, its
-stories and analysis, then three cards on the canvas made sense of. The seed is the dataset's rows and
-files (`sherlock/sample_seed.py`); paths in it are relative, so it works on any machine.
+The run happens in a throwaway data folder: import, clean it with the Cleaner, then ask what drives
+survival so the sample has an analysis. The seed is the dataset's rows and files
+(`sherlock/sample_seed.py`); paths in it are relative, so it works on any machine.
 
-With `--keep-data` it starts from the current seed instead: the same cleaned data, steps and widgets
-(the Cleaner's choices vary from run to run, and the docs cite this sample's), with its analyses run
-again and every card and the synthesis written again. That is what a fix to the ML, stories or
-synthesis code changes.
+With `--keep-data` it starts from the current seed instead: the same cleaned data and steps (the
+Cleaner's choices vary from run to run, and the docs cite this sample's), with its analyses run
+again. That is what a fix to the ML code changes.
 """
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -38,50 +38,33 @@ def all_done(client, ds: str) -> bool:
     return all(j["status"] in ("done", "failed", "cancelled") for j in client.get(f"{API}/jobs?dataset_id={ds}").json())
 
 
-def retell(client, ds: str) -> None:
-    """`--keep-data`: the cloned seed's analyses run again (a done run is the cache's answer to the same
-    request, so it's marked outdated first and Re-run queues it again under its ID), and every other
-    widget card, the overview and then the synthesis are written again."""
+def rerun(client, ds: str) -> None:
+    """`--keep-data`: the cloned seed's analyses run again. A done run is the cache's answer to the same
+    request, so it's marked outdated first and the same request queues it again under its ID."""
     from sherlock.config import get_settings
     from sherlock.db.connection import connect
-    from sherlock.jobs.stories import queue_stories
 
-    widgets = client.get(f"{API}/datasets/{ds}/widgets").json()["widgets"]
-    ml = [w["id"] for w in widgets if w["spec"]["op"]["type"] == "ml"]
     db = connect(get_settings())
     try:
+        runs = db.execute("SELECT recipe, method, scope_json, params_json FROM runs WHERE dataset_id = ?", (ds,)).fetchall()
         db.execute("UPDATE runs SET status = 'outdated' WHERE dataset_id = ?", (ds,))
-        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds,)).fetchone()
-        queue_stories(db, dataset, [w["id"] for w in widgets if w["id"] not in ml], "refresh")
         db.commit()
     finally:
         db.close()
-    for wid in ml:  # each run tells its own widget's card when it finishes
-        r = client.post(f"{API}/widgets/{wid}/rerun")
-        assert r.status_code == 200, r.text
-    print("running the analyses and telling the cards again…", flush=True)
-    wait(lambda: all_done(client, ds), "the runs and stories")
-    retell_syntheses(client, ds)
-
-
-def retell_syntheses(client, ds: str, tries: int = 3) -> None:
-    """Write each synthesis card again, up to `tries` times until the model writes it: the seed is what
-    every visitor sees first, and the fallback only lists the cards' headlines."""
-    for cid in [c["id"] for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "synthesis"]:
-        for _ in range(tries):
-            r = client.post(f"{API}/cards/{cid}/refresh")
-            assert r.status_code == 201, r.text
-            wait(lambda: all_done(client, ds), "the synthesis")
-            if client.get(f"{API}/cards/{cid}").json()["narrated_by"]:
-                break
-        client.post(f"{API}/cards/{cid}/dismiss-badge")  # Refresh marks a card "changed", which every clone would show
+    for r in runs:
+        body = {"recipe": r["recipe"], "method": r["method"], "scope": json.loads(r["scope_json"]),
+                "params": json.loads(r["params_json"])}
+        res = client.post(f"{API}/datasets/{ds}/runs", json=body)
+        assert res.status_code == 200, res.text
+    print("running the analyses again…", flush=True)
+    wait(lambda: all_done(client, ds), "the runs")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default=str(ROOT / "api" / "samples" / "seed" / "titanic3"))
     parser.add_argument("--keep-data", action="store_true",
-                        help="start from the seed in --out: keep its data, run its analyses again and write its cards again")
+                        help="start from the seed in --out: keep its data and run its analyses again")
     args = parser.parse_args()
     out = Path(args.out)
     sys.path.insert(0, str(ROOT / "api"))
@@ -103,23 +86,15 @@ def main() -> int:
             ds = client.post(f"{API}/datasets/sample").json()["id"]
             if args.keep_data:
                 assert client.get(f"{API}/datasets/{ds}").json()["status"] == "ready", "no seed to keep in --out"
-                retell(client, ds)
+                rerun(client, ds)
             else:
                 wait(lambda: client.get(f"{API}/datasets/{ds}").json()["status"] == "offer", "the profile")
                 r = client.post(f"{API}/datasets/{ds}/clean", json={})
                 assert r.status_code == 201, r.text
                 print("cleaning with the real model…", flush=True)
-                wait(lambda: client.get(f"{API}/datasets/{ds}").json()["status"] in ("ready", "failed"), "the clean and build")
-                wait(lambda: all_done(client, ds), "stories and runs")
-
-                # The canvas: the first three widget cards in a column, made sense of.
-                cards = [c for c in client.get(f"{API}/datasets/{ds}/cards").json() if c["kind"] == "widget"][:3]
-                canvas = client.get(f"{API}/datasets/{ds}/canvas").json()
-                nodes = [{"id": f"seed{i}", "type": "text", "x": 0, "y": i * 280, "width": 240, "height": 250, "text": "",
-                          "sherlock": {"card_id": c["id"]}} for i, c in enumerate(cards)]
-                client.put(f"{API}/datasets/{ds}/canvas", json={"canvas": {"nodes": nodes, "edges": []}, "etag": canvas["etag"]})
-                with client.stream("POST", f"{API}/datasets/{ds}/chat", json={
-                        "text": "Make sense of this", "context": {"tab": "flow", "selected_card_ids": [c["id"] for c in cards]}}) as s:
+                wait(lambda: client.get(f"{API}/datasets/{ds}").json()["status"] in ("ready", "failed"), "the clean")
+                with client.stream("POST", f"{API}/datasets/{ds}/chat",
+                                   json={"text": "What drives survived?", "context": {"tab": "csv"}}) as s:
                     for _ in s.iter_lines():
                         pass
                 wait(lambda: all_done(client, ds), "the last jobs")

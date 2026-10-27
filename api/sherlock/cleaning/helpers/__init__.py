@@ -252,7 +252,7 @@ def flag_rows(df: pd.DataFrame, mask, reason) -> pd.DataFrame:
 
 def quarantine_rows(df: pd.DataFrame, mask, reason) -> pd.DataFrame:
     """Set `_quarantine_reason` on the masked rows that aren't quarantined already. Rows stay in
-    the data; widgets, models and stories leave them out."""
+    the data; answers and models leave them out."""
     out = df.copy()
     m = pd.Series(mask, index=out.index).fillna(False).astype(bool) & out["_quarantine_reason"].isna()
     out["_quarantine_reason"] = out["_quarantine_reason"].astype(object)

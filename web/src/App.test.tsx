@@ -1,7 +1,15 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { forwardRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ME, mockApi, renderAt } from "./test/render";
+
+// The real grid draws on a canvas, which jsdom lacks.
+vi.mock("@/components/csv/Grid", () => ({
+  Grid: forwardRef<unknown, { readOnly?: boolean }>(function Grid({ readOnly }, _ref) {
+    return <div data-testid="grid" data-readonly={String(!!readOnly)} />;
+  }),
+}));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,10 +52,10 @@ describe("App shell", () => {
     expect(screen.getByText("No CSVs yet.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try with sample (Titanic)" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Load a CSV to start asking")).toBeDisabled();
-    expect(screen.getByText("Stories appear once the dashboard is built.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "How it works" })).toBeInTheDocument(); // the right panel on `/`
   });
 
-  it("lists datasets with their status and opens one on its tab", async () => {
+  it("lists datasets with their status, and an old tab link opens the dataset's one view", async () => {
     mockApi({
       "GET /api/v1/me": ME,
       "GET /api/v1/datasets": [DS, { ...DS, id: "ds_2", name: "sales.csv", status: "ready", current_version: 5 }],
@@ -69,13 +77,29 @@ describe("App shell", () => {
     expect(await screen.findByRole("heading", { name: /Here's what I found in titanic3.csv/ })).toBeInTheDocument();
     expect(await screen.findByText("1,014 missing values in cabin")).toBeInTheDocument();
     expect(screen.getByText("boat records the outcome")).toBeInTheDocument();
-    // Dashboard and Flow wait for the dataset to be ready; CSV is open once it's typed.
-    expect(screen.getByRole("tab", { name: "Flow" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("tab", { name: "CSV" })).toHaveAttribute("href", "/d/ds_1/csv");
+    expect(screen.queryByRole("tablist")).toBeNull(); // no tab switcher: one view per dataset
+  });
+
+  it("opens a ready dataset on its grid, with Changes in the right panel", async () => {
+    const ready = { ...DS, status: "ready", current_version: 3, step_count: 2, clean_plan_id: null };
+    mockApi({
+      "GET /api/v1/me": ME,
+      "GET /api/v1/datasets": [ready],
+      "GET /api/v1/datasets/ds_1": ready,
+      "GET /api/v1/datasets/ds_1/steps": [],
+      "GET /api/v1/datasets/ds_1/chat": [],
+      "GET /api/v1/jobs": [],
+    });
+    renderAt(<App />, "/d/ds_1");
+    expect(await screen.findByTestId("grid")).toHaveAttribute("data-readonly", "false");
+    expect(screen.getByRole("toolbar", { name: "CSV tools" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByText("v3 · 2 steps")).toBeInTheDocument();
+    expect(screen.getByLabelText("Ask Sherlock")).toBeEnabled();
   });
 });
 
-describe("canvas details", () => {
+describe("header details", () => {
   it("shows issue counts, the steps pill, and settings behind the gear", async () => {
     const calls = mockApi({
       "GET /api/v1/me": ME,
@@ -84,7 +108,7 @@ describe("canvas details", () => {
       "GET /api/v1/datasets/ds_1": { ...DS, issue_count: 4, step_count: 1 },
       "GET /api/v1/datasets/ds_1/datacard": { version: 2, row_count: 1, column_count: 1, quarantined: 0, columns: [], issues: [], target_candidates: [], leakage_candidates: [] },
     });
-    renderAt(<App />, "/d/ds_1/dashboard");
+    renderAt(<App />, "/d/ds_1");
     const nav = await screen.findByRole("navigation", { name: "Your CSVs" });
     expect(await within(nav).findByText("offer · 4 issues")).toBeInTheDocument();
     expect(await screen.findByText("v2 · 1 step")).toBeInTheDocument();

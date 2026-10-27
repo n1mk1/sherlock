@@ -10,21 +10,17 @@ import { request } from "@/api/client";
 import type { Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Segmented } from "@/components/ui/segmented";
 import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 
 interface Options {
   include_data: boolean;
-  include_cards: boolean;
-  include_notes: boolean;
   include_runs: boolean;
-  order: "steps_dashboard" | "flow_path";
 }
 interface Preview {
   version: number;
   notes: string[];
-  counts: { steps: number; widgets: number; runs: number; cards: number; notes?: number };
+  counts: { steps: number; runs: number };
   options: Options;
 }
 interface ExportState {
@@ -78,7 +74,7 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
   const preset = useUi((s) => s.exportPreset);
   const blocked = exportBlocked(dataset);
 
-  // Ctrl+Shift+E from any tab, and the ?export=notebook deep link (App Flow §17.1).
+  // Ctrl+Shift+E anywhere on the dataset, and the ?export=notebook deep link (App Flow §17.1).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "e") {
@@ -122,13 +118,13 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
 
   const o = options ?? preview.data?.options;
   const c = preview.data?.counts;
-  const set = (k: keyof Options, v: boolean | string) => o && setOptions({ ...o, [k]: v } as Options);
+  const set = (k: keyof Options, v: boolean) => o && setOptions({ ...o, [k]: v });
   const start = () => {
     if (!o) return;
     setOpen(false);
     runExport(dataset, o);
   };
-  const busy = dataset.status === "cleaning" || dataset.status === "building";
+  const busy = dataset.status === "cleaning";
   // The server's notes (TRD §4.2 preview), less its running-job note: the dialog words that one itself.
   const notes = (preview.data?.notes ?? []).filter((n) => !n.startsWith("A job was still running"));
 
@@ -139,24 +135,14 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
         <DialogDescription className="text-[14px] text-muted-foreground">
           A runnable Jupyter notebook that rebuilds <strong className="text-foreground">{dataset.name} v{preview.data?.version ?? dataset.current_version}</strong>{" "}
           from the raw file{c ? (
-            <>: <span className="font-mono">{c.steps}</span> {c.steps === 1 ? "step" : "steps"}, <span className="font-mono">{c.widgets}</span>{" "}
-              {c.widgets === 1 ? "widget" : "widgets"}, <span className="font-mono">{c.runs}</span> model {c.runs === 1 ? "run" : "runs"},{" "}
-              <span className="font-mono">{c.cards}</span> story {c.cards === 1 ? "card" : "cards"}
-              {c.notes ? <>, <span className="font-mono">{c.notes}</span> canvas {c.notes === 1 ? "note" : "notes"}</> : null}.</>
+            <>: <span className="font-mono">{c.steps}</span> {c.steps === 1 ? "step" : "steps"} and{" "}
+              <span className="font-mono">{c.runs}</span> model {c.runs === 1 ? "run" : "runs"}.</>
           ) : "."}
         </DialogDescription>
         {o && (
           <div className="flex flex-col gap-3">
             <Check label="Include data" help="The raw CSV downloads next to the notebook." checked={o.include_data} onChange={(v) => set("include_data", v)} />
-            <Check label="Include story cards" help="Each card follows its widget; the overview opens the notebook." checked={o.include_cards} onChange={(v) => set("include_cards", v)} />
-            <Check label="Include canvas notes" help="Notes from the Flow canvas." checked={o.include_notes} onChange={(v) => set("include_notes", v)} />
             <Check label="Include ML runs" help="Each run's reproduction code and its tables." checked={o.include_runs} onChange={(v) => set("include_runs", v)} />
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium">Order</span>
-              <Segmented label="Order" value="steps_dashboard" onChange={() => undefined}
-                options={[{ value: "steps_dashboard", label: "Steps, then dashboard order" },
-                          { value: "flow_path", label: <span title="Order the canvas first" className="opacity-40">Flow reading path</span> }]} />
-            </div>
           </div>
         )}
         {(busy || pending > 0 || notes.length > 0) && (

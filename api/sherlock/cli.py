@@ -5,7 +5,6 @@
     uv run sherlock eval ask [--sets titanic3.csv] the ask-anything eval (markdown table)
     uv run sherlock eval notebook [--sets a.csv,b.csv | all] export each file's notebook and run it in a fresh venv
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
-    uv run sherlock eval grounding [--sets a.csv,b.csv] check every story card's chips, facts, labels and wording (markdown table)
     uv run sherlock eval web [--sets a.csv] [--live | --record] web answers: on, failing and off (markdown table);
                                                  offline on recorded fixtures unless --live (needs TAVILY_API_KEY)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
@@ -97,7 +96,7 @@ def export_notebook(dataset_id: str, out: Path) -> int:
             return 1
         built = build(settings, db, cache, dataset, NotebookOptions())
         nbformat.write(built.nb, str(out))
-        _print(f"Wrote {out} (version {built.version}: {built.counts['steps']} steps, {built.counts['widgets']} widgets).")
+        _print(f"Wrote {out} (version {built.version}: {built.counts['steps']} steps, {built.counts['runs']} analyses).")
         return 0
     finally:
         cache.close()
@@ -142,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     p_clean.add_argument("source")
     p_clean.add_argument("--timeout", type=float, default=900)
     p_eval = sub.add_parser("eval", help="run a benchmark")
-    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "grounding", "web", *NOT_BUILT])
+    p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "web", *NOT_BUILT])
     p_eval.add_argument("--sets", default="", help="comma-separated benchmark sets (corruption) or sample files (ask)")
     live = p_eval.add_mutually_exclusive_group()
     live.add_argument("--live", action="store_true", help="web: real Nemotron and real Tavily (needs TAVILY_API_KEY)")
@@ -174,11 +173,6 @@ def main(argv: list[str] | None = None) -> int:
 
             sets = [s for s in args.sets.split(",") if s]
             _print(run_notebook(END_TO_END if sets == ["all"] else sets or None))
-            return 0
-        if args.which == "grounding":
-            from sherlock.eval.grounding import run as run_grounding
-
-            _print(run_grounding([s for s in args.sets.split(",") if s] or None))
             return 0
         if args.which == "web":
             from sherlock.eval.web import run as run_web

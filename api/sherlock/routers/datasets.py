@@ -21,7 +21,7 @@ from sherlock.ingest.importer import import_csv
 from sherlock.ingest.options import ImportOptions
 from sherlock import sample_seed
 from sherlock.cleaning import plan as plans
-from sherlock.jobs.clean import queue_build
+from sherlock.jobs.clean import mark_ready
 from sherlock.jobs.events import emit
 from sherlock.jobs.runner import cancel_job
 from sherlock.ownership import check_dataset, owned_dataset
@@ -44,13 +44,13 @@ class CleaningProgress(BaseModel):
 class Dataset(BaseModel):
     id: str
     name: str
-    status: Literal["profiling", "offer", "cleaning", "building", "ready", "failed"]
+    status: Literal["profiling", "offer", "cleaning", "ready", "failed"]
     current_version: int
     row_count: int | None
     column_count: int | None
     created_at: str
     last_opened_at: str | None
-    last_tab: Literal["csv", "dashboard", "flow"] | None
+    last_tab: Literal["csv"] | None
     cleaning_progress: CleaningProgress | None = None
     error: str | None = None
     # For the library row ("offer · 4 issues") and the version pill ("v7 · 6 steps"): the issues on the
@@ -140,8 +140,7 @@ def sample_dataset(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """The bundled Titanic file; returns the user's existing sample instead of a duplicate. With the
-    cached seed (D9.1) it's a clone, ready at once, with its cleaning, dashboard, stories, analysis
-    and canvas; without it, the file is imported and goes through the pipeline live."""
+    cached seed (D9.1) it's a clone, ready at once, with its cleaning and analysis; without it, the file is imported and goes through the pipeline live."""
     existing = datasets_repo.find_sample(db, user.id)
     if existing is not None:
         return to_dataset(existing, db)
@@ -183,7 +182,7 @@ def get_dataset(row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connectio
 class DatasetPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=200)
-    last_tab: Literal["csv", "dashboard", "flow"] | None = None
+    last_tab: Literal["csv"] | None = None
 
 
 @router.patch("/datasets/{dataset_id}", response_model=Dataset)
@@ -224,8 +223,8 @@ def restore_dataset(
         busy = db.execute("SELECT 1 FROM jobs WHERE dataset_id = ? AND status IN ('queued', 'running')", (row["id"],)).fetchone()
         if not busy and row["status"] == "profiling":
             request.app.state.jobs.enqueue(db, user.id, row["id"], "profile")
-        elif not busy and row["status"] in ("cleaning", "building"):
-            queue_build(db, request.app.state.bus, user.id, row["id"], request.app.state.jobs)
+        elif not busy and row["status"] == "cleaning":
+            mark_ready(db, request.app.state.bus, row["id"])
     return to_dataset(datasets_repo.get(db, user.id, row["id"]), db)
 
 
@@ -293,10 +292,10 @@ def read_dictionary(
     from sherlock.agent.web import read_dictionary as read
     from sherlock.llm.client import CallScope, LLMClient
     from sherlock.web.client import WebClient
-    from sherlock.widgets import service as ws
+    from sherlock.query import context as qx
 
     settings = request.app.state.settings
-    env = ws.Env(settings, db, request.app.state.duckdb, request.app.state.bus)
-    columns = list(ws.user_types(env, row, row["current_version"]))
+    env = qx.Env(settings, db, request.app.state.duckdb, request.app.state.bus)
+    columns = list(qx.user_types(env, row, row["current_version"]))
     scope = CallScope(user_id=row["user_id"], dataset_id=row["id"], deadline=time.monotonic() + DICTIONARY_WALL_S)
     return read(LLMClient(settings), scope, WebClient(settings), db, row["id"], body.url.strip(), columns)

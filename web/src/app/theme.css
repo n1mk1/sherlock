@@ -153,11 +153,9 @@
   --chart-segment-background: var(--muted);
   --chart-segment-line: var(--border-strong);
 
-  /* 2.3 Spotlight: the only glow. <html data-spotlight> follows the setting (default subtle). */
+  /* 2.3 Spotlight: the only glow. */
   --spotlight-shadow: 0 0 0 1px var(--accent), 0 0 7px var(--spotlight);
 }
-:root[data-spotlight="full"] { --spotlight-shadow: 0 0 0 1px var(--accent), 0 0 14px var(--spotlight); }
-:root[data-spotlight="off"] { --spotlight-shadow: 0 0 0 1px var(--accent); }
 
 /* 2.4 / §8: reduce motion from the OS or the setting; the spotlight becomes a 1px ring. */
 @media (prefers-reduced-motion: reduce) {

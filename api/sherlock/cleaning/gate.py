@@ -11,7 +11,7 @@ The critic's verdict that the step changed something it shouldn't skips the step
 decision, 2026-10-25). The critic's list of concerns is recorded on the step but doesn't lower confidence: concerns on
 their own can't keep a step from committing (owner's decision, 2026-10-24).
 blast = cells changed / cells in the dataset, where a newly quarantined row counts as all of its
-cells (`cells_affected`): it leaves every widget, model and story, so it isn't one cell's change.
+cells (`cells_affected`): it leaves every answer and model, so it isn't one cell's change.
 A step the user asked for in the cleaning plan (`requested`, PRD CLEAN-8b) that would be skipped for
 low confidence commits with a flag instead, so it can be undone; with no candidate passing the hard
 checks it is still skipped.

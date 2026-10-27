@@ -16,21 +16,18 @@ from sherlock.db.connection import connect
 from sherlock.db.migrate import current_version, migrate
 from sherlock.errors import RequestIdMiddleware, install_error_handlers, not_found
 from sherlock.identity import IdentityMiddleware, current_user
-from sherlock.jobs import build as _build_job  # noqa: F401  (each import registers a job kind)
-from sherlock.jobs import cascade as _cascade_job  # noqa: F401
-from sherlock.jobs import clean as _clean_job  # noqa: F401
+from sherlock.jobs import clean as _clean_job  # noqa: F401  (each import registers a job kind)
 from sherlock.jobs import export as _export_job  # noqa: F401
 from sherlock.jobs import profile as _profile_job  # noqa: F401
 from sherlock.jobs import purge as _purge_job  # noqa: F401
 from sherlock.jobs import review as _review_job  # noqa: F401
-from sherlock.jobs import stories as _stories_job  # noqa: F401
 from sherlock.ml import runner as _ml_job  # noqa: F401
 from sherlock.cleaning import registry
 from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
-from sherlock.routers import canvas, cards, chat, proposals, cleaning, datasets, exports, jobs, me, rows, rules, runs, steps, streams, widgets
+from sherlock.routers import chat, proposals, cleaning, datasets, exports, jobs, me, rows, rules, runs, selections, steps, streams
 from sherlock.storage import VersionConnections, clear_spill
 from sherlock.storage_check import check_storage
 
@@ -173,14 +170,12 @@ def create_app() -> FastAPI:
     api.include_router(rows.router)
     api.include_router(cleaning.router)
     api.include_router(rules.router)
+    api.include_router(selections.router)
     api.include_router(jobs.router)
     api.include_router(streams.router)
-    api.include_router(widgets.router)
     api.include_router(chat.router)
     api.include_router(exports.router)
-    api.include_router(cards.router)
     api.include_router(runs.router)
-    api.include_router(canvas.router)
     api.include_router(proposals.router)
     app.include_router(api)
     if settings.web_dist_dir and settings.web_dist_dir.is_dir():

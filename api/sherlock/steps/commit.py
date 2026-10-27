@@ -3,8 +3,8 @@
 Under the dataset lock: check `base_version`, let the caller write the new Parquet, check it,
 diff it against the current version (lineage), then in one SQLite transaction write the step,
 the version (with its effective chain), the lineage, `user_edited_cells` for edit batches, and
-bump `current_version`, `next_row_id`, `state_rev` and storage. Then re-profile the new version
-and emit `version.created` (TRD §5.1).
+bump `current_version`, `next_row_id`, `state_rev` and storage. Then re-profile the new version,
+emit `version.created` (TRD §5.1) and mark the ML runs the change outdates (TRD §7.5).
 """
 
 import json
@@ -64,9 +64,11 @@ def emit_version_created(ctx: Context, dataset: sqlite3.Row, step: dict, version
         "cells_changed": impact["cells_changed"], "rows_added": impact["rows_added"],
         "rows_removed": impact["rows_deleted"],
     }, job_id=step["job_id"])
-    from sherlock.jobs.cascade import queue_cascade
+    from sherlock.ml import runner as ml
+    from sherlock.steps.lineage import changes
 
-    queue_cascade(ctx.db, dataset)  # the dashboard follows the new version (TRD §7.6)
+    fresh = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (dataset["id"],)).fetchone()
+    ml.outdate(ctx.db, ctx.bus, fresh, lambda since: changes(ctx.db, fresh["id"], since, version), step["job_id"])
 
 
 def conflict(message: str, **extra) -> ApiError:

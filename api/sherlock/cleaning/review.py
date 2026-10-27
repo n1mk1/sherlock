@@ -33,7 +33,7 @@ from sherlock.db.util import now_iso
 from sherlock.llm.client import BudgetExceeded, CallScope, LLMClient, LLMUnavailable, StructuredOutputError, cap_values, fence
 from sherlock.llm.schemas import Ratings, RuleSuggestions
 from sherlock.llm.text import has_digits
-from sherlock.stories.wording import wording_problem
+from sherlock.llm.wording import wording_problem
 
 CHUNK = 40
 SAMPLES = 2  # rating calls per chunk; the more severe level of each finding is kept

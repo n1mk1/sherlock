@@ -30,7 +30,9 @@ from sherlock.errors import ApiError
 from sherlock.llm.client import BudgetExceeded, LLMUnavailable, StructuredOutputError, fence
 from sherlock.llm.schemas import Meaning, StatsDraft
 from sherlock.rows.query import ident
-from sherlock.widgets import service as ws
+from sherlock.query import compile as qc
+from sherlock.query import context as qx
+from sherlock.query.execute import run_query
 
 HELP_DIR = REPO_ROOT / "docs" / "help"
 MAX_GROUPS = 20
@@ -148,7 +150,7 @@ def ask_stats(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str)
         a, b, ka, kb = b, a, kb, ka  # the number is the outcome
     where = f"{ident(a)} IS NOT NULL AND {ident(b)} IS NOT NULL"
     sql = f"SELECT {ident(a)} AS a, {ident(b)} AS b FROM t WHERE {kit.rows.rows()} AND {where}"
-    with ws.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
+    with qx.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
         df = conn.execute(sql).df()
     n = len(df)
     if n < 3:
@@ -225,7 +227,7 @@ def _size(v: float, cuts: tuple[float, float, float]) -> str:
 
 # --- ask_why --------------------------------------------------------------------------------------
 
-def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, filters: list[dict], rid: str,
+def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, rid: str,
             wait_s: float = WAIT_S, status=lambda _: None) -> Reply:
     """"What drives X?": the `driver_analysis` run for X on the chat's rows, cached when it exists,
     else started and waited for (up to a minute); then its verdict and strongest factors."""
@@ -237,7 +239,7 @@ def ask_why(kit: Toolkit, question: str, resolved: dict, card: dict, filters: li
     target = named[0] if named else (targets[0] if targets else None)
     if target is None:
         raise CantAnswer("There's no column to explain in this file: it needs a yes/no, a category or a number.")
-    req = ml.parse_request({"recipe": "driver_analysis", "filters": filters,
+    req = ml.parse_request({"recipe": "driver_analysis",
                             "scope": {"columns": {"target": target}, "rows": {"selection_id": kit.rows.selection_id}}})
     try:
         run = ml.launch(kit.env, kit.dataset, ml.prepare(kit.env, kit.dataset, req), "chat")
@@ -372,13 +374,10 @@ def _verdict_runs(mc: dict, target: str, metric: str, shown, scores: Result) -> 
 def quarantined(kit: Toolkit, rid: str) -> Reply:
     """"How many rows are quarantined, and why?": counted in code on the current version, by reason. The rows
     in quarantine are exactly the ones `{{rows}}` leaves out, so this reads `t` without it."""
-    from sherlock.widgets import compile as wc
-    from sherlock.widgets.execute import run_query
-
-    sql = wc.validate_select("SELECT _quarantine_reason AS reason, count(*) AS n FROM t WHERE _quarantine_reason IS NOT NULL "
+    sql = qc.validate_select("SELECT _quarantine_reason AS reason, count(*) AS n FROM t WHERE _quarantine_reason IS NOT NULL "
                              "GROUP BY 1 ORDER BY n DESC, 1 LIMIT 20")
-    total_sql = wc.validate_select("SELECT count(*) AS quarantined FROM t WHERE _quarantine_reason IS NOT NULL")
-    with ws.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
+    total_sql = qc.validate_select("SELECT count(*) AS quarantined FROM t WHERE _quarantine_reason IS NOT NULL")
+    with qx.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
         out, total = run_query(conn, sql), run_query(conn, total_sql)
     res = Result(rid, sql, "", out["columns"], out["rows"], out["row_count"])
     count = Result(f"{rid}n", total_sql, "", total["columns"], total["rows"], total["row_count"])
@@ -387,23 +386,18 @@ def quarantined(kit: Toolkit, rid: str) -> Reply:
     if not count.rows[0][0]:
         return Reply(blocks=[text_block([text("No rows are quarantined in this version.")])], sources=sources[:1])
     runs = [chip(count, 0, 0), text(" rows are quarantined in this version: they're kept in the file but left out of "
-            "answers, widgets and models. Each row's reason is below, and the steps that set them follow. Restore in the "
+            "answers and models. Each row's reason is below, and the steps that set them follow. Restore in the "
             "CSV tab puts a row back as a step you can undo.")]
     return Reply(blocks=[text_block(runs), table_block(res)], sources=sources, focus={"quarantined": True})
 
 
 # --- ask_model ------------------------------------------------------------------------------------
 
-def pick_run(db, dataset, context: dict, resolved: dict, focus: dict | None):
-    """The run a question is about: the focused widget's, the previous answer's, one on a column the
-    message names, else the newest finished one."""
-    ids = []
-    wid = context.get("focused_widget_id")
-    if wid:
-        w = db.execute("SELECT run_id FROM widgets WHERE id = ? AND dataset_id = ?", (wid, dataset["id"])).fetchone()
-        ids.append(w["run_id"] if w else None)
-    ids.append((focus or {}).get("run_id"))
-    for rid in [i for i in ids if i]:
+def pick_run(db, dataset, resolved: dict, focus: dict | None):
+    """The run a question is about: the previous answer's, one on a column the message names, else the
+    newest finished one."""
+    rid = (focus or {}).get("run_id")
+    if rid:
         row = db.execute("SELECT * FROM runs WHERE id = ? AND status IN ('done', 'outdated')", (rid,)).fetchone()
         if row:
             return row
@@ -418,9 +412,9 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
     answered in code with the misclassified rows (out of fold) and a link to them in the CSV tab."""
     from sherlock.ml import runner as ml
 
-    run = pick_run(kit.env.db, kit.dataset, context, resolved, focus)
+    run = pick_run(kit.env.db, kit.dataset, resolved, focus)
     if run is None:
-        raise CantAnswer("There's no analysis yet. Ask “what drives <a column>?”, or use a widget's analysis menu.")
+        raise CantAnswer("There's no analysis yet. Ask “what drives <a column>?”.")
     mc = json.loads(run["model_card_json"])
     outdated = run["status"] == "outdated"  # said, never passed off as current
     source = {"kind": "run", "run_id": run["id"], "label": f"The model card of “what drives {mc['target']}” "
@@ -476,7 +470,7 @@ def ask_model(kit: Toolkit, question: str, resolved: dict, context: dict, focus:
 
 def _wrong_table(kit: Toolkit, sel: dict, rid: str) -> Result:
     """The first rows of the selection, with the selection attached for "Open these rows in CSV"."""
-    sql = ws.selection_sql(kit.env.db, kit.dataset["id"], sel["selection_id"])
+    sql = qx.selection_sql(kit.env.db, kit.dataset["id"], sel["selection_id"])
     template = f"SELECT * EXCLUDE (_quarantine_reason) FROM t WHERE {{{{rows}}}} AND {sql} ORDER BY _row_id LIMIT 20"
     res = kit._run(template, rid)
     res.total, res.selection_id = sel["row_count"], sel["selection_id"]
@@ -585,8 +579,8 @@ def app_help(question: str, folder: Path = HELP_DIR) -> Reply:
         scored.append((score, s))
     scored.sort(key=lambda x: -x[0])
     if not scored or scored[0][0] < 1.5:
-        raise CantAnswer("I couldn't find that in the help. Ask about loading a file, cleaning, the dashboard, "
-                         "analysis, the CSV tab, chat or exporting a notebook.")
+        raise CantAnswer("I couldn't find that in the help. Ask about loading a file, cleaning, analysis, "
+                         "the CSV tab, chat or exporting a notebook.")
     best = scored[0][1]
     runs = [{"type": "label", "ref": f"help:{best['file']}", "text": best["heading"]}, text(": " + best["text"])]
     also = [s for score, s in scored[1:3] if score >= max(1.5, scored[0][0] / 2)]

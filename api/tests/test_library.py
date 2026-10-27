@@ -19,6 +19,7 @@ def test_rename_and_last_tab(client):
     assert r.status_code == 200 and r.json()["name"] == "People" and r.json()["last_tab"] == "csv"
     assert client.patch(f"{API}/datasets/{ds['id']}", json={"name": ""}).status_code == 422
     assert client.patch(f"{API}/datasets/{ds['id']}", json={"last_tab": "nope"}).status_code == 422
+    assert client.patch(f"{API}/datasets/{ds['id']}", json={"last_tab": "dashboard"}).status_code == 422  # the CSV tab only
     assert client.patch(f"{API}/datasets/{ds['id']}", json={"owner": "x"}).status_code == 422
 
 
@@ -33,6 +34,21 @@ def test_delete_hides_and_restore_brings_back(client):
     assert [d["id"] for d in client.get(f"{API}/datasets").json()] == [ds["id"]]
     kinds = [(j["kind"], j["status"]) for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()]
     assert kinds == [("profile", "queued"), ("profile", "cancelled")]
+
+
+def test_restore_of_a_dataset_left_cleaning_makes_it_ready(client):
+    """A clean the delete cancelled doesn't start again: the steps it committed stay and the data is
+    ready with them (TRD §3.3)."""
+    ds = upload(client)
+    assert client.delete(f"{API}/datasets/{ds['id']}").status_code == 204
+    db = connect(get_settings())
+    db.execute("UPDATE datasets SET status = 'cleaning' WHERE id = ?", (ds["id"],))
+    db.close()
+    r = client.post(f"{API}/datasets/{ds['id']}/restore")
+    assert r.status_code == 200 and r.json()["status"] == "ready"
+    assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "ready"
+    kinds = [(j["kind"], j["status"]) for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()]
+    assert kinds == [("profile", "cancelled")]
 
 
 def test_restore_window_is_ten_minutes(client):

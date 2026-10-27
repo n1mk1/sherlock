@@ -39,17 +39,6 @@
   {"purpose": "predicate", "match": ["Request:\n<data>\nwhich passengers paid more than 500?\n</data>"],
    "content": {"predicate": "fare > 500", "label": "passengers who paid over five hundred"}},
 
-  {"purpose": "route", "match": ["<data>\nadd a chart of fare by port to the dashboard\n</data>"],
-   "content": {"intents": ["create_widget"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "port", "kind": "column"}]}},
-  {"purpose": "widget", "match": ["Request:\n<data>\nadd a chart of fare by port to the dashboard\n</data>"],
-   "content": {"reading": "port → embarked", "title": "Average fare by port",
-               "sql": "SELECT embarked, AVG(fare) AS avg_fare FROM t WHERE {{rows}} AND embarked IS NOT NULL GROUP BY 1 ORDER BY 2 DESC",
-               "view": "bar", "x": "embarked", "y": "avg_fare"}},
-
-  {"purpose": "widget", "match": ["Request:\n<data>\na KPI of the average age\n</data>"],
-   "content": {"reading": "age", "title": "Average age", "sql": "SELECT AVG(age) AS avg_age FROM t WHERE {{rows}}",
-               "view": "kpi", "x": null, "y": "avg_age"}},
-
   {"purpose": "route", "match": ["<data>\ncompare the groups\n</data>"],
    "content": {"intents": ["ask_data"], "ambiguous": true, "clarification": {"question": "Which groups?", "options": ["men and women", "the passenger classes"]},
                "multi_step": false, "entities": []}},
@@ -63,7 +52,7 @@
                "prose": [{"text": "Women survived at "}, {"chip": "r1:0:1"}, {"text": " and men at "}, {"chip": "r1:1:1"}, {"text": "."}]}},
 
   {"purpose": "route", "match": ["<data>\nsurvival rate by sex as a chart\n</data>"],
-   "content": {"intents": ["ask_data", "create_widget"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}},
+   "content": {"intents": ["ask_data"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}},
   {"purpose": "sql", "match": ["Question:\n<data>\nsurvival rate by sex as a chart\n</data>"],
    "content": {"reading": "sex", "sql": "SELECT sex, AVG(survived) AS survival_rate FROM t WHERE {{rows}} GROUP BY 1 ORDER BY 1",
                "answerable": true, "closest": null}},
@@ -89,10 +78,5 @@
   {"purpose": "route", "match": ["<data>\nwhat does sibsp mean?\n</data>"], "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "content": {"intents": ["ask_meaning"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "sibsp", "kind": "column"}]}, "prompt_tokens": 1425, "completion_tokens": 70},
   {"purpose": "meaning", "match": ["column: sibsp"], "model": "nvidia/nemotron-3-super-120b-a12b", "content": {"general": ""}, "prompt_tokens": 237, "completion_tokens": 201},
   {"purpose": "meaning", "match": ["column: sibsp"], "model": "nvidia/nemotron-3-super-120b-a12b", "content": {"general": "It probably indicates how many siblings and/or spouses of each passenger were traveling together on the Titanic."}, "prompt_tokens": 292, "completion_tokens": 313},
-  {"purpose": "route", "match": ["<data>\nhow do I undo a step?\n</data>"], "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "content": {"intents": ["app_help"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "undo a step", "kind": "widget"}]}, "prompt_tokens": 1402, "completion_tokens": 67},
-  {"purpose": "route", "match": ["<data>\nadd a chart of fare by sex to the dashboard\n</data>"], "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "content": {"intents": ["ask_data"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "fare", "kind": "column"}, {"text": "sex", "kind": "column"}, {"text": "chart of fare by sex", "kind": "widget"}]}, "prompt_tokens": 1296, "completion_tokens": 105},
-  {"purpose": "sql", "match": ["Question:\n<data>\nadd a chart of fare by sex to the dashboard\n</data>"], "model": "nvidia/nemotron-3-super-120b-a12b", "content": {"reading": "", "sql": "SELECT \"sex\", AVG(\"fare\") AS avg_fare FROM t WHERE {{rows}} GROUP BY \"sex\" ORDER BY \"sex\"", "answerable": true, "closest": null}, "prompt_tokens": 1233, "completion_tokens": 571},
-  {"purpose": "compose", "match": ["Question:\n<data>\nadd a chart of fare by sex to the dashboard\n</data>"], "model": "nvidia/nemotron-3-super-120b-a12b", "content": {"prose": [{"text": ""}], "shape": "chart", "number": null, "label": null, "chart": null}, "prompt_tokens": 565, "completion_tokens": 443},
-  {"purpose": "compose", "match": ["Question:\n<data>\nadd a chart of fare by sex to the dashboard\n</data>"], "model": "nvidia/nemotron-3-super-120b-a12b", "content": {"prose": [{"text": "The average fare for "}, {"label": "value:sex:female"}, {"text": " is "}, {"chip": "r1:0:1"}, {"text": " while for "}, {"label": "value:sex:male"}, {"text": " it is "}, {"chip": "r1:1:1"}, {"text": "."}], "shape": "chart", "number": null, "label": null, "chart": null}, "prompt_tokens": 644, "completion_tokens": 804},
-  {"purpose": "route", "match": ["<data>\nmake this a line chart\n</data>"], "content": {"intents": ["update_widget"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}}
+  {"purpose": "route", "match": ["<data>\nhow do I undo a step?\n</data>"], "model": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B", "content": {"intents": ["app_help"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}, "prompt_tokens": 1402, "completion_tokens": 67}
 ]

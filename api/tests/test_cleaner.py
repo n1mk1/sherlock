@@ -29,7 +29,7 @@ def offered(client, csv=CSV):
     return wait_status(client, ds["id"], "offer", "failed")
 
 
-def test_clean_commits_steps_reports_and_builds(client):
+def test_clean_commits_steps_reports_and_ends_ready(client):
     ds = offered(client)
     assert ds["status"] == "offer" and ds["current_version"] == 2  # the typing step typed age
     r = client.post(f"{API}/datasets/{ds['id']}/clean", json={})
@@ -90,19 +90,22 @@ def test_clean_commits_steps_reports_and_builds(client):
     assert committed["note"] == "Merges spelling variants of each region."
     left = next(entry for entry in logs if entry.get("text", "").startswith("Left as is"))
     assert left["calls"]["count"] == 1  # the diagnosis alone
-    # The clean queues the build, and the build queues the stories (TRD §7.3 step 7).
-    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()][:3] == [
-        "stories", "build_dashboard", "clean"]
+    # A whole clean ends `ready` by itself; it queues no other job (TRD §3.3).
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["clean", "profile"]
+    statuses = [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
+    assert statuses[-2:] == ["cleaning", "ready"]
     calls = db_rows("SELECT purpose, role FROM llm_calls WHERE job_id = ?", job["id"])
     assert {(c["purpose"], c["role"]) for c in calls} == {("diagnose", "large"), ("propose", "large"), ("critic", "medium")}
 
 
-def test_use_as_is_builds_on_the_typed_version(client):
+def test_use_as_is_returns_the_dataset_ready_on_the_typed_version(client):
     ds = offered(client)
     r = client.post(f"{API}/datasets/{ds['id']}/use-as-is")
-    assert r.status_code == 201 and r.json()["kind"] == "build_dashboard"
-    done = wait_status(client, ds["id"], "ready", "failed")
-    assert done["status"] == "ready" and done["current_version"] == 2
+    assert r.status_code == 200, r.text
+    done = r.json()
+    assert done["id"] == ds["id"] and done["status"] == "ready" and done["current_version"] == 2
+    assert client.get(f"{API}/datasets/{ds['id']}").json()["status"] == "ready"
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["profile"]
     assert client.post(f"{API}/datasets/{ds['id']}/use-as-is").status_code == 409
 
 
@@ -139,8 +142,9 @@ def test_unavailable_model_before_any_step_returns_to_the_offer(no_model, client
     client.post(f"{API}/datasets/{ds['id']}/clean", json={})
     back = wait_for(lambda: (d := client.get(f"{API}/datasets/{ds['id']}").json())["status"] == "offer" and d.get("error") and d)
     assert back["error"].startswith("Cleaning stopped: ")
-    job = client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()[0]
-    assert job["kind"] == "clean" and job["status"] == "failed"
+    jobs = client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()
+    assert [(j["kind"], j["status"]) for j in jobs] == [("clean", "failed"), ("profile", "done")]
+    assert [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"][-2:] == ["cleaning", "offer"]
     assert client.get(f"{API}/datasets/{ds['id']}/report").json()["ended_by"] == "error"
 
 
@@ -170,7 +174,7 @@ def slow_model(monkeypatch, mocked_llm):
     get_settings.cache_clear()
 
 
-def test_stop_kills_the_running_worker_and_builds(slow_model, client):
+def test_stop_kills_the_running_worker_and_ends_ready(slow_model, client):
     import time
 
     ds = offered(client)
@@ -182,8 +186,12 @@ def test_stop_kills_the_running_worker_and_builds(slow_model, client):
     assert client.post(f"{API}/jobs/{job['id']}/cancel").status_code == 204
     done = finished(client, job["id"])
     assert done["status"] == "cancelled" and time.monotonic() - stopped_at < 10
-    assert wait_status(client, ds["id"], "ready", "failed")["status"] == "ready"  # Stop still builds the dashboard
+    # Stop keeps the committed steps and the data is ready with them.
+    ready = wait_status(client, ds["id"], "ready", "failed")
+    assert ready["status"] == "ready" and ready["current_version"] >= ds["current_version"]
+    assert sorted(s["no"] for s in client.get(f"{API}/datasets/{ds['id']}/steps").json()) == list(range(1, ready["current_version"]))
     assert client.get(f"{API}/datasets/{ds['id']}/report").json()["ended_by"] == "stopped"
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["clean", "profile"]
 
 
 def test_after_upload_always_opens_the_plan_and_cleans_nothing(client):
@@ -200,13 +208,11 @@ def test_after_upload_always_opens_the_plan_and_cleans_nothing(client):
     assert back["status"] == "offer" and back["clean_plan_id"] is None
 
 
-def test_after_upload_never_builds_and_says_it_was_automatic(client):
+def test_after_upload_never_ends_ready_without_another_job(client):
     assert client.put(f"{API}/me/settings", json={"after_upload": "never"}).status_code == 200
     ds = upload(client, CSV, "messy.csv")
     assert wait_status(client, ds["id"], "ready", "failed")["status"] == "ready"
-    jobs = list(reversed(client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()))
-    assert [j["kind"] for j in jobs][:2] == ["profile", "build_dashboard"]
-    assert jobs[1]["automatic"] is True and jobs[0]["automatic"] is False
+    assert [j["kind"] for j in client.get(f"{API}/jobs", params={"dataset_id": ds["id"]}).json()] == ["profile"]
     assert "offer" not in [d["status"] for t, d in events_of(ds["id"]) if t == "dataset.status"]
 
 
@@ -306,7 +312,7 @@ def test_plan_refusals(client):
     assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": "pln_nope"}).status_code == 404
     assert client.get(f"{API}/clean-plans/pln_nope").status_code == 404
     # Clean it myself discards the draft.
-    assert client.post(f"{API}/datasets/{ds['id']}/use-as-is").status_code == 201
+    assert client.post(f"{API}/datasets/{ds['id']}/use-as-is").status_code == 200
     assert client.get(f"{API}/clean-plans/{plan['id']}").json()["status"] == "discarded"
 
 

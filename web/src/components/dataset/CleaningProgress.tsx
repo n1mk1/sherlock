@@ -163,7 +163,7 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
             </p>
           </section>
           <p className="rounded-2xl border border-dashed border-border-strong px-[22px] py-5 text-[13px] text-muted-foreground">
-            When cleaning finishes, the dashboard builds itself.
+            When cleaning finishes, the grid opens with every fix marked, and Changes lists each step.
           </p>
         </aside>
       </div>

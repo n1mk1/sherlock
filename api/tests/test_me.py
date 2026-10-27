@@ -7,10 +7,7 @@ DEFAULTS = {
     "chatbar": "pinned",
     "after_upload": "ask",
     "cleaning_mode": "auto",
-    "story_updates": "auto",
-    "spotlight": "subtle",
     "reduce_motion": "system",
-    "default_tab": "dashboard",
 }
 
 
@@ -32,7 +29,8 @@ def test_put_settings_merges_and_persists(client):
 
 
 def test_put_settings_rejects_bad_values_with_the_error_envelope(client):
-    for body in ({"accent": "neon"}, {"font_size": 14}):
+    # The removed dashboard settings are unknown keys now.
+    for body in ({"accent": "neon"}, {"font_size": 14}, {"story_updates": "ask"}, {"default_tab": "csv"}):
         res = client.put("/api/v1/me/settings", json=body)
         assert res.status_code == 422
         error = res.json()["error"]
@@ -46,12 +44,13 @@ def test_stale_stored_values_fall_back_to_defaults(client):
     conn = connect(get_settings())
     conn.execute(
         "UPDATE users SET settings_json = ? WHERE id = ?",
-        ('{"accent": "retired-accent", "theme": "light"}', user_id),
+        ('{"accent": "retired-accent", "theme": "light", "story_updates": "ask", "default_tab": "flow"}', user_id),
     )
     conn.close()
     settings = client.get("/api/v1/me").json()["settings"]
     assert settings["accent"] == "verdigris"
     assert settings["theme"] == "light"
+    assert settings == DEFAULTS | {"theme": "light"}  # a removed setting someone stored is ignored
 
 
 def test_unknown_route_uses_the_error_envelope(client):
