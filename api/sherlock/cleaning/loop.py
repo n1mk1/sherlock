@@ -38,7 +38,7 @@ import pandas as pd
 
 from sherlock.cleaning import gate, levels, prompts, registry, verifiers
 from sherlock.cleaning.plan import (
-    USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
+    DATE_ORDERS, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
 )
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
@@ -142,6 +142,21 @@ def code_fix(issue: dict) -> Candidate | None:
     if issue.get("user") or registry.setting(issue, "domain_rule") or spec.code_fix is None:
         return None
     return spec.code_fix(issue)
+
+
+def order_candidate(issue: dict) -> Candidate | None:
+    """The date order the user picked (PRD CLEAN-8b) as code's own parse: `parse_dates_smart` with that
+    `order_hint`, the values it can't read quarantined. The user's choice settles what the data can't, so
+    when it passes the checks it is the fix, and candidates that read the dates the other way are no
+    disagreement (TRD §7.2). None without a picked order."""
+    order, column = issue.get("date_order"), issue.get("column")
+    if not order or column is None or issue.get("user"):
+        return None
+    code = (f"parsed = parse_dates_smart(df[{column!r}], order_hint={order!r})\nresult = df.copy()\n"
+            f"result[{column!r}] = parsed\n"
+            f"result = quarantine_rows(result, parse_failures(df[{column!r}], parsed), {'unparsed: ' + column!r})")
+    return Candidate(label=f"Parse dates {DATE_ORDERS[order]}", code=code,
+                     expected_effect="Reads every date in the order you picked; values that aren't dates are set aside.")
 
 
 def measure_column(issue: dict, card: dict) -> bool:
@@ -496,6 +511,7 @@ class Cleaner:
         column = issue["column"]
         requested = bool(issue.get("requested"))
         rule = rule_candidate(issue)  # a domain rule (impossible values): no diagnosis or review leaves it be
+        picked = order_candidate(issue)  # the date order the user picked: code's own parse settles it
         detector = None if issue.get("user") else issue["detector"]  # a user step has no detector to re-run
         # The total is the issues the run expected at its start; it grows only if a fix exposes more.
         self.ctx.progress(self.state.attempted, max(self.state.planned, self.state.attempted),
@@ -515,11 +531,13 @@ class Cleaner:
         try:
             proposed = list(self._propose(issue, diagnosis, before).candidates)
         except StructuredOutputError:  # a reply cut off at its token cap too (TRD §3.5)
-            if rule is None and fallback is None:
+            if rule is None and fallback is None and picked is None:
                 return self._skip(issue, "model output invalid", "model_error")
             proposed = []
         if rule is not None:
             proposed.append(rule)
+        if picked is not None:
+            proposed.append(picked)
         sample_path = self.work / f"sample_{uuid.uuid4().hex}.parquet"
         _copy_rows(path, sample_path, self._sample_ids(before, issue))
         sample = self._read(sample_path)
@@ -555,7 +573,8 @@ class Cleaner:
             score(fallback)  # the model gave no fix that passes (or none at all): the code's own parse
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         best_i = best_candidate(scored, len([c for c in sample.columns if c not in verifiers.SYSTEM]))
-        if rule is not None and scored[-1][1] > 0.0:  # the domain rule's quarantine (last) beats a guessed value
+        settled = picked is not None and scored[-1][1] > 0.0  # the user's order (last) is the fix
+        if (rule is not None or picked is not None) and scored[-1][1] > 0.0:  # code's own fix beats a guessed value
             best_i = len(scored) - 1
         if best_i is None or scored[best_i][1] == 0.0:
             why = next((e for *_, e in scored if e), "no candidate passed the checks")
@@ -565,7 +584,7 @@ class Cleaner:
         # Output agreement: candidates that pass but value the same cells differently leave
         # the data's answer open, so the step is skipped before the full run, with two cells both ways.
         compared = verifiers.compare(sample, results, best_i)
-        apart = gate.disagree(compared.disagreement)
+        apart = None if settled else gate.disagree(compared.disagreement)  # a picked order isn't a guess
         if apart:
             one, other = (scored[i][0].label for i in compared.pair)
             shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)

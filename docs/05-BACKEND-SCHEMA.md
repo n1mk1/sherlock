@@ -28,6 +28,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
   | `008_column_notes.sql` | `column_notes` (§2.23) |
   | `009_issue_review.sql` | `issues.detector_version`, `issues.skip_kind` (§2.8); `issue_reviews` (§2.24) |
   | `010_detector_rules.sql` | `detector_rules` and `detector_rules_dataset` (§2.25) |
+  | `011_review_fingerprint.sql` | `issue_reviews.fingerprint` and `issue_reviews_fingerprint` (§2.24) |
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
@@ -731,9 +732,13 @@ CREATE TABLE issue_reviews (
   sev_source       TEXT NOT NULL,              -- model|default
   likely_real      INTEGER NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL,
+  fingerprint      TEXT,                       -- (011) sha1 of key, detector version, count, examples, role, type
   PRIMARY KEY (dataset_id, version, key)
 );
+CREATE INDEX issue_reviews_fingerprint ON issue_reviews(dataset_id, fingerprint);
 ```
+
+- **`fingerprint`** identifies the finding a rating is for. A finding with the same fingerprint later in the same dataset (a second review of the version, or an issue a fix left as it was on a newer version) reuses the model's rating without asking again (TRD §7.2).
 
 - Versions never change (CLAUDE.md Rule 3), so a rating holds until its detector's `version` changes: a row whose `detector_version` isn't the detector's current one is ignored.
 - Written by the `review_issues` job (TRD §7.2), one row per issue key it sent, model or default, replacing the version's rows.

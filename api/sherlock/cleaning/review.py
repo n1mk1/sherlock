@@ -16,8 +16,13 @@ floor wins over `likely_real`.
 
 Ratings are stored in `issue_reviews` (Schema §2.24), one row per issue key, model or default, so a
 version is reviewed once: reopening or merging a plan reads them, and a failed review isn't retried.
+Each row keeps its finding's fingerprint (`fingerprint`: key, detector version, count, examples, and
+the column's role and type). A finding identical to one the model already rated for the same dataset,
+on any version, reuses that rating with no model call, so the same file reviewed twice gets the same
+levels, and an issue a fix left untouched keeps its level on the next version.
 """
 
+import hashlib
 import json
 import sqlite3
 
@@ -100,6 +105,23 @@ def rated(issue: dict, card: dict, level: str, reason: str, likely_real: bool) -
     return {"sev": sev, "sev_reason": reason.strip() if ok else None, "sev_source": "model", "likely_real": likely_real}
 
 
+def fingerprint(issue: dict, card: dict) -> str:
+    """What makes two findings the same for a rating: key, detector version, count, examples, and the
+    column's role and type."""
+    entry = next((c for c in card.get("columns", []) if c["name"] == issue["column"]), {})
+    parts = [key(issue), registry.get(issue["detector"]).version, issue["count"], list(issue.get("examples") or []),
+             levels.role(issue["column"], card) if issue["column"] else "", entry.get("type", "")]
+    return hashlib.sha1(json.dumps(parts, default=str, ensure_ascii=False).encode()).hexdigest()
+
+
+def earlier(db: sqlite3.Connection, dataset_id: str) -> dict[str, dict]:
+    """The model's ratings of this dataset's findings, on any version, by fingerprint."""
+    rows = db.execute("SELECT * FROM issue_reviews WHERE dataset_id = ? AND sev_source = 'model' AND fingerprint IS NOT NULL",
+                      (dataset_id,)).fetchall()
+    return {r["fingerprint"]: {"sev": r["sev"], "sev_reason": r["sev_reason"], "sev_source": "model",
+                               "likely_real": bool(r["likely_real"])} for r in rows}
+
+
 def default(issue: dict, card: dict) -> dict:
     return {"sev": levels.default_level(issue, card), "sev_reason": None, "sev_source": "default", "likely_real": False}
 
@@ -154,8 +176,11 @@ def review(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
     model rated any, else "default"."""
     llm = llm or LLMClient(settings)
     todo = sorted(findings(card) + list(extra), key=lambda i: -i["severity"])
-    out: dict[str, dict] = {}
-    chunks = [todo[i:i + CHUNK] for i in range(0, len(todo), CHUNK)]
+    prints = {key(i): fingerprint(i, card) for i in todo}
+    known = earlier(db, dataset["id"])
+    out: dict[str, dict] = {key(i): known[prints[key(i)]] for i in todo if prints[key(i)] in known}
+    ask = [i for i in todo if key(i) not in out]  # only findings never rated are sent
+    chunks = [ask[i:i + CHUNK] for i in range(0, len(ask), CHUNK)]
     for n, chunk in enumerate(chunks, 1):
         progress(n, len(chunks), "Rating the findings")
         refs = [f"f{i}" for i in range(1, len(chunk) + 1)]
@@ -181,9 +206,9 @@ def review(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
     db.execute("DELETE FROM issue_reviews WHERE dataset_id = ? AND version = ?", (dataset["id"], card["version"]))
     db.executemany(
         "INSERT INTO issue_reviews (dataset_id, version, key, detector_version, sev, sev_reason, sev_source, likely_real, "
-        "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [(dataset["id"], card["version"], k, v, r["sev"], r["sev_reason"], r["sev_source"], int(r["likely_real"]), now)
-         for k, r, v in rows])
+        "created_at, fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(dataset["id"], card["version"], k, v, r["sev"], r["sev_reason"], r["sev_source"], int(r["likely_real"]), now,
+          prints[k]) for k, r, v in rows])
     return "ready" if any(r["sev_source"] == "model" for _, r, _ in rows) else "default"
 
 

@@ -939,7 +939,7 @@ Slices 2 and 3 only need slice 1, so they can be built in parallel, as can slice
 | # | Question | Decision |
 |---|---|---|
 | 8 | The floor (§5.3) is the spec's own default, so on the target the model may lower a level by one step; the live rating check (§13) expected `breaks` or `skews` there. | §5.3's floor stands; the check now expects at least the spec's own default on the target or a measure. |
-| 9 | The same version reviewed twice gave a different level for at least one finding at temperature 0. | Each chunk is rated twice and the more severe level kept (§6.2), so one lighter reading can't move a finding down. This narrows the differences but doesn't remove them, so the stored review (one per version) is what the plan and the queue use, and the live stability check can still fail. Open: whether to constrain the model's move from the default level further. |
+| 9 | The same version reviewed twice gave a different level for at least one finding at temperature 0. | Each chunk is rated twice and the more severe level kept (§6.2), so one lighter reading can't move a finding down. Two readings narrow the differences without removing them, so a finding identical to one already rated for the dataset (same key, detector version, count, examples, role and type) reuses that rating with no model call: a re-review of a file gives the same levels, and an untouched issue keeps its level on the next version. |
 
 ### 15.2 Risks
 

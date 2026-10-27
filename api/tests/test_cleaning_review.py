@@ -271,6 +271,9 @@ def test_two_ratings_keep_the_more_severe_level_of_each_finding(monkeypatch):
         def execute(self, *a):
             return self
 
+        def fetchall(self):
+            return []  # no earlier ratings
+
         def executemany(self, sql, rows):
             stored.update({r[2]: r for r in rows})
 
@@ -282,3 +285,32 @@ def test_two_ratings_keep_the_more_severe_level_of_each_finding(monkeypatch):
     assert calls == ["rate", "rate"]
     assert stored["whitespace_case|outcome"][4:6] == ("splits", "Splits the groups.")
     assert stored["outliers|amount"][4] == "check"  # check (likely real) is more severe than cosmetic
+
+
+@pytest.mark.usefixtures("reviews_on")
+def test_a_second_review_reuses_the_ratings_of_identical_findings(client):
+    ds, plan = _reviewed_plan(client)
+    from sherlock.db.connection import connect
+    from sherlock.profile import service as profile_service
+
+    db = connect(get_settings())
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds["id"],)).fetchone()
+        card = profile_service.get_or_build(get_settings(), db, client.app.state.duckdb, dataset, plan["version"])
+        first = review.stored(db, ds["id"], plan["version"])
+        rated = ScriptedLLM.calls.count("rate")
+        assert review.review(get_settings(), db, dataset, card, None, llm=ScriptedLLM()) == "ready"
+        assert ScriptedLLM.calls.count("rate") == rated  # every finding was rated before: no model call
+        assert review.stored(db, ds["id"], plan["version"]) == first
+    finally:
+        db.close()
+
+
+def test_a_picked_date_order_is_codes_own_parse():
+    from sherlock.cleaning.loop import order_candidate
+
+    fix = order_candidate({"detector": "ambiguous_dates", "column": "visit_date", "date_order": "dmy"})
+    assert fix.label == "Parse dates day-first (dd/mm/yyyy)"
+    assert "parse_dates_smart(df['visit_date'], order_hint='dmy')" in fix.code and "quarantine_rows(" in fix.code
+    compile(fix.code, "fix", "exec")
+    assert order_candidate({"detector": "ambiguous_dates", "column": "visit_date", "date_order": None}) is None

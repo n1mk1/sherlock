@@ -109,7 +109,8 @@ def test_the_user_picks_the_date_order_in_the_plan_and_no_vote_runs(client):
     calls = [c["purpose"] for c in db_rows("SELECT purpose FROM llm_calls WHERE job_id = ? ORDER BY id", job["id"])]
     assert calls.count("diagnose") == 1 and calls[:3] == ["diagnose", "propose", "critic"]  # one diagnosis, no vote of three
     report = client.get(f"{API}/datasets/{ds['id']}/report").json()
-    assert [s["summary"] for s in report["steps"]] == ["Parse day-first (visit_date)"]
+    # Code parses the dates in the picked order itself; it beats the model's parse (TRD §7.2).
+    assert [s["summary"] for s in report["steps"]] == ["Parse dates day-first (dd/mm/yyyy) (visit_date)"]
     (mine,) = report["your_steps"]
     assert mine["outcome"] in ("fixed", "flagged") and mine["instruction"].startswith("Read every date in visit_date day-first")
     assert report["decisions"][0]["asked"] == mine["instruction"]
