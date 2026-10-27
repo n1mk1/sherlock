@@ -1,6 +1,7 @@
 """Missing values and missingness patterns: per column, plus columns that go missing together."""
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector
+from sherlock.cleaning.detectors.fixtures import clean_frame
 
 TOGETHER = 0.9  # Jaccard overlap of two columns' missing masks
 
@@ -30,7 +31,13 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """Empty the chosen cells."""
+    return {(i, column): None for i in rows}
+
+
 SPEC = DetectorSpec(
     "missing", "missing values", "Missing values per column, and columns that go missing together.",
     group="missing", weight=0.5, default_level="check", scope="column", detect=detect,
+    injectors={"missing": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

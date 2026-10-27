@@ -9,7 +9,8 @@ For each target-like column, a column leaks when either
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector
+from sherlock.cleaning.detectors.fixtures import clean_frame
 
 ACCURACY = 0.95
 PURITY = 0.98
@@ -64,9 +65,17 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def found_fixture():
+    """A column that copies the yes/no target in other words."""
+    df = clean_frame()
+    df.insert(len(df.columns) - 1, "result_code", ["A" if v == "yes" else "B" for v in df["flag"]])
+    return df
+
+
 SPEC = DetectorSpec(
     "leakage", "records the outcome", "Columns that record the outcome, so a model using them would cheat.",
     group="other", weight=1.0, default_level=None, scope="column", detect=detect,
     never_change="Records the outcome, so it is marked as leakage and not changed", skip_text="excluded from models",
     marks_column="leakage_candidates",
+    found_fixture=found_fixture,
 )

@@ -3,7 +3,8 @@ Skewed non-negative measures (skew > 2) are scored on log(1 + x)."""
 
 import numpy as np
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 
 ROBUST_Z = 5.0
 FENCE = 3.0
@@ -45,7 +46,13 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """Each chosen number made fifty times larger."""
+    return {(i, column): f"{float(df.at[i, column]) * 50:g}" for i in rows}
+
+
 SPEC = DetectorSpec(
     "outliers", "outliers", "Extreme values in a measure, by robust statistics.",
     group="outliers", weight=0.3, default_level="check", scope="column", detect=detect,
+    injectors={"extreme": Injector(damage, share=0.03)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

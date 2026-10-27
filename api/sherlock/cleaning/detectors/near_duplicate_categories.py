@@ -11,7 +11,8 @@ Values need four characters, or three letters ("Wst").
 
 from rapidfuzz import fuzz
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.cleaning.helpers import _COMMON_SHARE, _merge_key, _merge_refusal
 
 MAX_DISTINCT = 200
@@ -52,7 +53,21 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """One inner letter dropped from each chosen value; a value under five characters is lowercased."""
+    out = {}
+    for i in rows:
+        v = str(df.at[i, column])
+        if len(v) < 5:
+            out[(i, column)] = v.lower()
+        else:
+            k = rng.randrange(1, len(v) - 1)
+            out[(i, column)] = v[:k] + v[k + 1:]
+    return out
+
+
 SPEC = DetectorSpec(
-    "near_duplicate_categories", "near-duplicate categories", "Category values one or two typos apart.",
+    "near_duplicate_categories", "near-duplicate categories", "Category values that differ by a typo.",
     group="text", weight=0.5, default_level="splits", scope="column", detect=detect,
+    injectors={"typo": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

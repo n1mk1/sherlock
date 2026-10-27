@@ -4,7 +4,8 @@ import re
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES, THRESHOLD
 
@@ -14,6 +15,7 @@ THOUSANDS_DOT = re.compile(r"^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$")
 COMMA_DECIMAL = re.compile(r"^[+-]?\d+,\d+$")
 THOUSANDS_SPACE = re.compile(r"^[+-]?\d{1,3}( \d{3})+([.,]\d+)?$")
 MIN_SHARE = 0.5
+NOT_A_NUMBER = re.compile(r"[^\W\d_aefinty]", re.I)  # a letter `float` never reads
 
 
 def clean_number(value: str) -> float | None:
@@ -41,11 +43,20 @@ def clean_number(value: str) -> float | None:
     return -number if negative else number
 
 
+def numeric_values(text: pd.Series) -> tuple[set, set]:
+    """The distinct values that are plain numbers, and those that are formatted numbers, each value
+    read once. A value with a letter left once currency codes are gone, other than those `float` reads
+    ("1e5", "inf", "nan"), never reads ("R1001"), so it isn't parsed."""
+    distinct = pd.Series(text.unique(), dtype=object)
+    plain = pd.to_numeric(distinct, errors="coerce").notna()
+    rest = distinct[~plain]
+    maybe = rest[~rest.str.replace(CURRENCY, "", regex=True).str.contains(NOT_A_NUMBER)]
+    return set(distinct[plain]), {v for v in maybe if pd.notna(clean_number(v))}  # "nan" reads as NaN: not one
+
+
 def needs_cleaning(text: pd.Series) -> pd.Series:
     """Values that aren't plain numbers but are formatted numbers."""
-    plain = pd.to_numeric(text, errors="coerce").notna()
-    cleaned = text[~plain].map(clean_number).notna()
-    return cleaned.reindex(text.index, fill_value=False)
+    return text.isin(numeric_values(text)[1])
 
 
 def detect(frame: Frame) -> list[Finding]:
@@ -53,8 +64,9 @@ def detect(frame: Frame) -> list[Finding]:
     for name, col in frame.columns.items():
         if col.type in NUMERIC_TYPES or col.type in ("empty", "date", "datetime", "bool") or col.text.empty:
             continue
-        plain_share = pd.to_numeric(col.text, errors="coerce").notna().mean()
-        formatted = needs_cleaning(col.text)
+        plain, formatted_values = numeric_values(col.text)
+        plain_share = col.text.isin(plain).mean()
+        formatted = col.text.isin(formatted_values)
         if plain_share < THRESHOLD and plain_share + formatted.mean() >= MIN_SHARE and formatted.any():
             findings.append(Finding(
                 "numbers_as_text", name, int(formatted.sum()),
@@ -76,9 +88,19 @@ def parse_candidate(issue: dict) -> Candidate | None:
                      expected_effect="Reads the column as numbers; values that aren't numbers are set aside.")
 
 
+def money(value) -> str:
+    """A number written as money that keeps every digit ("$1,234.5"), so the clean value is recoverable."""
+    return f"${float(value):,}".replace(".0", "") if float(value).is_integer() else f"${float(value):,}"
+
+
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    return {(i, column): money(df.at[i, column]) for i in rows}
+
+
 SPEC = DetectorSpec(
     "numbers_as_text", "numbers stored as text",
     "Numbers written with currency symbols, separators, locale decimals or percent signs.",
     group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
     type_fix=True, code_fix=parse_candidate,
+    injectors={"money": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

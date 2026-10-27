@@ -10,7 +10,8 @@ import re
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES
 
@@ -93,9 +94,21 @@ def rule_candidate(issue: dict) -> Candidate | None:
                      expected_effect="Sets aside the rows whose value breaks the column's domain rule.")
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """Each chosen number made negative, for a column whose name says it can't be."""
+    out = {}
+    for i in rows:
+        try:
+            out[(i, column)] = f"-{abs(float(df.at[i, column])) + 1:g}"
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 SPEC = DetectorSpec(
     "impossible_values", "impossible values",
     "Values outside the plausible domain the column's name gives it, such as a negative quantity or a future date.",
     group="records", weight=0.7, default_level="skews", scope="column", detect=detect,
     domain_rule=True, code_fix=rule_candidate,
+    injectors={"negative": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "units"),
 )

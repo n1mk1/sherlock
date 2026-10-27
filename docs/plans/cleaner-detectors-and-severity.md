@@ -571,7 +571,7 @@ flowchart LR
 | Wording | label, description and proposal pass `wording_problem` and carry no sample column names (`test_prompt_hygiene.py`) |
 | Generic | no column name from any sample file in the module's constants or a shipped rule pack (Rule 4) |
 
-`sherlock eval corruption` builds its damage from `registry.all()` injectors. The six damage kinds of `eval/corruption.py` move onto the specs they test (`money` → `numbers_as_text`, `sentinel` → `sentinels`, `case` → `whitespace_case`, `typo` → `near_duplicate_categories`, `mojibake` → `mojibake`, the date kinds → `ambiguous_dates`), and the other rated detectors get one in slice 2. Each case's plan then names a detector id instead of a kind, so a new check is measured for recovery, wrong values, harm and row loss with no new eval code. The eval also checks the ratings (§13).
+`sherlock eval corruption` builds its damage from `registry.all()` injectors. The six damage kinds of `eval/corruption.py` move onto the specs they test (`money` → `numbers_as_text`, `sentinel` → `sentinels`, `case` → `whitespace_case`, `typo` → `near_duplicate_categories`, `mojibake` → `mojibake`, the dates written one way → `ambiguous_dates`; the unambiguous day-first dates → `mixed_types`, which is the detector that finds them), and the other rated detectors get one in slice 2. Each case's plan then names a detector id instead of a kind, so a new check is measured for recovery, wrong values, harm and row loss with no new eval code. The eval also checks the ratings (§13).
 
 ---
 

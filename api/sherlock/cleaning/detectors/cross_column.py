@@ -6,7 +6,10 @@ created→updated, birth→death, departure→arrival, check_in→check_out), fo
 
 import re
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame
+import pandas as pd
+
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.profile.infer import NUMERIC_TYPES
 
 PAIRS = (("start", "end"), ("begin", "end"), ("from", "to"), ("min", "max"), ("open", "close"),
@@ -45,7 +48,33 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def earlier(columns, column: str) -> str | None:
+    """The earlier column of the pair `column` ends ("end_date" → "start_date"), or None."""
+    names = {n.lower(): n for n in columns}
+    for early, late in PAIRS:
+        pattern = re.compile(rf"(^|[_\s]){late}($|[_\s])")
+        if pattern.search(column.lower()):
+            found = names.get(pattern.sub(lambda m: f"{m.group(1)}{early}{m.group(2)}", column.lower()))
+            if found:
+                return found
+    return None
+
+
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """Each chosen later value moved to before its earlier one: one less, or a day earlier."""
+    partner = earlier(df.columns, column)
+    out = {}
+    for i in rows if partner else []:
+        a = df.at[i, partner]
+        try:
+            out[(i, column)] = f"{float(a) - 1:g}"
+        except (TypeError, ValueError):
+            out[(i, column)] = (pd.Timestamp(a) - pd.Timedelta(days=1)).date().isoformat()
+    return out
+
+
 SPEC = DetectorSpec(
     "cross_column", "values out of order", "Rows where a later value, such as an end, is before its earlier one.",
     group="records", weight=0.6, default_level="skews", scope="columns", detect=detect,
+    injectors={"order": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "end_date"),
 )

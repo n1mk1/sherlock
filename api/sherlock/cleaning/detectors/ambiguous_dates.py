@@ -6,7 +6,10 @@ values show day-first and others month-first.
 
 import re
 
-from sherlock.cleaning.detectors.base import MAX_EXAMPLES, DetectorSpec, Finding, Frame, examples
+import pandas as pd
+
+from sherlock.cleaning.detectors.base import MAX_EXAMPLES, DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import with_column
 
 DMY = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})(\s.*)?$")
 MAJORITY = 0.5
@@ -58,8 +61,24 @@ def plan_extras(issue: dict) -> dict:
             "needs_order": needs_order(issue)}
 
 
+def written(fmt: str):
+    """Damage that writes every chosen ISO date in one order (dd/mm/yyyy or mm/dd/yyyy)."""
+    def damage(df, column: str, rows: list[int], rng) -> dict:
+        return {(i, column): pd.Timestamp(df.at[i, column]).strftime(fmt) for i in rows}
+    return damage
+
+
+def clean_fixture():
+    """Dates whose day is 12 or less and never equal to the month, so written either way each reads both ways."""
+    days = [pd.Timestamp(2021, m, d) for m in range(1, 13) for d in range(1, 13) if d != m]
+    return with_column("visit_date", [days[i % len(days)].date().isoformat() for i in range(200)]), "visit_date"
+
+
 SPEC = DetectorSpec(
     "ambiguous_dates", "ambiguous dates", "Dates that could be read day-first or month-first.",
     group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
     vote=True, plan_extras=plan_extras,
+    injectors={"dmy_text": Injector(written("%d/%m/%Y"), share=1.0),
+               "mdy_text": Injector(written("%m/%d/%Y"), share=1.0)},
+    clean_fixture=clean_fixture,
 )

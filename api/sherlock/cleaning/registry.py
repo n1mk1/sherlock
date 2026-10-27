@@ -91,6 +91,16 @@ def get(detector: str) -> DetectorSpec:
                         detect=lambda frame: [], enabled_by_default=False, source="unknown")
 
 
+def injector(name: str):
+    """A damage kind by name, "<detector>" (its first kind) or "<detector>:<kind>", for the corruption
+    eval and the contract suite (TRD §14). KeyError for one no spec has."""
+    detector, _, kind = name.partition(":")
+    injectors = get(detector).injectors
+    if not injectors or (kind and kind not in injectors):
+        raise KeyError(f"no damage kind {name!r}")
+    return injectors[kind or next(iter(injectors))]
+
+
 def label(detector: str) -> str:
     return get(detector).label
 

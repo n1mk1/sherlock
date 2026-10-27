@@ -5,6 +5,7 @@ Amounts aren't IDs however unique (TRD §7.1): a float column, or text that most
 """
 
 from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.profile.infer import measure_like
 
 UNIQUE = 0.98
@@ -32,4 +33,5 @@ SPEC = DetectorSpec(
     "id_candidates", "looks like an ID", "Columns that identify rows: almost every value distinct and present.",
     group="other", weight=0.2, default_level=None, scope="column", detect=detect,
     never_change="Looks like an ID column, so it is left as is", skip_text="left as is",
+    found_fixture=clean_frame,
 )

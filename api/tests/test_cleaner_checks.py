@@ -81,7 +81,7 @@ def test_dates_that_read_both_ways_stay_text_and_cost_no_model_call(client):
 def test_the_benchmark_leaves_dates_that_read_both_ways_and_says_why(client):
     from sherlock.eval import corruption, synthetic
 
-    case = corruption.corrupt("dates_mdy", synthetic.visits(rows=40), [("visit_date", "mdy_text", 1.0)], 5)
+    case = corruption.corrupt("dates_mdy", synthetic.visits(rows=40), [("visit_date", "ambiguous_dates:mdy_text", 1.0)], 5)
     score = corruption.run_case(client, case, timeout_s=120)
     assert (score.recovered, score.wrong, score.harmed, score.rows_out) == (0, 0, 0, 40)
     assert any(d == "ambiguous_dates" and why.startswith("Left as text: every date reads both ways")
@@ -122,7 +122,7 @@ def test_the_user_picks_the_date_order_in_the_plan_and_no_vote_runs(client):
 def test_the_benchmark_set_with_a_picked_order_is_recovered(client):
     from sherlock.eval import corruption, synthetic
 
-    for order, kind in (("dmy", "dmy_text"), ("mdy", "mdy_text")):
+    for order, kind in (("dmy", "ambiguous_dates:dmy_text"), ("mdy", "ambiguous_dates:mdy_text")):
         case = corruption.picked(corruption.corrupt(f"dates_{order}_picked", synthetic.visits(rows=60), [("visit_date", kind, 1.0)], 4), order)
         score = corruption.run_case(client, case, timeout_s=120)
         assert (score.recovered, score.wrong, score.harmed, score.rows_out) == (60, 0, 0, 60), score

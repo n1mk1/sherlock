@@ -1,6 +1,7 @@
 """Whitespace and case variants: stray spaces, and spellings that differ only by case or spacing."""
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 
 TEXT_TYPES = ("category", "text", "id", "bool")
 
@@ -35,8 +36,18 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """A case or spacing variant of each chosen value."""
+    out = {}
+    for i in rows:
+        v = str(df.at[i, column])
+        out[(i, column)] = rng.choice([v.lower(), v.upper(), f" {v}", f"{v}  ", v.swapcase()])
+    return out
+
+
 SPEC = DetectorSpec(
     "whitespace_case", "spacing or case variants",
     "Stray spaces, and spellings of one value that differ only by case or spacing.",
     group="text", weight=0.4, default_level="splits", scope="column", detect=detect,
+    injectors={"case": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

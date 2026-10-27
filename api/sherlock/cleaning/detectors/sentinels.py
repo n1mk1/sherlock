@@ -6,7 +6,8 @@ so a genuine 999 in a column of similar values is not flagged.
 
 import pandas as pd
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.profile.infer import NUMERIC_TYPES, SENTINEL_STRINGS
 
 NUMERIC_SENTINELS = (-99999, -9999, -999, -99, 999, 9999, 99999)
@@ -48,9 +49,15 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """A placeholder in place of each chosen value."""
+    return {(i, column): rng.choice(["N/A", "-999", "?"]) for i in rows}
+
+
 # A placeholder age of -999 becomes missing before the domain rule would quarantine its row.
 SPEC = DetectorSpec(
     "sentinels", "placeholder values", "Placeholder text or numbers that stand for a missing value.",
     group="missing", weight=0.7, default_level="skews", scope="column", detect=detect,
     type_fix=True, runs_before=("impossible_values",),
+    injectors={"sentinel": Injector(damage, missing_ok=True)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

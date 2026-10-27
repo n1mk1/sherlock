@@ -66,59 +66,24 @@ def _cells(df: pd.DataFrame, column: str, share: float, rng: random.Random, take
     return picked
 
 
-def money(value) -> str:
-    """Currency formatting that keeps every digit, so the clean value is recoverable."""
-    return f"${float(value):,}".replace(".0", "") if float(value).is_integer() else f"${float(value):,}"
-
-
-def case_variant(value: str, rng: random.Random) -> str:
-    return rng.choice([value.lower(), value.upper(), f" {value}", f"{value}  ", value.swapcase()])
-
-
-def typo(value: str, rng: random.Random) -> str:
-    if len(value) < 5:
-        return value.lower()
-    i = rng.randrange(1, len(value) - 1)
-    return value[:i] + value[i + 1:]  # drop one letter: "Southampton" → "Southmpton"
-
-
-def mojibake(value: str) -> str:
-    return value.encode("utf-8").decode("latin-1", errors="replace")
-
-
 def corrupt(name: str, clean: pd.DataFrame, plan: list[tuple[str, str, float]], seed: int) -> Case:
-    """plan: [(column, kind, share)], kinds: money, sentinel, case, typo, mojibake, dmy_date (an
-    unambiguous day-first date), dmy_text and mdy_text (any date written day-first or month-first)."""
+    """plan: [(column, damage, share)]. A damage is a detector's damage kind from the registry,
+    "<detector>" for its first kind or "<detector>:<kind>" (TRD §14), so a new detector's damage needs
+    no eval code: numbers_as_text (money), sentinels, whitespace_case (case), near_duplicate_categories
+    (typo), mojibake, mixed_types:dmy_date (an unambiguous day-first date), ambiguous_dates:dmy_text and
+    ambiguous_dates:mdy_text (any date written day-first or month-first), and the others' own kinds."""
+    from sherlock.cleaning import registry
+
     rng = random.Random(seed)
     dirty = clean.astype(object).copy()
     case = Case(name, clean, dirty)
     taken: set = set()
-    for column, kind, share in plan:
-        for i in _cells(clean, column, share, rng, taken):
-            value = clean.at[i, column]
-            if kind == "money":
-                new = money(value)
-            elif kind == "sentinel":
-                new = rng.choice(["N/A", "-999", "?"])
-            elif kind == "case":
-                new = case_variant(str(value), rng)
-            elif kind == "typo":
-                new = typo(str(value), rng)
-            elif kind == "mojibake":
-                new = mojibake(str(value))
-                if new == value:
-                    continue
-            elif kind == "dmy_date":
-                d = pd.Timestamp(value)
-                if d.day <= 12:
-                    continue  # keep it unambiguous
-                new = d.strftime("%d/%m/%Y")
-            elif kind in ("dmy_text", "mdy_text"):
-                new = pd.Timestamp(value).strftime("%d/%m/%Y" if kind == "dmy_text" else "%m/%d/%Y")
-            else:
-                raise ValueError(kind)
-            dirty.at[i, column] = new
-            case.damage.append(Damage(i, column, kind, value, missing_ok=kind == "sentinel"))
+    for column, damage, share in plan:
+        injector = registry.injector(damage)
+        rows = _cells(clean, column, share, rng, taken)
+        for (i, c), new in injector.damage(clean, column, rows, rng).items():
+            dirty.at[i, c] = new
+            case.damage.append(Damage(i, c, damage, clean.at[i, c], missing_ok=injector.missing_ok))
     return case
 
 
@@ -128,17 +93,19 @@ def cases() -> list[Case]:
     hr = synthetic.hr(rows=800)
     visits = synthetic.visits(rows=400)
     return [
-        corrupt("titanic_clean", titanic, [("fare", "money", 0.3), ("embarked", "case", 0.15), ("age", "sentinel", 0.04)], 1),
-        corrupt("sales", sales, [("unit_price", "money", 0.25), ("region", "case", 0.2), ("product", "typo", 0.03),
-                                 ("units", "sentinel", 0.03)], 2),
-        corrupt("hr", hr, [("department", "case", 0.15), ("city", "mojibake", 0.08), ("hire_date", "dmy_date", 0.2),
-                           ("salary", "sentinel", 0.02)], 3),
-        corrupt("dates_dmy", visits, [("visit_date", "dmy_text", 1.0)], 4),
-        corrupt("dates_mdy", visits, [("visit_date", "mdy_text", 1.0)], 5),
-        corrupt("lookalikes", synthetic.lookalikes(rows=600), [("plan", "case", 0.1), ("region", "case", 0.1),
-                                                                ("country", "case", 0.08), ("monthly_fee", "money", 0.2)], 6),
-        picked(corrupt("dates_dmy_picked", visits, [("visit_date", "dmy_text", 1.0)], 4), "dmy"),
-        picked(corrupt("dates_mdy_picked", visits, [("visit_date", "mdy_text", 1.0)], 5), "mdy"),
+        corrupt("titanic_clean", titanic, [("fare", "numbers_as_text", 0.3), ("embarked", "whitespace_case", 0.15),
+                                           ("age", "sentinels", 0.04)], 1),
+        corrupt("sales", sales, [("unit_price", "numbers_as_text", 0.25), ("region", "whitespace_case", 0.2),
+                                 ("product", "near_duplicate_categories", 0.03), ("units", "sentinels", 0.03)], 2),
+        corrupt("hr", hr, [("department", "whitespace_case", 0.15), ("city", "mojibake", 0.08),
+                           ("hire_date", "mixed_types:dmy_date", 0.2), ("salary", "sentinels", 0.02)], 3),
+        corrupt("dates_dmy", visits, [("visit_date", "ambiguous_dates:dmy_text", 1.0)], 4),
+        corrupt("dates_mdy", visits, [("visit_date", "ambiguous_dates:mdy_text", 1.0)], 5),
+        corrupt("lookalikes", synthetic.lookalikes(rows=600), [("plan", "whitespace_case", 0.1), ("region", "whitespace_case", 0.1),
+                                                                ("country", "whitespace_case", 0.08),
+                                                                ("monthly_fee", "numbers_as_text", 0.2)], 6),
+        picked(corrupt("dates_dmy_picked", visits, [("visit_date", "ambiguous_dates:dmy_text", 1.0)], 4), "dmy"),
+        picked(corrupt("dates_mdy_picked", visits, [("visit_date", "ambiguous_dates:mdy_text", 1.0)], 5), "mdy"),
     ]
 
 

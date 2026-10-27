@@ -3,7 +3,8 @@ disagree. Only checked between categorical columns, and only where A's groups ca
 
 from itertools import permutations
 
-from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, examples
+from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
+from sherlock.cleaning.detectors.fixtures import with_column
 
 AGREEMENT = 0.95
 MAX_DISTINCT = 1000
@@ -45,8 +46,27 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+SITES = {"Northgate": "N", "Riverside": "N", "Lakeview": "S", "Oakwood": "S", "Brookfield": "E", "Elmstead": "E",
+         "Westmere": "W", "Ashford": "W"}
+
+
+def damage(df, column: str, rows: list[int], rng) -> dict:
+    """Another of the column's own values in place of each chosen one."""
+    values = sorted({v for v in df[column] if v is not None})
+    return {(i, column): rng.choice([v for v in values if v != df.at[i, column]]) for i in rows}
+
+
+def clean_fixture():
+    """A site column that determines its zone."""
+    sites = list(SITES)
+    df = with_column("site", [sites[i % len(sites)] for i in range(200)])
+    df.insert(len(df.columns) - 1, "zone", [SITES[s] for s in df["site"]])
+    return df, "zone"
+
+
 SPEC = DetectorSpec(
     "functional_dependency", "rows breaking a dependency",
     "Rows that disagree with a value another column almost always determines.",
     group="records", weight=0.5, default_level="check", scope="columns", detect=detect,
+    injectors={"broken": Injector(damage, share=0.03)}, clean_fixture=clean_fixture,
 )

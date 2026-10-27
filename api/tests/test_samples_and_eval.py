@@ -30,7 +30,7 @@ def test_samples_are_seeded():
 
 def test_benchmark_scoring():
     case = corruption.corrupt("t", pd.DataFrame({"x": [1.5, 2.5, 3.5, 4.5] * 5, "c": ["North", "South"] * 10}),
-                              [("x", "money", 0.25), ("c", "case", 0.2)], seed=1)
+                              [("x", "numbers_as_text", 0.25), ("c", "whitespace_case", 0.2)], seed=1)
     assert len(case.damage) == 9 and case.dirty.at[case.damage[0].row, "x"].startswith("$")
 
     def as_final(df):
@@ -53,7 +53,7 @@ def test_benchmark_counts_wrong_guesses_and_keeps_ambiguous_text_unread():
     assert corruption.same(pd.Timestamp("2021-04-03"), "2021-04-03") and corruption.same("22", 22.0)
     visits = synthetic.visits(rows=40)
     assert all(pd.Timestamp(d).day <= 12 and pd.Timestamp(d).day != pd.Timestamp(d).month for d in visits["visit_date"])
-    case = corruption.corrupt("d", visits, [("visit_date", "mdy_text", 1.0)], seed=5)
+    case = corruption.corrupt("d", visits, [("visit_date", "ambiguous_dates:mdy_text", 1.0)], seed=5)
     assert len(case.damage) == 40
     final = case.dirty.assign(_row_id=range(1, 41), _quarantine_reason=None)
     left = corruption.score(case, final, 0, 1.0, "done")

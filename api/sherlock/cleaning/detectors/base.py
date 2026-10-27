@@ -43,6 +43,22 @@ class Finding:
     details: dict = field(default_factory=dict)
 
 
+Edits = dict[tuple[int, str], Any]  # (row position, column) → the damaged value
+
+
+@dataclass(frozen=True)
+class Injector:
+    """Seeded damage of the kind a detector finds, for the contract suite and the corruption eval
+    (TRD §14). `damage(df, column, rows, rng)` returns the cells to change for the chosen row positions
+    of `column`, in their order; a row it leaves out stays clean. `missing_ok`: a missing value is an
+    honest recovery (a placeholder made missing). `share`: how much of the column the contract suite
+    damages (ambiguous dates need every value)."""
+
+    damage: Callable[[pd.DataFrame, str, list[int], Any], Edits]
+    missing_ok: bool = False
+    share: float = 0.1
+
+
 @dataclass(frozen=True)
 class DetectorSpec:
     id: str                       # stored as issues.detector
@@ -65,6 +81,12 @@ class DetectorSpec:
     code_fix: Callable[[dict], Any] | None = None
     runs_before: tuple[str, ...] = ()  # on the same column, attempted just before these detectors
     plan_extras: Callable[[dict], dict] | None = None  # extra fields on its plan item
+    # Quality gates (TRD §14): its damage kinds, the first the default; a clean frame and the column its
+    # damage goes in, where it finds nothing; and, for a detector that is never changed, a frame it must
+    # find something in.
+    injectors: dict[str, Injector] = field(default_factory=dict)
+    clean_fixture: Callable[[], tuple[pd.DataFrame, str]] | None = None
+    found_fixture: Callable[[], pd.DataFrame] | None = None
     enabled_by_default: bool = True
     source: str = "builtin"
 
