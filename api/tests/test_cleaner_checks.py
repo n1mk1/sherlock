@@ -142,3 +142,26 @@ def test_code_whose_line_breaks_came_escaped_still_runs(client):
     assert step["notebook_code"].startswith("result = df.copy()\nresult['city'] = ")
     cities = {r["cells"]["city"] for r in client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]}
     assert cities == {"Basel", "Bern"}
+
+
+PRICES = ["$151.55", "$7.25", "$26.00", "$8.05", "$1,234.50", "$13.00"] * 6
+PRICES_CSV = ("order_id,price,units\n" + "".join(f"O{700 + i},\"{p}\",{1 + i % 5}\n" for i, p in enumerate(PRICES))).encode()
+
+
+def test_codes_own_parse_settles_disagreeing_fixes_when_every_value_reads_one_way(client):
+    # PRD CLEAN-4e: the model's fixes disagree ("$151.55" as 151.55 or as 15155), but no price reads two ways,
+    # so code's own parse settles it; "1,250"-style amounts keep their skip (the test above, CLEAN-4b).
+    ds, job = clean(client, PRICES_CSV, "prices.csv")
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert [s["summary"] for s in report["steps"]] == ["Parse numbers (price)"]
+    rows = client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]
+    assert sorted({r["cells"]["price"] for r in rows}) == [7.25, 8.05, 13.0, 26.0, 151.55, 1234.5]
+
+
+def test_values_that_read_two_ways_are_spotted():
+    import pandas as pd
+
+    from sherlock.cleaning.detectors.numbers_as_text import reads_one_way
+
+    assert reads_one_way(pd.Series(["$151.55", "$1,234.50", "12%", None]))
+    assert not reads_one_way(pd.Series(["$151.55", "1,250"])) and not reads_one_way(pd.Series(["EUR 2.500"]))

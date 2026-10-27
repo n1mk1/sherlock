@@ -15,6 +15,8 @@ THOUSANDS_DOT = re.compile(r"^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$")
 COMMA_DECIMAL = re.compile(r"^[+-]?\d+,\d+$")
 THOUSANDS_SPACE = re.compile(r"^[+-]?\d{1,3}( \d{3})+([.,]\d+)?$")
 MIN_SHARE = 0.5
+# One separator then exactly three digits ("1,250", "2.500"): a thousands separator or a decimal one.
+TWO_WAYS = re.compile(r"^[+-]?\d{1,3}[.,]\d{3}$")
 NOT_A_NUMBER = re.compile(r"[^\W\d_aefinty]", re.I)  # a letter `float` never reads
 
 
@@ -52,6 +54,13 @@ def numeric_values(text: pd.Series) -> tuple[set, set]:
     rest = distinct[~plain]
     maybe = rest[~rest.str.replace(CURRENCY, "", regex=True).str.contains(NOT_A_NUMBER)]
     return set(distinct[plain]), {v for v in maybe if pd.notna(clean_number(v))}  # "nan" reads as NaN: not one
+
+
+def reads_one_way(values: pd.Series) -> bool:
+    """No value reads as two numbers: none is digits, one separator, then exactly three digits once its
+    currency, percent and spaces are gone ("1,250" is 1250 or 1.25)."""
+    text = values.dropna().astype(str).str.replace(CURRENCY, "", regex=True).str.replace(r"[%\s]", "", regex=True)
+    return not text.str.match(TWO_WAYS).any()
 
 
 def needs_cleaning(text: pd.Series) -> pd.Series:
@@ -102,6 +111,6 @@ SPEC = DetectorSpec(
     "Numbers written with currency symbols, separators, locale decimals or percent signs.",
     group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
     applies_to=frozenset(("category", "text", "id")),
-    type_fix=True, code_fix=parse_candidate,
+    type_fix=True, code_fix=parse_candidate, code_fix_settles=reads_one_way,
     injectors={"money": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

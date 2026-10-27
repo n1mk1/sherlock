@@ -173,5 +173,52 @@
       "changed_something_it_shouldnt": false,
       "concerns": []
     }
+  },
+  {
+    "purpose": "diagnose",
+    "match": [
+      "Column: price",
+      "numbers_as_text"
+    ],
+    "content": {
+      "cause": "Prices were typed as money.",
+      "approach_options": [
+        "Parse them as numbers",
+        "Keep the digits only"
+      ],
+      "preferred_option": 0,
+      "risk": "low",
+      "leave_as_is": false
+    }
+  },
+  {
+    "purpose": "propose",
+    "match": [
+      "Column: price"
+    ],
+    "content": {
+      "candidates": [
+        {
+          "label": "Keep the digits",
+          "code": "result = df.copy()\nresult['price'] = pd.to_numeric(df['price'].astype(str).str.replace(r'[^0-9]', '', regex=True), errors='coerce')\n",
+          "expected_effect": "Reads the digits of each price."
+        },
+        {
+          "label": "Parse money",
+          "code": "result = df.copy()\nparsed = parse_numbers(df['price'])\nresult['price'] = parsed\nresult = quarantine_rows(result, parse_failures(df['price'], parsed), 'parse: price')\n",
+          "expected_effect": "Reads each price as a number."
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "critic",
+    "match": [
+      "Column: price"
+    ],
+    "content": {
+      "changed_something_it_shouldnt": false,
+      "concerns": []
+    }
   }
 ]

@@ -982,6 +982,7 @@ Each requirement of §3–§13, where it lives and what proves it (`api/` paths;
 | 6.2 | Rating call: `medium`, `rate`, temperature 0, reasoning on, chunks of 40, two readings, fenced prompt, refs checked with one repair, reasons without digits | `cleaning/review.py`, `prompts/rate.txt`, `Ratings` | `test_cleaning_review.py`, `test_prompt_hygiene.py` |
 | 6.3 | Suggested checks from the DataCard summary, validated, deduplicated, counted by code, rated, editable, Keep and Dismiss | `review.suggest`, `prompts/suggest_rules.txt`, `RuleSuggestions`, `SuggestedChecks` | `test_cleaning_review.py`, vitest, e2e |
 | 7 | Your steps first, then level, then severity; `runs_before`; no model call in a run | `loop.queue` | `test_cleaning_levels.py`, `test_cleaner_gaps.py` |
+| 13 | Live recovery holds: a picked date order and code's own parse settle what the data allows (`order_candidate`, `code_fix_settles`) | `cleaning/loop.py`, `numbers_as_text.reads_one_way` | `test_cleaner_checks.py` |
 | 8 | Code finds, counts and runs everything; the model picks levels, reasons and rules | the above | `test_rules.py`, `test_cleaning_review.py` |
 | 9 | Contract: metadata, clean data, finds its damage, determinism, purity, shape, types, 2 s on 200,000 rows, the total on 500,000, overlaps, wording, generic | `cleaning/contract.py`, `sherlock detectors check` | `test_detector_contract.py`; the command |
 | 9 | Corruption eval builds damage from the injectors | `eval/corruption.py`, `registry.injector` | identical damage for all 8 sets |

@@ -1421,6 +1421,7 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
      | `domain_rule` | impossible_values | quarantined by its own fix, never guessed |
      | `vote` | ambiguous_dates | diagnosed three times |
      | `code_fix(issue)` | impossible_values (the rule's quarantine), numbers_as_text (the parse) | a candidate code writes without the model |
+     | `code_fix_settles(values)` | numbers_as_text (`reads_one_way`) | whether that candidate may settle a disagreement between the model's (§7.2) |
      | `runs_before` | sentinels: `("impossible_values",)` | goes just before those detectors' issues on its column |
      | `plan_extras(issue)` | ambiguous_dates | extra fields on its plan item |
      | `injectors`, `clean_fixture`, `found_fixture` | every rated detector has the first two; leakage and id_candidates the third | the contract suite's damage and fixtures, and the corruption eval's damage (§14) |
@@ -1693,7 +1694,8 @@ Issues the user shaped are `requested`:
 - **Code fixes** (PRD CLEAN-4e; the `spec.code_fix` of a detector that isn't a domain rule: `numbers_as_text`). A fix the code can write without the model, so the issue doesn't depend on one long reply.
   - `loop.code_fix` builds it with the spec's `code_fix` (`numbers_as_text.parse_candidate`), labelled "Parse numbers": `parsed = parse_numbers(df['unit_price'])`, `result = df.copy()`, `result['unit_price'] = parsed`, `result = quarantine_rows(result, parse_failures(df['unit_price'], parsed), 'unparsed: unit_price')`. A minus sign, `(300)` and `300-` stay negative; a placeholder becomes missing, not a parse failure.
   - It runs only when no model candidate scores above 0: the propose output was invalid or cut off, it gave no candidates, or none passed the hard checks. Then it is scored, chosen, run on the full data, reviewed and gated like any candidate, with the model's failed candidates kept as alternatives.
-  - When a model candidate passes, the code fix isn't run, so it changes neither the choice nor the agreement.
+  - When a model candidate passes and the passing candidates agree, the code fix isn't run, so it changes neither the choice nor the agreement.
+  - **Settling a disagreement.** When the model's passing candidates disagree (the output-agreement check would skip the step) and every value of the column on the sample reads one way (`spec.code_fix_settles`; for numbers: no value is digits, one separator and exactly three digits, such as "1,250", once currency, percent and spaces are gone: `numbers_as_text.reads_one_way`), the code fix is scored; when it passes the checks it is the fix and the step goes on. Code's parse of such values isn't a guess. Values that read two ways keep the skip (PRD CLEAN-4b).
 
 **5. Verify on the sample.**
 - **The sample.** A dataset of up to 2,000 rows is used whole. A larger one gets up to 1,000 rows that have the issue, and the rest are filled at random (seed 42). Rows that have the issue are the missing cells for `missing`, the issue's example values otherwise, and its example `_row_id`s for row-level detectors. The sample is copied from the version's Parquet, so column types are the real ones.

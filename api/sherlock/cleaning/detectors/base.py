@@ -81,6 +81,9 @@ class DetectorSpec:
     vote: bool = False                 # diagnosed three times, the majority wins (TRD §7.2)
     # A fix the code writes without the model: the domain rule's quarantine, or a fallback parse.
     code_fix: Callable[[dict], Any] | None = None
+    # Whether code's own fix may settle a disagreement between the model's fixes on these values: only
+    # when they read one way, so code's result isn't a guess (numbers stored as text).
+    code_fix_settles: Callable[[pd.Series], bool] | None = None
     runs_before: tuple[str, ...] = ()  # on the same column, attempted just before these detectors
     plan_extras: Callable[[dict], dict] | None = None  # extra fields on its plan item
     # Quality gates (TRD §14): its damage kinds, the first the default; a clean frame and the column its

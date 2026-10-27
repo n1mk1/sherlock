@@ -599,6 +599,19 @@ class Cleaner:
         # the data's answer open, so the step is skipped before the full run, with two cells both ways.
         compared = verifiers.compare(sample, results, best_i)
         apart = None if settled else gate.disagree(compared.disagreement)  # a picked order isn't a guess
+        settles = registry.get(issue["detector"]).code_fix_settles
+        if apart and fallback is not None and settles is not None and column in sample and settles(sample[column]):
+            # The model's fixes disagree, but code has its own parse (numbers stored as text, PRD CLEAN-4e)
+            # and every value reads one way, so code's result isn't a guess: when it passes the checks it
+            # settles the step. Values that read two ways ("1,250") keep the skip (CLEAN-4b).
+            if not any(c is fallback for c, *_ in scored):
+                score(fallback)
+                chips.append({"label": fallback.label, "chosen": False})
+            code_i = next(i for i, (c, *_) in enumerate(scored) if c is fallback)
+            if scored[code_i][1] > 0.0:
+                chips[best_i]["chosen"], chips[code_i]["chosen"] = False, True
+                best_i, apart = code_i, None
+                best, best_score, sample_report, _ = scored[best_i]
         if apart:
             one, other = (scored[i][0].label for i in compared.pair)
             shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)
