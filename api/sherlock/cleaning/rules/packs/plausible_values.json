@@ -1,0 +1,13 @@
+{
+  "pack": "plausible_values",
+  "description": "The domain a column's name gives it: quantities that can't be negative, ages up to 120, percentages between 0 and 100, and dates from 1800 to today. Read by the impossible_values detector; columns are named by whole words of their name, never by one file's columns.",
+  "rules": [
+    {"id": "non_negative", "low": 0,
+     "words": ["age", "price", "fare", "amount", "cost", "count", "qty", "quantity", "weight", "height", "salary",
+               "income", "wage", "duration", "distance", "size", "length", "width", "area", "population", "total",
+               "revenue", "sales", "unit", "stock", "year"]},
+    {"id": "percent", "low": 0, "high": 100, "words": ["pct", "percent", "percentage"]},
+    {"id": "age", "high": 120, "words": ["age"]}
+  ],
+  "dates": {"earliest": "1800-01-01"}
+}

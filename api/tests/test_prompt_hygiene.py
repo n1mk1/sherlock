@@ -192,6 +192,7 @@ def test_generic_prompts_and_messages_carry_nothing_from_the_sample():
         for f in sorted((root / "sherlock" / folder).rglob("*.py")):
             texts += _strings(f)
         texts += [f.read_text(encoding="utf-8") for f in sorted((root / "sherlock" / folder).rglob("*.txt"))]
+        texts += [f.read_text(encoding="utf-8") for f in sorted((root / "sherlock" / folder).rglob("*.json"))]  # rule packs
     from sherlock.llm import schemas
     from pydantic import BaseModel
     texts += [json.dumps(m.model_json_schema()) for m in vars(schemas).values()

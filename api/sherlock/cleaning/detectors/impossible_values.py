@@ -1,12 +1,17 @@
 """Impossible values: negatives in quantities that can't be negative, ages over 120, percentages
-outside 0–100, and dates in the future or before 1800. Quantities are recognised by column name.
+outside 0–100, and dates in the future or before 1800. The domains come from the shipped rule pack
+`cleaning/rules/packs/plausible_values.json` (PRD CLEAN-13), and a column takes a rule when a whole word
+of its name is one of the rule's words, or that word plus "s": `customer_age` and `units_sold` do,
+`account_balance` and `average_temp` don't.
 
 `details` carries the column's domain rule and its plain words (`rule`): `low`/`high` for numbers;
 `earliest`, and `after`, the first instant too late, for dates. The Cleaner builds the rule's own
 quarantine from it (`rule_candidate`, the spec's `code_fix`, TRD §7.2).
 """
 
+import json
 import re
+from pathlib import Path
 
 import pandas as pd
 
@@ -15,20 +20,27 @@ from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES
 
-NON_NEGATIVE = re.compile(
-    r"(age|price|fare|amount|cost|count|qty|quantity|weight|height|salary|income|wage|duration|"
-    r"distance|size|length|width|area|population|total|revenue|sales|units|stock|years?)", re.I)
-AGE = re.compile(r"(^|_|\b)age($|_|\b)", re.I)
-PERCENT = re.compile(r"(pct|percent|percentage)", re.I)
-MAX_AGE = 120
-EARLIEST = pd.Timestamp("1800-01-01")
+PACK = json.loads((Path(__file__).parents[1] / "rules" / "packs" / "plausible_values.json").read_text(encoding="utf-8"))
+EARLIEST = pd.Timestamp(PACK["dates"]["earliest"])
+CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def name_words(name: str) -> set[str]:
+    """The whole words of a column name: split on anything but letters and digits, and at camelCase."""
+    return {w.lower() for w in re.split(r"[^0-9A-Za-z]+", CAMEL.sub(" ", name)) if w}
 
 
 def bounds(name: str) -> tuple[float | None, float | None]:
-    """The plausible domain the column's name gives it: (lowest, highest), None for no bound."""
-    low = 0 if NON_NEGATIVE.search(name) or PERCENT.search(name) else None
-    high = 100 if PERCENT.search(name) else MAX_AGE if AGE.search(name) else None
-    return low, high
+    """The plausible domain the column's name gives it: (lowest, highest), None for no bound. Where
+    several rules match, the tightest bound of each side holds."""
+    words = name_words(name)
+    words |= {w[:-1] for w in words if w.endswith("s")}
+    lows, highs = [], []
+    for rule in PACK["rules"]:
+        if words & set(rule["words"]):
+            lows += [rule["low"]] if "low" in rule else []
+            highs += [rule["high"]] if "high" in rule else []
+    return (max(lows) if lows else None), (min(highs) if highs else None)
 
 
 def rule_words(low, high) -> str:
@@ -63,9 +75,9 @@ def detect(frame: Frame) -> list[Finding]:
             if bad.any():
                 findings.append(Finding(
                     "impossible_values", name, int(bad.sum()),
-                    "Quarantine dates in the future or before 1800 for review.",
+                    f"Quarantine dates in the future or before {EARLIEST.year} for review.",
                     examples(col.raw[bad].tolist()),
-                    {"rule": f"{name} must be between 1800 and today", "earliest": EARLIEST.date().isoformat(),
+                    {"rule": f"{name} must be between {EARLIEST.year} and today", "earliest": EARLIEST.date().isoformat(),
                      "after": after.date().isoformat()},
                 ))
     return findings

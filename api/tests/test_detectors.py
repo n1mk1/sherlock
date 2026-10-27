@@ -42,7 +42,7 @@ def counts(module, f, column=None):
 
 
 def test_weights_cover_the_sixteen_detectors():
-    weights = {s.id: s.weight for s in registry.all()}
+    weights = {s.id: s.weight for s in registry.all() if s.source == "builtin" and s.id != "rule"}
     assert len(weights) == 16
     assert weights["leakage"] == 1.0 and weights["id_candidates"] == 0.2
 
@@ -220,3 +220,12 @@ def test_roles():
     assert roles == {"customer_id": "id", "signup": "time", "plan": "dimension", "visits": "dimension",
                      "spend": "measure", "churn": "target_like"}
     assert f.target_candidates == ["churn"]
+
+
+def test_impossible_values_match_whole_words_of_the_name():
+    from sherlock.cleaning.detectors.impossible_values import bounds
+
+    assert bounds("customer_age") == (0, 120) and bounds("unitPrice") == (0, None) and bounds("units_sold") == (0, None)
+    assert bounds("discount_pct") == (0, 100) and bounds("years_employed") == (0, None)
+    # A word inside another word isn't one: no domain for these.
+    assert bounds("account_balance") == bounds("average_temp") == bounds("country") == bounds("agent") == (None, None)

@@ -913,7 +913,7 @@ flowchart LR
 6. **Your checks.** The rule interpreter and kinds, migration 010, the `/rules` API, `add_rule`, and "Add a check".
 7. **Installable packs.** Entry points, `DETECTOR_PLUGINS`, `DETECTORS_OFF`, `/healthz` listing, `sherlock detectors check`, the developer guide and the example pack.
 8. **Suggested checks (P1).** `suggest_rules` inside the review job, validation, the "Suggested checks" group, Keep and Dismiss.
-9. **Built-in rule packs.** Move the `impossible_values` word lists into `cleaning/rules/*.json` with word-boundary matching; the contract suite and the corruption eval prove recovery is unchanged.
+9. **Built-in rule packs.** Move the `impossible_values` word lists into `cleaning/rules/packs/plausible_values.json` with whole-word matching; the detector keeps its id and reads its domains from the pack; the contract suite and the corruption eval prove recovery is unchanged.
 10. **Live evals.** The rating, report-honesty and stability checks against Nemotron.
 
 Slices 2 and 3 only need slice 1, so they can be built in parallel, as can slices 6 and 7.
