@@ -623,7 +623,8 @@ Base path `/api/v1`, JSON unless noted. `GET /healthz` sits outside it (§11).
 - **`CleanPlan`**: `{ id: "pln_…", dataset_id, version, status: "draft"|"started"|"discarded", source: "user"|"after_upload", job_id, items: PlanItem[], scope: PlanScope|null, created_at, updated_at, notes?: string[] }`.
   - `PlanScope` is `{ kind: "selection"|"new_rows", selection_id, row_ids, rows }`: the rows the plan was opened for; `null` is the whole dataset. `POST …/clean/plan` with `scope` (the new-rows toast's "Clean them") sets it, and a `selection` scope's `selection_id` must be this dataset's (`422`). `kind: "all"` clears it, and no scope leaves it as it is. The panel starts on it and sends it as `POST /clean`'s `scope`.
   - `notes` is set when the response merged the plan onto a newer version: what changed, in code-written sentences ("1 fix no longer needed: placeholder values in name.", "1 new fix found, ticked."), or "The data changed, so the plan was checked again." when the merge changed nothing.
-- **`PlanItem`**: `{ id: "pit_…", source: "sherlock"|"you"|"chat", key: "<detector>|<column>"|null, detector, column, count, severity, action, instruction: string|null, examples (≤ 5), ticked, change, reason?, module }`.
+- **`PlanItem`**: `{ id: "pit_…", source: "sherlock"|"you"|"chat", key: "<detector>|<column>"|null, detector, column, count, severity, action, instruction: string|null, examples (≤ 5), ticked, change, reason?, module, sev, sev_reason, sev_source, likely_real }`.
+  - `sev` is the item's level (`breaks`, `skews`, `splits`, `check`, `cosmetic`; PRD CLEAN-8c): code's default level (`levels.default_level`, §7.2), with `sev_source: "default"`, `sev_reason: null` and `likely_real: false`. A `kept` item and a user's step have `sev` and `sev_source` null. `plan.run_params` passes each Sherlock fix's level to the run by key (`levels`).
   - `module` (`plan.MODULES`, in display order): `yours` (Your steps), the detector's `spec.group` (`types`: mixed_types, numbers_as_text, ambiguous_dates, unit_mixes; `missing`: missing, sentinels; `text`: whitespace_case, near_duplicate_categories, mojibake; `records`: duplicates, cross_column, functional_dependency, impossible_values; `outliers`; `other`: any other detector), and `kept` (Marked, not changed).
   - `kept` items (`plan.never_change`, the rule the Cleaner uses) are the issues of a detector with `spec.never_change` (leakage, ID candidates), any issue on a column in the card's `leakage_candidates`, and any issue on one of its `id_columns` except those of a `spec.type_fix` detector (`sentinels`, `numbers_as_text`). They have `change: false`, are never ticked, and carry the Cleaner's `reason`.
   - `action` is the detector's `proposal`, and every number is the detector's: the plan makes no model call (Rule 2).
@@ -1339,9 +1340,9 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
 { job_id, status, from_version, to_version,
   ended_by: "done"|"steps"|"time"|"tokens"|"stopped"|"error",
   waited_for_model_s, attempted, budget: { max_steps, max_seconds }, started_at, finished_at,
-  counts: { found, fixed, flagged, skipped, rows_deleted },
+  counts: { found, fixed, flagged, skipped, checked_and_kept, couldnt_fix, not_attempted, kept_by_design, rows_deleted },
   steps: [{ step_id, no, summary, gate, confidence, flag_reason, impact }],
-  skipped: [{ issue_id, column, detector, reason }],
+  skipped: [{ issue_id, column, detector, reason, skip_kind, level }],
   hand_edited_skipped: [{ row_id, column }],
   decisions: [{ step_id, question, chosen, alternatives, reason, review, asked? }],
   your_steps: [{ item_id, column, instruction, source, detector,
@@ -1351,9 +1352,10 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
 
 - `status` is the job's. A cancelled job reads `ended_by: "stopped"`, a failed one `"error"`.
 - `counts.found` is the number of issues on `from_version`. `fixed` and `flagged` count the job's steps with gate `commit` and `flag`. `rows_deleted` is always 0.
+- The other counts say what became of each issue (PRD CLEAN-6), from each skip's `skip_kind` (`loop.SKIP_KINDS`, Schema §2.8): `checked_and_kept` (`left_as_is`), `couldnt_fix` (`failed_checks`, `disagreement`, `gate`, `model_error`, `conflict`), `not_attempted` (`unticked`, `needs_choice`, plus the keys of `from_version`'s issues the run never reached), and `kept_by_design`, apart. `skipped` stays the number of skips; a skip from a run before `skip_kind` counts on no line. Each skip carries its `skip_kind` and its `level` (§7.2).
 - The run's state is checkpointed before the first issue, so the report can be read while the run is going; the cleaning screen polls it for its counts.
 - `GET /report` without `job_id` reads the latest clean job, and answers `404` before the first one.
-- The cleaner writes `issues.outcome`, `handled_by_step_id` and `skip_reason` as it goes.
+- The cleaner writes `issues.outcome`, `handled_by_step_id`, `skip_reason` and `skip_kind` as it goes.
 - Per PRD CLEAN-8b, a decision for a step the user asked for in the cleaning plan carries `asked` (their instruction). `your_steps` has one entry per ticked plan item marked for change with an instruction or a date order (§7.2), and is `[]` for a run without a plan.
 
 `Run` (`ml/runner.py::to_run`): `{ id, dataset_id, widget_id?, version, recipe, method, scope: Scope, params, status: "queued"|"running"|"done"|"failed"|"cancelled"|"outdated", job_id?, target, model_card?: ModelCard, fact_sheet_id?, error?, created_at, finished_at?, summary, progress }`. `Scope` is `WidgetSpec.scope` (§6.3).
@@ -1596,7 +1598,18 @@ Rows are never removed: code that removes rows fails `row_ledger` and scores 0, 
 
 **2. The queue** (`_next_issue`, `loop.queue`). The key of an issue is `detector|column` (`plan.key`). After every attempt, the next issue is the first not yet handled:
 1. **The user's steps** (PRD CLEAN-8b) go first, in plan order, as issues with `user: True`, `detector: "user_request"`, severity 2.0 (above any detector's), the plan item's ID as `issue_id`, and `requested`. `handled` records them as `user|<item id>`. They count against the step budget.
-2. **The card's issues** on the current version come next, most severe first. One exception: an issue whose `spec.runs_before` names other detectors goes just before the most severe of their issues on its column, and never later than its own place. So a column's `sentinels` issue goes just before its domain rule (`impossible_values`), whatever their severities, and a placeholder such as "-999" in an age becomes missing rather than quarantining its row.
+2. **The card's issues** on the current version come next (`loop.queue`), by level, breaks first, then by severity, highest first. An issue's level is its plan item's `sev` when the plan lists its key, else its default level. An issue that is never changed has no level and comes first, since it is skipped at once. Then an issue whose `spec.runs_before` names other detectors moves up to just before the first of their issues on its column, never down. So a column's `sentinels` issue goes just before its domain rule (`impossible_values`), whatever their levels and severities, and a placeholder such as "-999" in an age becomes missing rather than quarantining its row. When the budget runs out, the issues not reached are the least severe.
+
+   **Default levels** (`cleaning/levels.py`, PRD CLEAN-8c). An issue starts at its detector's `spec.default_level`. Code moves it along breaks → skews → splits → cosmetic: one step more severe when one of its columns is a target candidate or has role `measure`, one less when all of them are `free_text`. Its columns are its own and, for a finding over several columns, the others its `details` name (cross-column's earlier column, a dependency's determinant). A finding over whole rows (`scope: rows`, duplicates) and a `check` default (outliers, missing values, functional dependencies) take no adjustment. Leakage and ID candidates have no level. A detector that isn't registered is `check`.
+
+   | Built-in | Default | On the target or a measure | On free text |
+   |---|---|---|---|
+   | mixed_types, numbers_as_text, sentinels, impossible_values, unit_mixes, ambiguous_dates, cross_column | skews | breaks | splits |
+   | duplicates | skews | skews | skews |
+   | near_duplicate_categories, whitespace_case, mojibake | splits | skews | cosmetic |
+   | missing, outliers, functional_dependency | check | check | check |
+
+Every skip records its `skip_kind` (Schema §2.8) beside its reason, and the report counts by it (§6.8): the never-changed below are `kept_by_design`, not in the plan `unticked`, dates that read both ways `needs_choice`, a diagnosis' "leave as is" `left_as_is`, an invalid model output `model_error`; candidates that fail the checks, a fix that fails on the full data or changes nothing, `failed_checks`; disagreeing candidates `disagreement`; the critic's veto and the gate `gate`; and a version that moved under the step `conflict`.
 
 Before an issue is attempted, these are skipped with no model call and use no budget:
 - **Never changed** (`plan.never_change`, shared with the plan; `spec.never_change`, `spec.skip_text`):

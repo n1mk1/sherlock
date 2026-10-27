@@ -70,6 +70,8 @@ export interface DataCard {
 
 // The cleaning plan (TRD §4.4, PRD CLEAN-8a): what Clean with AI will try, editable before it starts.
 export type PlanModule = "yours" | "types" | "missing" | "text" | "records" | "outliers" | "other" | "kept";
+// What a finding does to an analysis (PRD CLEAN-8c), most severe first.
+export type Level = "breaks" | "skews" | "splits" | "check" | "cosmetic";
 
 export interface CleanPlanItem {
   id: string;
@@ -86,6 +88,12 @@ export interface CleanPlanItem {
   change: boolean; // false for leakage and ID columns: marked, never changed
   reason?: string;
   module: PlanModule;
+  // Its level (null for a step you added or a column that's never changed), the reason a review gave
+  // (no digits), and where the level came from.
+  sev?: Level | null;
+  sev_reason?: string | null;
+  sev_source?: "model" | "default" | null;
+  likely_real?: boolean;
   // An ambiguous-dates item: the order the user picked, up to three values read both ways,
   // and whether every date reads both ways, so it's cleaned only with an order.
   date_order?: "dmy" | "mdy" | null;
@@ -170,12 +178,19 @@ export interface CleaningReport {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
-  counts: { found: number; fixed: number; flagged: number; skipped: number; rows_deleted: number };
+  counts: {
+    found: number; fixed: number; flagged: number; skipped: number; rows_deleted: number;
+    // What became of each issue (PRD CLEAN-6); marked-not-changed is counted apart.
+    checked_and_kept?: number; couldnt_fix?: number; not_attempted?: number; kept_by_design?: number;
+  };
   steps: {
     step_id: string; no: number; summary: string; gate: string; confidence: number | null; flag_reason: string | null;
     impact: Step["impact"];
   }[];
-  skipped: { issue_id: string; column: string | null; detector: string; reason: string }[];
+  skipped: {
+    issue_id: string; column: string | null; detector: string; reason: string;
+    skip_kind?: string; level?: Level | null;
+  }[];
   hand_edited_skipped: { row_id: number; column: string }[];
   decisions: { step_id: string; question: string; chosen: string; reason: string; asked?: string }[];
   // A run from a cleaning plan: each step the user added or fix they rewrote, and what became of it.

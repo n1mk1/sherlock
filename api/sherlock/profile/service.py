@@ -10,6 +10,7 @@ import sqlite3
 import threading
 from collections import defaultdict
 
+from sherlock.cleaning import registry
 from sherlock.config import Settings
 from sherlock.db.util import now_iso
 from sherlock.errors import not_found
@@ -72,11 +73,11 @@ def _store(db, dataset_id: str, version: int, card: dict, frame, is_current: boo
         )
         db.execute("DELETE FROM issues WHERE dataset_id = ? AND version = ?", (dataset_id, version))
         db.executemany(
-            "INSERT INTO issues (id, dataset_id, version, detector, column, count, severity, details_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO issues (id, dataset_id, version, detector, detector_version, column, count, severity, details_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                (i["id"], dataset_id, version, i["detector"], i["column"], i["count"], i["severity"],
-                 json.dumps({"examples": i["examples"], "proposal": i["proposal"], **i["details"]}, default=str))
+                (i["id"], dataset_id, version, i["detector"], registry.get(i["detector"]).version, i["column"], i["count"],
+                 i["severity"], json.dumps({"examples": i["examples"], "proposal": i["proposal"], **i["details"]}, default=str))
                 for i in card["issues"]
             ],
         )

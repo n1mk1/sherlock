@@ -36,7 +36,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from sherlock.cleaning import gate, prompts, registry, verifiers
+from sherlock.cleaning import gate, levels, prompts, registry, verifiers
 from sherlock.cleaning.plan import (
     USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
 )
@@ -56,6 +56,14 @@ from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
 NOT_IN_PLAN = "You left this out of the plan"
+# Why an issue was skipped (Schema §2.8 `issues.skip_kind`), and the report line each lands on (PRD CLEAN-6).
+SKIP_KINDS = {
+    "kept_by_design": "kept_by_design",                                                # marked, not changed
+    "left_as_is": "checked_and_kept",
+    "failed_checks": "couldnt_fix", "disagreement": "couldnt_fix", "gate": "couldnt_fix",
+    "model_error": "couldnt_fix", "conflict": "couldnt_fix",
+    "unticked": "not_attempted", "needs_choice": "not_attempted",
+}
 USER_SEVERITY = 2.0  # above any detector's (at most 1.0): the user's steps go first
 USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data block"
 LEFT_AS_IS = "the values look legitimate"  # when the diagnosis' own cause has digits
@@ -141,24 +149,26 @@ def measure_column(issue: dict, card: dict) -> bool:
     return bool(entry and entry.get("role") == "measure")
 
 
-def queue(issues: list[dict]) -> list[dict]:
-    """The card's issues in the order the Cleaner attempts them: most severe first, except that an
-    issue whose spec `runs_before` other detectors goes just before the most severe of their issues on
-    its column, never later than its own place: a column's placeholders go before its domain rule, so
-    a "-999" age becomes a missing value rather than quarantining its row; the rule then takes what is
-    left."""
-    top: dict[tuple[str, str | None], float] = {}  # (detector, column) → its most severe issue
-    for i in issues:
-        k = (i["detector"], i["column"])
-        top[k] = max(top.get(k, 0.0), i["severity"])
+def queue(issues: list[dict], card: dict, plan_levels: dict[str, str] | None = None) -> list[dict]:
+    """The card's issues in the order the Cleaner attempts them (TRD §7.2): by level, breaks first (the
+    plan's level for a key it lists, else the code's default level, PRD CLEAN-8c), then most severe
+    first; an issue that is never changed has no level and comes first, since it is skipped at once.
+    Then an issue whose spec `runs_before` other detectors moves up to just before the first of their
+    issues on its column, never down: a column's placeholders go before its domain rule, so a "-999"
+    age becomes a missing value rather than quarantining its row; the rule then takes what is left."""
+    plan_levels = plan_levels or {}
 
-    def rank(i: dict) -> tuple[float, int]:
-        later = [top[(d, i["column"])] for d in registry.get(i["detector"]).runs_before if (d, i["column"]) in top]
-        if later:
-            return -max(i["severity"], *later), 0
-        return -i["severity"], 1
+    def level(i: dict) -> str | None:
+        return plan_levels.get(key(i)) or levels.default_level(i, card)
 
-    return sorted(issues, key=rank)
+    ordered = sorted(issues, key=lambda i: (levels.rank(level(i)), -i["severity"]))
+    for i in [i for i in ordered if registry.get(i["detector"]).runs_before]:
+        after = registry.get(i["detector"]).runs_before
+        first = next((j for j in ordered if j["column"] == i["column"] and j["detector"] in after), None)
+        if first is not None and ordered.index(first) < ordered.index(i):
+            ordered.remove(i)
+            ordered.insert(ordered.index(first), i)
+    return ordered
 
 
 def rule_only(report: verifiers.Report) -> bool:
@@ -251,6 +261,7 @@ class Cleaner:
         self.instructions: dict[str, str] = run["instructions"]  # rewritten fixes, by issue key
         self.date_orders: dict[str, str] = run["date_orders"]     # the order picked for ambiguous dates, by key
         self.user_steps: list[dict] = run["user_steps"]           # in the plan's order
+        self.levels: dict[str, str] = run["levels"]               # each listed fix's level, by key
         self.item_ids = {i["key"]: i["id"] for i in plan.get("items") or [] if i["key"]}
         self.scope = CallScope(user_id=self.dataset["user_id"], dataset_id=self.dataset["id"], job_id=ctx.id,
                                on_wait=lambda text: ctx.log(text, level="warn", icon="wait"))
@@ -404,18 +415,18 @@ class Cleaner:
                         "severity": USER_SEVERITY, "proposal": step["instruction"], "examples": [], "details": {},
                         "user": True, "requested": True, "instruction": step["instruction"], "plan_item_id": step["id"]}
         card = self._card()
-        for issue in queue(card["issues"]):
+        for issue in queue(card["issues"], card, self.levels):
             if key(issue) in self.state.handled:
                 continue
             # Columns that record the outcome or identify rows are marked, never changed, whatever the issue.
             kept = never_change(issue, card)
             if kept is not None:
                 self.state.handled.append(key(issue))
-                self._skip(issue, kept[0], log_text=registry.get(kept[1]).skip_text)
+                self._skip(issue, kept[0], "kept_by_design", log_text=registry.get(kept[1]).skip_text)
                 continue
             if key(issue) in self.skip_keys:  # unticked in the plan: no model call, no budget used
                 self.state.handled.append(key(issue))
-                self._skip(issue, NOT_IN_PLAN, log_text="not in your plan")
+                self._skip(issue, NOT_IN_PLAN, "unticked", log_text="not in your plan")
                 continue
             if key(issue) in self.date_orders:  # the user picked the order: no vote
                 order = self.date_orders[key(issue)]
@@ -424,7 +435,7 @@ class Cleaner:
                         "plan_item_id": self.item_ids.get(key(issue))}
             if needs_order(issue) and key(issue) not in self.instructions:  # every date reads both ways
                 self.state.handled.append(key(issue))
-                self._skip(issue, order_needed(issue), log_text="needs your choice of order")
+                self._skip(issue, order_needed(issue), "needs_choice", log_text="needs your choice of order")
                 continue
             if key(issue) in self.instructions:  # a fix the user rewrote
                 return {**issue, "requested": True, "instruction": self.instructions[key(issue)],
@@ -444,10 +455,14 @@ class Cleaner:
             out.update(step_id=step["id"], step_no=step["no"])
         self.state.plan_outcomes[item_id] = out
 
-    def _skip(self, issue: dict, reason: str, candidates=None, log_text: str | None = None, checks=None) -> None:
+    def _skip(self, issue: dict, reason: str, kind: str, candidates=None, log_text: str | None = None,
+              checks=None) -> None:
+        """Skip an issue with its reason and its kind (`SKIP_KINDS`), which the report counts by."""
+        level = None if issue.get("user") else (self.levels.get(key(issue)) or levels.default_level(issue, self._card()))
         self.state.skipped.append({"issue_id": issue["id"], "column": issue["column"], "detector": issue["detector"],
-                                   "reason": reason})
-        self.db.execute("UPDATE issues SET outcome = 'skipped', skip_reason = ? WHERE id = ?", (reason, issue["id"]))
+                                   "reason": reason, "skip_kind": kind, "level": level})
+        self.db.execute("UPDATE issues SET outcome = 'skipped', skip_reason = ?, skip_kind = ? WHERE id = ?",
+                        (reason, kind, issue["id"]))
         self._outcome(issue, "skipped", reason)
         self.ctx.log(reason, icon="skip", column=issue["column"], gate="skip", candidates=candidates,
                      detail=log_text or "skipped", issue_id=issue["id"], checks=checks, calls=self._calls())
@@ -490,16 +505,16 @@ class Cleaner:
         try:
             diagnosis = self._diagnose(issue, card, before)
         except StructuredOutputError:
-            return self._skip(issue, "model output invalid")
+            return self._skip(issue, "model output invalid", "model_error")
         fallback = code_fix(issue)  # numbers stored as text: the code's own parse when the model's fixes fail
         # Asked for, a domain rule, or numbers stored as text in a measure: "leave as is" doesn't end it.
         if diagnosis.leave_as_is and not requested and rule is None and not (fallback and measure_column(issue, card)):
-            return self._skip(issue, f"Left as is: {prose(diagnosis.cause) or LEFT_AS_IS}")
+            return self._skip(issue, f"Left as is: {prose(diagnosis.cause) or LEFT_AS_IS}", "left_as_is")
         try:
             proposed = list(self._propose(issue, diagnosis, before).candidates)
         except StructuredOutputError:  # a reply cut off at its token cap too (TRD §3.5)
             if rule is None and fallback is None:
-                return self._skip(issue, "model output invalid")
+                return self._skip(issue, "model output invalid", "model_error")
             proposed = []
         if rule is not None:
             proposed.append(rule)
@@ -542,7 +557,7 @@ class Cleaner:
             best_i = len(scored) - 1
         if best_i is None or scored[best_i][1] == 0.0:
             why = next((e for *_, e in scored if e), "no candidate passed the checks")
-            return self._skip(issue, f"No candidate passed the checks ({why})", candidates=chips)
+            return self._skip(issue, f"No candidate passed the checks ({why})", "failed_checks", candidates=chips)
         best, best_score, sample_report, _ = scored[best_i]
         chips[best_i]["chosen"] = True
         # Output agreement: candidates that pass but value the same cells differently leave
@@ -552,7 +567,7 @@ class Cleaner:
         if apart:
             one, other = (scored[i][0].label for i in compared.pair)
             shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)
-            return self._skip(issue, f"Skipped: {apart} ({one} vs {other}: {shown})", candidates=chips)
+            return self._skip(issue, f"Skipped: {apart} ({one} vs {other}: {shown})", "disagreement", candidates=chips)
 
         # The best candidate on the full data, verified again; the gate uses the real blast.
         self.ctx.check_cancel()
@@ -563,17 +578,17 @@ class Cleaner:
         if r.cancelled:
             raise JobCancelled()
         if not r.ok:
-            return self._skip(issue, f"Failed on the full data ({r.error})", candidates=chips)
+            return self._skip(issue, f"Failed on the full data ({r.error})", "failed_checks", candidates=chips)
         try:
             after_full = self._restrict(before, self._read(full_out))
         except ScopeError as exc:
-            return self._skip(issue, f"Not applied: {exc}", candidates=chips)
+            return self._skip(issue, f"Not applied: {exc}", "failed_checks", candidates=chips)
         full_report = verifiers.verify(before, after_full, detector, column, requested=requested)
         if not full_report.passed:
-            return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", candidates=chips,
+            return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", "failed_checks", candidates=chips,
                               checks=full_report.hard)
         if full_report.cells_changed == 0 and full_report.quarantined == 0:
-            return self._skip(issue, "The fix changed nothing", candidates=chips)
+            return self._skip(issue, "The fix changed nothing", "failed_checks", candidates=chips)
         try:
             critique = self._critic(issue, best, before, after_full, full_report)
             review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
@@ -586,7 +601,7 @@ class Cleaner:
             # A domain rule's fix that only quarantines the rows the rule names is flagged instead: the
             # rule, not the model, says those values are impossible.
             if rule is None or not rule_only(full_report):
-                return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", candidates=chips,
+                return self._skip(issue, "Skipped: the review found it changed values it shouldn't have", "gate", candidates=chips,
                                   checks=full_report.hard)
             overruled = True
         user_cols = [c for c in before.columns if c not in verifiers.SYSTEM]
@@ -599,7 +614,7 @@ class Cleaner:
         elif decision.gate == "commit" and (issue.get("details") or {}).get("review_pairs"):
             decision = gate.review(decision, issue["details"]["review_pairs"])
         if decision.gate == "skip":
-            return self._skip(issue, f"Skipped: {decision.reason}", candidates=chips, checks=full_report.hard)
+            return self._skip(issue, f"Skipped: {decision.reason}", "gate", candidates=chips, checks=full_report.hard)
         restricted = full_out
         if self.allowed is not None or self.protected:
             restricted = self.work / f"commit_{uuid.uuid4().hex}.parquet"
@@ -625,7 +640,7 @@ class Cleaner:
                                   version, spec, lambda _old, out: shutil.copyfile(restricted, out))
         except ApiError as exc:
             if exc.status == 409:
-                return self._skip(issue, "The data changed while this step ran", candidates=chips)
+                return self._skip(issue, "The data changed while this step ran", "conflict", candidates=chips)
             raise
         self.state.step_ids.append(step["id"])
         outcome = "fixed" if decision.gate == "commit" else "flagged"

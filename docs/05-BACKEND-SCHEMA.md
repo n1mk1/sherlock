@@ -26,6 +26,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
   | `006_message_version.sql` | `messages.version`, back-filled (§2.15) |
   | `007_llm_fallback.sql` | `llm_calls.fallback_from` (§2.18) |
   | `008_column_notes.sql` | `column_notes` (§2.23) |
+  | `009_issue_review.sql` | `issues.detector_version`, `issues.skip_kind` (§2.8); `issue_reviews` (§2.24) |
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
@@ -200,7 +201,7 @@ CREATE TABLE user_edited_cells (
 
 ### 2.8 issues
 
-Detected issues per version: the DataCard's `issues`, normalized for querying and for tracking what the Cleaner handled. Written by the profile (`profile/service.py`), which replaces a version's rows each time it profiles it. The Cleaner sets `outcome` (`fixed` or `flagged` with `handled_by_step_id`, or `skipped` with `skip_reason`, `cleaning/loop.py`).
+Detected issues per version: the DataCard's `issues`, normalized for querying and for tracking what the Cleaner handled. Written by the profile (`profile/service.py`), which replaces a version's rows each time it profiles it, with the `version` of the detector that found each (`detector_version`, `DetectorSpec.version`). The Cleaner sets `outcome` (`fixed` or `flagged` with `handled_by_step_id`, or `skipped` with `skip_reason` and `skip_kind`, `cleaning/loop.py`).
 
 ```sql
 CREATE TABLE issues (
@@ -214,10 +215,14 @@ CREATE TABLE issues (
   details_json TEXT NOT NULL,                  -- examples, proposal, plus the detector's own details
   handled_by_step_id TEXT,
   outcome    TEXT,                             -- fixed|flagged|skipped|NULL
-  skip_reason TEXT
+  skip_reason TEXT,
+  detector_version INTEGER,                    -- (009)
+  skip_kind  TEXT                              -- (009) see below
 );
 CREATE INDEX issues_dataset ON issues(dataset_id, version, severity DESC);
 ```
+
+- **`skip_kind`** says why a skipped issue was skipped, so the report counts by it rather than by parsing `skip_reason` (TRD §7.2, PRD CLEAN-6): `kept_by_design` (a leakage or ID column; "marked, not changed"), `left_as_is` (the diagnosis judged the values real; "checked and kept"), `failed_checks`, `disagreement`, `gate`, `model_error` and `conflict` ("couldn't fix"), `unticked` and `needs_choice` ("not attempted").
 
 ### 2.9 widgets and layouts
 
@@ -710,6 +715,29 @@ CREATE TABLE column_notes (
 - **One note per column and kind.** Reading a dictionary again replaces the column's `dictionary` note; a new web meaning replaces its `web` note. Readers show the `dictionary` note first, and with one chat doesn't search the web for that column.
 - Deleted with the dataset by the foreign key cascade (§6).
 
+### 2.24 issue_reviews
+
+A version's severity ratings (PRD CLEAN-8c, TRD §7.2), apart from `issues`, which a re-profile rewrites. One row per issue key of a reviewed version.
+
+```sql
+CREATE TABLE issue_reviews (
+  dataset_id       TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  version          INTEGER NOT NULL,
+  key              TEXT NOT NULL,              -- detector|column, as plan.key
+  detector_version INTEGER NOT NULL,
+  sev              TEXT NOT NULL,              -- breaks|skews|splits|check|cosmetic
+  sev_reason       TEXT,
+  sev_source       TEXT NOT NULL,              -- model|default
+  likely_real      INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT NOT NULL,
+  PRIMARY KEY (dataset_id, version, key)
+);
+```
+
+- Versions never change (CLAUDE.md Rule 3), so a rating holds until its detector's `version` changes: a row whose `detector_version` isn't the detector's current one is ignored.
+- Not built yet: the review that writes it; until then every plan item keeps its default level.
+- Deleted with the dataset by the foreign key cascade (§6).
+
 ---
 
 ## 3. DuckDB (in-memory, cached per version)
@@ -814,7 +842,7 @@ The `purge` job (`sherlock/jobs/purge.py`) runs these six steps, in this order, 
 
 **Hard-deleting a dataset** (`hard_delete_dataset`) drops its cached DuckDB connections, removes its folder, then deletes its rows:
 - Cleared explicitly (`LOOSE_TABLES`, no cascading key): `lineage`, `user_edited_cells`, `issues`, `widget_cache`, `fact_sheets`, `relations`, `job_events`, `thread_summaries`, `proposals`, `value_index`.
-- Then the `datasets` row; the cascading foreign keys remove `versions` (and `datacards`), `steps`, `widgets`, `layouts`, `cards`, `canvases`, `runs`, `jobs`, `messages`, `selections`, `exports`, `clean_plans` and `column_notes`.
+- Then the `datasets` row; the cascading foreign keys remove `versions` (and `datacards`), `steps`, `widgets`, `layouts`, `cards`, `canvases`, `runs`, `jobs`, `messages`, `selections`, `exports`, `clean_plans`, `column_notes` and `issue_reviews`.
 - Kept: `llm_calls` and `sandbox_runs`, which the daily budgets and spend figures read (§2.18). `web_cache` belongs to no dataset.
 - Only `datasets` references `users`, so deleting a user with no datasets removes that row alone.
 

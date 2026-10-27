@@ -19,7 +19,7 @@ Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset
 import json
 import sqlite3
 
-from sherlock.cleaning import registry
+from sherlock.cleaning import levels, registry
 from sherlock.db.util import new_id, now_iso
 
 # Display order; "Your steps" comes first.
@@ -108,6 +108,9 @@ def _item(issue: dict, card: dict, item_id: str | None = None) -> dict:
         "column": issue["column"], "count": issue["count"], "severity": issue["severity"],
         "action": issue.get("proposal") or "", "instruction": None, "examples": list(issue.get("examples") or [])[:MAX_EXAMPLES],
         "ticked": kept is None, "change": kept is None, "module": module,
+        # The issue's severity level (PRD CLEAN-8c): code's default until a review rates it.
+        "sev": None if kept else levels.default_level(issue, card), "sev_reason": None,
+        "sev_source": None if kept else "default", "likely_real": False,
     }
     if kept:
         item["reason"] = kept[0]
@@ -253,7 +256,8 @@ def apply_ops(items: list[dict], ops: list[dict], columns=(), source: str = "you
             text = _instruction(op.get("instruction"))
             new = {"id": new_id("pit"), "source": source, "key": None, "detector": USER_DETECTOR, "column": column,
                    "count": None, "severity": None, "action": text, "instruction": text, "examples": [],
-                   "ticked": True, "change": True, "module": "yours"}
+                   "ticked": True, "change": True, "module": "yours",
+                   "sev": None, "sev_reason": None, "sev_source": None, "likely_real": False}
             items.append(new)
             by_id[new["id"]] = new
             done["added"].append(column or "the rows")
@@ -301,9 +305,10 @@ def order_instruction(column: str, order: str) -> str:
 
 def run_params(items: list[dict]) -> dict:
     """What the Cleaner reads from a started plan's frozen items: unticked Sherlock fixes to skip,
-    rewritten fixes' instructions by key, the date orders the user picked by key, and the ticked
-    user steps in order."""
+    rewritten fixes' instructions by key, the date orders the user picked by key, the ticked
+    user steps in order, and each Sherlock fix's level by key (the queue's order, TRD §7.2)."""
     return {
+        "levels": {i["key"]: i["sev"] for i in items if i["key"] and i.get("sev")},
         "date_orders": {i["key"]: i["date_order"] for i in items
                         if i["key"] and i["change"] and i["ticked"] and i.get("date_order")},
         "skip_keys": [i["key"] for i in items if i["key"] and i["change"] and not i["ticked"]],

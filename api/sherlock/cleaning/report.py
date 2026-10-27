@@ -1,7 +1,12 @@
 """The cleaning report (TRD §6.8, PRD CLEAN-6), assembled for one clean job from its checkpointed
 state (`jobs.state_json`), the steps it committed, and the issues it handled. A run from a cleaning
 plan adds `your_steps`: each step the user added, fix they rewrote or date order they picked, with
-its outcome (PRD CLEAN-8b)."""
+its outcome (PRD CLEAN-8b).
+
+The counts say what became of each issue (PRD CLEAN-6): fixed, flagged, checked and kept (the Cleaner
+looked and judged the values real), couldn't fix, not attempted (unticked, waiting on the user's
+choice, or not reached before the budget ran out), and, apart, marked and not changed (leakage and
+ID columns). A skip's line comes from its `skip_kind` (`loop.SKIP_KINDS`)."""
 
 import json
 import sqlite3
@@ -25,10 +30,11 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
     state = json.loads(job["state_json"]) if job["state_json"] else {}
     steps = db.execute("SELECT * FROM steps WHERE job_id = ? ORDER BY no", (job["id"],)).fetchall()
     from_version = state.get("from_version")
-    found = 0
+    found, start_keys = 0, set()
     if from_version is not None:
-        found = db.execute("SELECT count(*) FROM issues WHERE dataset_id = ? AND version = ?",
-                           (dataset_id, from_version)).fetchone()[0]
+        rows = db.execute("SELECT detector, column FROM issues WHERE dataset_id = ? AND version = ?",
+                          (dataset_id, from_version)).fetchall()
+        found, start_keys = len(rows), {f"{r['detector']}|{r['column']}" for r in rows}
     ended_by = state.get("ended_by", "done")
     if job["status"] == "cancelled":
         ended_by = "stopped"
@@ -51,6 +57,7 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
             "fixed": sum(1 for s in steps if s["gate"] == "commit"),
             "flagged": sum(1 for s in steps if s["gate"] == "flag"),
             "skipped": len(state.get("skipped", [])),
+            **_outcomes(state, start_keys),
             "rows_deleted": 0,
         },
         "steps": [{"step_id": s["id"], "no": s["no"], "summary": s["summary"], "gate": s["gate"],
@@ -62,6 +69,19 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
         "your_steps": _your_steps(job, state),
         "error": job["error"],
     }
+
+
+def _outcomes(state: dict, start_keys: set[str]) -> dict:
+    """The skips by report line, plus the issues found at the start that the run never reached."""
+    from sherlock.cleaning.loop import SKIP_KINDS
+
+    lines = {"checked_and_kept": 0, "couldnt_fix": 0, "not_attempted": 0, "kept_by_design": 0}
+    for s in state.get("skipped", []):
+        line = SKIP_KINDS.get(s.get("skip_kind"))
+        if line:
+            lines[line] += 1
+    lines["not_attempted"] += len(start_keys - set(state.get("handled", [])))
+    return lines
 
 
 def _your_steps(job: sqlite3.Row, state: dict) -> list[dict]:

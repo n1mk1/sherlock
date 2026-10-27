@@ -83,8 +83,9 @@ def test_a_columns_placeholders_go_before_its_domain_rule():
               {"detector": "missing", "column": "cabin", "severity": 0.1},
               {"detector": "sentinels", "column": "age", "severity": 0.05},
               {"detector": "sentinels", "column": "units", "severity": 0.02}]
-    assert [(i["detector"], i["column"]) for i in queue(issues)] == [
-        ("sentinels", "age"), ("impossible_values", "age"), ("missing", "cabin"), ("sentinels", "units")]
+    # By level first: placeholders and impossible values skew answers, missing values are worth a look.
+    assert [(i["detector"], i["column"]) for i in queue(issues, {"columns": []})] == [
+        ("sentinels", "age"), ("impossible_values", "age"), ("sentinels", "units"), ("missing", "cabin")]
 
 
 def test_a_domain_rule_is_flagged_not_skipped():
