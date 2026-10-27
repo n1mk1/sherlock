@@ -57,5 +57,9 @@ uv run sherlock eval ask # also: corruption, ml, grounding, notebook, web (offli
 2. **No model outside NVIDIA on Token Factory.** The model never computes a number. Numbers come from code, and generated text shows them only as chips bound to fact sheets.
 3. **Data is never changed in place.** Every change is a step that creates a new version and can be undone. Cleaning quarantines rows; it never deletes them.
 4. **Keep it generic.** No code, tuning or prep that is specific to one dataset. Titanic is only the sample file.
-5. **When editing docs, add, don't cut.** Fix gaps by adding requirements. Don't add timelines or trim scope; a P0 drops only through the cut order in plan §5.
+5. **Keep docs lean; never cut scope.**
+   - Fix gaps by adding requirements. Don't add timelines or trim scope; a P0 drops only through the cut order in plan §5.
+   - Specs describe what the code does now, stated once, in the doc that owns it; other docs cite the section (`TRD §7.2`).
+   - History (commit hashes, "as built" stories, which day fixed what) goes in `docs/LOG.md` and the commit message, never in a spec.
+   - Keep section numbers and requirement IDs stable, because code comments cite them.
 6. **Commit each verified slice to `main` and push as much as possible** Secrets stay in `.env`, never in the repo or an exported notebook.

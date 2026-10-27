@@ -32,7 +32,12 @@ Every model call goes to **NVIDIA Nemotron on Nebius Token Factory** (its OpenAI
 - **Nebius services used by the deployed app:** Token Factory only. The app is hosted on Render because the account's Nebius AI Cloud tenant was suspended; the same image runs as a Nebius Serverless Endpoint with `scripts/deploy.sh` (see Deploy).
 - **Structured output.** Every structured call uses Token Factory's strict `response_format` JSON schema, validated again in code, with one repair round that sends the error back.
 - **Where Token Factory sped up the build.** One OpenAI-compatible endpoint serves all three Nemotron sizes, so the whole model client is the stock `openai` SDK with one base URL, and moving a purpose between Ultra, Super and Nano is a one-word change. Strict JSON schema decoding worked on every Nemotron model, so each reply arrives in its shape and the one repair round is needed only for our own rules (no digits in prose, no markup inside a text run).
-- **Every call is logged** in `llm_calls` with its purpose: Ultra's `diagnose` and `propose`; Super's `critic`, `curate`, `narrate`, `overview`, `synthesis`, `ask_story`, `plan`, `sql`, `predicate`, `compose`, `stats`, `meaning`, `widget`, `update_widget`, `edits` and `plan_edits`; Nano's `route` and `summary`. Each chat answer and each clean shows its calls in the app under "How I worked it out" (model, time, tokens, repairs and a total), and `uv run sherlock llm stats` sums the log per purpose and role.
+- **Every call is logged** in `llm_calls` with its purpose:
+  - Ultra: `diagnose`, `propose`;
+  - Super: `critic`, `curate`, `narrate`, `overview`, `synthesis`, `ask_story`, `plan`, `sql`, `sql_check`, `predicate`, `compose`, `stats`, `meaning`, `widget`, `update_widget`, `edits`, `plan_edits`, and for the web `web_query`, `web_answer`, `meaning_web` and `dictionary`;
+  - Nano: `route`, `summary`.
+
+  Each chat answer and each clean shows its calls under "How I worked it out" (model, time, tokens, repairs, total). `uv run sherlock llm stats` (in `api/`) sums the log per purpose and role.
 
 ## Web retrieval (Tavily)
 
@@ -44,7 +49,7 @@ Sherlock can read the web through **Tavily**, for retrieval only: `search`, `ext
 - **What it never sends:** cell values. Outbound requests hold only your own words, column names and a URL you typed, and code refuses a search that would carry a value from the file (TRD §3.6, §15). `uv run sherlock eval web` checks every request against every cell of the three eval files.
 - **Turning it on:** set `TAVILY_API_KEY` in `.env` (local) or in the Render service's environment variables (`render.yaml` declares it with `sync: false`, so the value is never in the repo), then restart. Nothing else changes: no code, no setting in the app. `WEB_SEARCH=off` turns it off again.
 - **Without a key** (the default here) the app runs the same, and each web feature says in one line that web search isn't set up instead of failing.
-- Responses are cached for 24 h, each user has 20 Tavily calls an hour, and every call is logged next to the model calls (`llm_calls`, `role = 'web'`).
+- Responses are cached for 24 h, each user has 20 Tavily calls an hour (`WEB_RATE_LIMIT`), and every call is logged next to the model calls (`llm_calls`, `role = 'web'`).
 
 ![Architecture: the browser, the Sherlock API on Render, Nemotron on Nebius Token Factory, the persistent disk, DuckDB, the sandbox and the exported notebook](docs/architecture.png)
 
@@ -74,23 +79,24 @@ flowchart LR
 | Check | Result | Command |
 |---|---|---|
 | Cleaning benchmark: three clean sets damaged in known ways, the Cleaner on each with the real models | recovery 97.2% (Titanic-derived), 94.5% (sales), 74.0% (HR); harm 0.00%; row loss 0.0% | `uv run sherlock eval corruption` |
-| ML planted-truth cases | 3 of 3: drivers found in order with the leak and ID excluded, noise reported as "no signal", a regression's drivers ranked | `uv run sherlock eval ml` |
+| ML planted-truth cases (no model) | 3 of 3: drivers found in order with the leak and ID excluded, noise reported as "no signal", a regression's drivers ranked | `uv run sherlock eval ml` |
 | Grounding: every story card's chips against their facts, facts re-run, wording scanned | Titanic 36 of 36 chips and sales 33 of 33 match their fact; 0 text runs with numbers; 0 causal phrases | `uv run sherlock eval grounding` |
-| Ask-anything: 50 questions over three files, every ASK-2 area | **49 of 50**, **0 unsourced answers** (2026-10-25, after fixing what the first run's 44 of 50 found); median 8.7 s per answer before the harness began waiting out the rate limit | `uv run sherlock eval ask` |
-| Notebook: export each end-to-end file and run it top to bottom in a fresh virtualenv | 5 of 5 files rebuild their version after an undo with replay (107–198 s each on 2026-10-26, including a fresh virtualenv and its installs, on a busy laptop; 78–116 s on 2026-10-25; the table is in TRD §14) | `uv run sherlock eval notebook --sets all` |
-| The deployed site from fresh browsers: the instant sample, isolation, rate limits, a sourced answer, the cascade, then the five files uploaded, built (two cleaned live), exported and their notebooks run | 31 of 31 checks (2026-10-25) | `uv run --project api python scripts/live_check.py --files all` |
+| Ask-anything: 61 questions over three files, every ASK-2 area | **60 of 61**, **0 unsourced answers** in each of the last three live runs (2026-10-26, `docs/LOG.md`) | `uv run sherlock eval ask` |
+| Notebook (no model): export each end-to-end file and run it top to bottom in a fresh virtualenv | 5 of 5 files rebuild their version after an undo with replay (107–198 s each on 2026-10-26, including a fresh virtualenv and its installs, on a busy laptop; the table is in TRD §14) | `uv run sherlock eval notebook --sets all` |
+| The deployed site from fresh browsers: the instant sample, isolation, rate limits, a sourced answer, the cascade, then the five files uploaded, built (two cleaned live), exported and their notebooks run | 31 of 31 checks (2026-10-25, plan D9.2) | `uv run --project api python scripts/live_check.py --files all` |
+| Web retrieval, live: real Nemotron and Tavily (local key), each question with the web on, failing and off | **0 outbound requests held a cell value**; web on 14 of 20 (6 of 7 on the rerun of the file a Token Factory stall hit); no answer ended in an error (2026-10-26, `FEEDBACK.md`) | `uv run sherlock eval web --live` |
 | End-to-end browser flow (Playwright, recorded model replies) | sample → dashboard → ask → approved edit → story update → Flow synthesis → notebook download, 11 s | `pnpm e2e` |
 | Baseline: three questions on `titanic3.csv`, with Sherlock versus by hand in a spreadsheet | With Sherlock (live, 2026-10-25): about 31 s and 4 steps in all, 3 of 3 answers traceable to their SQL. The by-hand half needs a person with a stopwatch and isn't measured yet | [`docs/USER-TESTS.md`](docs/USER-TESTS.md) |
 | Cold-start user test (three people who have never seen Sherlock) | not run yet; the protocol and the results table are in [`docs/USER-TESTS.md`](docs/USER-TESTS.md) | |
 
 ## Known limitations
 
-- **Ask-anything misses.** The first live run scored 44 of 50: Nano routed two plain "what is the rate?" questions to the significance test (a code guard now keeps the test for questions that ask about one); Super used an approximate median once (the prompt now asks for exact ones); and two false "no column answers that" (the prompt now explains per-row averages). The last run scored 49 of 50: "which reviews mention damaged packaging?" still answers with a count rather than listing the rows.
+- **Ask-anything misses.** The live runs score 60 of 61, and the miss varies: most often the follow-up "and for women only?" (Super returns an empty query, so the answer is an empty table), once "how accurate is the model?" answered as a query. The route guards are English keyword rules, so the same questions in another language go wherever Nano sends them (`docs/BACKLOG.md` §5).
 - **Model variance.** At temperature 0 with reasoning on, Ultra and Super still vary between runs: three builds of the same Titanic sample got no cleaning step, then "missing age by the median for the title", then that plus "the one missing fare by its class median". Every fix is still verified and undoable.
-- **Cleaning gaps.** Placeholder values in numeric columns (`N/A`, `-999`) are often quarantined rather than turned into missing values; quarantined rows keep their text and are left out of analysis.
+- **Cleaning gaps.** A placeholder in a numeric column (`N/A`, `-999`) becomes a missing value when its fix runs; if that fix is skipped, a domain rule (an age of −999) quarantines the row instead. Quarantined rows keep their text and are left out of analysis. An Ultra reply cut off at its token cap skips its issue unless a code fix exists (numbers stored as text have one).
 - **Files.** A header that isn't on the first rows (as in `broken_latin1.txt`, header on row 3) must be set in the import preview. Files up to 50 MB.
 - **Identity.** Anonymous and per browser, with no recovery: clearing cookies loses access. Datasets expire after 7 days.
-- **Not shipped from P0** (the plan's cut order, applied on 2026-10-24 with the team solo): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill down, duplicate row, undo and redo of unsaved edits, the Review changes drawer, replace (Find is there), the filter row and quick views, the cell history tooltip, selection stats, right-click menus, jump to row and Ctrl+arrow; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet. Also not shipped, outside the cuts: type-aware cell editors and autocomplete (every cell edits as text), and multi-column sort and column resize (`docs/BACKLOG.md` §2).
+- **Not shipped from P0** (the plan's cut order, §5): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill down, duplicate row, undo and redo of unsaved edits, the Review changes drawer, replace (Find is there), the filter row and quick views, the cell history tooltip, selection stats, right-click menus, jump to row and Ctrl+arrow; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet. Also not shipped, outside the cuts: type-aware cell editors and autocomplete (every cell edits as text), and multi-column sort and column resize (`docs/BACKLOG.md` §2).
 - **Latency.** Token Factory latency varies; we saw one 27 s routing call during an overload. Answers usually take 5–15 s. Cleaning a wide messy file is slow: the 60-column `wide_messy.csv` took 685 s for four steps on the live site; a sample-sized file takes about a minute.
 
 ## Accessibility
@@ -106,11 +112,11 @@ flowchart LR
 Requirements: [uv](https://docs.astral.sh/uv/) (Python 3.12 is pinned in `api/.python-version`), Node 24 with pnpm through Corepack (`corepack enable`), a Nebius Token Factory API key, and optionally Docker.
 
 ```bash
-cp .env.example .env        # then set LLM_BASE_URL and LLM_API_KEY
-uv run --project api python scripts/smoke_llm.py   # tests the Nemotron models, prints the MODEL_* lines
+cp .env.example .env        # then set LLM_API_KEY (LLM_BASE_URL and the MODEL_* IDs are filled in)
+uv run --project api python scripts/smoke_llm.py   # optional: tests the Nemotron models, prints the MODEL_* lines
 ```
 
-The API refuses to start until `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` are Nemotron IDs. Copy the lines the smoke test prints into `.env`.
+The API refuses to start unless `MODEL_LARGE`, `MODEL_MEDIUM` and `MODEL_SMALL` are NVIDIA Nemotron IDs (`nvidia/…nemotron…`). If the catalog changes, copy the lines the smoke test prints into `.env`. Web retrieval stays off until `TAVILY_API_KEY` is set.
 
 With Docker:
 
@@ -121,8 +127,8 @@ docker compose up           # API on :8000, web on :5173
 Without Docker:
 
 ```bash
-cd api && uv sync && uv run uvicorn sherlock.main:app --reload --port 8000
-cd web && pnpm install && pnpm dev
+cd api && uv sync && uv run uvicorn sherlock.main:app --reload --port 8000   # terminal 1
+cd web && pnpm install && pnpm dev                                           # terminal 2: http://localhost:5173
 ```
 
 "Try with sample" clones the seed in `api/samples/seed/titanic3/`. To rebuild it with the real models: `uv run --project api python scripts/seed_sample.py`.
@@ -137,7 +143,7 @@ Sherlock is hosted on **Render**: one Docker web service built from `api/Dockerf
 
 Later pushes to `main` that touch `api/`, `web/` or `render.yaml` redeploy once CI passes.
 
-While GitHub Actions can't start jobs on this account (billing, since 2026-10-25), CI never passes, so nothing deploys on its own. Deploy by hand instead (TRD §11):
+GitHub Actions can't start jobs on this account (billing), so CI never passes and nothing deploys on its own. Deploy by hand (TRD §11):
 
 1. Run the checks locally: `uv run pytest` in `api/`, then `pnpm test` and `pnpm build` in `web/`.
 2. Push to `main`.
@@ -148,7 +154,7 @@ When you wait for a deploy from a script, poll `/healthz` with a bounded loop. A
 
 ### Nebius alternative
 
-The same image runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`) with a Nebius shared filesystem mounted at `/data`. There, the Token Factory key is stored in a Nebius secret (SecretStash) instead of plain endpoint settings. This needs an active Nebius AI Cloud tenant with billing or credits.
+The same image runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`) with a Nebius shared filesystem mounted at `/data`. There, the Token Factory key is a Nebius secret (`nebius mysterybox`, named `sherlock-llm`) instead of a plain endpoint setting. This needs an active Nebius AI Cloud tenant with billing or credits.
 
 Requirements: bash, Docker, `jq`, `curl` and the [Nebius CLI](https://docs.nebius.com/cli/install) with a profile for the project. On Windows, use WSL (Ubuntu) with Docker Desktop's WSL integration.
 
@@ -156,6 +162,7 @@ Requirements: bash, Docker, `jq`, `curl` and the [Nebius CLI](https://docs.nebiu
 ./scripts/deploy.sh setup   # once: registry, /data filesystem, secret, image, endpoint
 ./scripts/deploy.sh         # redeploy: build, push the same tag, restart (the URL stays the same)
 ./scripts/deploy.sh check   # restart and confirm /data and the cookie user survive it
+./scripts/deploy.sh url     # print the endpoint's public URL
 ```
 
 Build and run the image locally:
@@ -170,10 +177,20 @@ docker run -p 8080:8080 --env-file .env -e DATA_DIR=/data -e DATABASE_URL=sqlite
 ```bash
 cd api && uv run pytest     # unit and integration, with recorded model replies
 cd web && pnpm test         # component tests
+cd web && pnpm typecheck    # tsc -b (vitest and e2e don't type-check)
 cd web && pnpm e2e          # builds the app and runs the Playwright flow against one local server
 ```
 
-The evals in **Results** use the real models (`LLM_MOCK` unset) and print markdown tables: `uv run sherlock eval corruption | ml | grounding | ask | notebook` in `api/`.
+The evals in **Results** run in `api/` and print markdown tables:
+
+| Command | Models |
+|---|---|
+| `uv run sherlock eval corruption [--sets a,b]` | real (`LLM_MOCK` unset) |
+| `uv run sherlock eval ask [--sets titanic3.csv]` | real |
+| `uv run sherlock eval grounding [--sets a.csv,b.csv]` | real |
+| `uv run sherlock eval ml` | none |
+| `uv run sherlock eval notebook [--sets a.csv,b.csv or all]` | none |
+| `uv run sherlock eval web [--sets a.csv] [--live or --record]` | recorded replies offline; real Nemotron and Tavily with `--live` (needs `TAVILY_API_KEY`) |
 
 The sandbox's OS-isolation test (workers run as the `sandbox` user and can't read protected files) needs root, so CI skips it. Run the whole API suite as root on Linux with:
 
