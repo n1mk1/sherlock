@@ -17,6 +17,12 @@ THOUSANDS_SPACE = re.compile(r"^[+-]?\d{1,3}( \d{3})+([.,]\d+)?$")
 MIN_SHARE = 0.5
 # One separator then exactly three digits ("1,250", "2.500"): a thousands separator or a decimal one.
 TWO_WAYS = re.compile(r"^[+-]?\d{1,3}[.,]\d{3}$")
+# A separator's role, shown by a value that reads one way: "." before other than three final digits, or
+# after a "," group, is a decimal point; between three-digit groups, or before a ",", a thousands one.
+DOT_DECIMAL = re.compile(r"\d\.(?:\d{1,2}|\d{4,})$|\d,\d{3}\.\d+$")
+DOT_THOUSANDS = re.compile(r"\d\.\d{3}\.\d{3}|\d\.\d{3},\d+$")
+COMMA_THOUSANDS = re.compile(r"\d,\d{3},\d{3}|\d,\d{3}\.\d+$")
+COMMA_DECIMAL = re.compile(r"\d,(?:\d{1,2}|\d{4,})$|\d\.\d{3},\d+$")
 NOT_A_NUMBER = re.compile(r"[^\W\d_aefinty]", re.I)  # a letter `float` never reads
 
 
@@ -57,10 +63,20 @@ def numeric_values(text: pd.Series) -> tuple[set, set]:
 
 
 def reads_one_way(values: pd.Series) -> bool:
-    """No value reads as two numbers: none is digits, one separator, then exactly three digits once its
-    currency, percent and spaces are gone ("1,250" is 1250 or 1.25)."""
+    """Every value reads as one number, the way `parse_numbers` reads it ("." the decimal point, "," the
+    thousands separator), once its currency, percent and spaces are gone. On its own a value that is
+    digits, one separator, then exactly three digits reads two ways ("1,250" is 1250 or 1.25); it reads
+    one way when other values of the column show that separator in parse_numbers' role ("151.55",
+    "1,250.50") and none shows it in the other ("3,5", "1.234,5")."""
     text = values.dropna().astype(str).str.replace(CURRENCY, "", regex=True).str.replace(r"[%\s]", "", regex=True)
-    return not text.str.match(TWO_WAYS).any()
+    two = text[text.str.match(TWO_WAYS)]
+
+    def shows(pattern) -> bool:
+        return bool(text.str.contains(pattern).any())
+
+    if two.str.contains(".", regex=False).any() and not (shows(DOT_DECIMAL) and not shows(DOT_THOUSANDS)):
+        return False
+    return not (two.str.contains(",", regex=False).any() and not (shows(COMMA_THOUSANDS) and not shows(COMMA_DECIMAL)))
 
 
 def needs_cleaning(text: pd.Series) -> pd.Series:

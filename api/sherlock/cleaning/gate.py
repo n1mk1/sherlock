@@ -78,6 +78,13 @@ def overrule(decision: Decision, rule: str | None) -> Decision:
     return Decision("flag", decision.confidence, decision.agreement, decision.blast, why)
 
 
+def overrule_parse(decision: Decision) -> Decision:
+    """Code's own parse of numbers that each read one way, which the critic objected to: committed with a
+    flag, never skipped (PRD CLEAN-4e)."""
+    return Decision("flag", decision.confidence, decision.agreement, decision.blast,
+                    "the review objected, but code's own parse reads every value one way")
+
+
 def review(decision: Decision, pairs: list) -> Decision:
     """A merge of two common spellings: flagged for review rather than committed."""
     shown = "; ".join(f"{a} → {b}" for a, b in pairs[:3])

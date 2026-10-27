@@ -158,6 +158,29 @@ def test_codes_own_parse_settles_disagreeing_fixes_when_every_value_reads_one_wa
     assert sorted({r["cells"]["price"] for r in rows}) == [7.25, 8.05, 13.0, 26.0, 151.55, 1234.5]
 
 
+def test_codes_own_parse_is_flagged_not_skipped_when_the_review_objects(monkeypatch, tmp_path):
+    # CLEAN-4e: numbers stored as text always get a parse step. The critic objecting to code's own parse of
+    # values that each read one way flags the step instead of skipping it, as for a domain rule's quarantine.
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from sherlock.main import create_app
+    entries = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    entries.insert(0, {"purpose": "critic", "match": ["Column: price"], "content": {
+        "changed_something_it_shouldnt": True, "concerns": ["Converting the column changes its type."]}})
+    fixture = tmp_path / "critic_objects.json"
+    fixture.write_text(json.dumps(entries), encoding="utf-8")
+    monkeypatch.setenv("LLM_MOCK", str(fixture))
+    get_settings.cache_clear()
+    with TestClient(create_app()) as client:
+        ds, job = clean(client, PRICES_CSV, "prices.csv")
+        report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    (step,) = report["steps"]
+    assert step["summary"] == "Parse numbers (price)" and step["gate"] == "flag"
+    assert step["flag_reason"].startswith("the review objected, but code's own parse reads every value one way")
+
+
 def test_values_that_read_two_ways_are_spotted():
     import pandas as pd
 
@@ -165,3 +188,8 @@ def test_values_that_read_two_ways_are_spotted():
 
     assert reads_one_way(pd.Series(["$151.55", "$1,234.50", "12%", None]))
     assert not reads_one_way(pd.Series(["$151.55", "1,250"])) and not reads_one_way(pd.Series(["EUR 2.500"]))
+    # The column says how a separator reads: a fare of "7.925" beside "151.55" and "8.05" is 7.925.
+    assert reads_one_way(pd.Series(["$7.925", "$151.55", "8.05"]))
+    assert reads_one_way(pd.Series(["1,250", "$1,250.50"]))
+    assert not reads_one_way(pd.Series(["7.925", "151.55", "1.234,50"]))  # "." is also a thousands separator
+    assert not reads_one_way(pd.Series(["1,250", "3,5", "1,234.5"]))  # "," is also a decimal comma

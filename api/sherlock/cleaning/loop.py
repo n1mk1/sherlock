@@ -591,6 +591,9 @@ class Cleaner:
             # fix, which repairs without guessing, is scored too and wins a tie on the cells it touches.
             score(fallback)
             best_i = best_candidate(scored, width)
+        settles = registry.get(issue["detector"]).code_fix_settles
+        # Every value reads one way, so code's own parse isn't a guess (PRD CLEAN-4e).
+        code_settles = fallback is not None and settles is not None and column in sample and settles(sample[column])
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
         settled = picked is not None and scored[-1][1] > 0.0  # the user's order (last) is the fix
         if (rule is not None or picked is not None) and scored[-1][1] > 0.0:  # code's own fix beats a guessed value
@@ -604,15 +607,11 @@ class Cleaner:
         # the data's answer open, so the step is skipped before the full run, with two cells both ways.
         compared = verifiers.compare(sample, results, best_i)
         apart = None if settled else gate.disagree(compared.disagreement)  # a picked order isn't a guess
-        settles = registry.get(issue["detector"]).code_fix_settles
-        if apart and fallback is not None and settles is not None and column in sample and settles(sample[column]):
+        if apart and code_settles:
             # The model's fixes disagree, but code has its own parse (numbers stored as text, PRD CLEAN-4e)
             # and every value reads one way, so code's result isn't a guess: when it passes the checks it
             # settles the step. Values that read two ways ("1,250") keep the skip (CLEAN-4b).
-            if not any(c is fallback for c, *_ in scored):
-                score(fallback)
-                chips.append({"label": fallback.label, "chosen": False})
-            code_i = next(i for i, (c, *_) in enumerate(scored) if c is fallback)
+            code_i = self._score_code_fix(score, scored, chips, fallback)
             if scored[code_i][1] > 0.0:
                 chips[best_i]["chosen"], chips[code_i]["chosen"] = False, True
                 best_i, apart = code_i, None
@@ -652,8 +651,15 @@ class Cleaner:
             # The critic's verdict skips the step (owner's decision, 2026-10-25): its 0.2 share of the
             # confidence couldn't stop a commit with a flag (Day 3 review H2). Concerns alone still don't.
             # A domain rule's fix that only quarantines the rows the rule names is flagged instead: the
-            # rule, not the model, says those values are impossible.
-            if rule is None or not rule_only(full_report):
+            # rule, not the model, says those values are impossible. So is a fix whose result on the sample
+            # is code's own parse of values that each read one way (CLEAN-4e): code says what each number is.
+            parse = False
+            if code_settles:
+                code_i = self._score_code_fix(score, scored, chips, fallback)
+                parse = scored[code_i][1] > 0.0 and (code_i == best_i or (
+                    scored[best_i][2].quarantined <= scored[code_i][2].quarantined  # sets no more rows aside
+                    and verifiers.compare(sample, [results[best_i], results[code_i]], 0).agreement == 1.0))
+            if not (rule is not None and rule_only(full_report)) and not parse:
                 said = next((c for c in critique.concerns if prose(c)), None)  # its first concern, as the flag shows it
                 return self._skip(issue, "Skipped: the review found it changed values it shouldn't have"
                                   + (f" ({said.rstrip('.')})" if said else ""), "gate", candidates=chips,
@@ -665,7 +671,8 @@ class Cleaner:
         decision = gate.decide([s for _, s, *_ in scored], compared.agreement, review_ok, affected, total_cells,
                                requested=requested, domain_rule=rule is not None)
         if overruled:
-            decision = gate.overrule(decision, (issue.get("details") or {}).get("rule"))
+            decision = (gate.overrule(decision, (issue.get("details") or {}).get("rule")) if rule is not None
+                        else gate.overrule_parse(decision))
         elif decision.gate == "commit" and (issue.get("details") or {}).get("review_pairs"):
             decision = gate.review(decision, issue["details"]["review_pairs"])
         if decision.gate == "skip":
@@ -719,6 +726,14 @@ class Cleaner:
             return True
 
     # --- model calls ----------------------------------------------------------------------------
+
+    @staticmethod
+    def _score_code_fix(score, scored: list, chips: list, fallback: Candidate) -> int:
+        """The index of code's own fix in `scored`, scoring it (and adding its chip) if it wasn't yet."""
+        if not any(c is fallback for c, *_ in scored):
+            score(fallback)
+            chips.append({"label": fallback.label, "chosen": False})
+        return next(i for i, (c, *_) in enumerate(scored) if c is fallback)
 
     def _messages(self, user: str) -> list[dict]:
         return [{"role": "system", "content": prompts.SYSTEM}, {"role": "user", "content": user}]
