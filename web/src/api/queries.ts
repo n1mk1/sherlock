@@ -5,7 +5,7 @@ import { canvasKey, ownEtags } from "./canvas";
 import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  Card, CleaningReport, CleanPlan, DataCard, Dataset, Detector, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
+  Card, CleaningReport, CleanPlan, DataCard, Dataset, Detector, RuleIn, DatasetStatusEvent, Explain, FilterClause, Job, JobProgressEvent, Layout,
   Me, Message, PlanOp, Settings, Step, Tab, Widget, WidgetData, WidgetSpec,
 } from "./types";
 
@@ -286,6 +286,16 @@ export function useRuleStatus(planId: string) {
   return useMutation({
     mutationFn: ({ ruleId, status }: { ruleId: string; status: "active" | "off" }) =>
       request<unknown>("PATCH", `/api/v1/rules/${ruleId}`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.plan(planId) }),
+  });
+}
+
+/** Change a check's values or action (a suggestion before it's kept, PRD CLEAN-14); the plan is read again. */
+export function useEditRule(planId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ruleId, params, action }: { ruleId: string; params: Record<string, unknown>; action: RuleIn["action"] }) =>
+      request<unknown>("PATCH", `/api/v1/rules/${ruleId}`, { params, action }),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.plan(planId) }),
   });
 }

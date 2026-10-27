@@ -3,9 +3,11 @@ one-line reason, after the profile, so opening a plan never waits for the model.
 
 Code found and counted every finding; the model only picks a level from the five and writes a reason
 without digits (Rule 2). Findings go in chunks of at most 40, most severe by code first, so a wide
-file doesn't overflow the reply; a chunk whose reply is still invalid after the client's one repair,
-or that fails, times out or runs over the job's token budget, keeps code's default levels, and the
-others still apply. Leakage and ID findings (`plan.never_change`) are never sent and have no level.
+file doesn't overflow the reply. Each chunk is rated twice (`SAMPLES`), and for each finding the more
+severe level is kept, with that rating's reason, so one call's lighter reading can't move a finding
+down: two reviews of a file agree more often than two single calls. A chunk whose replies are all
+still invalid after the client's one repair, or fail, time out or run over the job's token budget,
+keeps code's default levels; the others still apply. Leakage and ID findings (`plan.never_change`) are never sent and have no level.
 
 Code then applies `likely_real` (the level becomes "check") and the floor: on the target or a measure
 a level is never less severe than the detector's own default (`spec.default_level`), so the model can
@@ -29,6 +31,7 @@ from sherlock.llm.text import has_digits
 from sherlock.stories.wording import wording_problem
 
 CHUNK = 40
+SAMPLES = 2  # rating calls per chunk; the more severe level of each finding is kept
 RATE = prompts.load("rate")
 SUGGEST = prompts.load("suggest_rules")
 MAX_SUGGESTIONS = 8
@@ -156,17 +159,23 @@ def review(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
     for n, chunk in enumerate(chunks, 1):
         progress(n, len(chunks), "Rating the findings")
         refs = [f"f{i}" for i in range(1, len(chunk) + 1)]
-        try:
-            reply = llm.structured("medium", messages(chunk, card), Ratings, purpose="rate", scope=scope,
-                                   temperature=0.0, max_tokens=8192, validate=_check_refs(refs)).value
-            by_ref = {r.ref: r for r in reply.ratings}
-            for ref, issue in zip(refs, chunk):
-                r = by_ref[ref]
-                out[key(issue)] = rated(issue, card, r.level, r.reason, r.likely_real)
-        except BudgetExceeded:
+        replies, over = [], False
+        for _ in range(SAMPLES):
+            try:
+                replies.append(llm.structured("medium", messages(chunk, card), Ratings, purpose="rate", scope=scope,
+                                              temperature=0.0, max_tokens=8192, validate=_check_refs(refs)).value)
+            except BudgetExceeded:
+                over = True
+                break
+            except (StructuredOutputError, LLMUnavailable):
+                continue
+        for ref, issue in zip(refs, chunk):
+            got = [rated(issue, card, r.level, r.reason, r.likely_real)
+                   for reply in replies for r in reply.ratings if r.ref == ref]
+            if got:  # the more severe reading; a tie keeps the first, with its reason
+                out[key(issue)] = min(got, key=lambda g: levels.rank(g["sev"]))
+        if over:
             break  # the rest keep their default levels
-        except (StructuredOutputError, LLMUnavailable):
-            continue  # this chunk keeps its defaults
     rows = [(key(i), out.get(key(i)) or default(i, card), registry.get(i["detector"]).version) for i in todo]
     now = now_iso()
     db.execute("DELETE FROM issue_reviews WHERE dataset_id = ? AND version = ?", (dataset["id"], card["version"]))

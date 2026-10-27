@@ -445,7 +445,7 @@ stateDiagram-v2
 ### 6.2 The rating call
 
 - **Role and purpose:** `medium`, purpose `rate`, temperature 0, reasoning on (only `route` may turn it off, TRD §3.5).
-- **Chunks:** at most 40 findings per call, most severe by code first, so a wide file doesn't overflow the reply. A chunk that fails leaves its items at their default levels; the others still apply.
+- **Chunks:** at most 40 findings per call, most severe by code first, so a wide file doesn't overflow the reply. Each chunk is rated twice and each finding keeps the more severe level. A chunk that fails both times leaves its items at their default levels; the others still apply.
 - **Prompt** (`cleaning/prompts/rate.txt`): the scale, then one line per finding inside a `<data>` block:
   - its ref (`f1`, `f2`…, as `edit_plan` does);
   - the spec's label and description;
@@ -875,7 +875,7 @@ What each slice built and the eval results it got go in its commit message, not 
     - Keep and Dismiss on a suggestion;
     - the new report counts.
 - **Live eval** (`sherlock eval corruption`, Nemotron):
-  - **Rating:** every injected damage in the target or a measure is rated `breaks` or `skews`, and damage to free text is rated `splits` or lower.
+  - **Rating:** every injected damage in the target or a measure is rated at least as severe as its detector's own default (the floor, §5.3), and damage to free text is rated `splits` or lower.
   - **Report honesty:** "couldn't fix" equals the real failures.
   - **Unchanged:** recovery, Wrong 0, harm 0 and row loss 0 stay at or above the last run's.
   - **Stable:** the same file reviewed twice gives the same levels.
@@ -934,12 +934,12 @@ Slices 2 and 3 only need slice 1, so they can be built in parallel, as can slice
 | 6 | Add the `regex` package for timed matching? | Yes, so a pattern can't hang the profile job. Otherwise, drop the `pattern` kind. |
 | 7 | When the model says `likely_real` on the target, which wins? | The floor (§5.3): the item stays at the spec's default level and ticked. The Cleaner's own diagnosis can still leave the values as they are, which the report counts as "checked and kept". |
 
-### 15.1a Open after the live benchmark
+### 15.1a Decided after the live benchmark
 
-| # | Question | What the live run showed |
+| # | Question | Decision |
 |---|---|---|
-| 8 | The floor (§5.3) is the spec's own default, so on the target the model may lower a level by one step; the live rating check (§13) expects `breaks` or `skews` there. Which is right? | Super rated case variants in a target column `splits`, which the floor allows and the check counts as a miss. Either raise the floor to the adjusted default, or relax the check to "at or above the spec's default". |
-| 9 | The same version reviewed twice gave a different level for at least one finding at temperature 0. Accept it, or rate twice and keep the more severe? | One live set, one difference; the queue and the report don't depend on it, only the plan's grouping. |
+| 8 | The floor (§5.3) is the spec's own default, so on the target the model may lower a level by one step; the live rating check (§13) expected `breaks` or `skews` there. | §5.3's floor stands; the check now expects at least the spec's own default on the target or a measure. |
+| 9 | The same version reviewed twice gave a different level for at least one finding at temperature 0. | Each chunk is rated twice and the more severe level kept (§6.2), so one lighter reading can't move a finding down. |
 
 ### 15.2 Risks
 

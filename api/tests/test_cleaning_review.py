@@ -145,7 +145,7 @@ def test_a_changed_detector_version_drops_its_ratings(client, monkeypatch):
 
 @pytest.mark.usefixtures("reviews_on")
 def test_a_failed_chunk_keeps_its_defaults_and_is_not_retried(client):
-    ScriptedLLM.fail = {1}
+    ScriptedLLM.fail = {1, 2}  # both of the chunk's rating calls
     ds, plan = _reviewed_plan(client)
     assert plan["review"] == "default"  # every chunk failed: code's levels, recorded so it isn't asked again
     assert all(i["sev_source"] == "default" for i in plan["items"] if i["change"])
@@ -220,10 +220,17 @@ def test_suggested_checks_are_checked_counted_and_kept_or_dismissed(client):
     assert got[1].get("reason") is None
     assert not any(i["key"].startswith("rule:") for i in plan["items"])  # not run by the Cleaner until kept
 
+    # Its threshold is a suggestion: edited before keeping it, it stays a suggestion with the new count.
+    edited = client.patch(f"{API}/rules/{parch['id']}", json={"params": {"max": 4}})
+    assert edited.status_code == 200 and edited.json()["status"] == "suggested" and edited.json()["words"] == "parch is at most 4"
+    now = client.get(f"{API}/clean-plans/{plan['id']}").json()["suggestions"][0]
+    assert now["words"] == "parch is at most 4" and now["count"] >= parch["count"]
+    bad = client.patch(f"{API}/rules/{parch['id']}", json={"params": {"max": "lots"}})
+    assert bad.status_code == 422
     kept = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "keep_suggestion", "rule_id": parch["id"]}]})
-    assert kept.status_code == 200 and kept.json()["summary"] == "Kept the suggested check: parch is at most 5."
+    assert kept.status_code == 200 and kept.json()["summary"] == "Kept the suggested check: parch is at most 4."
     item = next(i for i in kept.json()["items"] if i["key"] == f"rule:{parch['id']}|parch")
-    assert item["count"] == parch["count"] and item["sev_source"] == "model"
+    assert item["count"] == now["count"]
     gone = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "dismiss_suggestion", "rule_id": got[1]["id"]}]})
     assert gone.json()["summary"] == "Dismissed the suggested check: ticket is unique." and gone.json()["suggestions"] == []
     again = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "keep_suggestion", "rule_id": got[1]["id"]}]})
@@ -241,3 +248,37 @@ def test_suggested_checks_are_checked_counted_and_kept_or_dismissed(client):
         assert review.suggest(get_settings(), db, dataset, card, frame, None, ScriptedLLM()) == []
     finally:
         db.close()
+
+
+def test_two_ratings_keep_the_more_severe_level_of_each_finding(monkeypatch):
+    """One call's lighter reading can't move a finding down (PRD CLEAN-8c): of the two ratings, the more severe."""
+    calls = []
+    replies = [
+        Ratings(ratings=[Rating(ref="f1", level="cosmetic", reason="Changes nothing.", likely_real=False),
+                         Rating(ref="f2", level="check", reason="Looks real.", likely_real=True)]),
+        Ratings(ratings=[Rating(ref="f1", level="splits", reason="Splits the groups.", likely_real=False),
+                         Rating(ref="f2", level="cosmetic", reason="Changes nothing.", likely_real=False)]),
+    ]
+
+    class Two:
+        def structured(self, role, messages, schema, **kw):
+            calls.append(kw["purpose"])
+            return SimpleNamespace(value=replies[len(calls) - 1])
+
+    stored = {}
+
+    class DB:
+        def execute(self, *a):
+            return self
+
+        def executemany(self, sql, rows):
+            stored.update({r[2]: r for r in rows})
+
+    card = {"version": 2, "row_count": 100, "columns": [{"name": "outcome", "role": "dimension", "type": "category"},
+                                          {"name": "amount", "role": "dimension", "type": "float"}],
+            "target_candidates": [], "leakage_candidates": [], "id_columns": [],
+            "issues": [issue("whitespace_case", "outcome", 0.3), issue("outliers", "amount", 0.2)]}
+    assert review.review(get_settings(), DB(), {"id": "ds", "user_id": "u"}, card, None, llm=Two()) == "ready"
+    assert calls == ["rate", "rate"]
+    assert stored["whitespace_case|outcome"][4:6] == ("splits", "Splits the groups.")
+    assert stored["outliers|amount"][4] == "check"  # check (likely real) is more severe than cosmetic

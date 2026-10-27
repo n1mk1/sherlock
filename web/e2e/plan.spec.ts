@@ -44,6 +44,11 @@ test("the plan groups fixes by level and starts worth-a-look fixes unticked", as
   const suggested = page.getByRole("region", { name: "Suggested checks" });
   await expect(suggested).toContainText("parch is between 0 and 5");
   await expect(suggested).toContainText("suggested by Sherlock");
+  // Its threshold is a suggestion: edited before it's kept.
+  await suggested.getByRole("button", { name: "Edit parch is between 0 and 5" }).click();
+  await suggested.getByRole("textbox", { name: "Highest" }).fill("4");
+  await suggested.getByRole("button", { name: "Save" }).click();
+  await expect(suggested).toContainText("parch is between 0 and 4");
   await suggested.getByRole("button", { name: "Keep" }).click();
   await expect(page.getByRole("region", { name: "Suggested checks" })).toHaveCount(0);
   await expect(page.getByRole("checkbox", { name: "parch: your check" })).toBeVisible();

@@ -127,6 +127,7 @@ export interface Suggestion {
   id: string;
   kind: RuleKind;
   column: string;
+  params: Record<string, unknown>;
   action: RuleIn["action"];
   words: string;
   reason?: string;

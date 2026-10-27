@@ -328,6 +328,23 @@ describe("the cleaning plan", () => {
       .toEqual({ ops: [{ op: "keep_suggestion", rule_id: "rul_s" }] }));
   });
 
+  it("edits a suggested check's values before keeping it", async () => {
+    const suggestion = { id: "rul_s", kind: "range", column: "units", params: { min: null, max: 50 }, action: "quarantine",
+                         words: "units is at most 50", count: 3, error: null, sev: "skews" };
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": { ...PLAN, suggestions: [suggestion] },
+      "PATCH /api/v1/rules/rul_s": { ...suggestion, params: { min: null, max: 40 } },
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit units is at most 50" }));
+    const form = screen.getByRole("group", { name: "Edit units is at most 50" });
+    expect(within(form).getByRole("textbox", { name: "Highest" })).toHaveValue("50");
+    fireEvent.change(within(form).getByRole("textbox", { name: "Highest" }), { target: { value: "40" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent(calls).find((c) => c.method === "PATCH")?.body)
+      .toEqual({ params: { min: null, max: 40 }, action: "quarantine" }));
+  });
+
   it("groups the fixes by level, with the review's reason or the default level, while it reviews", async () => {
     const bigFare = PLAN.items.map((i) => (i.id === "pit_fare" ? { ...i, severity: 0.5 } : i));
     mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, review: "running", items: bigFare } });

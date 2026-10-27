@@ -15,9 +15,9 @@ The output ends with every step the Cleaner committed (its gate and confidence) 
 skipped and why, so a fix that didn't happen can be told from one that went wrong.
 
 Three checks of the severity review and the report (PRD CLEAN-8c, CLEAN-6), per set:
-- ratings: each damage the model rated (`issue_reviews`, `sev_source` model) is `breaks` or `skews` when
-  its column is the target or a measure, and `splits` or below on free text; "—" when nothing was rated
-  (recorded replies, or the review off)
+- ratings: each damage the model rated (`issue_reviews`, `sev_source` model) is at least as severe as its
+  detector's own default level when its column is the target or a measure (the floor, TRD §7.2), and
+  `splits` or below on free text; "—" when nothing was rated (recorded replies, or the review off)
 - report honest: the report's "couldn't fix" and "checked and kept" equal the skips read from their
   reasons, so the counts aren't the classifier marking its own homework
 - stable: reviewing the same version again gives the same levels
@@ -263,7 +263,7 @@ def run_case(client, case: Case, timeout_s: float = 900) -> Score:
     return result
 
 
-EXPECTED = {"target": {"breaks", "skews"}, "measure": {"breaks", "skews"}, "free_text": {"splits", "check", "cosmetic"}}
+FREE_TEXT = {"splits", "check", "cosmetic"}
 FAILED = ("No candidate passed", "Failed", "Skipped:", "model output invalid", "Not applied", "The fix changed nothing",
           "The data changed")
 
@@ -280,14 +280,19 @@ def honest(report: dict) -> bool | None:
     return counts["couldnt_fix"] == failed and counts["checked_and_kept"] == kept
 
 
-def expected(role: str, level: str) -> bool | None:
-    """Whether a rated level fits the column's role, or None when the role sets no expectation."""
-    want = EXPECTED.get(role)
-    return None if want is None else level in want
+def expected(role: str, level: str, default: str | None) -> bool | None:
+    """Whether a rated level fits the column's role, or None when the role sets no expectation: on the
+    target or a measure, at least as severe as the detector's default (the floor); on free text, splits
+    or below."""
+    from sherlock.cleaning.levels import rank
+
+    if role in ("target", "measure") and default:
+        return rank(level) <= rank(default)
+    return level in FREE_TEXT if role == "free_text" else None
 
 
 def _review_checks(client, ds_id: str, case: Case, version: int | None, timeout_s: float) -> tuple[list, bool | None]:
-    from sherlock.cleaning import levels, review
+    from sherlock.cleaning import levels, registry, review
     from sherlock.config import get_settings
     from sherlock.db.connection import connect
     from sherlock.llm.client import CallScope
@@ -310,7 +315,8 @@ def _review_checks(client, ds_id: str, case: Case, version: int | None, timeout_
         for column, damage in sorted({(d.column, d.kind) for d in case.damage}):
             rating = first.get(f"{damage.split(':')[0]}|{column}")
             if rating and rating["sev_source"] == "model":
-                out.append((column, damage, rating["sev"], expected(levels.role(column, card), rating["sev"])))
+                default = registry.get(damage.split(":")[0]).default_level
+                out.append((column, damage, rating["sev"], expected(levels.role(column, card), rating["sev"], default)))
         review.review(settings, db, dataset, card, CallScope(user_id=dataset["user_id"], dataset_id=ds_id))
         second = review.stored(db, ds_id, version) or {}
         stable = all(second.get(k, {}).get("sev") == r["sev"] for k, r in first.items() if r["sev_source"] == "model")

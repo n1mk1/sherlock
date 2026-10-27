@@ -84,6 +84,8 @@ def test_the_benchmark_checks_the_report_against_the_skip_reasons_and_the_levels
     assert corruption.honest(report) is True
     assert corruption.honest({**report, "counts": {"couldnt_fix": 3, "checked_and_kept": 1}}) is False
     assert corruption.honest({"counts": {"found": 1}, "skipped": []}) is None  # a report from before the counts
-    assert corruption.expected("target", "breaks") and corruption.expected("measure", "skews")
-    assert corruption.expected("measure", "check") is False and corruption.expected("free_text", "cosmetic")
-    assert corruption.expected("dimension", "splits") is None  # no expectation for other roles
+    # On the target or a measure: at least as severe as the detector's own default (the floor).
+    assert corruption.expected("target", "breaks", "skews") and corruption.expected("measure", "skews", "skews")
+    assert corruption.expected("target", "splits", "splits") and corruption.expected("measure", "check", "skews") is False
+    assert corruption.expected("free_text", "cosmetic", "splits") and corruption.expected("free_text", "skews", "skews") is False
+    assert corruption.expected("dimension", "splits", "splits") is None  # no expectation for other roles

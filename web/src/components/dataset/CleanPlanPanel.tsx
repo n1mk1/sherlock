@@ -16,7 +16,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { makeSelection } from "@/api/csv";
 import {
-  stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useRuleStatus, useStartCleaning,
+  stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, useEditRule, usePlanOps, useRuleStatus,
+  useStartCleaning,
   type CleanScope,
 } from "@/api/queries";
 import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind, Suggestion } from "@/api/types";
@@ -215,7 +216,10 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
               ? { op: on ? "tick_module" : "untick_module", module: "yours" }
               : { op: on ? "tick_level" : "untick_level", level: g.group as Level }])} />
         ))}
-        {!!plan.suggestions?.length && <SuggestedChecks items={plan.suggestions} busy={ops.isPending} send={send} />}
+        {!!plan.suggestions?.length && (
+          <SuggestedChecks items={plan.suggestions} busy={ops.isPending} send={send} planId={plan.id}
+            onDirty={(on) => markDirty("suggestion", on)} />
+        )}
         {!changeable.length && <p className="text-muted-foreground">Nothing that needs cleaning yet. Add a step of your own below.</p>}
         <div className="flex flex-wrap gap-x-2">
           <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
@@ -462,7 +466,10 @@ function InstructionEditor({ item, busy, onDirty, onCancel, onSave }: {
 
 /** "+ Add a step": a column of the file (or the rows) and what to do, in plain words. */
 // "Suggested checks" (PRD CLEAN-14): rules Sherlock wrote, counted by code, run only once kept.
-function SuggestedChecks({ items, busy, send }: { items: Suggestion[]; busy: boolean; send: Send }) {
+function SuggestedChecks({ items, busy, send, planId, onDirty }: {
+  items: Suggestion[]; busy: boolean; send: Send; planId: string; onDirty: (on: boolean) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <section aria-labelledby="plan-group-suggested">
       <div className="flex items-center gap-2 border-b border-border pb-1.5">
@@ -483,6 +490,10 @@ function SuggestedChecks({ items, busy, send }: { items: Suggestion[]; busy: boo
                 {s.reason && <span className="ml-1.5">{s.reason}</span>}
               </p>
             </div>
+            <Button size="sm" variant="ghost" disabled={busy || editing === s.id} aria-label={`Edit ${s.words}`}
+              onClick={() => setEditing(s.id)}>
+              Edit
+            </Button>
             <Button size="sm" variant="secondary" disabled={busy} onClick={() => send([{ op: "keep_suggestion", rule_id: s.id }])}>
               Keep
             </Button>
@@ -492,7 +503,67 @@ function SuggestedChecks({ items, busy, send }: { items: Suggestion[]; busy: boo
           </li>
         ))}
       </ul>
+      {editing && (
+        <SuggestionEditor key={editing} suggestion={items.find((s) => s.id === editing)!} planId={planId}
+          onDirty={onDirty} onDone={() => { onDirty(false); setEditing(null); }} />
+      )}
     </section>
+  );
+}
+
+/** A suggestion's values as the Add a check fields hold them (`ruleParams` reads them back). */
+export function fieldsOf(kind: RuleKind, params: Record<string, unknown>): Record<string, string> {
+  const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+  switch (kind) {
+    case "range": return { min: s(params.min), max: s(params.max) };
+    case "date_window": return { min: s(params.earliest), max: s(params.latest) };
+    case "allowed": return { values: ((params.values as string[]) ?? []).join(", ") };
+    case "pattern": return { values: s(params.regex) };
+    case "order": return { other: s(params.left) };
+    case "depends": return { other: s(params.from) };
+    default: return {};
+  }
+}
+
+/** Edit a suggested check's values before keeping it (PRD CLEAN-14): the thresholds are suggestions. */
+function SuggestionEditor({ suggestion, planId, onDirty, onDone }: {
+  suggestion: Suggestion; planId: string; onDirty: (on: boolean) => void; onDone: () => void;
+}) {
+  const edit = useEditRule(planId);
+  const [f, setF] = useState<Record<string, string>>(() => fieldsOf(suggestion.kind, suggestion.params));
+  const [action, setAction] = useState<RuleIn["action"]>(suggestion.action);
+  const set = (k: string, v: string) => { setF((x) => ({ ...x, [k]: v })); onDirty(true); };
+  const field = (k: string, label: string) => (
+    <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+      {label}
+      <input value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)}
+        className="h-8 rounded-md border border-input bg-card px-2 text-[13px] text-foreground" />
+    </label>
+  );
+  const kind = suggestion.kind;
+  return (
+    <div className="mt-2 flex flex-col gap-2 rounded-[14px] border border-border p-3" role="group" aria-label={`Edit ${suggestion.words}`}>
+      {kind === "range" && <div className="flex gap-2">{field("min", "Lowest")}{field("max", "Highest")}</div>}
+      {kind === "date_window" && <div className="flex gap-2">{field("min", "Earliest")}{field("max", "Latest")}</div>}
+      {kind === "allowed" && field("values", "Allowed values, separated by commas")}
+      {kind === "pattern" && field("values", "Pattern")}
+      {(kind === "order" || kind === "depends") && field("other", kind === "order" ? "After the column" : "Set by the column")}
+      <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
+        Rows that break it
+        <select value={action} onChange={(e) => { setAction(e.target.value as RuleIn["action"]); onDirty(true); }}
+          className="h-8 rounded-md border border-input bg-card px-2 text-[13px] text-foreground">
+          {ACTIONS.map(([a, label]) => <option key={a} value={a}>{label}</option>)}
+        </select>
+      </label>
+      <div className="flex justify-end gap-1.5">
+        <Button size="sm" variant="ghost" onClick={onDone}>Cancel</Button>
+        <Button size="sm" variant="primary" loading={edit.isPending}
+          onClick={() => edit.mutate({ ruleId: suggestion.id, params: ruleParams(kind, f), action },
+                                      { onSuccess: onDone, onError: (e) => toast.error((e as Error).message) })}>
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }
 
