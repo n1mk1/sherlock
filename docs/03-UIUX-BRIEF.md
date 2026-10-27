@@ -2,7 +2,7 @@
 
 Version 1.1 · 2026-10-24 · The visual and interaction system: tokens, components, copy and accessibility. Pairs with the [App Flow](02-APP-FLOW.md) (screens, states, transitions) and the [PRD](01-PRD.md) (what must be true).
 
-A "Not built yet (docs/BACKLOG.md)" line marks a spec the code doesn't meet yet; the backlog tracks it. "Removed by cut N" means the cut order dropped it (plan §5, applied in plan §2.0).
+A "Not built yet" line marks a spec the code doesn't meet yet. "Removed by cut N" means the cut order dropped it (plan §5, applied in plan §2.0).
 
 ---
 
@@ -120,6 +120,7 @@ Where the screens step off the scale:
 - Serif at weight 600: story card headline 18px (§4.5), canvas card headline 15px (§5.10), model card verdict 20px (§5.9), Export notebook title 22px (§5.13). The logo is serif 20px at 500.
 - Widget titles are 13px/600 (§5.5). KPI values are mono 28px at 500, not the serif `kpi` style (§5.5).
 - Changes panel step summaries are 13.5px at 500 (§5.7).
+- The cleaning-in-progress title is serif 26px until the centre is 768px wide, then 32px (§5.4).
 
 ### 2.3 Spacing, radius, elevation
 
@@ -127,7 +128,7 @@ Where the screens step off the scale:
 - Panel padding 16px; widget padding 12px 16px; card padding 20px 22px. Dashboard gap 20px.
 - `--radius: 10px` (Bklit's `.625rem`). Chips and badges 999px (`--radius-chip`), except inline number chips at 6px (`--radius-number-chip`). Inputs and buttons 8px (`--radius-control`). Widgets, cards and dialogs 16px (`--radius-surface`).
 - Elevation is almost never used. Drawers, menus and the chat thread use `--shadow-overlay`: `0 12px 32px rgba(46,48,53,0.10)` in Light, `0 12px 32px rgba(0,0,0,0.35)` in Dark. Nothing else has a shadow.
-  - Not built yet (docs/BACKLOG.md): dialogs, popovers, the chart readout and slide-overs also use `--shadow-overlay`, and canvas card nodes have a hard-coded `rgba(0,0,0,0.04)` shadow.
+  - Not built yet: dialogs, popovers (job tray, the card editor's number picker), the custom charts' readout and the narrow-screen slide-overs also use `--shadow-overlay`; the column-note tooltip has Tailwind's `shadow-md`, Bklit's chart tooltip its own soft shadow, and canvas card nodes a hard-coded `0 1px 2px rgba(0,0,0,0.04)`.
 - The spotlight is the only glow, `--spotlight-shadow`: `0 0 0 1px var(--accent), 0 0 14px var(--spotlight)` at Full, a 7px blur at Subtle (the default), the 1px ring alone at Off. The Spotlight setting is removed by cut 1, so the app shows Subtle unless a saved setting says otherwise (§9).
 
 ### 2.4 Motion
@@ -141,8 +142,9 @@ Where the screens step off the scale:
 
 Motion (the library) is for: widget enter (fade + 4px rise), card stream-in, spotlight fade, thread expand, canvas node placement. Charts animate on first render only (Bklit default), not on re-query. With `prefers-reduced-motion` or the setting on, every `--duration-*` is 0 and charts don't animate.
 
-- Not built yet (docs/BACKLOG.md): only the Bklit charts use Motion. Widgets, cards, the thread and canvas nodes appear with no enter animation, drawers don't slide in, and the spotlight fades over `--duration-fast`.
-- The Reduce motion setting is removed by cut 1, so the OS preference decides unless a saved setting says otherwise (§9). What still ignores reduced motion is in docs/BACKLOG.md §4.
+- Not built yet: only the Bklit charts use Motion. Widgets, cards, the thread and canvas nodes appear with no enter animation, drawers don't slide in, and the spotlight fades over `--duration-fast`.
+- The Reduce motion setting is removed by cut 1, so the OS preference decides unless a saved setting says otherwise (§9).
+- Not built yet: reduced motion in full. Bklit's line and area animations follow the OS preference but not a saved setting; its bar and pie entry animations, Tailwind's pulse and spin, smooth scrolling to a widget or card, the canvas's zoom and fit animations, the number chip's 400ms pulse and the analysis progress bar's 500ms transition ignore both.
 
 ### 2.5 Iconography
 
@@ -163,11 +165,11 @@ lucide-react, 16px in controls, 14px in chips, 1.75px stroke. Icon-only buttons 
 
 - **Dividers** (`AppShell.tsx`, Sherlock's own, not shadcn Resizable): a 1px `--border` line with a 6px grip. Drag to resize: left 200–320, right 300–480. Sizes persist per browser.
   - Each is a focusable `role="separator"` (WAI-ARIA window splitter): `aria-valuenow` is the panel's width in pixels, `aria-valuemin`/`aria-valuemax` are the bounds, the text is "240 pixels wide", and ← / → move it 16px.
-- **Below 1024px** both side panels become slide-overs opened from header icons, each up to 320px wide (85% of a narrow screen) over a dimmed backdrop; the centre takes the full width.
-  - Not built yet (docs/BACKLOG.md §4): the slide-overs don't trap focus or close on Esc, and the backdrop has no dark-mode variant.
+- **Below 1024px** both side panels become slide-overs opened from header icons ("Show your CSVs", "Show stories"), each up to 320px wide (85% of a narrow screen), sliding in over `--duration-base` above a dimmed backdrop that closes them on click; the centre takes the full width.
+  - Not built yet: the slide-overs don't trap focus or close on Esc, and the backdrop has no dark-mode variant.
 - The centre scrolls; the side panels scroll independently; headers are sticky.
 - Side panels use `--background` in both modes; the dividers do the work.
-- Not built yet (docs/BACKLOG.md): the centre has no 560px minimum, and the right panel can't be collapsed at 1024px and up.
+- Not built yet: the centre has no 560px minimum, and the right panel can't be collapsed at 1024px and up.
 
 ### 3.2 Centre header
 
@@ -175,7 +177,7 @@ lucide-react, 16px in controls, 14px in chips, 1.75px stroke. Icon-only buttons 
 
 1. **Tab switcher**, centred: a segmented control (CSV · Dashboard · Flow) styled as §4.12, segments 36px tall; active `--foreground`, inactive `--muted-foreground`. A tab that isn't available yet (Dashboard and Flow during cleaning) is at 40% opacity with its reason as the tooltip.
 2. **Context row**: dataset name (title), version pill, filter chips, then the tab's right-aligned actions.
-   - The version pill reads "v7 · 6 steps" (the version, then the steps in its effective chain): 24px tall, 12px mono, `--muted` fill. Not built yet (docs/BACKLOG.md): it isn't clickable (App Flow has a click open the Changes panel).
+   - The version pill reads "v7 · 6 steps" (the version, then the steps in its effective chain): 24px tall, 12px mono, `--muted` fill. Not built yet: it isn't clickable (App Flow has a click open the Changes panel).
 
 ### 3.3 Dashboard grid
 
@@ -207,10 +209,10 @@ States:
 - Focus: 2px `--ring` outline, offset 2px.
 - Disabled: 40% opacity, cursor default, tooltip with the reason when one exists.
 - Loading: a spinner replaces the icon, the label stays.
-- Not built yet (docs/BACKLOG.md): secondary buttons show no hover change (`hover:bg-muted` equals `--secondary`); the loading spinner sits beside the icon; most icons use lucide's 2px stroke, not 1.75 (§2.5); many icon-only buttons have no tooltip (job tray, dataset menu, widget shell, chat bar, the cleaning plan's ✎, × and chevrons).
+- Not built yet: secondary buttons show no hover change (`hover:bg-muted` equals `--secondary`); the loading spinner sits beside the icon; most icons use lucide's 2px stroke, not 1.75 (§2.5); many icon-only buttons have no tooltip (job tray, dataset menu, widget shell, chat bar, the cleaning plan's ✎, × and chevrons).
 
 Targets: icon buttons at least 32 × 32, text buttons 36px tall; compact text buttons inside panels (the step Undo) may be 28px.
-- Not built yet (docs/BACKLOG.md): the inline icon buttons in the cleaning plan and the Changes panel (✎, ×, chevrons) are about 18px, and the CSV toolbar's text buttons are 28px.
+- Not built yet: the inline icon buttons in the cleaning plan and the Changes panel (✎, ×, chevrons) are about 18px; the widget header's analysis and menu buttons are 28px; and the text buttons in the CSV toolbar and the Dashboard and Flow context rows are 28px.
 
 ### 4.2 Chips
 
@@ -229,7 +231,7 @@ Targets: icon buttons at least 32 × 32, text buttons 36px tall; compact text bu
 `dashboard/WidgetShell.tsx`.
 
 ```
-┌ ⠿  Survival by sex          [All rows] [What drives this? ▾] [⋯] ┐  header 40px
+┌ ⠿  Survival by sex                            [All rows] [⚗] [⋯] ┐  header 40px
 │                                                                  │
 │                         chart / table                            │  body
 │                                                                  │
@@ -237,14 +239,14 @@ Targets: icon buttons at least 32 × 32, text buttons 36px tall; compact text bu
 ```
 
 - Surface `--card`, 1px `--border`, radius 16. No shadow.
-- Hover (not dragging): border `--accent` plus `--spotlight-shadow`; its story card gets the same.
-- Related (another widget's card is hovered): border `--accent` at 45%, spotlight at half strength. Not built yet (docs/BACKLOG.md): the border only, no spotlight.
+- Hover: border `--accent`, plus `--spotlight-shadow` outside Edit layout; its story card gets the same and the Stories panel scrolls it into view.
+- Related (another widget's card is hovered): border `--accent` at 45%, spotlight at half strength. Not built yet: the border only, no spotlight.
 - Selected / focused: 1px `--border-strong`.
 - Updating: body at 60% opacity, with a pulsing 2px `--accent` line under the header.
-- Outdated: the footer shows "Outdated" in `--warning` with a small secondary Re-run.
+- Outdated (an analysis widget whose run is older than the data): the footer shows "Outdated" in `--warning` with a small secondary Re-run.
 - Error: the message in `--muted-foreground`, then Retry and Show query.
 - Collapsed: header only, 40px.
-- Drag handle (⠿): `--muted-foreground`, always visible, cursor grab. In Edit layout the whole header is the handle and a resize corner appears. It's a mouse grip, so it is `role="img"` named "Drag to move" (the layout has no keyboard move, docs/BACKLOG.md §4).
+- Drag handle (⠿): `--muted-foreground`, always visible, cursor grab. In Edit layout the whole header is the handle and a resize corner appears. It's a mouse grip, so it is `role="img"` named "Drag to move" (the layout has no keyboard move; not built yet).
 - Footer details are in §5.5.
 
 ### 4.4 Charts (Bklit)
@@ -254,16 +256,16 @@ Targets: icon buttons at least 32 × 32, text buttons 36px tall; compact text bu
 - Tooltip: `--popover` surface, mono numbers, the series name in `--muted-foreground`.
 - Hovered element: 100% opacity, siblings 60%.
 - Clicked (filter active): the clicked element keeps the accent; others 40%.
-- Not built yet (docs/BACKLOG.md): Bklit siblings fade to 40% on hover, not 60%, and tooltip numbers aren't mono.
+- Not built yet: Bklit siblings fade to 40% on hover, not 60%, and tooltip numbers aren't mono.
 - Brush: a `--accent-soft` region with 1px `--accent` edges and handles. Removed by cut 8.
-- Empty: "No rows match the current filter" in `--muted-foreground`, with a "Clear filter" link. Not built yet (docs/BACKLOG.md): the message shows whether or not a filter is set, and there's no link.
+- Empty: "No rows match the current filter" in `--muted-foreground`, with a "Clear filter" link. Not built yet: the message shows whether or not a filter is set, and there's no link.
 
 Custom charts (`charts/custom.tsx`, plain visx SVG) follow the same tokens:
 - **Histogram.** Bars radius 2; the tallest bin (or the builder's point) in the accent.
 - **Heatmap.** Cells mix `--chart-1` into `--card` by value (15–85%); the largest cell in the accent; the value in mono inside cells big enough to hold it.
 - **Box plot.** Whiskers to min and max, a `--card` box with a 1.5px series outline, a 2px median line; the point's box in the accent.
-- **Scatter.** Points 2.5px at 55% opacity.
-- **All.** Axis labels 11px in `--chart-label`. Hovered element at 100%, siblings 60%. A small readout of the hovered element at the top right. A one-sentence summary as the accessible label (`role="img"`).
+- **Scatter.** Points 2.5px at 55% opacity; the hovered point grows to 4px in the accent.
+- **All.** Axis labels 11px in `--chart-label`. Histogram and box plot: hovered element at 100%, siblings 60%; the heatmap outlines the hovered cell in `--foreground`. A small readout of the hovered element at the top right. A one-sentence summary as the accessible label (`role="img"`).
 
 ### 4.5 Story card
 
@@ -281,23 +283,23 @@ Custom charts (`charts/custom.tsx`, plain visx SVG) follow the same tokens:
 ```
 
 - Surface `--card`, 1px `--border`, radius 16, padding 20 22.
-- Overline: the widget's title (11px, uppercase, muted). Headline: serif 18px, weight 600. Body: 14px in `--foreground-2`. Related chips: 24px tall.
-- Footer: Evidence (link with a database icon), Edit and Ask why (ghost, small), and a trash icon button (§5.15).
+- Overline: the widget's title, or "Overview", "Synthesis" or "Answer" for a card without one (11px, uppercase, muted). Headline: serif 18px, weight 600. Body: 14px in `--foreground-2`. Related chips: 24px tall.
+- Footer: Evidence (link with a database icon; it opens the first chip's evidence and is disabled on a card with no chips), then Edit, a trash icon button (§5.15) and Ask why (ghost, small).
 - Linked (its widget hovered): `--accent` border and `--spotlight-shadow`.
 - Updating (being rewritten): the card at 70%.
 - Badges, top right:
   - "changed": a `--warning` outlined chip; it clears when clicked.
   - "edited": pencil icon, muted.
   - "outdated, click to refresh": a `--warning` outlined chip.
-  - "unverified": a dashed chip on hand-typed numbers (§4.6).
-  - "Cites n cards" on a synthesis.
+  - Hand-typed numbers are dashed chips in the text, not a badge (§4.6).
+  - "Cites n cards" on a synthesis (on its canvas node only, below).
 - **User-written text on a newer version** (PRD STORY-7). Once the data is past the version a card's words were written on:
   - an edited card shows "Written on v5, data is now v7", a muted chip with a `--border-strong` outline;
   - a card with hand-typed numbers shows "Has numbers you typed; check them", a dashed `--warning` chip.
   - Both stay until the user edits the card on the new version or accepts a suggestion. On the canvas node they're 10px, like its other chips.
-- **Suggestion.** When the data changes under an edited card, the new narration sits under the body in a dashed `--warning` box headed "The data changed. Suggested revision:". There's no separate badge or link.
+- **Suggestion.** When the data changes under an edited card, the new narration sits under the body in a dashed `--warning` box headed "The data changed. Suggested revision:" (12px, 600, `--warning`), with Accept (primary), Edit (secondary) and Dismiss (ghost), all small. There's no separate badge or link.
 - Overview card: no related chips, bullets instead of prose.
-- Synthesis card: overline in `--accent`, "Cites n cards" footer. Not built yet (docs/BACKLOG.md): in the Stories panel it has the muted overline and no "Cites n cards"; only its canvas node has both (§5.10).
+- Synthesis card: overline in `--accent`, "Cites n cards" footer. Not built yet: in the Stories panel it has the muted overline and no "Cites n cards"; only its canvas node has both (§5.10).
 - Direction card (building): dashed `--accent` border, a four-item checklist with ✓ / spinner / empty circle. Removed by cut 3.
 - Note node (canvas only, not a story card): `--muted` fill, no overline, no chips.
 
@@ -305,7 +307,8 @@ Custom charts (`charts/custom.tsx`, plain visx SVG) follow the same tokens:
 
 Inline button, mono 12.5px, `--info-soft` fill, 1px `--info` border at 35%, radius 6, padding 1.5px 5px (25px tall, over WCAG 2.5.8's 24px), `--foreground` text.
 - Value: the card's latest fact-sheet value (`Card.facts`). Tooltip: the fact's label.
-- Hover: underline, cursor pointer. Click: opens the evidence drawer.
+- Hover: underline, cursor pointer. Click: opens the evidence drawer. Not built yet: the cursor stays the default arrow (Tailwind 4 gives buttons `cursor: default`).
+- In chat answers the chip is a plain span, not a button: its tooltip reads "Computed from the query below", and the source is under "How do you know?" (§4.8).
 - Updating: a 400ms pulse to `--accent-soft` when the value changes.
 - Unverified: dashed `--border-strong` border, `--muted-foreground` text, tooltip "Typed by you, not computed".
 - **Evidence drawer** ("How do you know?"): "<value> is the <label>, computed on version n", then the SQL in a `--muted` mono block with Copy, or the formula and the test. A hand-typed number says it has no evidence.
@@ -333,10 +336,10 @@ Glide Data Grid (`csv/Grid.tsx`). Glide draws on a canvas, so each style is draw
 Row height 32px; header 56px. Editors open in place at the same height.
 
 **Column notes** (PRD LOAD-7). A column with a note starts its type line with ⓘ ("ⓘ category · 0% missing"). Hovering the header shows a tooltip under it:
-- `--card` fill, `--border`, radius 8px, shadow-md, at most 340px wide, 12.5px text.
+- `--card` fill, `--border`, radius 10px (`--radius`), shadow-md, at most 340px wide, 12.5px text.
 - Sherlock's sentence in `--foreground`; the source's words in italic `--foreground-2`, with a 2px `--border` rule on the left and curly quotes.
 - An 11.5px `--muted-foreground` line: "From the data dictionary" or "From the web", the site, "retrieved <date>", ending "Not computed from your data."
-- It's hover-only (docs/BACKLOG.md §4); chat's "what does <column> mean?" gives the same note.
+- It's hover-only (no keyboard or click path: not built yet); chat's "what does <column> mean?" gives the same note.
 
 ### 4.8 Chat bar and thread
 
@@ -344,12 +347,12 @@ Row height 32px; header 56px. Editors open in place at the same height.
 
 **Bar.**
 - Max 680px wide, centred, `--card`, 1px `--border` (`--border-strong` on focus), radius 14, 52px tall, input 14px. A mono `/` hint on the right, then the send button: 40 × 40 primary, radius 10, arrow icon.
-- As drawn: on dataset routes the bar sits at the bottom of the centre column (24px side and 20px bottom padding). On the empty library it sits in the centred column, 24px under the pitch. Not built yet (docs/BACKLOG.md): it's 48px under the pitch.
+- As drawn: on dataset routes the bar sits at the bottom of the centre column (24px side and 20px bottom padding). On the empty library it sits in the centred column, 24px under the pitch. Not built yet: it's 48px under the pitch.
 - **Context chip** on the left, always shown, 28px:
   - Dashboard: "All rows", the filter (`col = value`) or the widget last clicked, with × to clear.
   - CSV tab: "n rows selected". Flow tab: "n cards selected" or "Whole canvas".
-  - In `--accent` (text and border) while something is selected. Not built yet (docs/BACKLOG.md): no `--accent-soft` fill.
-- **Disabled** where chat can't answer, with the placeholder naming the state: "Load a CSV to start asking" on the empty library, "Ask about this CSV (profiling in progress)" while a file profiles; a failed file's bar is disabled too.
+  - The CSV and Flow chips are in `--accent` (text and border) while something is selected. Not built yet: no `--accent-soft` fill. The Dashboard's filter or widget chip is a `--secondary` chip in `--muted-foreground` with ×.
+- **Disabled** where chat can't answer, with the placeholder naming the state: "Load a CSV to start asking" on the empty library, "Ask about this CSV (profiling in progress)" while a file profiles; a failed file's bar is disabled too. Otherwise the placeholder reads "Ask Sherlock, or tell it what to build…".
 - While a cleaning plan is open the placeholder reads "Ask Sherlock to change the plan…" (§5.3a).
 - **Sending while an answer is written.** Enter or send still takes the message: the bar empties and the message waits in the thread under the answer, in a dashed `--border-strong` bubble with "Queued: sends when this answer finishes · Cancel" under it (12px `--muted-foreground`). Queued messages go one at a time once the stream ends, so two answers never run at once. Cancel removes it and puts its text back in an empty bar. Meanwhile the send button's tooltip reads "Sends when this answer finishes".
 - Suggested questions (three ghost chips under the bar, gone at 3+ messages): removed by cut 9.
@@ -364,11 +367,11 @@ Row height 32px; header 56px. Editors open in place at the same height.
 
 **Answer blocks.**
 - Number: 26px mono with the label under it.
-- Table: up to 20 rows in a bordered box, with "Open these rows in CSV" or "Open all n rows in CSV" for row answers.
+- Table: up to 20 rows in a bordered box, with "Open these rows in CSV" or "Open all n rows in CSV" for row answers, or a muted "Showing 20 of n rows".
 - Chart: 220px tall, with "Pin to dashboard", or "Open the widget" when chat made one.
-- Text: with number chips (§4.6).
+- Text: with number chips (§4.6; in chat they're plain spans).
 - General knowledge (`labeled: "general"`): a 1px dashed `--border` box, 13px `--foreground-2`, tooltip "From the model's general knowledge, not computed from your data".
-- Web (TRD §8.2): a 1px dashed `--info` border at 50%, 13px `--foreground-2`, tooltip "From the web pages cited below, not computed from your data". A citation is a superscript 10.5px `--accent` link "[n]" that opens the page in a new tab. Under it, 12.5px: "Searched the web for: “…”" in `--muted-foreground`, then a `<details>` "n sources"; each is "[n] <title>" (an `--accent` link) "· <site> · retrieved <date>" and its excerpt as an italic `<q>` with a 2px `--border` rule on the left.
+- Web (TRD §8.2): a 1px dashed `--info` border at 50%, 13px `--foreground-2`, tooltip "From the web pages cited below, not computed from your data". A citation is a superscript 10.5px `--accent` link "[n]" that opens the page in a new tab. Under it, 12.5px: "Searched the web for: “…”" in `--muted-foreground` (with "(from earlier today)" when the cache answered), then a `<details>` "n sources"; each is "[n] <title>" (an `--accent` link) "· <site> · retrieved <date>" and its excerpt as an italic `<q>` with a 2px `--border` rule on the left.
 - Actions after the blocks: small secondary Model card (an `open_model_card` action), Export notebook and Undo (for a widget chat changed), and a ghost "Add to Flow".
 
 **Disclosures.** Every Sherlock message shows "How do you know?", a `<details>` listing each source's label and its SQL, run or step reference in a `--muted` mono block.
@@ -381,32 +384,32 @@ Row height 32px; header 56px. Editors open in place at the same height.
   - States: "Reading the calls…"; "No model was called for this."; "The calls couldn't be read. Try again in a minute."
   - The same disclosure ends the cleaning report's full report dialog (App Flow §5).
 
-**Proposal** (a change chat wants to make): a dashed `--accent` box with the summary, a table of the cells it changes (Row · Column · Now · After, up to 20), Approve (primary) and Reject (ghost). Once decided it reads "Approved", "Rejected" or "Expired: the data changed since". Not built yet (docs/BACKLOG.md): the "Show code" disclosure and the impact line (`Proposal.impact` exists).
+**Proposal** (a change chat wants to make): a dashed `--accent` box with the summary, a table of the cells it changes (Row · Column · Now · After, up to 20), Approve (primary) and Reject (ghost). Once decided it reads "Approved", "Rejected" or "Expired: the data changed since". Not built yet: the "Show code" disclosure and the impact line (`Proposal.impact` exists).
 
 ### 4.9 Drawers and dialogs
 
 - **Drawers** (`ui/drawer.tsx`): slide from the right over the right panel, 420px wide, `--popover`, `--shadow-overlay`, a 56px title row (15px/600) with ×. Used for How do you know?, the model card, Add widget and the cleaning report summary. The Review changes drawer is removed by cut 5.
-- **Dialogs** (`ui/dialog.tsx`): centred, radius 16. Max widths: Settings 580px, Import preview 880px, cleaning full report 720px, Export notebook 520px, confirmations and Rename 420px.
+- **Dialogs** (`ui/dialog.tsx`): centred, `--popover`, 1px `--border`, radius 16, a × at the top right. Max widths: Settings 580px, Import preview 880px, cleaning full report 720px, the save-conflict dialog ("The data changed while you edited") 560px, Export notebook 520px, the step Undo confirmation 460px, other confirmations and Rename 420px.
 - Both have a dimmed backdrop, `rgba(46,48,53,0.28)` (Light) / `rgba(0,0,0,0.5)` (Dark). Esc and backdrop click close both; focus is trapped and returned on close (Radix Dialog).
 
 ### 4.10 Toasts
 
-sonner, bottom-right, `--popover`, 1px `--border`. 10 s for Undo toasts, 4 s otherwise. One line of text plus an optional Undo button (link style). Errors use the destructive icon and stay until dismissed. Not built yet (docs/BACKLOG.md): error toasts close after 4 s.
+sonner, bottom-right, `--popover`, 1px `--border`. 10 s for Undo toasts, 4 s otherwise (the new-rows "Clean them" toast stays 15 s, "Notebook ready" 60 s). One line of text plus an optional Undo button (link style). Errors use the destructive icon and stay until dismissed. Not built yet: error toasts close after 4 s, and the Undo is sonner's default filled action button, not link style.
 
 ### 4.11 Tooltips
 
 `--popover` surface, body-sm, 6px 10px padding, 200ms delay, at most two lines.
-- Not built yet (docs/BACKLOG.md): outside the charts' own tooltips (§4.4) and the column-note tooltip (§4.7), every tooltip is the browser's native `title`, so this styling doesn't apply.
+- Not built yet: outside the charts' own tooltips (§4.4) and the column-note tooltip (§4.7), every tooltip is the browser's native `title`, so this styling doesn't apply.
 - Cell provenance tooltip (three lines with an Undo link): removed by cut 5.
 
 ### 4.12 Segmented control (settings, tabs)
 
-`ui/segmented.tsx` (`role="radiogroup"`). Container: 4px padding, `--muted` fill, 1px `--border`, radius 11. Segments: 36px tall, radius 8, 14px text. Active: `--card` fill (Light) or `--secondary` (Dark), `--foreground` text, 1px `--border-strong`. Inactive: `--muted-foreground`, `--foreground` on hover.
+`ui/segmented.tsx` (`role="radiogroup"`). Container: 4px padding, `--muted` fill, 1px `--border`, radius 11. Segments: 36px tall, radius 8, 14px text. Active: `--card` fill (Light) or `--secondary` (Dark), `--foreground` text, 1px `--border-strong`. Inactive: `--muted-foreground`, `--foreground` on hover. The tab switcher (§3.2, `CenterHeader.tsx`) copies the look as a `role="tablist"` of links, the active tab at weight 500.
 
 ### 4.13 Empty states
 
 Centred, max 420px wide: a 24px lucide icon in `--muted-foreground`, a title (title size), one sentence (body, muted), one primary action. Never more than one action, except the library empty state (Upload and Try with sample).
-- Not built yet (docs/BACKLOG.md): the dashboard's ("No widgets yet") and the canvas's ("The canvas is empty") have no icon or primary action.
+- Not built yet: the dashboard's ("No widgets yet") has no icon and its Add widget button is secondary; the canvas's ("The canvas is empty") has no icon or action.
 
 ---
 
@@ -455,17 +458,17 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
 - A single `--card` panel, max 640px, 8vh from the top, radius 16.
 - Display title "Here's what I found in titanic3.csv", then a muted line of rows · columns · issues.
 - The three most severe issues as lines with icons (missing: dashed circle; leakage: `--warning` flag; others: alert triangle). No issue table: the cleaning plan (§5.3a) lists every issue (owner's decision, App Flow §4).
-- Two buttons in a row: Clean with AI (primary), which opens the cleaning plan, and Clean it myself (secondary), which opens the CSV tab. After a failed run they read Try cleaning again and Build dashboard without cleaning.
+- Two buttons in a row: Clean with AI (primary), which opens the cleaning plan, and Clean it myself (secondary), which opens the CSV tab. After a failed run they read Try cleaning again and Build dashboard without cleaning, under a 13px `--destructive` line with the error ("… Your data is safe; you can build the dashboard without cleaning or try again.").
 - A "Remember my choice" checkbox with the muted hint "· You can change this in Settings" (label size).
 - Go step by step (P1) is the plan's Mode row (§5.3a).
 
 ### 5.3a Cleaning plan (centre, or the right panel on the CSV tab)
 
 `dataset/CleanPlanPanel.tsx`. Behaviour: PRD CLEAN-8a and App Flow §4.1. Two layouts:
-- **Centre** (from the offer): a `--card` panel, max 720px, 6vh from the top. Display title "Cleaning plan · v2", a muted line "Sherlock checked v2. Untick, edit or add steps, or ask in chat." Optional body-sm (13px) muted lines:
+- **Centre** (from the offer): a `--card` panel, max 720px, 6vh from the top. Display title "Cleaning plan · v2", a muted line "Sherlock checked v2. Untick, edit or add steps, or ask in chat." (when a newer version has arrived: "Sherlock checked v2; the data is v3. Checking the plan again…"). Optional body-sm (13px) muted lines:
   - opened by the After upload setting: "Opened because After upload is “Open the cleaning plan” · Change" (Change opens Settings at that field);
-  - opened for some rows: "Only the n rows you asked to clean."
-- **Side** (from the CSV tab's Clean with AI): fills the right panel in place of Changes, 16px padding, title "Cleaning plan · v2".
+  - opened for some rows: "Only the n rows you asked to clean." or "Only the n rows you just added."
+- **Side** (from the CSV tab's Clean with AI): fills the right panel in place of Changes, 16px padding, title "Cleaning plan · v2" (15px/600), sm footer buttons.
   - A **Scope** fieldset above the modules (overline legend, radios): Whole dataset · Current selection (n rows) · Rows added since the last clean. When the plan was opened for some rows, a first, picked radio names them: "The n rows you just added" or "The n rows you asked to clean". Under a narrowed scope: "Counts are for the whole file; changes stay inside the rows in scope."
   - The footer sticks to the panel's bottom on `--background` with a top border.
 - **While it's made**: a spinner and "Diagnosing v2 of titanic3.csv…" in the same box.
@@ -494,9 +497,9 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
 `dataset/CleaningProgress.tsx`. As drawn, with both side panels kept (App Flow §5 needs the library row's progress and dataset switching, and the story placeholders; the board shows the centre alone).
 - **Layout.**
   - Content centred at most 1200px wide, 32px × 24px padding, 20px between blocks.
-  - Top: display title, subtitle, Stop (secondary), then the step label and elapsed time (mono) over a 4px progress bar.
-  - Left 2/3: the live log card (`--card`, padding 8px × 16px), auto-scrolling. Right 1/3 (300px or wider): "So far", "Checks on the latest step", the budget line, and a dashed card "When cleaning finishes, the dashboard builds itself." Side cards use the 20px × 22px card padding.
-  - The two columns wrap into one when the centre panel is narrow (a container query on the centre, not the window).
+  - Top: display title (§2.2), subtitle, Stop (secondary), then the step label and elapsed time (mono) over a 4px progress bar.
+  - Left 2/3: the live log card (`--card`, padding 8px × 16px, at most 60vh tall), auto-scrolling while it's scrolled to the end. Right 1/3: "So far", "Checks on the latest step", the budget line, and a dashed card "When cleaning finishes, the dashboard builds itself." Side cards use the 20px × 22px card padding.
+  - The two columns wrap into one when the centre panel is under 768px (a container query on the centre, not the window).
 - **Log entries.**
   - A grid of 56px (time, mono 12.5px), 24px (icon) and the rest, 12px vertical padding, a hairline between entries.
   - Text: the column (mono 12.5px), then "· " and the issue in `--foreground-2`.
@@ -505,32 +508,32 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
   - The gate line: 12px in the gate's color: `--success` committed, `--warning` flagged, muted skipped, `--accent` running.
   - The issue's model calls end the entry in 11.5px mono muted ("3 model calls · <models> · 12.3 s").
 - **"So far"**: four tiles (2 × 2), values in mono 24px, labels 12px muted, `--muted` fill, radius 8.
-- **Checks**: a list with ✓. The merge check reads "No look-alike categories merged" and the fill check "Missing values stay missing".
+- **Checks**: a list with a `--success` ✓ (or a `--destructive` × on a failed check), then the budget line in mono 12.5px muted ("n of 20 issues tried · 01:12 of 05:00"). The merge check reads "No look-alike categories merged" and the fill check "Missing values stay missing".
 
 ### 5.5 Dashboard
 
 Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.tsx`.
-- **Context row.** The filter chip (`col = value`, ×) follows the version pill. On the right: Add widget (secondary), Edit layout (ghost toggle; active `--secondary` fill), the job tray, then the dataset menu. Not built yet (docs/BACKLOG.md): the Filter button (ghost with icon) and its filter builder; a filter comes only from clicking a chart.
+- **Context row.** The filter chip (`col = value`, ×) follows the version pill. On the right: Add widget (secondary, sm), Edit layout (ghost sm toggle; active `--secondary` fill), the job tray, then the dataset menu. Not built yet: the Filter button (ghost with icon) and its filter builder; a filter comes only from clicking a chart.
 - **Layouts.** Until the user arranges a breakpoint, md and sm are packed from lg in reading order: KPIs at a quarter width (two to a row on sm), charts at full width on sm.
-- **KPI tile.** The widget title is the label; the value in mono 28px (weight 500); "of n rows" under it (label, muted).
+- **KPI tile.** The widget title is the label; the value in mono 28px (weight 500); "of n rows" under it (label, muted) when the result carries a row count. A gauge draws as a KPI tile.
 - **Widget shell.**
   - Title: 13px, weight 600, 16px line. A long title wraps to a second line and is cut with an ellipsis only after that, with the whole title as its tooltip, so a KPI label ("Average customer age") reads in full at desktop widths.
   - Scope chip (24px): "All rows", or "All rows · col = value" while a filter applies; "Some rows" or "Selection" for a widget with its own narrower scope. It hides when the widget is narrower than 360px.
-  - Footer (28px, 12px muted): the version in mono · "How do you know?" (link) · "Model card" on an analysis · "Outdated" with Re-run · "first 2,000 rows" when a result was capped. Not built yet (docs/BACKLOG.md): "updated 2s ago" (§4.3).
+  - Footer (28px, 12px muted): the version in mono · "How do you know?" (link) · "Model card" on an analysis · "Outdated" with Re-run · "first 2,000 rows" when a result was capped. Not built yet: "updated 2s ago" (§4.3).
   - A card click, or `?widget=` in the URL, scrolls to the widget and flashes it: `--accent` border and a 3px `--spotlight` ring for 1.2 s.
 - **Charts.** Bars have radius 4. The point's bar or slice is `--chart-accent`; the rest `--chart-1`. Pie and ring slices cycle `--chart-1…5`, with a legend list beside the pie. A dated result draws as a line or area; one with too few dated points falls back to a table.
-- **Click-to-filter.** A click on a bar or slice sets the filter on the widget's category column; clicking it again or the chip's × clears it. The clicked chart doesn't filter itself: its clicked element keeps the accent and the others fade to 40%. Not built yet (docs/BACKLOG.md): pie and ring slices don't fade; only their legend rows do.
-- **Widget menu (⋯):** Change view (only views that can draw the result, a check on the current one) · Duplicate · Collapse / Expand · Show as table (a check toggle, this browser only; not built yet (docs/BACKLOG.md): it resets on reload) · Delete (toast with Undo, 10 s).
+- **Click-to-filter.** A click on a bar or slice sets the filter on the widget's category column; clicking it again or the chip's × clears it. The clicked chart doesn't filter itself: its clicked element keeps the accent and the others fade to 40%. Not built yet: pie and ring slices don't fade; only their legend rows do.
+- **Widget menu (⋯):** Change view (only views that can draw the result, a check on the current one) · Duplicate · Collapse / Expand · Show as table (a check toggle, this browser only; not built yet: it resets on reload) · Delete (toast with Undo, 10 s).
 - **Add widget drawer.** "Describe it" (a textarea and Add), then Quick templates: a segmented control (Bar of X by Y · KPI of X · Table), column selects, and Add template. Past 20 widgets, a warning toast.
 - **"How do you know?" drawer** (`ExplainDrawer.tsx`). One sentence naming the widget and version, the SQL in a `--muted` mono block, Copy, and the result row count. An analysis widget shows its run's reproduction code instead.
 
 ### 5.6 CSV tab
 
 `csv/CsvTab.tsx`, `SaveActions.tsx`.
-- **Toolbar** (40px, `role="toolbar"`, sm buttons): Add row, Delete row (or "Delete n rows"), Restore (when quarantined rows are selected), Find (toggles a find bar), Clean with AI (secondary, sparkle icon), Download (ghost menu: CSV · Notebook (.ipynb)). The legend on the right: three swatches with labels (label size).
+- **Toolbar** (40px, `role="toolbar"`, sm buttons): Add row, Delete row (or "Delete n rows"), Restore (when quarantined rows are selected), Find (toggles a find bar), Clean with AI (secondary, sparkle icon), Download (ghost menu: CSV · Notebook (.ipynb)). The legend on the right: three swatches with labels (changed · flagged · unsaved, label size), hidden below a 768px window.
   - Not built: Add column (P1), and the Filter toggle for a header filter row.
 - **Context row**: the unsaved count in `--accent`, Discard (ghost) and Save changes (n) (primary), or "Rebase and save" on a conflict. They hide when nothing is pending. Review changes is removed by cut 5.
-- **Find bar** (40px, under the toolbar): an input, Find, the match count, ×.
+- **Find bar** (40px, under the toolbar): an input ("Find in every cell…"), Find, the match count ("n matches in n rows; only those rows are shown"), ×; Esc closes it.
 - **Grid** fills the rest (§4.7).
 - **Status bar** (28px): the selected cell count, the row count (with the sort, marked "view only"), the unsaved count in `--accent`, and on the right "Row 9 · home.dest". The selection stats (sum · avg · min · max) are removed by cut 5.
 - **Opened on a selection** (`?rows=`, from a chat answer or "Who did it get wrong?"): a strip under the toolbar with an "n rows selected" chip (`--accent-soft`, `--accent` border) and Show all rows (ghost).
@@ -542,8 +545,8 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 `csv/ChangesPanel.tsx`.
 - Title "Changes" with the version pill.
 - **Unsaved (yours) · n**: a card with the `--accent` border when non-empty, a mono line per pending edit with ×.
-- **Running clean**: a card with its label, a 2px `--accent` progress bar and Stop.
-- **Steps** overline, then step cards (radius 14): number (mono, muted) · summary (13.5px, 500) · detail line (12px, muted) · Undo (secondary, 28px). The latest step has a `--border-strong` outline.
+- **Running clean**: an `--accent`-bordered card, "Cleaning…" with the progress label, a 2px `--accent` progress bar and Stop (ghost). It sits above Unsaved.
+- **Steps** overline, then step cards newest first (radius 14): a chevron to expand · number (mono, muted) · summary (13.5px, 500) · detail line (12px, muted: columns, cells changed, rows added, deleted or quarantined, "flagged · 0.62", who made it) · Undo (secondary, 28px). The latest step has a `--border-strong` outline. With no steps: "No steps yet. Edits you save and cleaning fixes appear here."
 - **Expanding a step**: its code in a plain `--muted` mono block (no syntax highlighting) or its edit list, then the impact lines and decisions.
 - **Undo** opens a confirmation dialog when the server asks for one (§6).
 - **Undone step**: a dashed border on `--background` instead of `--card`, the summary in `--muted-foreground` and struck through, "· undone" on the detail line. No opacity, which would take its text under 4.5:1 (§8).
@@ -561,7 +564,7 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 - **Baselines.** A table of the two baselines (everyone-majority, best one-column rule) plus "Model: pending" ("already run" when the same settings ran before).
 - **Footer.** The estimate ("about 10 s"), Cancel (ghost) and Run (primary). Run is disabled while the preview has an error, and that error replaces the baselines.
 
-**Analysis menu**: a 28px flask icon button left of the widget menu. Its menu has the group overlines (Predict · Group · Unusual · Time), disabled items with their reason in an 11px line, then "Plain chart (SQL)" as a check item.
+**Analysis menu**: a 28px flask icon button left of the widget menu. Its menu has the group overlines (Explain · Predict · Group · Unusual · Time, each shown only when it has recipes), disabled items with their reason in an 11px line, then "Plain chart (SQL)" as a check item.
 
 ### 5.9 Model card drawer
 
@@ -575,11 +578,12 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 - **Who it got wrong** (classification): the confusion matrix, the ROC curve and a secondary "Who did it get wrong? (n rows)" button, which opens the CSV tab on those rows and closes the drawer.
 - **Warnings.** `--warning` bordered boxes with the suggestion under the text.
 - **Limits.** The card's limits in one muted line.
-- **Show the code.** Reveals `repro.py` in a mono block.
+- **Show the code.** A secondary button (Show the code · Hide the code) that reveals `repro.py` in a mono block.
 - Removed by cut 4: Compare with Auto and the coefficients table (with CI and p).
 
 **The analysis widget's body** (`MlResult.tsx`, App Flow §9 steps 3–5):
-- **While running.** The progress line, a 4px `--accent` bar, and the steps with check and spinner icons.
+- **While running.** The progress line ("What drives survived: testing models…"), a 4px `--accent` bar, the steps with check and spinner icons, and Cancel (ghost).
+- **Failed or cancelled.** The reason in muted text and a Re-run button.
 - **View switcher** (classification): 24px text tabs over the body: Importance · Confusion · ROC.
 - **Importance.** The verdict line (in `--warning` for no signal), then up to twelve rows: the name, a 12px bar in `--chart-1` (the top factor or the open one in `--chart-accent`) and the value in mono.
 - **Partial dependence.** A 64px SVG mini chart in a bordered figure under its bar: a line for numbers, bars for categories, with an accessible label listing the points.
@@ -593,7 +597,7 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 - **Canvas**: `--background` with a dot grid (`--border-strong` dots, 1.2px, 22px spacing).
 - **Card nodes**: 240px wide in the §4.5 style; the headline serif 15px at 600, the body 13px clamped to six lines (except on a synthesis). "Open widget" when it has one; small `--warning` chips for "changed", "outdated" and "sources changed"; the user-text badges at 10px (§4.5).
 - **Synthesis node**: `--accent` overline, `--border-strong` border, "Cites n cards" in its footer.
-- **Notes**: 220px, a fill of 5% foreground over the background.
+- **Notes**: 220px, radius 14, a fill of 5% foreground over the background.
 - Direction node (dashed `--accent` border): removed by cut 3.
 - **Handles**: 9px side handles with an `--accent` ring, shown on hover and selection.
 - **Selected node**: 2px `--accent` outline offset 2px; dashed for the first node picked in connect mode.
@@ -601,12 +605,12 @@ Grid as §3.3, widgets as §4.3. `dashboard/Dashboard.tsx`, `DashboardActions.ts
 - **Labels**: pill chips at the midpoint, `--card` fill, edited in place.
 - **Zoom control**: bottom-left, two 32px ghost buttons in a `--card` pill.
 - **Minimap**: bottom-right, 132 × 84, `--card`, the viewport mask stroked in `--info`.
-- **"Make sense of this"**: a primary button at the canvas's top left, next to the node count, shown while two or more cards are selected.
-- **Context row**: Add note, Connect (a toggle) and Fit view.
+- **"Make sense of this"**: a primary button at the canvas's top left, next to the node count ("Story canvas · 6 nodes · 3 selected", 13px muted), shown while two or more cards are selected.
+- **Context row**: Add note (secondary), Connect (a toggle, `--accent` text while on) and Fit view, all 28px. While connecting, an `--accent`-bordered pill at the top centre says what to click next.
 - Deleting nodes or edges gives a toast with Undo for 10 s.
 - **Empty canvas**: "The canvas is empty" with one muted sentence on how to fill it.
 
-**Palette** (right panel): a "Search cards" input; rows (drag handle · name · "on canvas" / "not placed" in muted); a "Try asking" card; then Export: Notebook (.ipynb) (P0, a link) and "Obsidian (.canvas) · P1" (muted, not built).
+**Palette** (right panel): a "Story cards" overline; a "Search cards" input; rows (drag handle · name · "on canvas" / "not placed" in muted; Enter or a double-click places one in the middle); a "Try asking" card; then Export: Notebook (.ipynb) (P0, a link) and "Obsidian (.canvas) · P1" (muted, not built).
 
 ### 5.11 Settings dialog
 
@@ -632,10 +636,10 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 - One 14px sentence on what will be rebuilt, the counts in mono (steps, widgets, model runs, story cards, canvas notes).
 - Four native checkboxes tinted `--accent`, label on the right, muted help under each: Include data · Include story cards · Include canvas notes · Include ML runs.
 - **Order** segmented control: "Steps, then dashboard order"; "Flow reading path" is dimmed with its tooltip and can't be chosen.
-- Conditional notes in a `--muted` box with the warning icon (job running, unsaved edits). Not built yet (docs/BACKLOG.md): a secondary "Save and export" button in that box; the note says "save first to include them".
+- Conditional notes in a `--muted` box with the warning icon (job running, unsaved edits). Not built yet: a secondary "Save and export" button in that box; the note says "save first to include them".
 - Footer: Cancel (ghost), Export (primary).
 - **Progress**: sonner's loading toast "Preparing notebook…", then "Notebook ready" with "Download again" (shown for 60 s). Export is never a blocking modal.
-- The `book-open` icon marks every Export notebook entry point, and "Export notebook" is the label everywhere, never "Download .ipynb" alone. Not built yet (docs/BACKLOG.md): the Flow palette and chat export entries lack the icon.
+- The `book-open` icon marks every Export notebook entry point, and "Export notebook" is the label everywhere, never "Download .ipynb" alone. Not built yet: the Flow palette and chat export entries lack the icon, and the CSV tab's Download menu and the Flow palette label it "Notebook (.ipynb)".
 
 ### 5.14 Dataset menu (⋯)
 
@@ -643,7 +647,7 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 
 ### 5.15 Job tray, banners and small disclosures
 
-- **Job tray** (`JobTray.tsx`): a ghost icon button (`activity`) in the centre header with an `--accent` count of queued and running jobs. Its 320px popover lists jobs: the job ("Cleaning · titanic3.csv"), its progress label, a 2px bar, and Cancel. Done and cancelled jobs show for a minute; failed ones stay, with the error in `--destructive`, Retry and a dismiss ×. It polls `GET /api/v1/jobs` every 3 s.
+- **Job tray** (`JobTray.tsx`): a ghost icon button (`activity`) in the centre header with an `--accent` count of queued and running jobs. Its 320px popover lists jobs: the job ("Cleaning · titanic3.csv"), its progress label, a 2px bar, and Cancel. Done and cancelled jobs show for a minute; failed ones stay, with the error in `--destructive`, Retry and a dismiss ×. Empty, it reads "No background jobs right now." It polls `GET /api/v1/jobs` every 3 s.
 - **Library rail**: the « button beside the gear collapses the panel to a 56px rail with dataset initials (mono, 36px), Upload, Try with sample, the gear, and » to expand. Dividers in §3.1.
 - **Library row menu**: a ⋯ on hover with Rename (inline), Download original CSV and Delete (confirm, then a toast with Undo for 10 s). The context row's dataset menu is §5.14.
 - **Offline banner** (`OfflineBanner.tsx`): a strip at the top of the centre with a `--warning` tint and border and the `wifi-off` icon: "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It shows when the browser goes offline or an API request can't reach the server (the `sherlock:offline` event), and clears on `online` or when `/healthz` answers (checked every 5 s while it shows).
@@ -659,19 +663,21 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 ## 6. Interaction rules
 
 - **Hover linking** fires after 80ms of hover and clears 120ms after leaving, so moving across widgets doesn't flicker. Off while dragging, resizing or brushing, and while a drawer is open.
-  - Not built yet (docs/BACKLOG.md): it fires and clears at once, with no delay. It's off while Edit layout is on, not only during a drag or resize.
+  - Not built yet: it fires and clears at once, with no delay. It's off while Edit layout is on, not only during a drag or resize.
 - **Click-to-filter vs brush**: a click without movement filters; movement over 6px starts a brush, only inside the plot area. Brushing is removed by cut 8.
 - **Drag**: only from the handle, unless Edit layout is on. The dragged widget is at 90% opacity with a `--border-strong` outline; the drop placeholder is `--muted` (`index.css`, `.dashboard-grid`).
 - **Keyboard**:
   - Tab order: left panel → tabs → context row → grid (widgets are focusable; Enter opens the menu) → right panel → chat bar. Arrow keys move between widgets when the grid has focus.
   - Global shortcuts: `/` focuses the chat bar; Ctrl+Shift+E opens Export notebook. Single-key shortcuts fire only when no cell, input or editor has focus.
   - Every menu action having a shortcut listed on `?`: removed with the `?` sheet by cut 9.
-  - Not built yet (docs/BACKLOG.md §4): widgets aren't focusable, so the widget tab stop, Enter and arrow keys don't work.
+  - Not built yet: widgets aren't focusable, so the widget tab stop, Enter and arrow keys don't work.
 - **Focus**: 2px `--ring` with 2px offset everywhere, including grid cells and canvas nodes.
+  - Not built yet: only `ui/button.tsx` sets the offset; icon buttons and segments draw the 2px ring flush, menu items mark focus with a `--secondary` fill, and the tab switcher's links fall back to the base `outline-ring/50`.
 - **Loading**: skeletons (not spinners) for widgets and cards; spinners only in buttons and the cleaning state.
+  - Not built yet: spinners also show on the profiling and building screens, on an updating story card and on the running analysis step.
 - **Undo**: every destructive action has a toast with Undo; every step has Undo in the Changes panel. A pending edit is removed with its × in the Changes panel (Ctrl+Z buffer undo is removed by cut 5).
 - **Confirmation dialogs** only for: deleting a dataset, discarding pending edits, undoing a non-latest step, and undoing the automatic typing step (step 1). Everything else is undoable instead.
-  - Not built yet (docs/BACKLOG.md): the cleaning plan's Discard edits discards at once, with no confirmation.
+  - Not built yet: the cleaning plan's Discard edits discards at once, with no confirmation.
 
 ---
 
@@ -697,11 +703,11 @@ A dialog listing shortcuts in two columns grouped by tab (Global · Dashboard ·
 - Targets are at least 24 × 24 px (WCAG 2.5.8), inline number chips included (§4.6).
 - Nothing is dimmed with opacity when its text must stay readable: a faded state uses a muted color or a dashed border instead (§5.7).
 - The end-to-end flow (`web/e2e/axe.ts`, called from `flow.spec.ts`) runs axe-core 4.10 with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` and `wcag22aa` tags on five screens: the empty library, the dashboard with stories, the CSV tab with the thread open, the Flow canvas, and the Changes panel with an undone step. Any violation fails it.
-- Charts have an accessible alternative: "Show as table" in the widget menu, and an `aria-label` summarizing the chart from its fact sheet. Not built yet (docs/BACKLOG.md §4): the Bklit charts' SVGs are `aria-hidden` with no summary; only the custom charts carry one.
-- Grid cells and canvas nodes are keyboard reachable. Canvas nodes are focusable (React Flow's default) but have no accessible name (docs/BACKLOG.md §4). Cell provenance by keyboard (Ctrl+I) is removed with cell provenance by cut 5.
+- Charts have an accessible alternative: "Show as table" in the widget menu, and an `aria-label` summarizing the chart from its fact sheet. Not built yet: the Bklit charts' SVGs are `aria-hidden` with no summary; only the custom charts carry one.
+- Grid cells and canvas nodes are keyboard reachable. Canvas nodes are focusable (React Flow's default) but have no accessible name (not built yet). Cell provenance by keyboard (Ctrl+I) is removed with cell provenance by cut 5.
 - Drawers and dialogs trap focus and restore it; Esc closes.
-- `prefers-reduced-motion` and the setting disable animation, and the spotlight becomes a 1px ring (the setting is removed by cut 1). Not built yet in full (docs/BACKLOG.md §4).
-- Nothing relies on hover alone: every hover reveal (card linking, column notes) has a click or keyboard path. Not built yet (docs/BACKLOG.md §4): card linking has a click path but no keyboard path, and column notes are hover-only.
+- `prefers-reduced-motion` and the setting disable animation, and the spotlight becomes a 1px ring (the setting is removed by cut 1). Not built yet in full (§2.4).
+- Nothing relies on hover alone: every hover reveal (card linking, column notes) has a click or keyboard path. Not built yet: card linking has a click path but no keyboard path, and column notes are hover-only.
 
 ---
 

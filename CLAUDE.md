@@ -33,8 +33,6 @@ Read the doc for the area you're touching before you change it:
 | `docs/04-TRD.md` | Architecture, API contract, data formats, pipelines, config, deployment, testing |
 | `docs/05-BACKEND-SCHEMA.md` | SQLite tables, file layout, retention |
 | `docs/06-IMPLEMENTATION-PLAN.md` | Build order, cut order (§5), test data (§6), submission artifacts (§7), video script (§9) |
-| `docs/BACKLOG.md` | What's still open: the Day 10 submission steps, the owner's pending decisions, and every unfixed finding from the Day 1–9 reviews. Check it before fixing or building in an area, and remove a line when you fix it |
-| `docs/LOG.md`, `docs/USER-TESTS.md` | The build log (done, not done, decisions, day by day); the user-test and baseline protocols and results |
 | `docs/official_page.md`, `docs/judges_rubric.md` | Hackathon rules and judging; the live rules at https://nebiusglobalaihackathon.devpost.com/rules win any conflict |
 
 When docs disagree, the PRD decides *what* and the TRD and schema decide *how*.
@@ -60,6 +58,6 @@ uv run sherlock eval ask # also: corruption, ml, grounding, notebook, web (offli
 5. **Keep docs lean; never cut scope.**
    - Fix gaps by adding requirements. Don't add timelines or trim scope; a P0 drops only through the cut order in plan §5.
    - Specs describe what the code does now, stated once, in the doc that owns it; other docs cite the section (`TRD §7.2`).
-   - History (commit hashes, "as built" stories, which day fixed what) goes in `docs/LOG.md` and the commit message, never in a spec.
+   - History (commit hashes, "as built" stories, which day fixed what) goes in the commit message, never in a spec. An unbuilt requirement keeps a short "Not built yet." in the doc that owns it.
    - Keep section numbers and requirement IDs stable, because code comments cite them.
 6. **Commit each verified slice to `main` and push as much as possible** Secrets stay in `.env`, never in the repo or an exported notebook.

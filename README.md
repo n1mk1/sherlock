@@ -4,8 +4,6 @@ Sherlock is an AI data analyst for people who own a messy CSV and need answers t
 
 **Hosted URL:** https://sherlock-anw3.onrender.com (Render, Frankfurt, one web service with a persistent disk). No sign-up: each browser is its own anonymous workspace.
 
-![The Titanic sample's dashboard: hovering the survival heatmap lights up its story card, whose numbers are chips computed by code](docs/screenshot.jpg)
-
 ## Try it
 
 1. Open the URL and click **Try with sample (Titanic)**. The sample was cleaned, charted, analysed and written up once by the real models, and is cloned for you, so the dashboard and its stories appear at once.
@@ -51,9 +49,7 @@ Sherlock can read the web through **Tavily**, for retrieval only: `search`, `ext
 - **Without a key** (the default here) the app runs the same, and each web feature says in one line that web search isn't set up instead of failing.
 - Responses are cached for 24 h, each user has 20 Tavily calls an hour (`WEB_RATE_LIMIT`), and every call is logged next to the model calls (`llm_calls`, `role = 'web'`).
 
-![Architecture: the browser, the Sherlock API on Render, Nemotron on Nebius Token Factory, the persistent disk, DuckDB, the sandbox and the exported notebook](docs/architecture.png)
-
-The same flow as a diagram GitHub draws (`scripts/architecture.py` renders the image above):
+The same flow as a diagram GitHub draws (`scripts/architecture.py` renders the same flow as a PNG):
 
 ```mermaid
 flowchart LR
@@ -81,22 +77,22 @@ flowchart LR
 | Cleaning benchmark: three clean sets damaged in known ways, the Cleaner on each with the real models | recovery 97.2% (Titanic-derived), 94.5% (sales), 74.0% (HR); harm 0.00%; row loss 0.0% | `uv run sherlock eval corruption` |
 | ML planted-truth cases (no model) | 3 of 3: drivers found in order with the leak and ID excluded, noise reported as "no signal", a regression's drivers ranked | `uv run sherlock eval ml` |
 | Grounding: every story card's chips against their facts, facts re-run, wording scanned | Titanic 36 of 36 chips and sales 33 of 33 match their fact; 0 text runs with numbers; 0 causal phrases | `uv run sherlock eval grounding` |
-| Ask-anything: 61 questions over three files, every ASK-2 area | **60 of 61**, **0 unsourced answers** in each of the last three live runs (2026-10-26, `docs/LOG.md`) | `uv run sherlock eval ask` |
+| Ask-anything: 61 questions over three files, every ASK-2 area | **60 of 61**, **0 unsourced answers** in each of the last three live runs (2026-10-26) | `uv run sherlock eval ask` |
 | Notebook (no model): export each end-to-end file and run it top to bottom in a fresh virtualenv | 5 of 5 files rebuild their version after an undo with replay (107–198 s each on 2026-10-26, including a fresh virtualenv and its installs, on a busy laptop; the table is in TRD §14) | `uv run sherlock eval notebook --sets all` |
 | The deployed site from fresh browsers: the instant sample, isolation, rate limits, a sourced answer, the cascade, then the five files uploaded, built (two cleaned live), exported and their notebooks run | 31 of 31 checks (2026-10-25, plan D9.2) | `uv run --project api python scripts/live_check.py --files all` |
 | Web retrieval, live: real Nemotron and Tavily (local key), each question with the web on, failing and off | **0 outbound requests held a cell value**; web on 14 of 20 (6 of 7 on the rerun of the file a Token Factory stall hit); no answer ended in an error (2026-10-26, `FEEDBACK.md`) | `uv run sherlock eval web --live` |
 | End-to-end browser flow (Playwright, recorded model replies) | sample → dashboard → ask → approved edit → story update → Flow synthesis → notebook download, 11 s | `pnpm e2e` |
-| Baseline: three questions on `titanic3.csv`, with Sherlock versus by hand in a spreadsheet | With Sherlock (live, 2026-10-25): about 31 s and 4 steps in all, 3 of 3 answers traceable to their SQL. The by-hand half needs a person with a stopwatch and isn't measured yet | [`docs/USER-TESTS.md`](docs/USER-TESTS.md) |
-| Cold-start user test (three people who have never seen Sherlock) | not run yet; the protocol and the results table are in [`docs/USER-TESTS.md`](docs/USER-TESTS.md) | |
+| Baseline: three questions on `titanic3.csv`, with Sherlock versus by hand in a spreadsheet | With Sherlock (live, 2026-10-25): about 31 s and 4 steps in all, 3 of 3 answers traceable to their SQL. The by-hand half needs a person with a stopwatch and isn't measured yet | |
+| Cold-start user test (three people who have never seen Sherlock) | not run yet; protocol: PRD §12, plan §7 | |
 
 ## Known limitations
 
-- **Ask-anything misses.** The live runs score 60 of 61, and the miss varies: most often the follow-up "and for women only?" (Super returns an empty query, so the answer is an empty table), once "how accurate is the model?" answered as a query. The route guards are English keyword rules, so the same questions in another language go wherever Nano sends them (`docs/BACKLOG.md` §5).
+- **Ask-anything misses.** The live runs score 60 of 61, and the miss varies: most often the follow-up "and for women only?" (Super returns an empty query, so the answer is an empty table), once "how accurate is the model?" answered as a query. The route guards are English keyword rules, so the same questions in another language go wherever Nano sends them.
 - **Model variance.** At temperature 0 with reasoning on, Ultra and Super still vary between runs: three builds of the same Titanic sample got no cleaning step, then "missing age by the median for the title", then that plus "the one missing fare by its class median". Every fix is still verified and undoable.
 - **Cleaning gaps.** A placeholder in a numeric column (`N/A`, `-999`) becomes a missing value when its fix runs; if that fix is skipped, a domain rule (an age of −999) quarantines the row instead. Quarantined rows keep their text and are left out of analysis. An Ultra reply cut off at its token cap skips its issue unless a code fix exists (numbers stored as text have one).
 - **Files.** A header that isn't on the first rows (as in `broken_latin1.txt`, header on row 3) must be set in the import preview. Files up to 50 MB.
 - **Identity.** Anonymous and per browser, with no recovery: clearing cookies loses access. Datasets expire after 7 days.
-- **Not shipped from P0** (the plan's cut order, §5): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill down, duplicate row, undo and redo of unsaved edits, the Review changes drawer, replace (Find is there), the filter row and quick views, the cell history tooltip, selection stats, right-click menus, jump to row and Ctrl+arrow; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet. Also not shipped, outside the cuts: type-aware cell editors and autocomplete (every cell edits as text), and multi-column sort and column resize (`docs/BACKLOG.md` §2).
+- **Not shipped from P0** (the plan's cut order, §5): the settings beyond mode, accent, chat bar and after-upload; the CSV tab's range selection, copy and paste, fill down, duplicate row, undo and redo of unsaved edits, the Review changes drawer, replace (Find is there), the filter row and quick views, the cell history tooltip, selection stats, right-click menus, jump to row and Ctrl+arrow; the `predict` recipe and the linear and logistic method chooser (Auto only); brushing (click-to-filter instead); the material-change check (affected stories are always rewritten); "Rewrite this card" and "Take the story toward X" on Flow; suggested questions and the `?` shortcuts sheet. Also not shipped, outside the cuts: type-aware cell editors and autocomplete (every cell edits as text), and multi-column sort and column resize.
 - **Latency.** Token Factory latency varies; we saw one 27 s routing call during an overload. Answers usually take 5–15 s. Cleaning a wide messy file is slow: the 60-column `wide_messy.csv` took 685 s for four steps on the live site; a sample-sized file takes about a minute.
 
 ## Accessibility

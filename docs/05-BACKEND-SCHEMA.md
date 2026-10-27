@@ -29,7 +29,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
-- There are no `CHECK` constraints: allowed values (the `a|b|c` comments) are enforced in code.
+- There are no `CHECK` constraints: allowed values (the `a|b|c` comments) are the values code writes. A few are checked on write: `steps.kind` and `created_by` (`KINDS`, `CREATORS` in `steps/commit.py`), `jobs.kind` (`KINDS` in `jobs/runner.py`), `datasets.last_tab` (the request model). A value no code writes is marked where it appears.
 
 ---
 
@@ -75,7 +75,7 @@ CREATE TABLE datasets (
   expires_at       TEXT NOT NULL,              -- created_at + DATASET_TTL_DAYS
   folder_bytes     INTEGER NOT NULL DEFAULT 0,
   next_row_id      INTEGER NOT NULL DEFAULT 1,  -- next _row_id to assign; never decreases, so ids are never reused
-  state_rev        INTEGER NOT NULL DEFAULT 0,  -- bumped on any widget, card, run, layout or canvas write (export cache key)
+  state_rev        INTEGER NOT NULL DEFAULT 0,  -- bumped on any step, widget, card, run, layout or canvas write (export cache key)
   created_at       TEXT NOT NULL,
   deleted_at       TEXT
 );
@@ -94,7 +94,7 @@ CREATE TABLE versions (
   parquet_path TEXT NOT NULL,                  -- relative to the dataset folder; an undo version points at an earlier version's file (TRD §7.8)
   row_count    INTEGER NOT NULL,
   column_count INTEGER NOT NULL,
-  columns_json TEXT NOT NULL,                  -- [{name, type}] in order, after the step
+  columns_json TEXT NOT NULL,                  -- [{name, type}] in order, after the step, _row_id and _quarantine_reason included (column_count leaves them out)
   step_id      TEXT,                           -- the step that produced it (NULL for v1)
   effective_step_ids_json TEXT NOT NULL DEFAULT '[]', -- ordered ids of the steps whose effects make up this version (undone steps removed)
   created_at   TEXT NOT NULL,
@@ -137,7 +137,7 @@ CREATE TABLE steps (
   helpers_used_json TEXT NOT NULL DEFAULT '[]',-- helper function names referenced by code (for vendoring into the notebook)
   impact_json    TEXT NOT NULL,                -- Step.impact
   confidence     REAL,
-  gate           TEXT,                         -- commit|flag|skip|user
+  gate           TEXT,                         -- commit|flag|user; NULL for undo (a skipped issue makes no step, so skip is never stored)
   flag_reason    TEXT,
   decisions_json TEXT NOT NULL DEFAULT '[]',
   verifiers_json TEXT NOT NULL DEFAULT '{}',
@@ -152,6 +152,8 @@ CREATE INDEX steps_dataset ON steps(dataset_id, no DESC);
 ```
 
 A step from a scoped clean (some rows, or hand-edited cells kept) ends its `notebook_code` with `result = keep_outside_scope(df, result, rows=[…], cells=[…])` before `df = result`, so the notebook and a replay apply the same scope (TRD §7.7–§7.8).
+
+Who writes which kind: the typing step is `clean` by `system` (`profile/typing.py`, gate `commit`); the Cleaner's are `clean` by `cleaner` (gate `commit` or `flag`); grid saves and approved chat edits are `edit` by `user` (gate `user`, `rows/edits.py`); undos are `undo` by `user` (`steps/undo.py`). No code makes `ml_column` or `computed_column` steps, and no step has `created_by = 'chat'` (not built yet).
 
 ### 2.6 lineage
 
@@ -172,10 +174,11 @@ CREATE TABLE lineage (
 CREATE INDEX lineage_cell ON lineage(dataset_id, row_id, column);
 ```
 
-- Row-level events use `column = '_row'` and `new_value` ∈ `added|deleted|quarantined|restored`.
+- Row-level events use `column = '_row'` and `new_value` ∈ `added|deleted|quarantined|restored` (`steps/diff.py`); a `quarantined` event also has flag `quarantined`.
 - Flags (TRD §7.9):
   - `quarantined`: a cell that lost its value in a row the same step quarantined; the original text stays in `old_value`.
-  - `flagged`: every changed cell of a step with gate `flag`.
+  - `flagged`: every changed cell (not `_row` events) of a step with gate `flag` that has no other flag.
+  - `predicted`: not built yet (no `ml_column` step is made).
   - `invalid`: an edited cell whose value didn't parse as the column's type. The cell is NULL in the version; `new_value` keeps the typed text.
 
 ### 2.7 user_edited_cells
@@ -192,12 +195,12 @@ CREATE TABLE user_edited_cells (
 ) WITHOUT ROWID;
 ```
 
-- Written by `commit_step` for edit batches (`steps/commit.py`); `_row` events are not cells.
+- Written by `commit_step` for edit batches (`steps/commit.py`), and by an undo's replay for each edit batch it replays; `_row` events are not cells.
 - Undoing a step deletes its rows (`steps/undo.py`). A cell stays protected if an edit batch still in the new version's effective chain also edited it; its row then points at the latest such batch, found from that batch's lineage. Example: edit `age` → 5, edit `age` → 6, undo the second: the cell shows 5 and stays protected under the first batch.
 
 ### 2.8 issues
 
-Detected issues per version: the DataCard's `issues`, normalized for querying and for tracking what the Cleaner handled. Written by the profile (`profile/service.py`).
+Detected issues per version: the DataCard's `issues`, normalized for querying and for tracking what the Cleaner handled. Written by the profile (`profile/service.py`), which replaces a version's rows each time it profiles it. The Cleaner sets `outcome` (`fixed` or `flagged` with `handled_by_step_id`, or `skipped` with `skip_reason`, `cleaning/loop.py`).
 
 ```sql
 CREATE TABLE issues (
@@ -208,7 +211,7 @@ CREATE TABLE issues (
   column     TEXT,
   count      INTEGER NOT NULL,
   severity   REAL NOT NULL,
-  details_json TEXT NOT NULL,                  -- examples, proposal
+  details_json TEXT NOT NULL,                  -- examples, proposal, plus the detector's own details
   handled_by_step_id TEXT,
   outcome    TEXT,                             -- fixed|flagged|skipped|NULL
   skip_reason TEXT
@@ -258,7 +261,9 @@ CREATE TABLE widget_cache (
 - `spec_hash` is the sha1 of the spec's canonical JSON (sorted keys, no spaces), not of the stored `spec_json` text (`widgets/spec.py`).
 - `widget_cache.cache_key` is the sha1 of `<spec_hash>:<version>:<filter_hash>`; `filter_hash` is the sha1 of the compiled row filter (`widgets/execute.py`).
 - An in-memory LRU of 500 entries (`LRU_SIZE`) sits in front of `widget_cache` (TRD §9). The purge deletes rows older than 24 h (§6).
-- An analysis widget that replaced a chart keeps the chart's title in `spec_json` `view.options.chart_title`, for Undo.
+- An analysis widget that replaced a chart keeps the chart's title in `spec_json` `view.options.chart_title`, for Undo. A chart whose change also retitled it keeps the old title in `view.options.undo_title` (`widgets/service.py`).
+- `prev_spec_json`: changing an analysis's settings keeps the chart it replaced there, so Undo goes back to the chart. Undo swaps the two specs, so a second Undo puts it back.
+- `run_id` is written only by `ml.link` (`ml/runner.py`), for `op.type = ml` specs; the widget's `status` then follows the run's. It is kept when the widget goes back to a chart, so Undo can return to the run.
 
 ### 2.10 fact_sheets and relations
 
@@ -291,8 +296,9 @@ CREATE TABLE relations (
 - Each fact in `facts_json` is `{value, format, label, formatted}` plus `sql`+`cell`, `sql`+`scalar`, or `from`+`formula` (TRD §6.4).
 - `material_hash` is always written as `''` (cut 6).
 - The overview's sheet and an answer card's sheet (§2.12) have `widget_id` NULL; the overview's keys are prefixed `w<i>.`.
-- A run's own sheet has `run_id` set (§2.13). An analysis widget's sheet is a copy with its `widget_id`.
+- A run's own sheet has `run_id` set and the `widget_id` of the widget that asked for the run (§2.13). An analysis widget's sheet is a copy with its `widget_id`. A web answer's card has an empty sheet (`{}`, no columns).
 - Relations are rewritten for the current version on every stories run (`stories/service.py`). `detail_json` is `{columns}` for `shared_column` and `{column}` for `same_target`.
+- Only `shared_column` (weight 0.5) and `same_target` (0.3) are written; a pair is kept when its weights sum to 0.4 or more, at most four pairs per widget. `correlated` and `dependency` are not built yet.
 
 ### 2.11 cards
 
@@ -322,11 +328,12 @@ CREATE INDEX cards_dataset ON cards(dataset_id, deleted_at, kind);
 CREATE INDEX cards_widget ON cards(widget_id);
 ```
 
-- `narrated_by` is the model ID, or NULL when the card shows the fact-sheet bullets.
+- `narrated_by` is the model ID, or NULL when the card shows the fact-sheet bullets (and on answer cards, which keep chat's text).
+- No code writes `direction` cards (cut 3), so `job_id` is always NULL and `building` and `failed` are never written. Widget cards go `updating` while re-told; widget, overview and answer cards go `outdated` when their numbers moved (or an analysis's run failed); synthesis cards go `sources_changed` (`stories/service.py`, `stories/synthesis.py`).
 - Chip runs typed by hand have `key: null` and `unverified: true`.
-- `suggestion_json` holds `{headline, body}` for a user-edited card after a cascade.
+- `suggestion_json` holds `{headline, body}` for a user-edited card that was told again. That write moves `fact_sheet_id` to the new sheet but keeps `version` (and the user's text) where it was; editing a card sets `version` to its sheet's.
 - Synthesis cards (`kind = 'synthesis'`) have `source_card_ids_json` and no `fact_sheet_id`; their chips' keys are `<card_id>.<fact key>`.
-- Answer cards added to Flow (`kind = 'answer'`) have a fact sheet with no `widget_id` (`agent/flow.py`).
+- Answer cards added to Flow (`kind = 'answer'`) have a fact sheet with no `widget_id` (`agent/flow.py`). One that cites story cards lists them in `source_card_ids_json`.
 
 ### 2.12 canvases
 
@@ -344,6 +351,7 @@ CREATE TABLE canvases (
 - Every save that changes the document bumps `datasets.state_rev` and emits `canvas.updated`.
 - Card nodes reference `cards.id` (`sherlock.card_id`). Nodes of soft-deleted cards stay, hidden, so Undo restores them in place.
 - Nodes (and their edges) whose card is hard-deleted are pruned when the purge removes the card, which bumps `state_rev` and emits `canvas.updated`; any canvas read that finds such a node also prunes it and writes a new etag.
+- Every write is checked (`canvas.validate`, else `422`): at most 400 nodes and 800 edges, a card node names one of this dataset's cards and appears once, an edge joins two different nodes, edge `sherlock` is `{made_by: user|ai, kind: summarized_in|next|contrasts|custom}`. A saved card node of a card that's gone for good is dropped, not refused.
 
 ### 2.13 runs
 
@@ -379,9 +387,11 @@ CREATE INDEX runs_dataset ON runs(dataset_id, status);
 
 Lifecycle (`sherlock/ml/runner.py`):
 - **On request.** The row is written with `status = queued`, `scope_json` (target filled in, any dashboard filter folded into the predicate, `inherit_global_filters: false`), `params_json` (manifest defaults filled in), `target`, `cache_key`, and the `ml_run` job's `job_id`.
-- **Identity.** `UNIQUE (dataset_id, cache_key)` makes a repeat request return the same row. A failed or cancelled run's row is reset to `queued` and reused.
-- **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json`, `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json`, `libraries_json` (pandas, numpy, duckdb, scikit-learn) and `finished_at`.
-- **Outdated.** The cascade sets `status = outdated`, and so does the run itself when it finishes on an earlier version.
+- **Identity.** `UNIQUE (dataset_id, cache_key)` makes a repeat request return the same row. A failed or cancelled run's row is reset to `queued` (error, model card and `finished_at` cleared) and reused.
+- **Running.** The job sets `status = running` when it starts.
+- **On completion.** The job sets `status = done`, `model_card_json`, `fact_sheet_id`, `features_json`, `artifact_dir` (`runs/<id>/`), `repro_path`, `sample_json` (NULL when not sampled), `libraries_json` (pandas, numpy, duckdb, scikit-learn) and `finished_at`.
+- **On failure.** The job's failure hook sets `failed` with the error, or `cancelled` with "Cancelled.", and `finished_at`.
+- **Outdated.** The cascade sets `status = outdated` on `done` runs of earlier versions that read a changed column (`outdate`), and so does the run itself when it finishes on an earlier version.
 
 Links:
 - `widget_id` is the last widget that asked for the run. `widgets.run_id` is the link a widget shows; one cached run can back several widgets. The purge unlinks a run from a purged widget.
@@ -425,7 +435,9 @@ CREATE INDEX job_events_dataset ON job_events(dataset_id, id);
 ```
 
 `jobs` (`sherlock/jobs/runner.py`, `KINDS`):
-- **Recovery.** `owner_pid` is unique per process start. At startup, a `running` job of another owner with `cancel_requested = 1` is marked `cancelled`; every other `running` job is re-queued. While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
+- **Recovery.** `owner_pid` is unique per process start. At startup, a `running` job of another owner with `cancel_requested = 1` is marked `cancelled`; every other `running` job is re-queued, and a `profiling` dataset with no live `profile` job gets one. While running, a sweep every 30 s re-queues any `running` job of another owner whose `heartbeat_at` is older than 60 s.
+- **One at a time.** `cascade`, `stories` and `build_dashboard` (`SERIAL_KINDS`) run one at a time per dataset: the claim skips a queued one while another runs for its dataset.
+- `tokens_used` sums the job's model tokens; the job's budget reads it (TRD §3.5).
 - `progress_json` is NULL until the job reports; the API then shows `{step: 0, of: 0, label: "", pct: 0}`.
 - **`undo`** is a listed kind, but no `undo` job is queued: an undo, its replay included, runs inside its request (TRD §7.8).
 - **`purge`** jobs have `user_id = 'system'` and `dataset_id` NULL (§6).
@@ -434,7 +446,7 @@ CREATE INDEX job_events_dataset ON job_events(dataset_id, id);
 
 `job_events`:
 - Holds every SSE event of a dataset (TRD §5), not only job events, so every event has an `id` and can be replayed. An event that doesn't come from a job (such as `version.created` for a step committed through the API) has `job_id` NULL.
-- `data_json` always carries `dataset_id`, which the user-level stream needs (`jobs/events.py`).
+- `data_json` always carries `dataset_id`, which the user-level stream needs (`jobs/events.py`). A job with no dataset (the purge) writes no events.
 - The purge deletes rows older than 24 h (§6).
 
 ### 2.15 chat
@@ -482,10 +494,12 @@ CREATE TABLE proposals (
 ```
 
 - **`messages.version`** is `datasets.current_version` when the message was written: the version an answer's queries ran on. Migration 006 back-filled older messages with the newest version created at or before the message (versions only go up; an undo is a new version). The thread's history lines, Add to Flow and the `Message` response read it (TRD §8.1, §4.9).
+- **`messages.role`** is `user` or `assistant` (`agent/loop.py` `_save`); no code writes `system` messages.
 - **`thread_summaries`** is written by the running summary (TRD §8.1, `agent/loop.py`).
 - **Proposal kinds built:** only `edit_cells` and `clean_selection` are written (`agent/actions.py`). `card_edit` is not built (cut 2, Implementation Plan §2.0); `clean_step` and `computed_column` are P1. Approving any other kind answers `422`.
 - **`edit_cells` payload:** `{summary, edits: [{row_id, column, value, before}], impact, warnings?}`; `warnings` are code's sentences for new numbers outside their column's range (TRD §4.4). Approving commits an edit step with `created_by = 'user'` through the grid's save (`rows/edits.py`); `result_step_id` is that step.
-- **`clean_selection` payload:** `{summary, scope: {kind, selection_id}, impact}`. Approving opens the cleaning plan with that scope (§2.21).
+- **`clean_selection` payload:** `{summary, scope: {kind: selection|all, selection_id}, impact: {cells_changed: 0, rows_affected}}`. Selected cells with no saved selection become a `selections` row labelled "Selected in CSV". Approving opens the cleaning plan with that scope (§2.21).
+- **Status.** Approve and reject set `approved` or `rejected` and `resolved_at`; approving one whose `base_version` is no longer current sets `expired` and answers `409` (`agent/actions.py`).
 
 ### 2.16 selections
 
@@ -571,7 +585,8 @@ CREATE TABLE sandbox_runs (
 
 **Model rows:**
 - A failed call is logged too, with `ok = 0` and its error. No `embed` row is written while `MODEL_EMBED` is empty.
-- Budgets (TRD §3.5): the app-wide daily token ceiling sums `llm_calls` since midnight UTC before every model call (index `llm_calls_created`); a user's daily count is kept in `users.tokens_used_today`.
+- Budgets (TRD §3.5): the app-wide daily token ceiling sums `llm_calls` since midnight UTC before every model call (index `llm_calls_created`); a user's daily count is kept in `users.tokens_used_today` (with `tokens_day`), a job's in `jobs.tokens_used` (`llm/client.py`).
+- `error` keeps at most 500 characters.
 - `cached` is always 0: the model client has no cache.
 - **`fallback_from`:** the model client sends a Super (`medium`) call to Ultra (`large`) when Super's circuit breaker is open or its next retry would pass the call's deadline (TRD §3.5). That row has `role = 'large'`, Ultra's `model`, the original `purpose` and `fallback_from = 'medium'`; every other row has NULL. Receipts show it, and `sherlock llm stats` reports the fallback rate (`llm/calls.py`).
 
@@ -582,11 +597,11 @@ CREATE TABLE sandbox_runs (
 - The hourly limit (`WEB_RATE_LIMIT`, default 20; 0 = no cap) counts a user's web rows with `cached = 0` in the last hour.
 - A call that never goes out (web off, no key, the limit, no time left) writes no row. A call that times out or fails writes a row with `ok = 0`.
 
-**Receipts** (TRD §4.9, §4.10): `GET /chat/messages/{mid}/calls` reads the rows with that `message_id`, and `GET /jobs/{jid}/calls` the rows with that `job_id`, oldest first (`ORDER BY id`), through `sherlock/llm/calls.py`. Indexes `llm_calls_message` and `llm_calls_job` keep those reads off a full scan.
+**Receipts** (TRD §4.9, §4.10): `GET /chat/messages/{mid}/calls` reads the rows with that `message_id`, and `GET /jobs/{jid}/calls` the rows with that `job_id`, oldest first (`ORDER BY id`, at most 500 listed; the totals count every row), through `sherlock/llm/calls.py`. Indexes `llm_calls_message` and `llm_calls_job` keep those reads off a full scan.
 
-**Retention:** neither table is purged; the budgets and the spend figures read `llm_calls` (tracked in `docs/BACKLOG.md`).
+**Retention:** neither table is purged; the budgets and the spend figures read `llm_calls`.
 
-`sandbox_runs` gets one row per sandboxed code run (`sandbox/runner.py`).
+`sandbox_runs` gets one row per sandboxed code run (`sandbox/runner.py`): `code_hash` is the code's sha256, and `step_id` and `cpu_ms` are always NULL.
 
 ### 2.19 exports
 
@@ -602,7 +617,7 @@ CREATE TABLE exports (
   job_id      TEXT,
   path        TEXT,                            -- exports/notebook_<cache_key>.ipynb (relative to the dataset folder)
   bytes       INTEGER,
-  counts_json TEXT,                            -- {steps, widgets, runs, cards}
+  counts_json TEXT,                            -- {steps, widgets, runs, cards, notes}
   error       TEXT,
   created_at  TEXT NOT NULL,
   finished_at TEXT,
@@ -612,7 +627,7 @@ CREATE INDEX exports_dataset ON exports(dataset_id, created_at DESC);
 ```
 
 - `cache_key` is the sha1 of `notebook:<current_version>:<state_rev>:<options as sorted JSON>` (`notebook/exporter.py`). A request whose key has a `done` row with its file present returns it as cached; one with a `queued` or `running` row returns that row; a `failed` row, or one whose file was purged, is deleted and made again (`routers/exports.py`).
-- `version` is written as the current version, then set by the job to the version the notebook rebuilds (the earlier one for `up_to_step`) when it finishes (`jobs/export.py`).
+- `version` is written as the current version, then set by the job to the version the notebook rebuilds (the earlier one for `up_to_step`) when it finishes (`jobs/export.py`). The job sets `running`, then `done` with `path`, `bytes` and `counts_json`, or `failed` with its error.
 - A new version doesn't delete older exports; they stay valid for their version. The purge removes rows older than 24 h and their files (§6).
 
 ### 2.20 schema_migrations
@@ -691,7 +706,7 @@ CREATE TABLE column_notes (
 ```
 
 - **Metadata, not data** (CLAUDE.md Rule 3): a note never changes a value, so it isn't a step and has no version. It is keyed by column name; after a rename the old name's note matches no column and isn't shown.
-- **`description`** is one sentence Super writes from the excerpt, with no digits or numbers in words (`ColumnNotes`, TRD §7.1). Codes and their numbers stay in **`excerpt`**, the chunk of the page Tavily returned, shown verbatim beside it (at most 600 characters, `SNIPPET_CHARS` in `agent/web.py`).
+- **`description`** of a `dictionary` note is one sentence Super writes from the excerpt, with no digits or numbers in words (`ColumnNotes`, TRD §7.1); a `web` note's is the text of chat's web meaning answer (`remember_meaning`). Codes and their numbers stay in **`excerpt`**, the chunk of the page Tavily returned (for `web`, the first cited result's snippet), shown verbatim beside it (at most 600 characters, `SNIPPET_CHARS` in `agent/web.py`).
 - **One note per column and kind.** Reading a dictionary again replaces the column's `dictionary` note; a new web meaning replaces its `web` note. Readers show the `dictionary` note first, and with one chat doesn't search the web for that column.
 - Deleted with the dataset by the foreign key cascade (§6).
 
@@ -719,7 +734,7 @@ SET enable_external_access = false;   -- then run the validated SELECT
 
 **Columns inside a version Parquet:**
 - `_row_id BIGINT NOT NULL`, unique, assigned at import (1…n). New rows take `datasets.next_row_id`, so IDs are never reused.
-- `_quarantine_reason VARCHAR`, nullable, created at import (all NULL). Rows with a value are excluded from widgets, ML and stories by the compiled `{{rows}}` filter, which shows in the displayed SQL. The row-page API returns them with `quarantined: true`.
+- `_quarantine_reason VARCHAR`, nullable, created at import: NULL except on rows with more fields than the header, which are quarantined there (their extra values in `col_N` columns, `ingest/importer.py`). Rows with a value are excluded from widgets, ML and stories by the compiled `{{rows}}` filter, which shows in the displayed SQL. The row-page API returns them with `quarantined: true`.
 - User columns keep their original names. Characters outside `[A-Za-z0-9_]` are allowed and always quoted in generated SQL.
 
 ---
@@ -759,7 +774,7 @@ Under `DATA_DIR` (`/data` in the image). Paths in the database are relative to t
 - **Exports.** Only notebooks are written. The CSV export (`GET /datasets/{id}/export.csv`) streams from the version and writes no file; `repro.py` downloads from `runs/<run_id>/`.
 - **The sample.** Nothing is written under `/data/sample/`. The seed ships in the image as `api/samples/seed/titanic3/`: `rows.json` (the dataset's rows in every table it uses) and `files/` (its folder without `.lock` or `exports/`). `SAMPLE_SEED_DIR` points elsewhere, or `off` disables it (then the sample is imported and built the slow way). `POST /datasets/sample` clones the seed into a new dataset folder with fresh IDs (`sample_seed.py`, TRD §9).
 - **Sizes.** `datasets.folder_bytes` and `users.storage_bytes` are updated at import, at a sample clone, and at every commit and undo. A finished run's artifacts and exported notebooks are counted at the next purge pass, which measures every folder again (§6).
-- **Limit.** An upload is refused when the user's stored bytes plus the new file would exceed `USER_STORAGE_MB` (default 500). The limit is checked only at upload (`ingest/importer.py`).
+- **Limit.** An upload is refused (`413`) when the user's stored bytes plus the new dataset folder (the upload and `v1.parquet`) would exceed `USER_STORAGE_MB` (default 500). The limit is checked only at upload (`ingest/importer.py`).
 - Sandbox temp directories live outside `/data`, under `SANDBOX_TMP` or `<system temp>/sherlock-sandbox` (§6).
 
 ---
@@ -813,10 +828,11 @@ The `purge` job (`sherlock/jobs/purge.py`) runs these six steps, in this order, 
 
 ## 7. Integrity rules enforced in code
 
-- A step's `to_version` equals `from_version + 1` and the dataset's `current_version` after commit. Commits are serialized per dataset with a file lock (`<dataset>/.lock`, `storage.dataset_lock`). Every commit passes `base_version` and is rejected (409) when it differs from `current_version` (`steps/commit.py`).
+- A step's `to_version` equals `from_version + 1` and the dataset's `current_version` after commit. Commits and undos are serialized per dataset with a thread lock plus a file lock (`<dataset>/.lock`, `storage.dataset_lock`, 30 s timeout). Every commit and undo passes `base_version` and is rejected (409) when it differs from `current_version` (`steps/commit.py`, `steps/undo.py`).
+- `commit_step` rejects a new version file without a unique, non-null `_row_id` or without `_quarantine_reason` (`check_version_file`), a `clean`, `ml_column` or `computed_column` step that adds or removes rows (quarantine instead), and new rows whose `_row_id` is below `next_row_id`. Nothing is written when it rejects.
 - Every lineage row belongs to one step and the version that application of the step produced; replays write fresh rows under the original step IDs for the new version.
-- A card's `fact_sheet_id` always points at a sheet for the card's `version` (or an older one while `status = outdated`).
-- A run with `status = done` has `model_card_json` and an artifact dir; `outdated` keeps them for display.
-- `widgets.run_id` is set only for `op.type = ml` widgets and points at a run on the same dataset.
-- Canvas card nodes reference existing cards; nodes of hard-deleted cards are pruned (§2.12).
+- A card's `fact_sheet_id` points at a sheet of the card's `version`: the two are written together (`stories/service.py`). A card on an older version than the current one stays that way until it is told again or marked `outdated`. The exception is a user-edited card told again: its sheet moves to the new version while its `version` stays with the user's text (§2.11). Synthesis cards have no sheet.
+- A run with `status = done` has `model_card_json` and `artifact_dir` (written in one update with `repro_path`, `ml/runner.py`); `outdated` keeps them for display. Resetting a failed or cancelled run clears `model_card_json`.
+- `widgets.run_id` is written only by `ml.link`, with a run of the same dataset, for an `op.type = ml` spec. It stays when the widget goes back to a chart (§2.9).
+- Canvas card nodes reference this dataset's cards: every write is checked (`canvas.validate`, `422`), and nodes of hard-deleted cards are pruned (§2.12).
 - Every step has non-empty `notebook_code`, and a clean or computed_column step's ends with `df = result`; a commit without it is rejected (`validate_notebook_code`). Every version has `effective_step_ids_json`. Every run with `status = done` has `repro_path`. Together these guarantee the notebook export can always be produced.

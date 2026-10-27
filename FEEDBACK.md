@@ -89,7 +89,7 @@ Each entry covers: what we used it for · what worked · the problem, with steps
 | lookalikes | 41.7% (was 100%) | 0.0% | 0.00% | 0.0% | 1 | 90 s |
 
 - Before, the import typed both date sets day-first without saying so: right on one, wrong on every value of the other. Now neither is guessed; the user picks the order in the plan.
-- The `titanic_clean` and `lookalikes` drops were fixed the same morning: a lone imputation candidate had filled 26 age placeholders, and the look-alike fixes were skipped when candidates spelled one value two ways or wrote a number as currency text. After the fixes (`docs/LOG.md`, "slice 11's two benchmark drops fixed"):
+- The `titanic_clean` and `lookalikes` drops were fixed the same morning: a lone imputation candidate had filled 26 age placeholders, and the look-alike fixes were skipped when candidates spelled one value two ways or wrote a number as currency text. After the fixes:
 
 | Set | Recovered | Wrong | Harm | Row loss | Steps | Time |
 |---|---|---|---|---|---|---|
@@ -271,7 +271,7 @@ Chat messages with model calls: 3; tokens per message p50 6,717, p95 7,288.
 
 - **Privacy held in both runs:** no outbound request held a cell of the file, or a digit run the question didn't contain.
 - **The first run's six failures were a Token Factory stall, not the web.** Six answers in a row on `reviews_text` ran into the 90 s message deadline ("This answer ran out of time."), five of them with the failing stand-in, which returns at once, so the time went to the model calls. The rerun of that file, minutes later, failed soft on all seven questions (2–16 s each) with no error.
-- **The misses are routing**, in BACKLOG: a few outside-world questions that use one of the file's words go to the file's answerers or the help, and "what does posted mean?" (a date column) was answered from the data with no web source.
+- **The misses are routing**: a few outside-world questions that use one of the file's words go to the file's answerers or the help, and "what does posted mean?" (a date column) was answered from the data with no web source.
 - Median answer with the web on: 9.9–10.3 s, against 4.2–5.3 s with it off.
 
 ## Nebius hosting (Serverless Endpoint / AI Cloud VM)

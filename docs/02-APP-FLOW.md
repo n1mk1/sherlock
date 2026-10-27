@@ -1,6 +1,6 @@
 # Sherlock · App Flow
 
-Version 1.0 · 2026-10-19 · Every screen, state, transition and edge case, as the user sees them. Read with the [PRD](01-PRD.md) for requirement IDs, the [UI/UX Brief](03-UIUX-BRIEF.md) for how things look, and the [TRD](04-TRD.md) for the API and pipelines behind each screen. "Cut N" refers to the cut list in Implementation Plan §2.0. "Not built yet" items are tracked in `docs/BACKLOG.md`.
+Version 1.0 · 2026-10-19 · Every screen, state, transition and edge case, as the user sees them. Read with the [PRD](01-PRD.md) for requirement IDs, the [UI/UX Brief](03-UIUX-BRIEF.md) for how things look, and the [TRD](04-TRD.md) for the API and pipelines behind each screen. "Cut N" refers to the cut order in Implementation Plan §5; all nine cuts apply (§2.0).
 
 ---
 
@@ -92,7 +92,7 @@ Contents:
 - **Skip rows** before the header: a number (0–1000), starting at 0.
 - **Data dictionary URL (optional)** (PRD LOAD-7): the address of a page that describes the columns, such as a codebook.
 - A preview table of the first 20 rows as currently parsed.
-- The footer line "Detected 14 columns · about 1,309 rows", any notes under it, or the reason Import is blocked. Then **Cancel** and **Import**.
+- The footer line "Detected 14 columns · about 1,309 rows", any notes under it, or the reason Import is blocked ("Reading the file…" until the sample is read). Then **Cancel** and **Import**.
 
 The preview doesn't detect the header row or skip rows itself; the server's sniffer does when the user leaves them alone (TRD §7.1). PRD LOAD-2's header-row detection in the preview is not built yet.
 
@@ -158,7 +158,7 @@ Contents:
 - Header: "Cleaning plan · v2" and "Sherlock checked v2. Untick, edit or add steps, or ask in chat." While it's being made: "Diagnosing v2 of titanic3.csv…".
 - The fixes in modules, in this order: Your steps · Types and parsing · Missing and placeholder values · Spelling and formatting · Duplicates and broken records · Outliers · Other checks · Marked, not changed. Empty modules aren't shown. Each module header except Marked, not changed has a tri-state checkbox and "n of m".
 - One row per fix, **every fix ticked**: checkbox, the column, the issue ("missing", "spacing or case variants"), the count, and Sherlock's planned action in one muted line. ▸ shows up to 5 example values as chips. With nothing to fix: "Nothing that needs cleaning yet. Add a step of your own below."
-- Exact and near duplicate rows share one issue, so the plan shows only the more severe of the two, the one the Cleaner attempts (a known gap, tracked in BACKLOG).
+- Exact and near duplicate rows share one issue, so the plan shows only the more severe of the two, the one the Cleaner attempts (a known gap).
 - **Marked, not changed**: leakage and ID-like columns, and any issue on such a column, with the flag icon, the reason ("ticket looks like an ID column, so it is left as is") and no checkbox. They are never changed.
 - **✎ on a fix** (PRD CLEAN-8b) turns its planned action into an instruction the user rewrites (up to 500 characters), with Save, Cancel and Reset (Reset puts Sherlock's wording back). A rewritten fix shows the instruction marked "edited", with Sherlock's wording struck through beneath.
 - **An ambiguous-dates fix** asks "Which order are these dates in?": a small table of up to three of its values with their day-first and month-first readings ("03/04/2021 · 3 Apr 2021 · 4 Mar 2021"), and two toggle buttons, **Day first** and **Month first**. Picking one saves at once and marks that column of the table; picking it again clears it. Until one is picked, a muted line says "Every date here reads both ways, so Sherlock won't guess: without an order they stay text." (or, when some dates show their order, "Sherlock reads the dates that show their order; pick one to decide the rest."). The picked order runs as the user's instruction for the fix, with one diagnosis instead of the three-way vote, and the report lists it under "Your steps".
@@ -233,7 +233,7 @@ Not built yet: skeleton widgets in the chosen layout filling in as their queries
 ### 7.1 Layout and header
 
 - Tabs CSV | Dashboard | Flow centred at the top.
-- The context row: dataset name, the version pill "v7 · 6 steps", the filter chip ("pclass = 3" with ×) when a filter is set, then **Add widget**, **Edit layout**, the job tray and the dataset menu (⋯): Export notebook (with Ctrl+Shift+E shown) · Download CSV · Rename · Delete. The dataset menu is the same on all three tabs.
+- The context row: dataset name, the version pill "v7 · 6 steps", the filter chip ("pclass = 3" with ×) when a filter is set, then **Add widget**, **Edit layout**, the job tray and the dataset menu (⋯): Export notebook (with Ctrl+Shift+E shown) · Download CSV · Rename (a small dialog) · Delete (the confirm in §14). The dataset menu is the same on all three tabs.
 - The grid of widgets, then the chat bar per its setting.
 
 Not built yet: clicking the version pill to open the Changes panel, and a **Filter** button with a small filter builder (a filter comes only from clicking a chart). The selection chip is cut (cut 8).
@@ -265,6 +265,7 @@ Menu (⋯): Change view (the views that fit the result, the current one checked)
 | Delete | Removes the widget; toast "Widget deleted" with Undo for 10 s. |
 
 Also:
+- **Loading**: four skeleton cards until the widget list arrives; if it fails, its error message in their place.
 - **Fewer than 3 widgets**: the dashed card above the grid (§6). With none, the tab shows "No widgets yet", "Widgets you add, or ask for in chat, appear here." and **Add widget**.
 - **A new version**: the dashboard checks its filter against the new version's data card once. A filter whose column is gone, or whose value no row has (when the card lists every value of the column), is cleared with a toast like "Cleared the filter region = North: no row of v5 has region = North.", so the widgets don't all read "No rows match the current filter".
 
@@ -281,7 +282,7 @@ The panel shows the overview card first ("Overview" overline, bullets), then a c
 | Related chip | Spotlights that widget on hover and flashes it on click. |
 | Edit | The card becomes an inline editor (§11). |
 | Delete (trash) | Removes the card; toast "Card deleted" with Undo for 10 s. |
-| Ask why | Makes the card's widget the chat context, opens the thread and fills the bar with "Why <headline>?". |
+| Ask why (not on the overview) | Makes the card's widget the chat context, opens the thread and fills the bar with "Why <headline>?". |
 | "changed" badge | Tooltip "Updated after v8. Click to dismiss."; a click dismisses it. P1: showing what changed. |
 | "outdated, click to refresh" | Writes the card again. |
 
@@ -293,7 +294,7 @@ The "edited" badge marks a card the user changed; §11 covers its version badges
 
 ### 8.1 Layout
 
-- **Toolbar**: Add row · Delete row ("Delete 3 rows" for several; the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (a menu: CSV · Notebook (.ipynb)) · and on the right the legend (changed / flagged / unsaved). Add column (P1) is not built; the Filter control and quick views are cut (cut 5).
+- **Toolbar**: Add row (toast "Row added at the top. Fill it in, then save.") · Delete row ("Delete 3 rows" for several; the rows of the selected cells) · Restore (shown when the selection includes quarantined rows) · Find · Clean with AI · Download (a menu: CSV · Notebook (.ipynb)) · and on the right the legend (changed / flagged / unsaved). Add column (P1) is not built; the Filter control and quick views are cut (cut 5).
 - **Header**: when edits are pending, "n unsaved changes", **Discard** and **Save changes (n)** sit in the context row on the right, before the job tray. Review changes is cut (cut 5); the Changes panel's "Unsaved (yours)" list removes single lines instead.
 - **Grid**: a frozen first column shows `_row_id` ("new" for a pending row), struck through for quarantined rows and rows marked for deletion. New rows appear at the top until saved. Each header shows the name, the type and the missing share. A header click sorts by that column (ascending, descending, off); the sort is a view only.
 - **Column notes (PRD LOAD-7)**: a column with a note (from a data dictionary the user linked, or from the web when chat explained the column) has ⓘ before its type line. Hovering the header shows Sherlock's sentence, the source's own words in quotes, and "From the data dictionary at <site>, retrieved <date>. Not computed from your data." (or "From the web at …"). A dictionary note wins over a web note. Hover only, since the canvas header has no keyboard focus; chat answers the same meaning ("what does <column> mean?").
@@ -327,6 +328,7 @@ Editing a cell: double-click, Enter or typing edits it in place as text. A value
 |---|---|
 | Double-click, Enter or type | Edits the cell in place as text (§8.2). |
 | Click, Shift+click, drag, Ctrl+A | Select cells and ranges (the grid library's default keys; `Grid.tsx` sets none; PRD CSV-3, CSV-4). Ctrl+arrow jumps to the data's edge. |
+| Delete or Backspace on selected cells | Empties them, as pending edits (the grid library's default). |
 | Select cells, then use chat | The chat chip shows "3 rows selected". "Set this age to 1" or "make these empty" makes a proposal (§10.2). "Clean these rows" proposes Clean with AI on them; **Approve** opens the cleaning plan in the right panel scoped to "The n rows you asked to clean", with the toast "The cleaning plan is open for those rows. Look it over, then press Start cleaning." Nothing is cleaned until Start (PRD CLEAN-1). |
 | Find (toolbar) | A find bar ("Find in every cell…"). The grid then shows only the matching rows, with the matching cells highlighted and "12 matches in 9 rows; only those rows are shown", until the bar is closed (Esc or ×). No match toasts "No cells match." |
 
@@ -349,7 +351,7 @@ While the job runs, the Changes panel shows a "Cleaning…" card with its progre
 Header: "Changes" and the version pill. Sections, top to bottom:
 - **Cleaning…** while a clean runs (§8.4).
 - **Unsaved (yours) · n**: pending edits, one line each ("Row 9 · age: 22 → 23", "New row: …", "Delete row 12", "Restore row 40 from quarantine"), each removable with ×.
-- **Steps**, newest first. Each: number, summary, and a detail line (affected columns, cells changed, rows added, deleted or quarantined, "flagged · 0.62", and who made it: automatic, Cleaner, you, chat), with **Undo** on steps in the current data. Expanding shows the code (cleaning and typing steps) or the edit list (edit batches), the impact line, the flag reason and the decisions. With no steps: "No steps yet. Edits you save and cleaning fixes appear here."
+- **Steps**, newest first. Each: number, summary, and a detail line (affected columns, cells changed, rows added, deleted or quarantined, "flagged · 0.62", and who made it: automatic, Cleaner, you, chat), with **Undo** on steps in the current data. Expanding shows the code (cleaning and typing steps) or the edit list (edit batches), the impact line, the flag reason, the decisions and, for a code step, up to 6 changed cells as "Row 9 · age: — → 28". With no steps: "No steps yet. Edits you save and cleaning fixes appear here."
 - Links: **Full cleaning report** (opens the last report in a drawer) · **Export notebook**. Export pipeline as Python (P1) is not built.
 
 Steps not in the current data read "undone": dashed border, muted and struck through. Undo steps themselves have no Undo.
@@ -362,24 +364,24 @@ Steps not in the current data read "undone": dashed border, muted and struck thr
 
 Within cuts 4 and 7: "What drives this?" is the only analysis that runs, and Auto the only method.
 
-1. **The analysis button** (a flask in each widget's header) opens a menu grouped Explain (What drives this?) · Predict (Predict a column) · Group (Find groups, P1) · Unusual (Find unusual rows, P1) · Time (Forecast, P1) · Plain chart (SQL). The options come from `GET /recipes` (TRD §4.8). Disabled options show their reason under the label: Predict "Not in this release", Find groups and Find unusual rows "Coming later", Forecast "Coming later" (or "needs a date column" on a file without one).
+1. **The analysis button** (a flask in each widget's header) opens a menu grouped Explain (What drives this?) · Predict (Predict a column) · Group (Find groups, P1) · Unusual (Find unusual rows, P1) · Time (Forecast, P1) · Plain chart (SQL). The options come from `GET /recipes` (TRD §4.8). Disabled options show their reason under the label: Predict "Not in this release", Find groups and Find unusual rows "Coming later", Forecast "Coming later" (or "needs a date column" on a file without one). What drives this? itself is disabled on a file with nothing to explain ("needs a column to explain (a yes/no, a category or a number)") or under 100 rows ("needs 100 rows; this has 80").
    - "Plain chart (SQL)" is checked on a chart. On an analysis it goes back to the chart the analysis replaced (the widget's Undo), with its title. An analysis the builder made has no chart behind it, and a toast says so.
 2. **Setup.** "What drives this?" flips the widget body into the setup:
    - **Target**: pre-filled with the analysis's own target, else the chart's measure or category when it can be explained, else the best guess.
    - **Features**: chips from the preview. Excluded ones are struck through, with "Left out: <reason>" on hover. A click toggles a chip; putting an excluded one back shows a warning line, and the model card keeps the warning.
    - **Rows**: the widget's rows and the count with the target. With a dashboard filter active, "Only the filtered rows" (on by default) runs on those rows (cut 8: ML scope comes from a filter or the whole dataset).
-   - **Method**: Auto alone, with what it tries ("tries logistic regression, gradient boosting and a random forest on the same folds and keeps the best"). Choosing Linear or Logistic regression is cut (cut 4).
+   - **Method**: Auto alone, with what it tries ("tries logistic regression, gradient boosting and a random forest on the same folds and keeps the best"; ridge regression in place of logistic for a number target). Choosing Linear or Logistic regression is cut (cut 4).
    - **More**: Folds and Time budget, from the recipe manifest.
    - **Baselines** for this scope from the preview, then "Model: pending" (or "already run" when the same request is cached).
-   - "about N s", **Cancel** and **Run**. Run turns the widget into the analysis, titled "What drives <target>?". The same settings as a finished run show its result with the toast "Same settings as an earlier run: showing its result."
-3. **Progress.** The widget shows "What drives <target>: <label>…", a progress bar and the steps ticked off ("checking for leakage → baselines → testing models → explaining"), with Cancel. The job tray lists the analysis job.
+   - "about N s", **Cancel** and **Run**. Run turns the widget into the analysis, titled "What drives <target>?". The same settings as a finished run show its result with the toast "Same settings as an earlier run: showing its result." A recipe that can't run shows "<label> isn't available here: <reason>." with **Back**.
+3. **Progress.** The widget shows "What drives <target>: <label>…", a progress bar and the steps ticked off ("preparing data → checking for leakage → setting baselines → testing models → explaining"), with Cancel. The job tray lists the analysis job.
 4. **Result.** The verdict line ("Beats the best simple rule by 2.4 points. Gradient boosting: Accuracy 80.4% vs 78.0%."), then the importance bars, the top factor in the accent. The footer has "Model card" (a drawer: excluded columns, method, baselines vs model, importance, who it got wrong, warnings, limits, and Show the code) and "How do you know?" (the run's reproduction code). Its story card is narrated from the run's fact sheet when the run finishes. On a fresh dashboard the builder's "What drives <target>?" widget does the same by itself.
 5. **Digging in.**
    - Clicking a factor bar opens its partial-dependence mini chart (the probability or prediction as the factor varies) under the bar.
    - For a category target the widget has a view switcher (Importance · Confusion · ROC, the last for two classes), and the model card shows the confusion matrix and the ROC curve.
    - **"Who did it get wrong?"** in the model card, with the count, saves a selection of the rows the out-of-fold predictions got wrong and opens the CSV tab on `?rows=<selection_id>` ("256 rows selected" on Titanic).
    - Predicted cells and their explanation are cut (cut 7).
-6. **Outdated.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first". Under "Automatic" it re-runs by itself and shows the progress again. Story updates isn't in the Settings dialog (cut 1), so it stays at its default, Automatic, unless set through `PUT /me/settings`.
+6. **Outdated.** After a new version that changes its columns, the footer shows "Outdated" with **Re-run** under "Story updates: Ask first", and the model card says "Outdated: the data changed after this ran on v6." with **Re-run**. Under "Automatic" it re-runs by itself and shows the progress again. Story updates isn't in the Settings dialog (cut 1), so it stays at its default, Automatic, unless set through `PUT /me/settings`.
 
 A failed or cancelled run says so ("The analysis was cancelled.", "The analysis failed: <reason>"), with **Re-run**. "Compare with Auto" in the model card (runs Auto with the same setup and shows both model cards side by side) is cut (cut 4).
 
@@ -408,7 +410,7 @@ What the answerers do (TRD §8.2 has the contracts):
 ### 10.2 Message lifecycle
 
 1. The user sends a message (Enter or the send button). `/` focuses the bar when nothing editable has focus.
-2. A reply appears at once with "Thinking…", then a one-line status from the stream as the agent works ("Running a query", "Writing the answer"). A multi-step plan shows as a checklist above the answer (○ waiting, ◌ running, ✓ done, × failed) and stays on the saved message.
+2. A reply appears at once with "Thinking…", then a one-line status from the stream as the agent works ("Running a query", "Finding rows", "Writing the answer"). A multi-step plan shows as a checklist above the answer (○ waiting, ◌ running, ✓ done, × failed) and stays on the saved message.
 3. The answer renders in its shape:
    - **Number**: a large value with its label.
    - **Table**: up to 20 rows inline. A row answer links to the CSV tab ("Open these rows in CSV", or "Open all 143 rows in CSV"); other long tables say "Showing 20 of 143 rows".
@@ -416,7 +418,7 @@ What the answerers do (TRD §8.2 has the contracts):
    - **Text**: markdown with number chips; **Add to Flow** when it's a narrative answer (toast "Added to the canvas" with Open).
    - **Proposal**: a dashed card with **Approve** / **Reject** for data changes.
    - **Clarification**: the question and 2–3 buttons; the buttons work on the latest message only.
-4. Every Sherlock message, clarifications and failures included, has a **How do you know?** disclosure: its sources (labels, SQL, web pages as links), then **How I worked it out** (collapsed, TRD §4.9). That lists the model calls in order: what each did ("Read the question", "Wrote the query"), the model, time and tokens, marked "(repair)", "(failed)", "(cut off, asked again)" or "(in place of the medium model)" (TRD §3.5); then "Total: 3 calls · 4.1 s waiting on them · 5,120 tokens". A web request reads "Searched the web · 5 results" ("cached" when the cache answered). A copy button on answers is not built yet.
+4. Every Sherlock message, clarifications and failures included, has a **How do you know?** disclosure: its sources (labels, SQL, web pages as links), then **How I worked it out** (collapsed, TRD §4.9). That lists the model calls in order: what each did ("Read the question", "Wrote the query"), the model, time and tokens, marked "(repair)", "(failed)", "(cut off, asked again)" or "(in place of the medium model)" (TRD §3.5); then "Total: 3 calls · 4.1 s waiting on them · 5,120 tokens". A web request reads "Searched the web · 5 results" ("cached" when the cache answered). An answer with no model call says "No model was called for this." A copy button on answers is not built yet.
 5. Follow-ups reuse the saved focus (scope, columns, result ids).
 
 Streaming and queueing:
@@ -480,7 +482,7 @@ Streaming and queueing:
 1. Click **Edit** (or double-click the card on the canvas). The card becomes two TipTap editors, Headline (one line) and Body.
 2. Number chips and column labels are atoms: they can be deleted or moved as a whole, not edited character by character. Typing `/` opens a picker of the card's facts ("Find a number…"; type to filter, Enter or click inserts the chip, Esc closes).
 3. Save sends the card; the server turns numbers typed by hand, digits or words ("zero", "twice"), into "unverified" chips (dashed outline, tooltip "Typed by you, not computed").
-4. **Save** or **Cancel**. Saving marks the card user-edited (the "edited" pencil badge).
+4. **Save** or **Cancel** (Esc cancels too, when the picker is closed). Saving marks the card user-edited (the "edited" pencil badge).
 5. Later data changes: chips update in place. An edited card keeps its text and shows, under its body, "The data changed. Suggested revision:" with **Accept**, **Edit** (opens the suggestion in the editor) and **Dismiss**. PRD's side-by-side view (your text vs the AI's revision) isn't built; where the suggestion goes is an open decision.
 
 The editors hold only what a card can store: paragraphs and bullets in the body, one paragraph in the headline, and text, chips and labels. Numbered lists, line breaks, bold, italic, strike, code, underline and links aren't offered.
@@ -505,7 +507,7 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 | Action | Result |
 |---|---|
 | Drag a palette row onto the canvas | Places that card as a node at the drop point. The row becomes "on canvas". |
-| Enter or Space on a focused row, or double-click it | Places the card in the middle of the view, below any card already there. The row's accessible name is the card's title and "on canvas" or "not placed". Synthesis and answer cards are listed by their headline. |
+| Enter or Space on a focused row, or double-click it | Places the card in the middle of the view, below any card already there. The row's accessible name is the card's title and "on canvas" or "not placed". Synthesis and answer cards are listed by their headline. A card already on the canvas isn't placed twice: it's selected and the view centres on it. |
 | Drag a node | Moves it. |
 | Click a node | Selects it; Shift-, Ctrl- or Cmd-click adds. There is no box selection. Selection is the chat context. |
 | Keyboard | Tab reaches each node (and the chips and "Open widget" inside it); Enter selects the focused node, and Shift, Ctrl or Cmd with Enter adds it (React Flow's keyboard selection). Then `/` and "Make sense of this" in the chat bar. |
@@ -517,7 +519,7 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 | "Open widget" on a card node | Navigates to `?widget=:id` on the Dashboard tab. |
 | Scroll / pinch | Zoom; drag the background to pan. |
 
-**Card nodes** show the overline (the widget's title, "Overview", or "Synthesis" in the accent colour), the headline and the body with live chips (a chip opens the evidence drawer), "Cites n cards" on a synthesis, "Open widget" on a widget card, and the badges: changed, edited, outdated, and "sources changed" (click to write it again).
+**Card nodes** show the overline (the widget's title, "Overview", "Answer", or "Synthesis" in the accent colour), the headline and the body with live chips (a chip opens the evidence drawer), "Cites n cards" on a synthesis, "Open widget" on a widget card, and the badges: changed, edited, outdated, and "sources changed" (click to write it again).
 
 **Saving.** Every change saves within a second. When another tab or the AI changed the canvas meanwhile, this tab's changes are merged onto the newer copy and saved again; nothing is lost. A synthesis from chat appears without a reload.
 
@@ -537,13 +539,13 @@ Within cuts 2 and 3: no "take the story toward X", no direction cards, no "Rewri
 | "Argue against this" (P1) | Adds cards for widgets that weaken the claim, connected with "contrasts with". Not built. |
 | "Order this into a story" (P1) | Proposes a numbered path; Accept numbers the nodes and enables Present mode. Not built. |
 
-Failures: "Select at least two cards to make sense of them." · "I couldn't find a column about X. The closest are: age, fare." (buttons).
+Failures: "Select at least two cards to make sense of them." · "There are no story cards to answer from yet." · when every card asked about is outdated, the "I left out …" sentence alone. Add to Flow refuses text without numbers ("Only an answer's text with its numbers can be added to Flow.") and an answer whose cited card changed ("A card this answer cites has changed; ask again to add it.").
 
 ---
 
 ## 13. Settings overlay
 
-Opened from the gear (library panel or rail) or `?settings=1`. A centred dialog, "Settings", over a dimmed app. Within cut 1 it holds four settings as segmented controls (PRD §7.10, UI/UX brief §5.11):
+Opened from the gear (library panel or rail) or `?settings=1`. A centred dialog, "Settings", over a dimmed app. Within cut 1 it holds four settings as segmented controls, each with a help line (PRD §7.10, UI/UX brief §5.11):
 - **Mode**: Light · Dark · System.
 - **Accent**: Verdigris · Arcane · Ember · Aether · Brass.
 - **Chat bar**: Pinned · Auto-hide · Hidden.
@@ -558,10 +560,11 @@ Changes apply at once and save to the server ("Saved to your Sherlock profile");
 | Action | Result |
 |---|---|
 | Click a row | Opens that dataset on its last tab. |
-| Row menu (⋯, on hover or focus) | Rename (inline; Enter saves, Esc cancels) · Download original CSV · Delete. Delete confirms ("Delete <name>? Its versions, dashboard and chat go with it. You can undo for 10 seconds."), then a toast "Deleted <name>" with Undo for 10 s. |
+| Row menu (⋯, on hover or focus) | Rename (inline; Enter saves, Esc cancels) · Download original CSV · Delete. Delete confirms ("Delete <name>? Its versions, dashboard and chat go with it. You can undo for 10 seconds."), then a toast "Deleted <name>" with Undo for 10 s. Deleting the open CSV goes to the library, and Undo reopens it. |
 | Status line | "profiling" · "offer · 7 issues" · "cleaning 40%" with a thin progress bar · "building" with a bar · "ready · v7" · "failed" (hover shows the error). Hover text for the other states is not built. |
 | Collapse (« / ») | The panel becomes an icon rail: dataset initials as links, Upload, Sample, the gear, and » to expand. |
 | Upload CSV / Try with sample | §3. |
+| Drag the panel's edge | Resizes the left (or right) panel; with the edge focused, ← and → resize it by 16 px. Sizes are kept in this browser. |
 
 Below 1024 px wide, both side panels become slide-overs opened from buttons at the top of the centre.
 
@@ -625,7 +628,7 @@ Title "Export notebook". Body:
 1. Export → the dialog closes; a loading toast "Preparing notebook…" (the job shows in the tray).
 2. On completion the browser downloads `titanic3-v7.ipynb` and, with Include data, `titanic3-raw.csv` 0.4 s later. The toast becomes "Notebook ready" with **Download again** for 1 minute.
 3. A repeat export with nothing changed (same version, same dataset state, same options) comes straight from the cache.
-4. A failed export turns the toast into its error.
+4. A failed export turns the toast into its error; one not done after 2 minutes says "The export didn't finish."
 
 While the dashboard or its stories are being updated, the export waits for them for up to 20 seconds (the job's log says "Waiting for the story cards to finish updating…"). If they're still updating, the notebook's first cell says so and each card that isn't current carries a note. A widget whose query fails on this version becomes a cell saying why, and the rest of the notebook is still written.
 
@@ -663,15 +666,15 @@ While the dashboard or its stories are being updated, the export waits for them 
 | Situation | Behaviour |
 |---|---|
 | Token Factory unavailable | Model calls retry with backoff for at most 2 minutes each (time that counts against the cleaning budget); the cleaning log shows "Waiting for the model…". Then the job fails with "The model service is unavailable. Try again in a minute."; chat answers "The model service is unavailable. Your data is safe; try again in a minute." Non-model features (grid, SQL widgets, filters) keep working (TRD §3.5). |
-| A daily model budget is used up | App-wide: "Sherlock has used today's model budget for everyone. It resets at midnight UTC." Per user: "You've used today's model budget. It resets at midnight UTC." A job that hits its own budget: "This job used its model budget." Chat shows it as a text answer; cleaning and stories take their budget-exceeded paths. Uploads, the grid, edits, widgets and exports keep working (PRD §9, TRD §3.5). |
+| A daily model budget is used up | App-wide: "Sherlock has used today's model budget for everyone. It resets at midnight UTC." Per user: "You've used today's model budget. It resets at midnight UTC." A job that hits its own budget: "This job used its model budget."; a chat answer that hits its own: "This answer used its model budget." Chat shows it as a text answer; cleaning and stories take their budget-exceeded paths. Uploads, the grid, edits, widgets and exports keep working (PRD §9, TRD §3.5). |
 | Too many new visitors from one network | A first visit past 300 new users an hour from one IP gets `429` with "Too many new visitors from your network. Try again in N minutes." Anyone with a cookie is unaffected (TRD §15). The app shows a whole page, not the shell: "Sherlock can't open a new workspace yet", the server's message, "A browser that has opened Sherlock before isn't affected." and **Try again**. |
 | The first request fails for another reason | A whole page: "Sherlock couldn't start", the error (or "Sherlock couldn't reach its server. Check your connection."), and **Try again**. |
-| The server refuses an upload | An error toast with the reason: "This file is over 50 MB. The limit is 50 MB.", "This file has 1,200 columns. The limit is 1,000.", "This file has 2,500,000 rows. The limit is 2,000,000.", "This file has no data rows.", "Couldn't read this file as CSV: …", or the storage quota, "Your CSVs would use 520 MB. The limit is 500 MB; delete a CSV first." No dataset is created. |
+| The server refuses an upload | An error toast with the reason: "This file is 73 MB. The limit is 50 MB." ("This file is over 50 MB. …" when the size only shows while reading), "This file has 1,200 columns. The limit is 1,000.", "This file has 2,500,000 rows. The limit is 2,000,000.", "This file has no data rows.", "Couldn't read this file as CSV: …", or the storage quota, "Your CSVs would use 520 MB. The limit is 500 MB; delete a CSV first." No dataset is created. |
 | Rows with different numbers of fields | The file imports with its real columns. Short rows are padded with empty cells. A row with extra fields keeps them in `col_N` columns and is quarantined ("extra fields: this row has more fields than the header's 14"). It shows in the grid with its row number struck through, and Restore brings it back (PRD LOAD-3a). The flagged quick view is cut (cut 5). |
 | Header not on the first row | The import preview's Header row and Skip rows controls fix it. Left alone, the server's sniffer detects skipped lines and the header (TRD §7.1). |
 | LLM returns invalid JSON | One repair retry; then the cleaning step is skipped, or the chat answer falls back to the raw results table. Logged. |
 | SQL from the model fails | One repair retry with the error; then "I couldn't build a working query for that. …" (§10.2). |
-| Sandbox timeout (30 s of CPU) | The candidate fix is discarded ("The step took too long and was stopped."); with no candidate left, the issue is skipped. |
+| Sandbox timeout (30 s of CPU; the wall clock at twice that plus 5 s) | The candidate fix is discarded ("The step hit the sandbox's CPU or memory limit.", or "The step took too long and was stopped." at the wall clock); with no candidate left, the issue is skipped. |
 | Browser offline, or the server unreachable | A banner: "Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back." It also shows when an API call can't reach the server, and clears once `/healthz` answers (checked every 5 s). Pending edits persist in local storage. Save retrying by itself is not built yet; pressing Save again after the banner clears saves. |
 | Session cookie cleared | The library appears empty. There is no recovery; the README and the empty state's small print say so (§2). |
 | Dataset expired (7 days) or deleted | Removed from the library. A stale link opens the library with the toast "That CSV is no longer available." |
