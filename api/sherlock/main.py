@@ -25,6 +25,7 @@ from sherlock.jobs import purge as _purge_job  # noqa: F401
 from sherlock.jobs import review as _review_job  # noqa: F401
 from sherlock.jobs import stories as _stories_job  # noqa: F401
 from sherlock.ml import runner as _ml_job  # noqa: F401
+from sherlock.cleaning import registry
 from sherlock.jobs.events import EventBus
 from sherlock.jobs.runner import JobRunner
 from sherlock.llm.models import LLMReachability, validate_model_roles
@@ -108,6 +109,7 @@ class SecurityHeadersMiddleware:
 def create_app() -> FastAPI:
     settings = get_settings()
     _app_logging(settings.log_level)
+    registry.configure(settings)  # DETECTORS_OFF and the detector packs DETECTOR_PLUGINS allows
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -160,6 +162,7 @@ def create_app() -> FastAPI:
             "storage": storage,
             "llm": {"reachable": app.state.llm_reachability.check()},
             "models": settings.models,
+            "detectors": registry.packs(),
         }
 
     # Every /api/v1 route depends on the cookie user and the per-user rate limit (TRD §3.1, §15).

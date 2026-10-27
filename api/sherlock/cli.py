@@ -10,6 +10,7 @@
                                                  offline on recorded fixtures unless --live (needs TAVILY_API_KEY)
     uv run sherlock export notebook <dataset_id> --out out.ipynb
     uv run sherlock llm stats [--days N] [--json]    per purpose and role: p50/p95 latency, tokens, repair, fail and fallback rates
+    uv run sherlock detectors check [--rows N]   every registered detector, packs included, against the contract
 
 Commands run the app in-process against the configured `DATA_DIR` and `DATABASE_URL` (the `.env`),
 with the real model unless `LLM_MOCK` is set. A CLI run is its own anonymous user. `llm stats` only
@@ -154,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
     p_llm.add_argument("what", choices=["stats"])
     p_llm.add_argument("--days", type=float, default=None, help="only the last N days (default: the whole log)")
     p_llm.add_argument("--json", action="store_true", help="print JSON instead of markdown tables")
+    p_det = sub.add_parser("detectors", help="the detector registry")
+    p_det.add_argument("what", choices=["check"])
+    p_det.add_argument("--rows", type=int, default=200_000, help="rows of the frame the time budget runs on")
     args = parser.parse_args(argv)
 
     if args.command == "clean":
@@ -199,7 +203,30 @@ def main(argv: list[str] | None = None) -> int:
         return export_notebook(args.dataset_id, Path(args.out))
     if args.command == "llm":
         return llm_stats(args.days, args.json)
+    if args.command == "detectors":
+        return detectors_check(args.rows)
     return 2
+
+
+def detectors_check(rows: int) -> int:
+    """Run the contract (TRD §14) on every registered detector, with the packs `DETECTOR_PLUGINS` allows,
+    as a markdown table; exit 1 when any detector fails, so a pack can be checked when it's installed."""
+    from sherlock.cleaning import contract, registry
+    from sherlock.config import get_settings
+
+    registry.configure(get_settings())
+    big = contract.big_frame(rows)
+    lines = ["| Detector | Source | Result |", "|---|---|---|"]
+    failed = 0
+    for spec in registry.all():
+        problems = contract.check(spec, big)
+        failed += bool(problems)
+        result = "; ".join(f"{name}: {why}" for name, why in problems) or "passes"
+        lines.append(f"| {spec.id} | {spec.source} | {result.replace('|', '/')} |")
+    refused = registry.packs()["refused"]
+    lines += [f"| {p['name']} (pack) | refused | {p['reason'].replace('|', '/')} |" for p in refused]
+    _print("\n".join(lines))
+    return 1 if failed or refused else 0
 
 
 if __name__ == "__main__":

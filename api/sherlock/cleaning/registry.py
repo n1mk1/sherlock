@@ -3,13 +3,19 @@ place the rest of the app learns what a detector is called, where it goes in the
 weighs and how the Cleaner treats it.
 
 The built-ins register at import, in their run order; a spec `register` refuses is a bug, so the API
-doesn't start. `get` of an id no longer registered (an issue row from a check since removed) returns an
-"unknown detector" spec that finds nothing, so old plans and reports still display.
+doesn't start. `configure(settings)`, at startup, loads installed packs (Python entry points in the group
+`sherlock.detectors`) when `DETECTOR_PLUGINS` allows them: a pack whose specs `register` refuses is
+skipped, logged and listed as refused in `/healthz`. `DETECTORS_OFF` names ids that don't run. `get` of an
+id no longer registered (an issue row from a check since removed) returns an "unknown detector" spec
+that finds nothing, so old plans and reports still display.
 
 Severity = min(count / rows, 1) × the spec's weight.
 """
 
+import logging
 import re
+from dataclasses import replace
+from importlib import metadata
 
 from sherlock.cleaning.detectors import BUILTINS
 from sherlock.cleaning.detectors.base import GROUPS, LEVELS, SCOPES, DetectorSpec, Finding, Frame
@@ -18,6 +24,11 @@ from sherlock.cleaning.rules.interpreter import SPEC as RULE
 ID = re.compile(r"^[a-z][a-z0-9_]*$")
 
 _specs: dict[str, DetectorSpec] = {}
+_off: set[str] = set()                # DETECTORS_OFF
+_packs: dict[str, dict] = {}          # installed packs loaded: name → {name, version, detectors}
+_refused: dict[str, dict] = {}        # packs skipped: name → {name, version, reason}
+GROUP = "sherlock.detectors"
+log = logging.getLogger("sherlock.detectors")
 
 
 class RegistryError(ValueError):
@@ -78,8 +89,45 @@ def all() -> list[DetectorSpec]:  # noqa: A001 - the registry's own name for eve
 
 
 def enabled() -> list[DetectorSpec]:
-    """The specs that run on every version, in run order."""
-    return [s for s in _specs.values() if s.enabled_by_default]
+    """The specs that run on every version, in run order: on by default and not in `DETECTORS_OFF`."""
+    return [s for s in _specs.values() if s.enabled_by_default and s.id not in _off]
+
+
+def configure(settings) -> None:
+    """At startup: the ids `DETECTORS_OFF` turns off, and the installed packs `DETECTOR_PLUGINS` allows
+    (`off`, `all`, or a comma-separated allowlist of pack names). A pack loads once per process."""
+    global _off
+    _off = {i.strip() for i in settings.detectors_off.split(",") if i.strip()}
+    choice = settings.detector_plugins.strip()
+    if choice == "off":
+        return
+    allow = None if choice == "all" else {n.strip() for n in choice.split(",") if n.strip()}
+    for ep in metadata.entry_points(group=GROUP):
+        if (allow is not None and ep.name not in allow) or ep.name in _packs or ep.name in _refused:
+            continue
+        load_pack(ep)
+
+
+def load_pack(ep) -> bool:
+    """Register one entry point's specs (a sequence of `DetectorSpec`) as a pack, all or nothing."""
+    version = getattr(getattr(ep, "dist", None), "version", None)
+    try:
+        specs = [replace(s, source="pack") for s in ep.load()]
+        if any(not isinstance(s, DetectorSpec) for s in specs):  # (`all` here is the registry's own)
+            raise RegistryError("the entry point must give DetectorSpec objects")
+        register(*specs)
+    except Exception as exc:  # noqa: BLE001 - any failure of a pack skips it; the API still starts
+        _refused[ep.name] = {"name": ep.name, "version": version, "reason": str(exc)[:300]}
+        log.warning("detector pack %s refused: %s", ep.name, exc)
+        return False
+    _packs[ep.name] = {"name": ep.name, "version": version, "detectors": [s.id for s in specs]}
+    log.info("detector pack %s %s: %s", ep.name, version or "", ", ".join(s.id for s in specs))
+    return True
+
+
+def packs() -> dict:
+    """What `/healthz` lists: the packs loaded and refused, and the ids turned off."""
+    return {"packs": list(_packs.values()), "refused": list(_refused.values()), "off": sorted(_off)}
 
 
 def get(detector: str) -> DetectorSpec:
