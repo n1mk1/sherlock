@@ -341,9 +341,9 @@ def test_a_step_the_critic_rejects_is_skipped(monkeypatch, tmp_path):
                                                       "(State codes were re-cased)")
 
 
-def test_a_parse_that_matches_codes_own_is_flagged_when_the_critic_rejects_it(monkeypatch, tmp_path):
-    # PRD CLEAN-4e: the model's parse of amounts that each read one way gives the same result as code's own
-    # parse, so the critic's objection flags the step instead of skipping it.
+def test_a_vetoed_parse_falls_to_codes_own_which_is_flagged_when_rejected_too(monkeypatch, tmp_path):
+    # PRD CLEAN-4e: the critic rejects the model's parse of amounts that each read one way; code's own parse
+    # takes its place, and when the critic rejects that too the step is flagged, not skipped.
     entries = json.loads(FIXTURES.read_text(encoding="utf-8"))
     entries.insert(0, {"purpose": "critic", "match": ["Column: amount"],
                        "content": {"changed_something_it_shouldnt": True, "concerns": ["The column's type changed."]}})
@@ -360,7 +360,7 @@ def test_a_parse_that_matches_codes_own_is_flagged_when_the_critic_rejects_it(mo
         assert finished(client, job["id"])["status"] == "done"
         wait_status(client, ds["id"], "ready", "failed")
         report = client.get(f"{API}/datasets/{ds['id']}/report").json()
-    amount = next(s for s in report["steps"] if s["summary"] == "Parse money as numbers (amount)")
+    amount = next(s for s in report["steps"] if s["summary"] == "Parse numbers (amount)")
     assert amount["gate"] == "flag"
     assert amount["flag_reason"].startswith("the review objected, but code's own parse reads every value one way")
 

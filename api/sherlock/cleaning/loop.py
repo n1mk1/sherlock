@@ -137,9 +137,10 @@ def rule_candidate(issue: dict) -> Candidate | None:
 def code_fix(issue: dict) -> Candidate | None:
     """The code's own fix for another detector with a `spec.code_fix` (TRD §7.2, "Code fixes"): numbers
     stored as text are parsed with `parse_numbers` and the values it can't read are quarantined; a
-    near-duplicate's pairs are merged. It is tried when the model's proposal fails (a reply cut off at
-    its token cap), none of its candidates passes the checks or the best of them only sets rows aside,
-    and on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
+    near-duplicate's pairs are merged; spacing and case variants take the most common spelling. It is
+    tried when the model's proposal fails (a reply cut off at its token cap), none of its candidates
+    passes the checks or the best of them only sets rows aside, and in place of a fix the critic vetoed;
+    on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
     spec = registry.get(issue["detector"])
     if issue.get("user") or registry.setting(issue, "domain_rule") or spec.code_fix is None:
         return None
@@ -621,44 +622,54 @@ class Cleaner:
             shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)
             return self._skip(issue, f"Skipped: {apart} ({one} vs {other}: {shown})", "disagreement", candidates=chips)
 
-        # The best candidate on the full data, verified again; the gate uses the real blast.
-        self.ctx.check_cancel()
-        full_out = self.work / f"full_{uuid.uuid4().hex}.parquet"
-        r = sandbox.execute(self.settings, best.code, path, full_out, db=self.db,
-                            dataset_id=self.dataset["id"], job_id=self.ctx.id,
+        # Code's own fix may stand in for a vetoed one only where it isn't a guess: always for a fix
+        # without `code_fix_settles` (pairs, spellings), for a parse only when the values read one way.
+        code_stands_in = fallback is not None and (settles is None or code_settles)
+        while True:
+            # The best candidate on the full data, verified again; the gate uses the real blast.
+            self.ctx.check_cancel()
+            full_out = self.work / f"full_{uuid.uuid4().hex}.parquet"
+            r = sandbox.execute(self.settings, best.code, path, full_out, db=self.db,
+                                dataset_id=self.dataset["id"], job_id=self.ctx.id,
                                 should_stop=self._stop_requested)
-        if r.cancelled:
-            raise JobCancelled()
-        if not r.ok:
-            return self._skip(issue, f"Failed on the full data ({r.error})", "failed_checks", candidates=chips)
-        try:
-            after_full = self._restrict(before, self._read(full_out))
-        except ScopeError as exc:
-            return self._skip(issue, f"Not applied: {exc}", "failed_checks", candidates=chips)
-        full_report = verifiers.verify(before, after_full, detector, column, requested=requested, rules=self.rules)
-        if not full_report.passed:
-            return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", "failed_checks", candidates=chips,
-                              checks=full_report.hard)
-        if full_report.cells_changed == 0 and full_report.quarantined == 0:
-            return self._skip(issue, "The fix changed nothing", "failed_checks", candidates=chips)
-        try:
-            critique = self._critic(issue, best, before, after_full, full_report)
-            review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
-        except StructuredOutputError:
-            critique, review_ok = None, False
+            if r.cancelled:
+                raise JobCancelled()
+            if not r.ok:
+                return self._skip(issue, f"Failed on the full data ({r.error})", "failed_checks", candidates=chips)
+            try:
+                after_full = self._restrict(before, self._read(full_out))
+            except ScopeError as exc:
+                return self._skip(issue, f"Not applied: {exc}", "failed_checks", candidates=chips)
+            full_report = verifiers.verify(before, after_full, detector, column, requested=requested, rules=self.rules)
+            if not full_report.passed:
+                return self._skip(issue, f"Failed checks on the full data ({_first_failure(full_report)})", "failed_checks",
+                                  candidates=chips, checks=full_report.hard)
+            if full_report.cells_changed == 0 and full_report.quarantined == 0:
+                return self._skip(issue, "The fix changed nothing", "failed_checks", candidates=chips)
+            try:
+                critique = self._critic(issue, best, before, after_full, full_report)
+                review_ok = not critique.changed_something_it_shouldnt  # concerns alone don't count (gate.py)
+            except StructuredOutputError:
+                critique, review_ok = None, False
+            if (critique is not None and critique.changed_something_it_shouldnt and code_stands_in
+                    and best is not fallback and not (rule is not None and rule_only(full_report))):
+                # The review vetoed the model's fix: code's own fix gets one turn in its place (TRD §7.2).
+                code_i = self._score_code_fix(score, scored, chips, fallback)
+                if scored[code_i][1] > 0.0:
+                    chips[best_i]["chosen"], chips[code_i]["chosen"] = False, True
+                    best_i = code_i
+                    best, best_score, sample_report, _ = scored[best_i]
+                    compared = verifiers.compare(sample, results, best_i)
+                    continue
+            break
         overruled = False
         if critique is not None and critique.changed_something_it_shouldnt:
             # The critic's verdict skips the step (owner's decision, 2026-10-25): its 0.2 share of the
             # confidence couldn't stop a commit with a flag (Day 3 review H2). Concerns alone still don't.
             # A domain rule's fix that only quarantines the rows the rule names is flagged instead: the
-            # rule, not the model, says those values are impossible. So is a fix whose result on the sample
-            # is code's own parse of values that each read one way (CLEAN-4e): code says what each number is.
-            parse = False
-            if code_settles:
-                code_i = self._score_code_fix(score, scored, chips, fallback)
-                parse = scored[code_i][1] > 0.0 and (code_i == best_i or (
-                    scored[best_i][2].quarantined <= scored[code_i][2].quarantined  # sets no more rows aside
-                    and verifiers.compare(sample, [results[best_i], results[code_i]], 0).agreement == 1.0))
+            # rule, not the model, says those values are impossible. So is code's own parse of values that
+            # each read one way (CLEAN-4e): code, not the model, says what each number is.
+            parse = code_settles and best is fallback
             if not (rule is not None and rule_only(full_report)) and not parse:
                 said = next((c for c in critique.concerns if prose(c)), None)  # its first concern, as the flag shows it
                 return self._skip(issue, "Skipped: the review found it changed values it shouldn't have"

@@ -243,6 +243,44 @@ def test_near_duplicates_have_a_code_fix():
     assert code_fix({**issue, "details": {}}) is None
 
 
+def test_spacing_and_case_have_a_code_fix():
+    from sherlock.cleaning.helpers import normalize_whitespace_case
+
+    fix = code_fix({"detector": "whitespace_case", "column": "region"})
+    assert fix.label == "Trim and use the most common spelling"
+    df = pd.DataFrame({"_row_id": range(6), "_quarantine_reason": [None] * 6,
+                       "region": ["North", "North", " north", "NORTH ", "McAllen", "mcallen"]})
+    scope = {"df": df, "pd": pd, "normalize_whitespace_case": normalize_whitespace_case}
+    exec(fix.code, scope)
+    assert scope["result"]["region"].tolist() == ["North"] * 4 + ["McAllen", "McAllen"]  # no forced title case
+
+
+def test_codes_own_fix_takes_the_place_of_a_vetoed_one(monkeypatch, tmp_path):
+    # The critic rejects the model's merge of "Wst"; code's own merge of the same pairs takes its place,
+    # passes the review and commits (flagged, since both spellings are common).
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from sherlock.main import create_app
+    entries = json.loads(FIXTURES.read_text(encoding="utf-8"))
+    entries.insert(0, {"purpose": "critic", "match": ["Column: region", "Merge the listed pairs (region)"], "content": {
+        "changed_something_it_shouldnt": True, "concerns": ["The mapping was written by hand."]}})
+    fixture = tmp_path / "veto_then_code.json"
+    fixture.write_text(json.dumps(entries), encoding="utf-8")
+    monkeypatch.setenv("LLM_MOCK", str(fixture))
+    get_settings.cache_clear()
+    with TestClient(create_app()) as client:
+        ds, job = clean(client, REGIONS_CSV, "shops.csv")
+        report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+        rows = client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]
+    (step,) = report["steps"]
+    assert step["summary"] == "Merge the listed pairs (region)" and step["gate"] == "flag"
+    assert {r["cells"]["region"] for r in rows} == {"West", "East", "North"}
+    critics = db_rows("SELECT id FROM llm_calls WHERE job_id = ? AND purpose = 'critic'", job["id"])
+    assert len(critics) == 2  # the model's fix, vetoed, then code's own
+
+
 def test_a_merge_code_can_make_beats_setting_the_rows_aside(monkeypatch, tmp_path):
     # The model's only fix quarantines the "Wst" rows; code's own merge of the detector's pairs fixes the
     # same cells in place, so it is scored too and wins on the cells it touches.

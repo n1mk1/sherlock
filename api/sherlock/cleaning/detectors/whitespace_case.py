@@ -2,6 +2,7 @@
 
 from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
 from sherlock.cleaning.detectors.fixtures import clean_frame
+from sherlock.llm.schemas import Candidate
 
 TEXT_TYPES = ("category", "text", "id", "bool")
 
@@ -45,10 +46,22 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
     return out
 
 
+def spelling_candidate(issue: dict) -> Candidate | None:
+    """The code's own fix (PRD CLEAN-4e): trim, collapse inner spaces and give each value its most
+    frequent spelling (`normalize_whitespace_case`, mode "keep"). The column's own counts pick the
+    spelling, so it isn't a guess."""
+    column = issue.get("column")
+    if column is None:
+        return None
+    code = f"result = df.copy()\nresult[{column!r}] = normalize_whitespace_case(df[{column!r}], mode='keep')"
+    return Candidate(label="Trim and use the most common spelling", code=code,
+                     expected_effect="Each value loses stray spaces and takes its most frequent spelling.")
+
+
 SPEC = DetectorSpec(
     "whitespace_case", "spacing or case variants",
     "Stray spaces, and spellings of one value that differ only by case or spacing.",
     group="text", weight=0.4, default_level="splits", scope="column", detect=detect,
-    applies_to=frozenset(("category", "text", "id", "bool")),
+    applies_to=frozenset(("category", "text", "id", "bool")), code_fix=spelling_candidate,
     injectors={"case": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )
