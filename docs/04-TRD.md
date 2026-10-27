@@ -1211,7 +1211,7 @@ An undo step's `notebook_code` is only a comment, since the notebook applies the
      | `type_fix` | sentinels, numbers_as_text | still fixed on an ID column |
      | `domain_rule` | impossible_values | quarantined by its own fix, never guessed |
      | `vote` | ambiguous_dates | diagnosed three times |
-     | `code_fix(issue)` | impossible_values (the rule's quarantine), numbers_as_text (the parse) | a candidate code writes without the model |
+     | `code_fix(issue)` | impossible_values (the rule's quarantine), numbers_as_text (the parse), near_duplicate_categories (the pairs' merge) | a candidate code writes without the model |
      | `code_fix_settles(values)` | numbers_as_text (`reads_one_way`) | whether that candidate may settle a disagreement between the model's (§7.2) |
      | `runs_before` | sentinels: `("impossible_values",)` | goes just before those detectors' issues on its column |
      | `plan_extras(issue)` | ambiguous_dates | extra fields on its plan item |
@@ -1397,7 +1397,7 @@ for issue in queue(card.issues), user's steps first, while budget remains:
     leave_as_is → skip, unless requested, a domain rule, or numbers stored as text in a measure
     candidates = LLM(large, Candidates) [+ rule_candidate for a domain rule]
     for c in candidates: c.score = verify(sandbox.run(c.code, sample))   # 0 if any hard check fails
-    [+ code_fix, run and scored only when no candidate scores above 0]
+    [+ code_fix, run and scored only when no candidate scores above 0 or the best only sets rows aside]
     best = best_candidate(...)                          # a passing domain-rule quarantine always wins
     best.score == 0 → skip;  compare(...).disagreement > 1% → skip
     full = sandbox.run(best.code, full data); verify(full)   # fails or changes nothing → skip
@@ -1482,10 +1482,11 @@ Issues the user shaped are `requested`:
 - **Domain rules** (PRD CLEAN-4c; a `spec.domain_rule` detector: `impossible_values`). A value outside its column's plausible domain is quarantined, not kept and not replaced by a guess.
   - `loop.rule_candidate` is the spec's `code_fix` (`impossible_values.rule_candidate`), which builds the rule's own fix from the issue's `details` and adds it after the model's candidates, labelled "Quarantine impossible values". For example: `values = pd.to_numeric(df['customer_age'], errors='coerce')`, `bad = (values < 0) | (values > 120)`, `result = quarantine_rows(df, bad, 'impossible: customer_age')`. A date rule uses `pd.to_datetime` and the `earliest` and `after` dates.
   - When it passes the checks it is the chosen fix, whatever the model's candidates score: clipping an age of 999 to 120 is a guess. The model's candidates stay as alternatives and count in the agreement.
-- **Code fixes** (PRD CLEAN-4e; the `spec.code_fix` of a detector that isn't a domain rule: `numbers_as_text`). A fix the code can write without the model, so the issue doesn't depend on one long reply.
+- **Code fixes** (PRD CLEAN-4e; the `spec.code_fix` of a detector that isn't a domain rule: `numbers_as_text`, `near_duplicate_categories`). A fix the code can write without the model, so the issue doesn't depend on one long reply.
   - `loop.code_fix` builds it with the spec's `code_fix` (`numbers_as_text.parse_candidate`), labelled "Parse numbers": `parsed = parse_numbers(df['unit_price'])`, `result = df.copy()`, `result['unit_price'] = parsed`, `result = quarantine_rows(result, parse_failures(df['unit_price'], parsed), 'unparsed: unit_price')`. A minus sign, `(300)` and `300-` stay negative; a placeholder becomes missing, not a parse failure.
-  - It runs only when no model candidate scores above 0: the propose output was invalid or cut off, it gave no candidates, or none passed the hard checks. Then it is scored, chosen, run on the full data, reviewed and gated like any candidate, with the model's failed candidates kept as alternatives.
-  - When a model candidate passes and the passing candidates agree, the code fix isn't run, so it changes neither the choice nor the agreement.
+  - For near-duplicate categories, `near_duplicate_categories.merge_candidate`, labelled "Merge the listed pairs": each spelling of a rare value in `details.pairs` (case and outer spaces aside) maps to the most frequent spelling of its common neighbour, applied with `canonicalize_categories(df[col], mapping=…)`, which still refuses the merges its rules don't allow.
+  - It runs when no model candidate scores above 0 (the propose output was invalid or cut off, it gave no candidates, or none passed the hard checks), or when the best passing candidate changes no value and only quarantines rows (`loop.sets_aside_only`). Then it is scored with the others and the best is chosen as usual (`best_candidate`: score, then the fewest cells touched, so a repair beats setting the same rows aside), run on the full data, reviewed and gated like any candidate, with the model's candidates kept as alternatives.
+  - When the best model candidate changes values and the passing candidates agree, the code fix isn't run, so it changes neither the choice nor the agreement.
   - **Settling a disagreement.** When the model's passing candidates disagree (the output-agreement check would skip the step) and every value of the column on the sample reads one way (`spec.code_fix_settles`; for numbers: no value is digits, one separator and exactly three digits, such as "1,250", once currency, percent and spaces are gone: `numbers_as_text.reads_one_way`), the code fix is scored; when it passes the checks it is the fix and the step goes on. Code's parse of such values isn't a guess. Values that read two ways keep the skip (PRD CLEAN-4b).
 
 **5. Verify on the sample.**

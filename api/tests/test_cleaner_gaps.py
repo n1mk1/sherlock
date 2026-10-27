@@ -228,3 +228,43 @@ def test_wst_merges_into_west_as_a_flagged_step(client):
     assert step["gate"] == "flag" and step["flag_reason"].startswith("merges spellings that are both common")
     regions = {r["cells"]["region"] for r in client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]}
     assert regions == {"West", "East", "North"}
+
+
+def test_near_duplicates_have_a_code_fix():
+    issue = {"detector": "near_duplicate_categories", "column": "product",
+             "details": {"pairs": [["gzmo", "gizmo"], ["srocket", "sprocket"]]}}
+    fix = code_fix(issue)
+    assert fix.label == "Merge the listed pairs"
+    df = pd.DataFrame({"_row_id": range(8), "_quarantine_reason": [None] * 8,
+                       "product": ["Gizmo", "Gizmo", "Gzmo", "gzmo", "Sprocket", "Sprocket", "Srocket", None]})
+    scope = {"df": df, "pd": pd, "canonicalize_categories": canonicalize_categories}
+    exec(fix.code, scope)
+    assert scope["result"]["product"].tolist() == ["Gizmo"] * 4 + ["Sprocket"] * 3 + [None]
+    assert code_fix({**issue, "details": {}}) is None
+
+
+def test_a_merge_code_can_make_beats_setting_the_rows_aside(monkeypatch, tmp_path):
+    # The model's only fix quarantines the "Wst" rows; code's own merge of the detector's pairs fixes the
+    # same cells in place, so it is scored too and wins on the cells it touches.
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from sherlock.main import create_app
+    entries = [e for e in json.loads(FIXTURES.read_text(encoding="utf-8"))
+               if not (e["purpose"] == "propose" and "Column: region" in e["match"])]
+    entries.insert(0, {"purpose": "propose", "match": ["Column: region", "wst"], "content": {"candidates": [
+        {"label": "Set the rare spelling aside (region)",
+         "code": "result = quarantine_rows(df, df['region'] == 'Wst', 'typo: region')",
+         "expected_effect": "Quarantines the rows with the rare spelling."}]}})
+    fixture = tmp_path / "set_aside.json"
+    fixture.write_text(json.dumps(entries), encoding="utf-8")
+    monkeypatch.setenv("LLM_MOCK", str(fixture))
+    get_settings.cache_clear()
+    with TestClient(create_app()) as client:
+        ds, job = clean(client, REGIONS_CSV, "shops.csv")
+        report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+        rows = client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]
+    (step,) = report["steps"]
+    assert step["summary"] == "Merge the listed pairs (region)" and step["impact"]["quarantined"] == 0
+    assert {r["cells"]["region"] for r in rows} == {"West", "East", "North"}

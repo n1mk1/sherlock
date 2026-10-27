@@ -16,6 +16,7 @@ from rapidfuzz import fuzz
 from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
 from sherlock.cleaning.detectors.fixtures import clean_frame
 from sherlock.cleaning.helpers import _COMMON_SHARE, _merge_key, _merge_refusal
+from sherlock.llm.schemas import Candidate
 
 MAX_DISTINCT = 200
 MIN_LENGTH = 4
@@ -65,6 +66,28 @@ def detect(frame: Frame) -> list[Finding]:
     return findings
 
 
+def merge_candidate(issue: dict) -> Candidate | None:
+    """The code's own fix (PRD CLEAN-4e): each spelling of a rare value the detector paired joins the
+    most frequent spelling of its common neighbour, through `canonicalize_categories`, which still
+    refuses a merge its rules don't allow. The pairs come from code, so the merge isn't a guess."""
+    column = issue.get("column")
+    pairs = (issue.get("details") or {}).get("pairs") or []
+    if column is None or not pairs:
+        return None
+    to = {rare: common for rare, common in pairs}
+    code = (f"to = {to!r}\n"
+            f"values = df[{column!r}].dropna().astype(str)\n"
+            "spelling = {}\n"
+            "for v in values.value_counts().index:\n"
+            "    spelling.setdefault(v.strip().casefold(), v)\n"
+            "mapping = {v: spelling[to[v.strip().casefold()]] for v in values.unique()\n"
+            "           if v.strip().casefold() in to and to[v.strip().casefold()] in spelling}\n"
+            "result = df.copy()\n"
+            f"result[{column!r}] = canonicalize_categories(df[{column!r}], mapping=mapping)")
+    return Candidate(label="Merge the listed pairs", code=code,
+                     expected_effect="Each rare spelling becomes its common neighbour's usual spelling.")
+
+
 def damage(df, column: str, rows: list[int], rng) -> dict:
     """One inner letter dropped from each chosen value; a value under five characters is lowercased."""
     out = {}
@@ -81,6 +104,6 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 SPEC = DetectorSpec(
     "near_duplicate_categories", "near-duplicate categories", "Category values that differ by a typo.",
     group="text", weight=0.5, default_level="splits", scope="column", detect=detect,
-    applies_to=frozenset(("category", "text")),
+    applies_to=frozenset(("category", "text")), code_fix=merge_candidate,
     injectors={"typo": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

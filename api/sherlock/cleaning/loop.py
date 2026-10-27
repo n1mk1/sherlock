@@ -136,9 +136,10 @@ def rule_candidate(issue: dict) -> Candidate | None:
 
 def code_fix(issue: dict) -> Candidate | None:
     """The code's own fix for another detector with a `spec.code_fix` (TRD §7.2, "Code fixes"): numbers
-    stored as text are parsed with `parse_numbers` and the values it can't read are quarantined. It is
-    tried when the model's proposal fails (a reply cut off at its token cap) or none of its candidates
-    passes the checks, and on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
+    stored as text are parsed with `parse_numbers` and the values it can't read are quarantined; a
+    near-duplicate's pairs are merged. It is tried when the model's proposal fails (a reply cut off at
+    its token cap), none of its candidates passes the checks or the best of them only sets rows aside,
+    and on a measure column the diagnosis' "leave as is" doesn't end it. None for others."""
     spec = registry.get(issue["detector"])
     if issue.get("user") or registry.setting(issue, "domain_rule") or spec.code_fix is None:
         return None
@@ -583,10 +584,14 @@ class Cleaner:
 
         for cand in proposed:
             score(cand)
-        if fallback is not None and not any(s > 0.0 for _, s, *_ in scored):
-            score(fallback)  # the model gave no fix that passes (or none at all): the code's own parse
+        width = len([c for c in sample.columns if c not in verifiers.SYSTEM])
+        best_i = best_candidate(scored, width)
+        if fallback is not None and (best_i is None or scored[best_i][1] == 0.0 or sets_aside_only(scored[best_i][2])):
+            # The model gave no fix that passes (or none at all), or its best only sets rows aside: code's own
+            # fix, which repairs without guessing, is scored too and wins a tie on the cells it touches.
+            score(fallback)
+            best_i = best_candidate(scored, width)
         chips = [{"label": c.label, "chosen": False} for c, *_ in scored]
-        best_i = best_candidate(scored, len([c for c in sample.columns if c not in verifiers.SYSTEM]))
         settled = picked is not None and scored[-1][1] > 0.0  # the user's order (last) is the fix
         if (rule is not None or picked is not None) and scored[-1][1] > 0.0:  # code's own fix beats a guessed value
             best_i = len(scored) - 1
@@ -882,6 +887,11 @@ def _copy_rows(src: Path, dst: Path, row_ids: list[int] | None) -> None:
                      "(FORMAT PARQUET)")
     finally:
         conn.close()
+
+
+def sets_aside_only(report) -> bool:
+    """A passing fix that changes no value and only quarantines rows."""
+    return report is not None and report.cells_changed == 0 and report.quarantined > 0
 
 
 def best_candidate(scored: list[tuple], columns: int) -> int | None:
