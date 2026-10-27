@@ -90,7 +90,7 @@ function StatusScreen({ dataset }: { dataset: Dataset }) {
 function OfferOrPlan({ dataset }: { dataset: Dataset }) {
   const creating = useIsMutating({ mutationKey: ["create-plan", dataset.id] }) > 0;
   if (dataset.clean_plan_id || creating) return <CleanPlanPanel dataset={dataset} layout="centre" />;
-  return <CleaningOffer dataset={dataset} actions={<OfferActions dataset={dataset} />} />;
+  return <CleaningOffer dataset={dataset} actions={(depth) => <OfferActions dataset={dataset} depth={depth} />} />;
 }
 
 function chatPlaceholder(d: Dataset) {

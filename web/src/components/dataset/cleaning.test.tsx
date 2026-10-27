@@ -12,7 +12,7 @@ import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel, DateOrder } from "./CleanPlanPanel";
 import { callsLine, CleaningProgress, collapse, LogEntry, mergeLog, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
-import { summaryLines } from "./CleaningOffer";
+import { CleaningOffer, summaryLines } from "./CleaningOffer";
 import { OfferActions } from "./OfferActions";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -88,12 +88,14 @@ describe("cleaning screens", () => {
       "PUT /api/v1/me/settings": ME.settings,
       "GET /api/v1/datasets/ds_1": DS,
     });
-    renderAt(<OfferActions dataset={DS} />);
+    renderAt(<OfferActions dataset={DS} depth={2} />);
     fireEvent.click(screen.getByLabelText("Remember my choice"));
     fireEvent.click(screen.getByRole("button", { name: "Clean with AI" }));
     await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean/plan") && c.method === "POST")).toBe(true));
+    const made = sent(calls).find((c) => c.path.endsWith("/clean/plan"));
+    expect(made?.body).toEqual({ depth: 2 }); // the slider's depth (PRD CLEAN-15)
     const put = calls.mock.calls.find(([u]) => String((u as Request).url ?? u).includes("/me/settings"));
-    expect(await (put?.[0] as Request).json()).toEqual({ after_upload: "always" });
+    expect(await (put?.[0] as Request).json()).toEqual({ after_upload: "always", clean_depth: 2 });
     expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(false); // nothing is cleaned yet
     expect(screen.queryByRole("button", { name: "Go step by step" })).toBeNull();
     expect(screen.getByText("· You can change this in Settings")).toBeInTheDocument();
@@ -121,6 +123,28 @@ describe("cleaning screens", () => {
     expect(summaryLines(card).map((x) => x.id)).toEqual(["kept", "breaks", "skews"]);
     const old = { issues: [i("a", null, 0.1), i("b", null, 0.5)] } as never;  // a card from before levels
     expect(summaryLines(old).map((x) => x.id)).toEqual(["b", "a"]);
+  });
+
+  it("shows only the issues down to the depth the slider picks", async () => {
+    const issue = (id: string, detector: string, count: number) =>
+      ({ id, detector, column: "amount", count, severity: 0.5, proposal: "", examples: [], details: {} });
+    mockApi({
+      "GET /api/v1/me": ME,
+      "GET /api/v1/datasets/ds_1/datacard": { version: 2, row_count: 120, column_count: 4, quarantined: 0, columns: [],
+        issues: [issue("a", "sentinels", 3), issue("b", "duplicates", 4), issue("c", "cross_column", 5)] },
+    });
+    renderAt(<CleaningOffer dataset={DS} actions={(depth) => <span>picked {depth}</span>} />);
+    expect(await screen.findByText(/3 issues/)).toBeInTheDocument(); // the setting's depth: every layer
+    const slider = await screen.findByRole("slider", { name: "Cleaning depth" });
+    fireEvent.change(slider, { target: { value: "1" } });
+    expect(screen.getByText(/1 issue · 2 more in deeper layers/)).toBeInTheDocument();
+    expect(screen.getByText("3 placeholder values in amount")).toBeInTheDocument();
+    expect(screen.queryByText("4 duplicate rows in amount")).toBeNull();
+    expect(screen.getByText("picked 1")).toBeInTheDocument();
+    expect(screen.getByText(/Looks at single values: .*placeholder values/)).toBeInTheDocument();
+    fireEvent.change(slider, { target: { value: "3" } });
+    expect(screen.getByText(/2 issues · 1 more in deeper layers/)).toBeInTheDocument();
+    expect(slider).toHaveAttribute("aria-valuetext", "Layer 3 of 5: Records");
   });
 
   it("offers retry choices after a failed run", () => {
@@ -204,7 +228,7 @@ const item = (over: Partial<CleanPlanItem>): CleanPlanItem => ({
   ...over,
 });
 const PLAN: CleanPlan = {
-  id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null, created_at: "", updated_at: "",
+  id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null, depth: 5, created_at: "", updated_at: "",
   items: [
     item({ id: "pit_amount", key: "numbers_as_text|amount", detector: "numbers_as_text", column: "amount", count: 99, module: "types",
            examples: ["$980", "$2,000"], sev: "breaks", sev_source: "model", sev_reason: "Averages of the measure can't be read." }),

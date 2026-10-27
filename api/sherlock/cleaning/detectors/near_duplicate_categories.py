@@ -103,7 +103,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 
 SPEC = DetectorSpec(
     "near_duplicate_categories", "near-duplicate categories", "Category values that differ by a typo.",
-    group="text", weight=0.5, default_level="splits", scope="column", detect=detect,
+    group="text", weight=0.5, default_level="splits", scope="column", detect=detect, depth=3,
     applies_to=frozenset(("category", "text")), code_fix=merge_candidate,
     injectors={"typo": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

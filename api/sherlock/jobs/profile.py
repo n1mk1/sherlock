@@ -47,12 +47,13 @@ def _after_upload(ctx: JobContext, dataset: sqlite3.Row, card: dict) -> None:
     from sherlock.routers.me import effective_settings
 
     user = users.get(ctx.db, dataset["user_id"])
-    choice = effective_settings(user.settings if user else {}).after_upload
+    settings = effective_settings(user.settings if user else {})
+    choice = settings.after_upload
     if choice == "never":
         mark_ready(ctx.db, ctx.bus, dataset["id"])
         return
     if choice == "always" and plans.draft_id(ctx.db, dataset["id"]) is None:
-        row = plans.create(ctx.db, dataset, card, source="after_upload")
+        row = plans.create(ctx.db, dataset, card, source="after_upload", depth=settings.clean_depth)
         emit(ctx.db, ctx.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]}, ctx.id)
     ctx.set_dataset_status("offer")
 

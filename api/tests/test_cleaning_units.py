@@ -564,3 +564,23 @@ def test_one_value_written_two_ways_and_code_with_escaped_line_breaks():
     fine = "result = df.copy()\nresult['note'] = df['note'].str.replace('\n', ' ')"
     assert runnable(fine) == fine  # code that parses keeps its escapes
     assert runnable("result = (") == "result = ("  # still broken: left for the sandbox to refuse
+
+
+def test_a_plan_lists_only_the_layers_down_to_its_depth():
+    # PRD CLEAN-15: sentinels and missing are layer 1, outliers 2, duplicates 3, leakage 5.
+    from sherlock.cleaning import plan
+
+    card = card_with([("sentinels", "age", 4, 0.02), ("missing", "age", 263, 0.1), ("outliers", "fare", 40, 0.01),
+                      ("duplicates", None, 9, 0.2), ("leakage", "boat", 500, 0.4)])
+    assert {i["key"] for i in plan.diagnose(card, depth=1)} == {"sentinels|age", "missing|age"}
+    assert {i["key"] for i in plan.diagnose(card, depth=3)} == {"sentinels|age", "missing|age", "outliers|fare",
+                                                                "duplicates|None"}
+    assert len(plan.diagnose(card)) == 5  # every layer by default
+    # Going deeper keeps the user's ticks by key; going shallower drops the deeper layers' items.
+    shallow = plan.diagnose(card, depth=1)
+    shallow, _ = plan.apply_ops(shallow, [{"op": "untick", "item_id": next(i["id"] for i in shallow if i["key"] == "sentinels|age")}])
+    deep, _ = plan.merge(shallow, card, depth=3)
+    assert not next(i for i in deep if i["key"] == "sentinels|age")["ticked"]
+    assert next(i for i in deep if i["key"] == "duplicates|None")["ticked"]
+    back, _ = plan.merge(deep, card, depth=1)
+    assert {i["key"] for i in back} == {"sentinels|age", "missing|age"}

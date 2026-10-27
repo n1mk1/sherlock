@@ -67,7 +67,7 @@ def clean_fixture():
 SPEC = DetectorSpec(
     "functional_dependency", "rows breaking a dependency",
     "Rows that disagree with a value another column almost always determines.",
-    group="records", weight=0.5, default_level="check", scope="columns", detect=detect,
+    group="records", weight=0.5, default_level="check", scope="columns", detect=detect, depth=4,
     applies_to=frozenset(("category", "text", "bool", "int")),
     injectors={"broken": Injector(damage, share=0.03)}, clean_fixture=clean_fixture,
 )

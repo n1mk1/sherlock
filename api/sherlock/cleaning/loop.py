@@ -11,7 +11,8 @@ Leakage and ID-like columns are never changed: they are logged as skipped withou
 that breaks the column's domain rule (`spec.domain_rule`) is quarantined by the rule's own fix.
 What the run knows about a detector comes from its spec (`registry`, PRD CLEAN-12).
 A run started from a cleaning plan (`params.plan`, PRD CLEAN-8a) skips the fixes the plan leaves
-unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted.
+unticked the same way, "not in your plan"; issues the plan doesn't list (found mid-run) are attempted,
+unless they are deeper than the plan's depth (PRD CLEAN-15): those are skipped as "deeper than your scan".
 The user's own steps (CLEAN-8b) run first, then the issues; a step the user asked for, or a fix they
 rewrote, carries their instruction into the prompts, isn't ended by the diagnosis' "leave as is", and
 at low confidence commits with a flag instead of being skipped. Hard checks still skip it.
@@ -38,7 +39,7 @@ import pandas as pd
 
 from sherlock.cleaning import gate, levels, prompts, registry, verifiers
 from sherlock.cleaning.plan import (
-    DATE_ORDERS, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
+    DATE_ORDERS, DEPTH, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
 )
 from sherlock.cleaning.helpers import __all__ as HELPER_NAMES
 from sherlock.cleaning.helpers import keep_outside_scope
@@ -57,6 +58,7 @@ from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
 NOT_IN_PLAN = "You left this out of the plan"
+TOO_DEEP = "Deeper than the cleaning depth you chose"
 # Why an issue was skipped (Schema §2.8 `issues.skip_kind`), and the report line each lands on (PRD CLEAN-6).
 SKIP_KINDS = {
     "kept_by_design": "kept_by_design",                                                # marked, not changed
@@ -275,6 +277,7 @@ class Cleaner:
                               max_seconds=self.settings.clean_max_seconds)
         plan = self.params.get("plan") or {}
         self.state.plan_id = plan.get("id")
+        self.depth: int = plan.get("depth") or DEPTH  # the deepest layer the run attempts (PRD CLEAN-15)
         run = run_params(plan.get("items") or [])
         self.skip_keys = set(run["skip_keys"])
         self.instructions: dict[str, str] = run["instructions"]  # rewritten fixes, by issue key
@@ -432,7 +435,7 @@ class Cleaner:
     def _attemptable(self, issue: dict, card: dict) -> bool:
         """Whether `_next_issue` would attempt the issue rather than skip it with no model call."""
         k = key(issue)
-        return (never_change(issue, card) is None and k not in self.skip_keys
+        return (never_change(issue, card) is None and k not in self.skip_keys and registry.within(issue, self.depth)
                 and not (needs_order(issue) and k not in self.date_orders and k not in self.instructions))
 
     def _planned(self) -> int:
@@ -450,6 +453,10 @@ class Cleaner:
         card = self._card()
         for issue in queue(card["issues"], card, self.levels):
             if key(issue) in self.state.handled:
+                continue
+            if not registry.within(issue, self.depth):  # a layer the user didn't ask for: no model call
+                self.state.handled.append(key(issue))
+                self._skip(issue, TOO_DEEP, "unticked", log_text="deeper than your scan")
                 continue
             # Columns that record the outcome or identify rows are marked, never changed, whatever the issue.
             kept = never_change(issue, card)

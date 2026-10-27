@@ -71,7 +71,7 @@ describe("the dataset stream", () => {
 describe("the cleaning plan on a new version", () => {
   it("says which version Sherlock checked while the data is newer", async () => {
     const plan: CleanPlan = {
-      id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null,
+      id: "pln_1", dataset_id: "ds_1", version: 2, status: "draft", source: "user", job_id: null, scope: null, depth: 5,
       created_at: "", updated_at: "", items: [],
     };
     mockApi({ "GET /api/v1/clean-plans/pln_1": plan });

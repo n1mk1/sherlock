@@ -18,7 +18,7 @@ from dataclasses import replace
 from importlib import metadata
 
 from sherlock.cleaning.detectors import BUILTINS
-from sherlock.cleaning.detectors.base import GROUPS, LEVELS, SCOPES, DetectorSpec, Finding, Frame
+from sherlock.cleaning.detectors.base import GROUPS, LAYERS, LEVELS, SCOPES, DetectorSpec, Finding, Frame
 from sherlock.cleaning.rules.interpreter import SPEC as RULE
 
 ID = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -33,7 +33,7 @@ log = logging.getLogger("sherlock.detectors")
 
 class RegistryError(ValueError):
     """A spec the registry refuses: a duplicate id, an unknown group, level or scope, a weight outside
-    0–1, or a `runs_before` that names an unknown id or makes a cycle."""
+    0–1, a depth outside 1–5, or a `runs_before` that names an unknown id or makes a cycle."""
 
 
 def register(*specs: DetectorSpec) -> None:
@@ -54,6 +54,8 @@ def register(*specs: DetectorSpec) -> None:
             raise RegistryError(f"{s.id}: unknown scope {s.scope!r}; use one of {', '.join(SCOPES)}.")
         if not 0 <= s.weight <= 1:
             raise RegistryError(f"{s.id}: weight {s.weight} is outside 0–1.")
+        if s.depth not in range(1, len(LAYERS) + 1):
+            raise RegistryError(f"{s.id}: depth {s.depth} is outside 1–{len(LAYERS)}.")
         if not s.label.strip() or not s.description.strip():
             raise RegistryError(f"{s.id}: a label and a description are required.")
         batch[s.id] = s
@@ -162,9 +164,14 @@ def severity(finding: Finding, rows: int) -> float:
 
 def setting(issue: dict, name: str):
     """A behaviour of an issue: its finding's own (`details`, a rule's action) or else its spec's
-    (`domain_rule`, `never_change`, `default_level`)."""
+    (`domain_rule`, `never_change`, `default_level`, `depth`)."""
     own = (issue.get("details") or {}).get(name)
     return own if own is not None else getattr(get(issue["detector"]), name)
+
+
+def within(issue: dict, depth: int) -> bool:
+    """Whether a scan at `depth` (1–5, PRD CLEAN-15) looks for the issue: its layer is at most that deep."""
+    return setting(issue, "depth") <= depth
 
 
 def run_all(frame: Frame) -> list[tuple[Finding, float]]:
@@ -181,7 +188,7 @@ def run_all(frame: Frame) -> list[tuple[Finding, float]]:
 def catalog() -> list[dict]:
     """`GET /detectors` (TRD §4.4): what each registered check is, in run order."""
     return [{"id": s.id, "label": s.label, "description": s.description, "group": s.group,
-             "default_level": s.default_level, "source": s.source} for s in _specs.values()]
+             "default_level": s.default_level, "depth": s.depth, "source": s.source} for s in _specs.values()]
 
 
 register(*BUILTINS, RULE)

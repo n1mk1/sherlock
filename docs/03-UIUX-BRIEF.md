@@ -394,6 +394,7 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
 - A single `--card` panel, max 640px, 8vh from the top, radius 16.
 - Display title "Here's what I found in titanic3.csv", then a muted line of rows · columns · issues.
 - The three most severe issues as lines with icons (missing: dashed circle; leakage: `--warning` flag; others: alert triangle). No issue table: the cleaning plan (§5.3a) lists every issue (owner's decision, App Flow §4).
+- **Cleaning depth** (PRD CLEAN-15, `DepthSlider`), 24px above the buttons: the label "Cleaning depth" (14px/500) with "Layer n of 5 · <name>" right-aligned (13px muted); a native range input, full width, `--accent`, steps 1–5, its accessible value "Layer n of 5: <name>"; the five layer names under it (12px, the ones at or above the depth in `--foreground`, the rest muted); and a 13px muted line "Looks at <what the layer looks at>: <the labels of the checks it adds>." The muted counts line ends "· n more in deeper layers" when there are some.
 - Two buttons in a row: Clean with AI (primary), which opens the cleaning plan, and Clean it myself (secondary), which makes the dataset ready as it is and opens the CSV grid. After a failed run they read Try cleaning again and Use as is, under a 13px `--destructive` line with the error ("… Your data is safe; you can use it as is or try again.").
 - A "Remember my choice" checkbox with the muted hint "· You can change this in Settings" (label size).
 - Go step by step (P1) is the plan's Mode row (§5.3a).
@@ -513,11 +514,12 @@ Removed by cut 12.
 
 `shell/SettingsDialog.tsx`, 580px.
 - Title "Settings" (display serif 32px) and ×.
-- With cut 1, four settings in one column, each a label (13px/600), a segmented control (§4.12) and a help line (13px muted):
+- With cut 1, four settings in one column, plus Cleaning depth, each a label (13px/600), a segmented control (§4.12) and a help line (13px muted):
   - **Mode**: Light · Dark · System.
   - **Accent**: each with a dot in its color for the active mode.
   - **Chat bar**: Pinned · Auto-hide · Hidden. Auto-hide fades the bar out until it's pointed at or focused; Hidden removes it.
   - **After upload**: Ask me · Open the cleaning plan · I'll clean it myself (owner's decision; stored as `ask|always|never`), help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
+  - **Cleaning depth**: 1 · Surface · 2 · Columns · 3 · Records · 4 · Relationships · 5 · Meaning, help "How deep a new cleaning plan looks. Each layer adds checks on a wider part of the data."
 - Footer: "Saved to your Sherlock profile" (muted) and Done (primary).
 - Opens from the library panel's gear, or `?settings=1` in the URL. `&field=after_upload` scrolls to that field and outlines it in `--accent` (radius 14); the "Change" link on the plan screen uses it.
 - When cut 1 is lifted, the other two settings return (`cleaning_mode`, `reduce_motion`; `GET /me` stores all six). Default tab, Story updates and Spotlight are removed by cuts 10 and 11.

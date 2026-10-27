@@ -76,7 +76,7 @@ def clean_fixture():
 
 SPEC = DetectorSpec(
     "ambiguous_dates", "ambiguous dates", "Dates that could be read day-first or month-first.",
-    group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
+    group="types", weight=0.6, default_level="skews", scope="column", detect=detect, depth=2,
     applies_to=frozenset(("category", "text", "id")),
     vote=True, plan_extras=plan_extras,
     injectors={"dmy_text": Injector(written("%d/%m/%Y"), share=1.0),

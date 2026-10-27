@@ -16,6 +16,7 @@ from sherlock.cleaning.rules.kinds import RuleError
 from sherlock.db.connection import get_db
 from sherlock.errors import ApiError, not_found
 from sherlock.db import datasets as datasets_repo
+from sherlock.db import users
 from sherlock.jobs.clean import mark_ready
 from sherlock.jobs.events import emit
 from sherlock.jobs.runner import to_job
@@ -23,6 +24,7 @@ from sherlock.ownership import Owned, owned, owned_dataset
 from sherlock.profile import service as profile_service
 from sherlock.ratelimit import llm_rate_limit
 from sherlock.routers.datasets import Dataset, to_dataset
+from sherlock.routers.me import effective_settings
 from sherlock.routers.rules import RuleIn
 from sherlock.query import context as qx
 
@@ -49,6 +51,7 @@ class CleanRequest(BaseModel):
 class PlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scope: CleanScope | None = None  # the rows the plan is for: the new-rows toast, chat's clean_selection
+    depth: Literal[1, 2, 3, 4, 5] | None = None  # the layers it lists (PRD CLEAN-15); null: the user's setting
 
 
 class PlanOp(BaseModel):
@@ -76,6 +79,7 @@ class Detector(BaseModel):
     description: str
     group: str
     default_level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None
+    depth: int  # its layer, 1–5 (PRD CLEAN-15)
     source: str  # "builtin"
 
 
@@ -130,7 +134,7 @@ def start_clean(
         items = json.loads(row["items_json"])
         if not plans.ticked(items):
             raise ApiError(422, "invalid", "Nothing in the plan is ticked, so there's nothing to clean.")
-        params["plan"] = {"id": row["id"], "version": row["version"], "items": items}
+        params["plan"] = {"id": row["id"], "version": row["version"], "items": items, "depth": row["depth"]}
     job = request.app.state.jobs.enqueue(db, dataset["user_id"], dataset["id"], "clean", params)
     if row is not None:
         plans.set_status(db, row["id"], "started", job["id"])
@@ -171,9 +175,11 @@ def plan_scope(env: qx.Env, dataset: sqlite3.Row, scope: CleanScope | None) -> d
     return {"kind": "new_rows", "selection_id": None, "row_ids": row_ids, "rows": len(row_ids) if row_ids else None}
 
 
-def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanScope | None = None) -> tuple[dict, bool]:
-    """Get or create the dataset's draft plan on the current version (PRD CLEAN-8a), with `scope` when
-    given. Returns the `CleanPlan` and whether it was made now. Nothing is cleaned until Start."""
+def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanScope | None = None,
+              depth: int | None = None) -> tuple[dict, bool]:
+    """Get or create the dataset's draft plan on the current version (PRD CLEAN-8a), with `scope` and
+    `depth` when given. A new plan without a depth takes the user's Cleaning depth setting (PRD CLEAN-15).
+    Returns the `CleanPlan` and whether it was made now. Nothing is cleaned until Start."""
     if dataset["status"] not in PLANNABLE:
         raise ApiError(409, "conflict", f"This CSV is {dataset['status']}; a cleaning plan can be made once that finishes.")
     stored = plan_scope(qx.Env(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, scope)
@@ -183,7 +189,12 @@ def open_plan(app, db: sqlite3.Connection, dataset: sqlite3.Row, scope: CleanSco
         row, notes = plans.current(db, plans.get(db, existing), dataset, card)
         changed = bool(notes)
     else:
-        row, notes, changed = plans.create(db, dataset, card(dataset)), [], True
+        if depth is None:
+            user = users.get(db, dataset["user_id"])
+            depth = effective_settings(user.settings if user else {}).clean_depth
+        row, notes, changed = plans.create(db, dataset, card(dataset), depth=depth), [], True
+    if depth is not None and depth != row["depth"]:
+        row, changed = plans.set_depth(db, row, card(dataset), depth), True
     if scope is not None:
         row, changed = plans.set_scope(db, row["id"], stored), True
     if changed:
@@ -209,8 +220,9 @@ def create_plan(
 ) -> dict:
     """Get or create the draft plan for the current version (merged onto it when it's older).
     Answers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's "Clean
-    them"), the plan is for those rows; without it, a draft keeps the scope it has."""
-    plan, created = open_plan(request.app, db, dataset, body.scope if body else None)
+    them"), the plan is for those rows; without it, a draft keeps the scope it has. With `depth` (the
+    offer's slider), it lists the layers up to that depth; without it, a draft keeps its depth."""
+    plan, created = open_plan(request.app, db, dataset, body.scope if body else None, body.depth if body else None)
     if not created:
         response.status_code = status.HTTP_200_OK
     return plan

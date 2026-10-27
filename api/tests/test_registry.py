@@ -44,6 +44,8 @@ def test_a_new_spec_registers_and_is_found():
     (spec(scope="table"), "unknown scope"),
     (spec(weight=1.2), "outside 0–1"),
     (spec(weight=-0.1), "outside 0–1"),
+    (spec(depth=0), "depth 0 is outside 1–5"),
+    (spec(depth=6), "depth 6 is outside 1–5"),
     (spec(label=" "), "label and a description"),
     (spec(runs_before=("no_such_check",)), "unknown detector"),
 ])
@@ -87,7 +89,7 @@ def test_get_detectors_lists_the_sixteen_and_the_rule_detector(client):
     by_id = {d["id"]: d for d in found}
     assert by_id["sentinels"] == {"id": "sentinels", "label": "placeholder values",
                                   "description": registry.get("sentinels").description, "group": "missing",
-                                  "default_level": "skews", "source": "builtin"}
+                                  "default_level": "skews", "depth": 1, "source": "builtin"}
     assert by_id["leakage"]["default_level"] is None  # never changed, so not rated
 
 
@@ -100,3 +102,20 @@ def test_a_refused_built_in_stops_the_api_from_starting(monkeypatch):
     with pytest.raises(RegistryError, match="outside 0–1"):
         registry.register(*BUILTINS, spec(id="broken_built_in", weight=7.0))
     assert registry.all() == []  # all or nothing: nothing half-registered
+
+
+def test_each_layer_holds_the_checks_that_look_that_wide():
+    # PRD CLEAN-15: single values, each column, rows against rows, columns against columns, the dataset.
+    layers = {n: sorted(s.id for s in BUILTINS if s.depth == n) for n in range(1, 6)}
+    assert layers == {
+        1: ["missing", "mojibake", "numbers_as_text", "sentinels", "whitespace_case"],
+        2: ["ambiguous_dates", "id_candidates", "impossible_values", "mixed_types", "outliers", "unit_mixes"],
+        3: ["duplicates", "near_duplicate_categories"],
+        4: ["cross_column", "functional_dependency"],
+        5: ["leakage"],
+    }
+    assert registry.get("rule").depth == 1  # your checks run at every depth
+    # A finding's own depth wins over its spec's, as its other settings do.
+    assert registry.within({"detector": "leakage", "details": {}}, 4) is False
+    assert registry.within({"detector": "leakage", "details": {"depth": 2}}, 4) is True
+    assert registry.within({"detector": "sentinels", "details": {}}, 1) is True

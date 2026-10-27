@@ -26,7 +26,7 @@ def damage(df, column, rows, rng) -> dict:
 
 SPEC = DetectorSpec(
     "my_check", "plain words for a finding", "One sentence on what it finds.",
-    group="text", weight=0.5, default_level="splits", scope="column", detect=detect,
+    group="text", weight=0.5, default_level="splits", scope="column", detect=detect, depth=1,
     injectors={"my_damage": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )
 ```
@@ -34,6 +34,7 @@ SPEC = DetectorSpec(
 - **`id`** is stored on every issue row; never rename it. Bump `version` when what the detector finds changes, so stored severity reviews of the old findings are dropped.
 - **`label`** reads in "263 <label>" and "<label> in <column>". **`group`** is the plan module: `types`, `missing`, `text`, `records`, `outliers` or `other`.
 - **`weight`** (0–1) orders findings by size within a level. **`default_level`** is what the finding does to an analysis before any review: `breaks`, `skews`, `splits`, `check` (probably real, worth a look) or `cosmetic`. Code raises it on the target or a measure and lowers it on free text (§7.2).
+- **`depth`** (1–5, PRD CLEAN-15) is the layer it belongs to, by how wide a part of the data it reads: 1 single values, 2 each column as a whole, 3 rows against rows, 4 columns against columns, 5 the dataset as a whole. The offer's Cleaning depth slider shows and plans the layers up to the one picked. Left out, it is 1.
 - **Behaviour fields** say how the Cleaner treats the issues, instead of special cases in its code: `never_change` (with `skip_text`), `type_fix`, `domain_rule`, `vote`, `code_fix`, `runs_before`, `plan_extras`, `marks_column`.
 - **Generic only** (Rule 4): word lists and placeholders, never a sample file's column names. `tests/test_prompt_hygiene.py` checks the strings.
 
@@ -57,4 +58,4 @@ A pack is a Python package that exports a sequence of specs through the entry po
 example = "sherlock_example.detectors:SPECS"
 ```
 
-Packs run in the API process with its permissions, so only the operator installs them, and none load unless `DETECTOR_PLUGINS` is `all` or names the pack. A pack whose specs the registry refuses (a repeated id, an unknown group or level, a weight outside 0–1, a `runs_before` cycle) is skipped, logged, and listed as refused in `/healthz`; the API still starts. `DETECTORS_OFF` turns any detector off without a deploy; its old issues still display.
+Packs run in the API process with its permissions, so only the operator installs them, and none load unless `DETECTOR_PLUGINS` is `all` or names the pack. A pack whose specs the registry refuses (a repeated id, an unknown group or level, a weight outside 0–1, a depth outside 1–5, a `runs_before` cycle) is skipped, logged, and listed as refused in `/healthz`; the API still starts. `DETECTORS_OFF` turns any detector off without a deploy; its old issues still display.

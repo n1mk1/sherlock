@@ -1,20 +1,20 @@
 // The offer's choices (App Flow §4): Clean with AI opens the cleaning plan, where nothing changes until
 // Start; Clean it myself makes the dataset ready as it is and opens the grid, to edit by hand or ask the
-// chat. "Remember my choice" writes the After upload setting.
+// chat. "Remember my choice" writes the After upload setting, and with Clean with AI the Cleaning depth.
 import { useState } from "react";
 import { toast } from "sonner";
 import { useCreatePlan, useSaveSettings, useUseAsIs } from "@/api/queries";
-import type { Dataset } from "@/api/types";
+import type { Dataset, Depth } from "@/api/types";
 import { Button } from "@/components/ui/button";
 
-export function OfferActions({ dataset }: { dataset: Dataset }) {
+export function OfferActions({ dataset, depth = 5 }: { dataset: Dataset; depth?: Depth }) {
   const plan = useCreatePlan(dataset.id);
   const asIs = useUseAsIs(dataset.id);
   const save = useSaveSettings();
   const [remember, setRemember] = useState(false);
   const fail = (err: unknown) => toast.error((err as Error).message);
   const go = (choice: "always" | "never", run: () => void) => {
-    if (remember) save.mutate({ after_upload: choice });
+    if (remember) save.mutate(choice === "always" ? { after_upload: choice, clean_depth: depth } : { after_upload: choice });
     run();
   };
   // After a failed run the labels say what each choice means now (App Flow §5).
@@ -28,7 +28,7 @@ export function OfferActions({ dataset }: { dataset: Dataset }) {
       )}
       <div className="flex flex-wrap gap-2">
         <Button variant="primary" loading={plan.isPending} disabled={asIs.isPending}
-          onClick={() => go("always", () => plan.mutate(undefined, { onError: fail }))}>
+          onClick={() => go("always", () => plan.mutate({ depth }, { onError: fail }))}>
           {failed ? "Try cleaning again" : "Clean with AI"}
         </Button>
         <Button loading={asIs.isPending} disabled={plan.isPending}

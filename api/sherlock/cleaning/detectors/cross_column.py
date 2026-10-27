@@ -75,7 +75,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 
 SPEC = DetectorSpec(
     "cross_column", "values out of order", "Rows where a later value, such as an end, is before its earlier one.",
-    group="records", weight=0.6, default_level="skews", scope="columns", detect=detect,
+    group="records", weight=0.6, default_level="skews", scope="columns", detect=detect, depth=4,
     applies_to=frozenset(("int", "float", "date", "datetime")),
     injectors={"order": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "end_date"),
 )

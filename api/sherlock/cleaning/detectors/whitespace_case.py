@@ -61,7 +61,7 @@ def spelling_candidate(issue: dict) -> Candidate | None:
 SPEC = DetectorSpec(
     "whitespace_case", "spacing or case variants",
     "Stray spaces, and spellings of one value that differ only by case or spacing.",
-    group="text", weight=0.4, default_level="splits", scope="column", detect=detect,
+    group="text", weight=0.4, default_level="splits", scope="column", detect=detect, depth=1,
     applies_to=frozenset(("category", "text", "id", "bool")), code_fix=spelling_candidate,
     injectors={"case": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

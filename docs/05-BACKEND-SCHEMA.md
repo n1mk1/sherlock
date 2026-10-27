@@ -31,6 +31,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
   | `011_review_fingerprint.sql` | `issue_reviews.fingerprint` and `issue_reviews_fingerprint` (§2.24) |
   | `012_rules_for_every_dataset.sql` | `detector_rules` rebuilt: `dataset_id` nullable, `user_id` references `users`; `detector_rules_user` (§2.25) |
   | `013_drop_surfaces.sql` | Removes (cuts 10–12): drops `widgets`, `layouts`, `widget_cache` (§2.9), `relations` (§2.10), `cards` (§2.11) and `canvases` (§2.12); deletes the `fact_sheets` rows of widgets and cards, then drops `fact_sheets.widget_id` (with `fact_sheets_widget`) and `runs.widget_id`; sets datasets in `building` to `ready` and `last_tab` `dashboard` or `flow` to `csv`; cancels queued or running `build_dashboard`, `stories` and `cascade` jobs |
+  | `014_plan_depth.sql` | `clean_plans.depth` (§2.21) |
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them, and leave out dropped columns.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
@@ -555,7 +556,8 @@ CREATE TABLE clean_plans (
   job_id     TEXT,                             -- the clean job a started plan ran as
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  scope_json TEXT                              -- {kind: selection|new_rows, selection_id, row_ids, rows}; NULL = the whole dataset (003)
+  scope_json TEXT,                             -- {kind: selection|new_rows, selection_id, row_ids, rows}; NULL = the whole dataset (003)
+  depth      INTEGER NOT NULL DEFAULT 5        -- 1–5: the deepest detector layer it lists (PRD CLEAN-15) (014)
 );
 CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE status = 'draft';
 ```
@@ -565,6 +567,7 @@ CREATE UNIQUE INDEX clean_plans_one_draft ON clean_plans(dataset_id) WHERE statu
 - **`version`** moves when a draft is merged onto a newer version before it's shown or started (`cleaning/plan.py` `merge`): ticks and instructions are kept by issue key, and the user's steps while their column exists.
 - **`items_json`** holds Sherlock's fixes (`source: "sherlock"`, each with its rewritten `instruction`) and the user's own steps (PRD CLEAN-8b: `detector: "user_request"`, `key: null`, `source: "you"|"chat"`). The clean job's `state_json.plan_outcomes` records each item's outcome (§2.14).
 - **`scope_json`** is the rows a plan was opened for, so a reload can't widen it to the whole file: `new_rows` with the saved rows' IDs (from the new-rows toast's "Clean them"), or `selection` with the selection's ID (from approving chat's `clean_selection`, PRD CLEAN-1). `rows` is the count the panel shows. `POST …/clean/plan` with a scope replaces it, a whole-dataset scope clears it, and no scope leaves it. The job's own scope comes from `POST /clean`, which the panel sends from the scope the user leaves picked.
+- **`depth`** is the deepest detector layer the plan lists (PRD CLEAN-15, `DetectorSpec.depth`): only the issues of detectors at that depth or shallower are items, and the job attempts nothing deeper. A new plan takes it from the request or else the user's `clean_depth` setting; `POST …/clean/plan` with another depth lists the draft again at it (`plan.set_depth`), keeping ticks and instructions by key. Plans made before 014 have 5, every layer.
 - **`source`** is `after_upload` when the profile job made the draft because After upload is "Open the cleaning plan"; the plan screen then says why it opened.
 - Deleted with the dataset by the foreign key cascade (§6).
 

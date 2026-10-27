@@ -195,7 +195,8 @@ export interface paths {
          * Create Plan
          * @description Get or create the draft plan for the current version (merged onto it when it's older).
          *     Answers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's "Clean
-         *     them"), the plan is for those rows; without it, a draft keeps the scope it has.
+         *     them"), the plan is for those rows; without it, a draft keeps the scope it has. With `depth` (the
+         *     offer's slider), it lists the layers up to that depth; without it, a draft keeps its depth.
          */
         post: operations["create_plan_api_v1_datasets__dataset_id__clean_plan_post"];
         delete?: never;
@@ -1263,6 +1264,8 @@ export interface components {
         Detector: {
             /** Default Level */
             default_level: ("breaks" | "skews" | "splits" | "check" | "cosmetic") | null;
+            /** Depth */
+            depth: number;
             /** Description */
             description: string;
             /** Group */
@@ -1405,6 +1408,8 @@ export interface components {
         };
         /** PlanRequest */
         PlanRequest: {
+            /** Depth */
+            depth?: (1 | 2 | 3 | 4 | 5) | null;
             scope?: components["schemas"]["CleanScope"] | null;
         };
         /** Receipt */
@@ -1476,6 +1481,12 @@ export interface components {
              * @enum {string}
              */
             chatbar: "pinned" | "autohide" | "hidden";
+            /**
+             * Clean Depth
+             * @default 5
+             * @enum {integer}
+             */
+            clean_depth: 1 | 2 | 3 | 4 | 5;
             /**
              * Cleaning Mode
              * @default auto

@@ -13,6 +13,7 @@ ambiguous-dates item carries up to three of its values read both ways (`both_way
 the user picks (`date_order`: "dmy", "mdy" or null); a column every date of which reads
 both ways is cleaned only with an order (`needs_order`).
 A plan made on an older version is merged onto the current one (`merge`) before it's shown or started.
+A plan has a depth (PRD CLEAN-15): it lists only the issues of detectors in the layers up to it.
 Plans are stored in `clean_plans` (Schema §2.21), at most one draft per dataset.
 """
 
@@ -36,6 +37,7 @@ MODULES = {
 USER_DETECTOR = "user_request"
 MAX_INSTRUCTION = 500
 MAX_EXAMPLES = 5
+DEPTH = 5  # every layer
 OPS = ("tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction",
        "set_date_order", "add", "remove")  # and add_rule, which `rules.service.apply` handles
 DATE_ORDERS = {"dmy": "day-first (dd/mm/yyyy)", "mdy": "month-first (mm/dd/yyyy)"}
@@ -151,19 +153,22 @@ def _reviews(db: sqlite3.Connection, dataset_id: str, version: int) -> dict[str,
     return review.stored(db, dataset_id, version) or {}
 
 
-def diagnose(card: dict, reviews: dict[str, dict] | None = None) -> list[dict]:
+def diagnose(card: dict, reviews: dict[str, dict] | None = None, depth: int = DEPTH) -> list[dict]:
     """The plan's items for a DataCard in module order, most severe first within a module, with the
     version's review (`reviews` by key) where it has one; every changeable fix ticked but those worth a
-    look."""
+    look. Only the issues a scan at `depth` looks for (`registry.within`) are listed."""
     items: dict[str, dict] = {}
     reviews = reviews or {}
     for issue in sorted(card["issues"], key=lambda i: -i["severity"]):
+        if not registry.within(issue, depth):
+            continue
         if key(issue) not in items:  # a shared key: the most severe finding is the one attempted
             items[key(issue)] = _item(issue, card, rating=reviews.get(key(issue)))
     return _ordered(list(items.values()))
 
 
-def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None) -> tuple[list[dict], list[str]]:
+def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None,
+          depth: int = DEPTH) -> tuple[list[dict], list[str]]:
     """A plan carried onto a newer version: ticks and instructions kept by key, keys that went away
     dropped, new keys ticked; the user's steps kept while their column exists. Returns the items and
     what changed, in code-written sentences."""
@@ -177,7 +182,7 @@ def merge(old: list[dict], card: dict, reviews: dict[str, dict] | None = None) -
             items.append(i)
         else:
             notes.append(f"Dropped your step on {i['column']}: the column is no longer in the file.")
-    fresh = diagnose(card, reviews)
+    fresh = diagnose(card, reviews, depth)
     added = 0
     for item in fresh:
         before = by_key.get(item["key"])
@@ -372,7 +377,7 @@ def to_plan(row: sqlite3.Row, notes: list[str] | None = None, review: str | None
     """The TRD §4.4 `CleanPlan`; `review` is the version's review status (`review.status`)."""
     out = {"id": row["id"], "dataset_id": row["dataset_id"], "version": row["version"], "status": row["status"],
            "source": row["source"], "job_id": row["job_id"], "items": json.loads(row["items_json"]),
-           "scope": json.loads(row["scope_json"]) if row["scope_json"] else None,
+           "scope": json.loads(row["scope_json"]) if row["scope_json"] else None, "depth": row["depth"],
            "created_at": row["created_at"], "updated_at": row["updated_at"]}
     if notes:
         out["notes"] = notes
@@ -390,13 +395,14 @@ def draft_id(db: sqlite3.Connection, dataset_id: str) -> str | None:
     return row["id"] if row else None
 
 
-def create(db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, source: str = "user") -> sqlite3.Row:
-    """A new draft diagnosed on the card's version (the caller has checked there is none)."""
+def create(db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, source: str = "user",
+           depth: int = DEPTH) -> sqlite3.Row:
+    """A new draft at `depth` diagnosed on the card's version (the caller has checked there is none)."""
     pid, now = new_id("pln"), now_iso()
-    db.execute("INSERT INTO clean_plans (id, dataset_id, version, items_json, status, source, job_id, created_at, updated_at) "
-               "VALUES (?, ?, ?, ?, 'draft', ?, NULL, ?, ?)",
-               (pid, dataset["id"], card["version"], json.dumps(diagnose(card, _reviews(db, dataset["id"], card["version"])),
-                                                                 default=str), source, now, now))
+    items = diagnose(card, _reviews(db, dataset["id"], card["version"]), depth)
+    db.execute("INSERT INTO clean_plans (id, dataset_id, version, items_json, status, source, job_id, created_at, "
+               "updated_at, depth) VALUES (?, ?, ?, ?, 'draft', ?, NULL, ?, ?, ?)",
+               (pid, dataset["id"], card["version"], json.dumps(items, default=str), source, now, now, depth))
     return get(db, pid)
 
 
@@ -416,8 +422,18 @@ def current(db: sqlite3.Connection, row: sqlite3.Row, dataset: sqlite3.Row, card
     if row["status"] != "draft" or row["version"] == dataset["current_version"]:
         return row, []
     card = card_for(dataset)
-    items, notes = merge(json.loads(row["items_json"]), card, _reviews(db, dataset["id"], card["version"]))
+    items, notes = merge(json.loads(row["items_json"]), card, _reviews(db, dataset["id"], card["version"]), row["depth"])
     return save(db, row["id"], items, card["version"]), notes or ["The data changed, so the plan was checked again."]
+
+
+def set_depth(db: sqlite3.Connection, row: sqlite3.Row, card: dict, depth: int) -> sqlite3.Row:
+    """A draft on the card's version listed again at another depth: the issues of the layers it adds join
+    as a new plan's would, those of the layers it drops leave, and the rest keep the user's ticks and
+    instructions (`merge`)."""
+    items, _ = merge(json.loads(row["items_json"]), card, _reviews(db, row["dataset_id"], card["version"]), depth)
+    db.execute("UPDATE clean_plans SET items_json = ?, depth = ?, updated_at = ? WHERE id = ?",
+               (json.dumps(items, default=str), depth, now_iso(), row["id"]))
+    return get(db, row["id"])
 
 
 def set_scope(db: sqlite3.Connection, plan_id: str, scope: dict | None) -> sqlite3.Row:

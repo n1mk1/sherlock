@@ -113,7 +113,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 SPEC = DetectorSpec(
     "impossible_values", "impossible values",
     "Values outside the plausible domain the column's name gives it, such as a negative quantity or a future date.",
-    group="records", weight=0.7, default_level="skews", scope="column", detect=detect,
+    group="records", weight=0.7, default_level="skews", scope="column", detect=detect, depth=2,
     applies_to=frozenset(("int", "float", "date", "datetime")),
     domain_rule=True, code_fix=rule_candidate,
     injectors={"negative": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "units"),

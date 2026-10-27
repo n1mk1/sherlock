@@ -57,7 +57,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 # A placeholder age of -999 becomes missing before the domain rule would quarantine its row.
 SPEC = DetectorSpec(
     "sentinels", "placeholder values", "Placeholder text or numbers that stand for a missing value.",
-    group="missing", weight=0.7, default_level="skews", scope="column", detect=detect,
+    group="missing", weight=0.7, default_level="skews", scope="column", detect=detect, depth=1,
     type_fix=True, runs_before=("impossible_values",),
     injectors={"sentinel": Injector(damage, missing_ok=True)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

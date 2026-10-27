@@ -125,7 +125,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 SPEC = DetectorSpec(
     "numbers_as_text", "numbers stored as text",
     "Numbers written with currency symbols, separators, locale decimals or percent signs.",
-    group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
+    group="types", weight=0.6, default_level="skews", scope="column", detect=detect, depth=1,
     applies_to=frozenset(("category", "text", "id")),
     type_fix=True, code_fix=parse_candidate, code_fix_settles=reads_one_way,
     injectors={"money": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),

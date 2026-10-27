@@ -74,6 +74,8 @@ export interface DataCard {
 export type PlanModule = "yours" | "types" | "missing" | "text" | "records" | "outliers" | "other" | "kept";
 // What a finding does to an analysis (PRD CLEAN-8c), most severe first.
 export type Level = "breaks" | "skews" | "splits" | "check" | "cosmetic";
+// How deep a scan looks (PRD CLEAN-15): the deepest detector layer, 1 (surface) to 5 (meaning).
+export type Depth = Settings["clean_depth"];
 
 export interface CleanPlanItem {
   id: string;
@@ -112,6 +114,7 @@ export interface CleanPlan {
   job_id: string | null;
   items: CleanPlanItem[];
   scope: PlanScope | null; // the rows it was opened for (new-rows toast, chat); null is the whole dataset
+  depth: Depth; // the deepest detector layer it lists (PRD CLEAN-15)
   created_at: string;
   updated_at: string;
   notes?: string[];   // what a merge onto a newer version changed

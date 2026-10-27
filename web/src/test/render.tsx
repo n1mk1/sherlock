@@ -9,24 +9,25 @@ export const ME = {
   created_at: "2026-10-24T00:00:00Z",
   settings: {
     theme: "light", accent: "verdigris", chatbar: "pinned", after_upload: "ask", cleaning_mode: "auto",
-    reduce_motion: "system",
+    reduce_motion: "system", clean_depth: 5,
   },
 };
 
 // The detector catalog as `GET /detectors` serves it (`cleaning/registry.py`), for the labels.
-const CATALOG: [string, string, string, string | null][] = [
-  ["leakage", "records the outcome", "other", null], ["mixed_types", "values of another type", "types", "skews"],
-  ["duplicates", "duplicate rows", "records", "skews"], ["sentinels", "placeholder values", "missing", "skews"],
-  ["impossible_values", "impossible values", "records", "skews"], ["numbers_as_text", "numbers stored as text", "types", "skews"],
-  ["ambiguous_dates", "ambiguous dates", "types", "skews"], ["mojibake", "garbled characters", "text", "splits"],
-  ["cross_column", "values out of order", "records", "skews"], ["missing", "missing values", "missing", "check"],
-  ["near_duplicate_categories", "near-duplicate categories", "text", "splits"], ["unit_mixes", "mixed units", "types", "skews"],
-  ["functional_dependency", "rows breaking a dependency", "records", "check"],
-  ["whitespace_case", "spacing or case variants", "text", "splits"], ["outliers", "outliers", "outliers", "check"],
-  ["id_candidates", "looks like an ID", "other", null], ["rule", "your check", "other", "skews"],
+const CATALOG: [string, string, string, string | null, number][] = [
+  ["leakage", "records the outcome", "other", null, 5], ["mixed_types", "values of another type", "types", "skews", 2],
+  ["duplicates", "duplicate rows", "records", "skews", 3], ["sentinels", "placeholder values", "missing", "skews", 1],
+  ["impossible_values", "impossible values", "records", "skews", 2], ["numbers_as_text", "numbers stored as text", "types", "skews", 1],
+  ["ambiguous_dates", "ambiguous dates", "types", "skews", 2], ["mojibake", "garbled characters", "text", "splits", 1],
+  ["cross_column", "values out of order", "records", "skews", 4], ["missing", "missing values", "missing", "check", 1],
+  ["near_duplicate_categories", "near-duplicate categories", "text", "splits", 3], ["unit_mixes", "mixed units", "types", "skews", 2],
+  ["functional_dependency", "rows breaking a dependency", "records", "check", 4],
+  ["whitespace_case", "spacing or case variants", "text", "splits", 1], ["outliers", "outliers", "outliers", "check", 2],
+  ["id_candidates", "looks like an ID", "other", null, 2], ["rule", "your check", "other", "skews", 1],
 ];
 export const DETECTORS = {
-  detectors: CATALOG.map(([id, label, group, default_level]) => ({ id, label, description: "", group, default_level, source: "builtin" })),
+  detectors: CATALOG.map(([id, label, group, default_level, depth]) =>
+    ({ id, label, description: "", group, default_level, depth, source: "builtin" })),
 };
 
 /** Stubs fetch with a route table: "GET /api/v1/datasets" → body (or a function of the request). The

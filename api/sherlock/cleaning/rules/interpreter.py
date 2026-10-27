@@ -109,7 +109,7 @@ def _damage(df, column, rows, rng) -> dict:
 
 SPEC = DetectorSpec(
     "rule", "your check", "Checks you wrote, or a rule pack set: a range, allowed values, a pattern, an order and more.",
-    group="other", weight=0.6, default_level="skews", scope="column", detect=detect,
+    group="other", weight=0.6, default_level="skews", scope="column", detect=detect, depth=1,
     code_fix=quarantine,
     injectors={"range": Injector(_damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
     fixture_rules=({"id": "fixture", "kind": "range", "column": "amount", "params": {"min": 0.0, "max": None},

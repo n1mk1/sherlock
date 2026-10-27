@@ -8,6 +8,7 @@ DEFAULTS = {
     "after_upload": "ask",
     "cleaning_mode": "auto",
     "reduce_motion": "system",
+    "clean_depth": 5,
 }
 
 

@@ -577,6 +577,10 @@
       ],
       "title": "Default Level"
      },
+     "depth": {
+      "title": "Depth",
+      "type": "integer"
+     },
      "description": {
       "title": "Description",
       "type": "string"
@@ -604,6 +608,7 @@
      "description",
      "group",
      "default_level",
+     "depth",
      "source"
     ],
     "title": "Detector",
@@ -1074,6 +1079,24 @@
    "PlanRequest": {
     "additionalProperties": false,
     "properties": {
+     "depth": {
+      "anyOf": [
+       {
+        "enum": [
+         1,
+         2,
+         3,
+         4,
+         5
+        ],
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Depth"
+     },
      "scope": {
       "anyOf": [
        {
@@ -1247,6 +1270,18 @@
       ],
       "title": "Chatbar",
       "type": "string"
+     },
+     "clean_depth": {
+      "default": 5,
+      "enum": [
+       1,
+       2,
+       3,
+       4,
+       5
+      ],
+      "title": "Clean Depth",
+      "type": "integer"
      },
      "cleaning_mode": {
       "default": "auto",
@@ -1924,7 +1959,7 @@
   },
   "/api/v1/datasets/{dataset_id}/clean/plan": {
    "post": {
-    "description": "Get or create the draft plan for the current version (merged onto it when it's older).\nAnswers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's \"Clean\nthem\"), the plan is for those rows; without it, a draft keeps the scope it has.",
+    "description": "Get or create the draft plan for the current version (merged onto it when it's older).\nAnswers 201 for a new plan, 200 for the existing draft. With `scope` (the new-rows toast's \"Clean\nthem\"), the plan is for those rows; without it, a draft keeps the scope it has. With `depth` (the\noffer's slider), it lists the layers up to that depth; without it, a draft keeps its depth.",
     "operationId": "create_plan_api_v1_datasets__dataset_id__clean_plan_post",
     "parameters": [
      {

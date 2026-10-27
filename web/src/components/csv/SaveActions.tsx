@@ -50,7 +50,7 @@ export function SaveActions({ dataset }: { dataset: Dataset }) {
           duration: 15_000,
           action: { label: "Clean them", onClick: () => {
             setRightOpen(true); // on a narrow window the right panel is a slide-over
-            plan.mutate({ kind: "new_rows", row_ids: added }, { onError: (e) => toast.error((e as Error).message) });
+            plan.mutate({ scope: { kind: "new_rows", row_ids: added } }, { onError: (e) => toast.error((e as Error).message) });
           } },
         });
       }

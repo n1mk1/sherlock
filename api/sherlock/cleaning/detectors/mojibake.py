@@ -43,7 +43,7 @@ PLACES = ["Zürich", "Genève", "München", "Québec", "Köln", "Montréal"]
 
 SPEC = DetectorSpec(
     "mojibake", "garbled characters", "Text decoded with the wrong encoding somewhere upstream.",
-    group="text", weight=0.6, default_level="splits", scope="column", detect=detect,
+    group="text", weight=0.6, default_level="splits", scope="column", detect=detect, depth=1,
     applies_to=frozenset(("category", "text", "id")),
     injectors={"mojibake": Injector(damage)},
     clean_fixture=lambda: (with_column("place", [PLACES[i % len(PLACES)] for i in range(200)]), "place"),

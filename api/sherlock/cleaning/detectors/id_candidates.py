@@ -31,7 +31,7 @@ def detect(frame: Frame) -> list[Finding]:
 
 SPEC = DetectorSpec(
     "id_candidates", "looks like an ID", "Columns that identify rows: almost every value distinct and present.",
-    group="other", weight=0.2, default_level=None, scope="column", detect=detect,
+    group="other", weight=0.2, default_level=None, scope="column", detect=detect, depth=2,
     never_change="Looks like an ID column, so it is left as is", skip_text="left as is",
     found_fixture=clean_frame,
 )

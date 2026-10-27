@@ -38,6 +38,6 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 
 SPEC = DetectorSpec(
     "missing", "missing values", "Missing values per column, and columns that go missing together.",
-    group="missing", weight=0.5, default_level="check", scope="column", detect=detect,
+    group="missing", weight=0.5, default_level="check", scope="column", detect=detect, depth=1,
     injectors={"missing": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

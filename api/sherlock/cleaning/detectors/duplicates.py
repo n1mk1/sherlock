@@ -43,6 +43,6 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 
 SPEC = DetectorSpec(
     "duplicates", "duplicate rows", "Rows that repeat another row exactly, or apart from spacing or case.",
-    group="records", weight=0.8, default_level="skews", scope="rows", detect=detect,
+    group="records", weight=0.8, default_level="skews", scope="rows", detect=detect, depth=3,
     injectors={"repeat": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "record_id"),
 )

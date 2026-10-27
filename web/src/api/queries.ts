@@ -4,8 +4,8 @@ import { useCallback } from "react";
 import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
 import { useEventStream } from "./sse";
 import type {
-  CleaningReport, CleanPlan, DataCard, Dataset, Detector, RuleIn, DatasetStatusEvent, Job, JobProgressEvent,
-  Me, Message, PlanOp, Settings, Step,
+  CleaningReport, CleanPlan, DataCard, Dataset, Depth, Detector, RuleIn, DatasetStatusEvent, Issue, Job,
+  JobProgressEvent, Me, Message, PlanOp, Settings, Step,
 } from "./types";
 
 export const keys = {
@@ -92,6 +92,19 @@ export function useDetectorLabel(): (detector: string) => string {
     if (detector === "user_request") return "your step";
     const id = detector.split(":")[0]; // a rule's finding, "rule:rul_…", is the rule detector's
     return data?.detectors.find((d) => d.id === id)?.label ?? id.replace(/_/g, " ");
+  }, [data]);
+}
+
+// The layer a finding belongs to, 1–5 (PRD CLEAN-15): its own `details.depth` (a rule's), else its
+// detector's from the catalog; a detector the catalog doesn't list (or before it loads) is layer 1, as the
+// server's unknown-detector spec is.
+export function useDetectorDepth(): (issue: Pick<Issue, "detector" | "details">) => number {
+  const { data } = useDetectors();
+  return useCallback((issue: Pick<Issue, "detector" | "details">) => {
+    const own = issue.details?.depth;
+    if (typeof own === "number") return own;
+    const id = issue.detector.split(":")[0];
+    return data?.detectors.find((d) => d.id === id)?.depth ?? 1;
   }, [data]);
 }
 
@@ -246,8 +259,10 @@ export function useCreatePlan(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationKey: ["create-plan", datasetId],
-    mutationFn: (scope?: CleanScope) =>
-      request<CleanPlan>("POST", `/api/v1/datasets/${datasetId}/clean/plan`, scope ? { scope } : undefined),
+    // `depth`: the layers it lists (the offer's slider, PRD CLEAN-15); left out, a new plan takes the
+    // user's Cleaning depth setting and a draft keeps its own.
+    mutationFn: (opts?: { scope?: CleanScope; depth?: Depth }) =>
+      request<CleanPlan>("POST", `/api/v1/datasets/${datasetId}/clean/plan`, opts?.scope || opts?.depth ? opts : undefined),
     onSuccess: (plan) => showPlan(qc, datasetId, plan),
   });
 }

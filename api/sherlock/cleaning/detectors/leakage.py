@@ -74,7 +74,7 @@ def found_fixture():
 
 SPEC = DetectorSpec(
     "leakage", "records the outcome", "Columns that record the outcome, so a model using them would cheat.",
-    group="other", weight=1.0, default_level=None, scope="column", detect=detect,
+    group="other", weight=1.0, default_level=None, scope="column", detect=detect, depth=5,
     never_change="Records the outcome, so it is marked as leakage and not changed", skip_text="excluded from models",
     marks_column="leakage_candidates",
     found_fixture=found_fixture,

@@ -434,3 +434,27 @@ def test_issues_a_budget_left_unreached_are_listed_as_not_attempted(one_step, cl
     unreached = [s for s in report["skipped"] if s["skip_kind"] == "budget"]
     assert unreached and all(s["reason"] == "Not reached: the run hit its issue budget" for s in unreached)
     assert report["counts"]["not_attempted"] >= len(unreached)
+
+
+def test_a_plan_at_a_shallow_depth_lists_and_cleans_only_its_layers(client):
+    # PRD CLEAN-15: the offer's slider picks the depth; the setting is the default; nothing deeper is attempted.
+    assert client.put(f"{API}/me/settings", json={"clean_depth": 1}).status_code == 200
+    ds = offered(client)
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    assert plan["depth"] == 1
+    keys = {i["key"] for i in plan["items"]}
+    assert {"numbers_as_text|amount", "whitespace_case|region"} <= keys and "id_candidates|customer_id" not in keys
+    region = item(plan, "whitespace_case|region")
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "untick", "item_id": region["id"]}]})
+    deeper = client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"depth": 2})
+    assert deeper.status_code == 200 and deeper.json()["id"] == plan["id"] and deeper.json()["depth"] == 2
+    assert "id_candidates|customer_id" in {i["key"] for i in deeper.json()["items"]}
+    assert not item(deeper.json(), "whitespace_case|region")["ticked"]  # the untick survives the new depth
+    assert client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"depth": 1}).json()["depth"] == 1
+    assert client.post(f"{API}/datasets/{ds['id']}/clean/plan", json={"depth": 6}).status_code == 422
+
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).json()
+    assert finished(client, job["id"])["status"] == "done"
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    skipped = {(s["detector"], s["column"]): s["reason"] for s in report["skipped"]}
+    assert skipped[("id_candidates", "customer_id")] == "Deeper than the cleaning depth you chose"

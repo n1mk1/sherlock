@@ -129,11 +129,12 @@ Contents:
 - Heading: "Here's what I found in titanic3.csv".
 - A line: "1,309 rows · 14 columns · 7 issues".
 - Three issues as a list with icons: a column that's never changed first ("boat records the outcome"), then the most severe by code's default level, then by size ("263 missing values in age"); or "Nothing that needs cleaning." when there are none. Every issue, with its count, examples and planned fix, is in the cleaning plan (§4.1).
+- A **Cleaning depth** slider, 1 Surface to 5 Meaning (PRD CLEAN-15), starting at the Cleaning depth setting. The line "rows · columns · issues" and the three issues count only the layers up to it, adding "· n more in deeper layers" when deeper layers found more; with none at this depth but some deeper, the list says "Nothing at this depth. Drag right to look deeper." A line under the slider says what the layer looks at and names the checks it adds. Moving it changes nothing on the server.
 - Two buttons: **Clean with AI** (primary) and **Clean it myself**.
-- A checkbox "Remember my choice" (writes the After upload setting), with "· You can change this in Settings" beside it. Checked, Clean with AI saves `after_upload: always` and Clean it myself saves `never`.
+- A checkbox "Remember my choice" (writes the After upload setting), with "· You can change this in Settings" beside it. Checked, Clean with AI saves `after_upload: always` and the slider's depth as `clean_depth`, and Clean it myself saves `never`.
 
 Transitions:
-- **Clean with AI** → §4.1 Cleaning plan. The centre shows "Diagnosing v2 of titanic3.csv…", then the plan. Nothing is cleaned until **Start cleaning**, which goes to §5.
+- **Clean with AI** → §4.1 Cleaning plan at the slider's depth: it lists only those layers' issues. The centre shows "Diagnosing v2 of titanic3.csv…", then the plan. Nothing is cleaned until **Start cleaning**, which goes to §5.
 - **Clean it myself** → the dataset is `ready` at once on the typed version (version 1 plus the automatic typing step, which runs on every path), and the grid opens, editable; the user edits by hand or asks the chat (§8, §10). The toolbar's Clean with AI button showing a dot until cleaning has run once is not built yet.
 - **Ask me before each fix** (P1, the plan's Mode, PRD CLEAN-10) → when built, Start keeps the grid in view with the chat thread expanded and the first proposed step as an approval card. Until then the Mode row shows it disabled with "comes later".
 
@@ -404,11 +405,12 @@ Removed by cut 12.
 
 ## 13. Settings overlay
 
-Opened from the gear (library panel or rail) or `?settings=1`. A centred dialog, "Settings", over a dimmed app. Within cut 1 it holds four settings as segmented controls, each with a help line (PRD §7.10, UI/UX brief §5.11):
+Opened from the gear (library panel or rail) or `?settings=1`. A centred dialog, "Settings", over a dimmed app. Within cut 1 it holds four settings, plus Cleaning depth, as segmented controls, each with a help line (PRD §7.10, UI/UX brief §5.11):
 - **Mode**: Light · Dark · System.
 - **Accent**: Verdigris · Arcane · Ember · Aether · Brass.
 - **Chat bar**: Pinned · Auto-hide · Hidden.
 - **After upload**: Ask me · Open the cleaning plan · I'll clean it myself (stored as `ask|always|never`), with the help "What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
+- **Cleaning depth**: 1 · Surface · 2 · Columns · 3 · Records · 4 · Relationships · 5 · Meaning (stored as `1`–`5`), with the help "How deep a new cleaning plan looks. Each layer adds checks on a wider part of the data."
 
 Changes apply at once and save to the server ("Saved to your Sherlock profile"); the mode and accent preview live behind the dialog. **Done**, Esc or clicking outside closes it. `?settings=1&field=after_upload` opens it scrolled to that field and outlines it; the "Change" link on the plan screen uses it (§4).
 

@@ -23,6 +23,7 @@ class Settings(BaseModel):
     accent: Literal["verdigris", "arcane", "ember", "aether", "brass"] = "verdigris"
     chatbar: Literal["pinned", "autohide", "hidden"] = "pinned"
     after_upload: Literal["ask", "always", "never"] = "ask"
+    clean_depth: Literal[1, 2, 3, 4, 5] = 5  # the layers a new cleaning plan lists (PRD CLEAN-15)
     cleaning_mode: Literal["auto", "stepwise"] = "auto"
     reduce_motion: Literal["system", "on", "off"] = "system"
 

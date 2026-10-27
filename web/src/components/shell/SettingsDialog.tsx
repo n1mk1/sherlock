@@ -1,11 +1,12 @@
 // Settings (UI brief §5.11, App Flow §13). Cut 1 keeps four settings: mode, accent, chat bar and
-// after upload. Changes apply at once and save to the profile; the mode and accent preview live.
+// after upload; cleaning depth (PRD CLEAN-15) is a fifth. Changes apply at once and save to the profile; the mode and accent preview live.
 // `?settings=1` opens the dialog; `&field=after_upload` scrolls to that field and marks it (the
 // "Change" links on screens the setting opened by itself, App Flow §4).
 import { useEffect, useRef, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMe, useSaveSettings } from "@/api/queries";
-import type { Settings } from "@/api/types";
+import type { Depth, Settings } from "@/api/types";
+import { LAYERS } from "@/components/dataset/depth";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
@@ -82,6 +83,12 @@ export function SettingsDialog() {
               <Segmented label="After upload" value={s.after_upload} onChange={(after_upload) => set({ after_upload })}
                 options={[{ value: "ask", label: "Ask me" }, { value: "always", label: "Open the cleaning plan" },
                           { value: "never", label: "I'll clean it myself" }]} />
+            </Field>
+            <Field label="Cleaning depth" help="How deep a new cleaning plan looks. Each layer adds checks on a wider part of the data."
+              focus={field === "clean_depth"}>
+              <Segmented label="Cleaning depth" value={String(s.clean_depth)}
+                onChange={(v) => set({ clean_depth: Number(v) as Depth })}
+                options={LAYERS.map((l, n) => ({ value: String(n + 1), label: `${n + 1} · ${l.name}` }))} />
             </Field>
           </div>
         )}

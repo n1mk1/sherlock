@@ -18,6 +18,10 @@ GROUPS = ("types", "missing", "text", "records", "outliers", "other")
 # What a finding does to an analysis, most severe first. Set on every spec, not used yet.
 LEVELS = ("breaks", "skews", "splits", "check", "cosmetic")
 SCOPES = ("column", "rows", "columns")
+# How deep a scan looks (PRD CLEAN-15), shallowest first: a detector's `depth` is its 1-based index, and a
+# scan at depth n covers the layers up to n. Each layer looks at a wider part of the data than the one before:
+# single values, each column, rows against rows, columns against columns, the dataset as a whole.
+LAYERS = ("surface", "columns", "records", "relationships", "meaning")
 
 
 @dataclass
@@ -70,6 +74,7 @@ class DetectorSpec:
     default_level: str | None     # LEVELS; None for a detector whose issues are never changed (not rated)
     scope: str                    # "column", "rows" (whole rows) or "columns" (a pair or more)
     detect: Callable[[Frame], list[Finding]]
+    depth: int = 1                # the layer it belongs to, 1–5 (LAYERS)
     applies_to: frozenset[str] = frozenset()  # the column types it reads; empty = every type
     version: int = 1              # bumped when what it finds changes
     never_change: str | None = None    # its issues are marked, never changed: the reason (TRD §7.2)
