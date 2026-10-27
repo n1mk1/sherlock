@@ -76,6 +76,7 @@ SPEC = DetectorSpec(
     "mixed_types", "values of another type",
     "A mostly numeric or mostly date column with a minority of values that are neither.",
     group="types", weight=0.9, default_level="skews", scope="column", detect=detect,
+    applies_to=frozenset(("category", "text", "id")),
     injectors={"spelled": Injector(spell_numbers), "dmy_date": Injector(day_first_dates)},
     clean_fixture=lambda: (clean_frame(), "units"),
 )

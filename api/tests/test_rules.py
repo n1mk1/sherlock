@@ -132,3 +132,43 @@ def test_a_check_is_saved_counted_and_added_to_the_plan(client):
     refused = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [
         {"op": "add_rule", "rule": {"kind": "range", "column": "fare", "params": {}, "action": "flag"}}]})
     assert refused.status_code == 422 and len(client.get(f"{API}/datasets/{ds['id']}/rules").json()["rules"]) == 2
+
+
+def test_a_shipped_rule_pack_runs_on_columns_its_words_name():
+    from sherlock.cleaning import registry
+    from sherlock.cleaning.rules.packs import packs, rules_for
+
+    assert [p["pack"] for p in packs()] == ["formats"]  # plausible_values is read by impossible_values instead
+    df = pd.DataFrame({"contact_email": ["a@b.co", "not an address", "c@d.org"] * 10,
+                       "homepageURL": ["https://x.io", "x.io", "http://y.net"] * 10,
+                       "mailbox_count": [str(i) for i in range(30)],  # a number, not text: no email rule
+                       "remailed": ["yes", "no", "yes"] * 10}, dtype=object)  # "mail" inside a word: none
+    f = build_frame(df, {})
+    assert {(r["id"], r["column"]) for r in rules_for(f)} == {("formats.email", "contact_email"),
+                                                            ("formats.web_address", "homepageURL")}
+    found = {x.detector: x for x in registry.get("rule").detect(f)}
+    email = found["rule:formats.email"]
+    assert email.count == 10 and email.details["source"] == "pack" and email.details["never_change"]
+    assert found["rule:formats.web_address"].count == 10
+
+
+@pytest.mark.usefixtures("jobs_on")
+def test_a_check_for_every_dataset_runs_on_the_users_other_files(client):
+    first = client.post(f"{API}/datasets/sample").json()
+    wait_status(client, first["id"], "offer")
+    r = client.post(f"{API}/datasets/{first['id']}/rules",
+                    json={"kind": "range", "column": "fare", "params": {"max": 500}, "action": "flag", "scope": "all"})
+    assert r.status_code == 201 and r.json()["scope"] == "all" and r.json()["count"] > 0
+    rid = r.json()["id"]
+    second = client.post(f"{API}/datasets/sample").json()
+    wait_status(client, second["id"], "offer")
+    theirs = client.get(f"{API}/datasets/{second['id']}/rules").json()["rules"]
+    assert [(x["id"], x["scope"]) for x in theirs] == [(rid, "all")] and theirs[0]["count"] == r.json()["count"]
+    plan = client.post(f"{API}/datasets/{second['id']}/clean/plan", json={}).json()  # profiled with it
+    assert any(i["key"] == f"rule:{rid}|fare" for i in plan["items"])
+    assert client.patch(f"{API}/rules/{rid}", json={"params": {"max": 100}}).status_code == 422
+    assert client.patch(f"{API}/rules/{rid}", json={"status": "off"}).json()["status"] == "off"
+    assert client.get(f"{API}/datasets/{second['id']}/rules").json()["rules"][0]["count"] is None
+    # Another user can't see or change it.
+    other = type(client)(client.app)
+    assert other.patch(f"{API}/rules/{rid}", json={"status": "active"}).status_code == 404

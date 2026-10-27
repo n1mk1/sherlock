@@ -598,8 +598,9 @@ function AddCheck({ datasetId, busy, send, onDirty }: {
   const [column, setColumn] = useState("");
   const [kind, setKind] = useState<RuleKind>("range");
   const [action, setAction] = useState<RuleIn["action"]>("flag");
+  const [everywhere, setEverywhere] = useState(false);
   const [f, setF] = useState<Record<string, string>>({});
-  const close = () => { setOpen(false); setColumn(""); setF({}); onDirty(false); };
+  const close = () => { setOpen(false); setColumn(""); setF({}); setEverywhere(false); onDirty(false); };
   const set = (k: string, v: string) => { setF((x) => ({ ...x, [k]: v })); onDirty(true); };
   const columns = card?.columns ?? [];
   if (!open) {
@@ -652,10 +653,16 @@ function AddCheck({ datasetId, busy, send, onDirty }: {
           {ACTIONS.map(([a, label]) => <option key={a} value={a}>{label}</option>)}
         </select>
       </label>
+      <label className="flex items-center gap-2 text-[12.5px]">
+        <input type="checkbox" checked={everywhere} onChange={(e) => setEverywhere(e.target.checked)}
+          className="accent-[var(--accent)]" />
+        For every dataset of mine
+      </label>
       <div className="flex justify-end gap-1.5">
         <Button size="sm" variant="ghost" onClick={close}>Cancel</Button>
         <Button size="sm" variant="primary" disabled={busy || !column}
-          onClick={() => send([{ op: "add_rule", rule: { kind, column, params: ruleParams(kind, f), action } }], close)}>
+          onClick={() => send([{ op: "add_rule", rule: { kind, column, params: ruleParams(kind, f), action,
+                                                         scope: everywhere ? "all" : "dataset" } }], close)}>
           Add check
         </Button>
       </div>

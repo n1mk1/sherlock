@@ -111,6 +111,10 @@ def build_datacard(conn: duckdb.DuckDBPyConnection, version: int, rules: list[di
         "id_columns": [n for n, c in frame.columns.items() if c.role == "id"],
         **marked,
     }
+    from sherlock.cleaning import levels
+
+    for issue in card["issues"]:  # code's default level (PRD CLEAN-8c), so the offer lists the most severe
+        issue["level"] = levels.default_level(issue, card)
     return json.loads(json.dumps(card, default=_plain)), frame
 
 

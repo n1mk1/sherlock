@@ -89,3 +89,14 @@ def test_get_detectors_lists_the_sixteen_and_the_rule_detector(client):
                                   "description": registry.get("sentinels").description, "group": "missing",
                                   "default_level": "skews", "source": "builtin"}
     assert by_id["leakage"]["default_level"] is None  # never changed, so not rated
+
+
+def test_a_refused_built_in_stops_the_api_from_starting(monkeypatch):
+    import inspect
+
+    # At import the registry registers the built-ins with no guard, so a refusal is an import error.
+    assert inspect.getsource(registry).rstrip().endswith("register(*BUILTINS, RULE)")
+    monkeypatch.setattr(registry, "_specs", {})  # the registry as the import starts
+    with pytest.raises(RegistryError, match="outside 0–1"):
+        registry.register(*BUILTINS, spec(id="broken_built_in", weight=7.0))
+    assert registry.all() == []  # all or nothing: nothing half-registered

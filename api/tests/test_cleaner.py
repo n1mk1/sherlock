@@ -385,3 +385,21 @@ def test_a_rewritten_fix_asking_for_a_placeholder_is_still_skipped(client):
     assert "placeholder_fill" in yours["reason"] and "'Unknown'" in yours["reason"]
     # The diagnosis said "leave as is", but the user asked: candidates were still tried.
     assert not yours["reason"].startswith("Left as is")
+
+
+@pytest.fixture
+def one_step(monkeypatch):
+    monkeypatch.setenv("CLEAN_MAX_STEPS", "1")
+    get_settings.cache_clear()
+
+
+def test_issues_a_budget_left_unreached_are_listed_as_not_attempted(one_step, client):
+    # PRD CLEAN-6: a run that ends on its budget lists what it didn't reach (skip_kind "budget").
+    ds = offered(client)
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={}).json()
+    assert finished(client, job["id"])["status"] == "done"
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert report["ended_by"] == "steps" and report["attempted"] == 1
+    unreached = [s for s in report["skipped"] if s["skip_kind"] == "budget"]
+    assert unreached and all(s["reason"] == "Not reached: the run hit its issue budget" for s in unreached)
+    assert report["counts"]["not_attempted"] >= len(unreached)

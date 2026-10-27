@@ -63,8 +63,9 @@ SKIP_KINDS = {
     "left_as_is": "checked_and_kept",
     "failed_checks": "couldnt_fix", "disagreement": "couldnt_fix", "gate": "couldnt_fix",
     "model_error": "couldnt_fix", "conflict": "couldnt_fix",
-    "unticked": "not_attempted", "needs_choice": "not_attempted",
+    "unticked": "not_attempted", "needs_choice": "not_attempted", "budget": "not_attempted",
 }
+BUDGET_WORDS = {"steps": "issue", "time": "time", "tokens": "model"}
 USER_SEVERITY = 2.0  # above any detector's (at most 1.0): the user's steps go first
 USER_ISSUE_LINE = "A change the user asked for; the instruction is in the data block"
 LEFT_AS_IS = "the values look legitimate"  # when the diagnosis' own cause has digits
@@ -397,7 +398,20 @@ class Cleaner:
                 raise
         return self._finish()
 
+    def _not_reached(self) -> None:
+        """A run that ended on a budget: each issue it would still have attempted is skipped as `budget`,
+        so the report lists what wasn't attempted (PRD CLEAN-6). By the queue's order, the least severe."""
+        card = self._card()
+        for issue in queue(card["issues"], card, self.levels):
+            if key(issue) in self.state.handled or not self._attemptable(issue, card):
+                continue
+            self.state.handled.append(key(issue))
+            self._skip(issue, f"Not reached: the run hit its {BUDGET_WORDS[self.state.ended_by]} budget", "budget",
+                       log_text="not reached")
+
     def _finish(self) -> dict:
+        if self.state.ended_by in BUDGET_WORDS:
+            self._not_reached()
         self._checkpoint()
         shutil.rmtree(self.work, ignore_errors=True)
         d = self._dataset()

@@ -40,3 +40,15 @@ def test_a_detector_that_breaks_the_contract_is_named():
                     [registry.get("missing").detect(contract.damaged(registry.get("missing"))[0])[0]])
     problems = dict(contract.check(noisy, contract.big_frame(rows=200)))
     assert "clean_shared" in problems and "well_behaved" in problems
+
+
+def test_every_enabled_check_together_fits_the_profile_budget(big):
+    # The command reports 500,000 rows against 60 s; here the 200,000-row frame gets its share of that.
+    share = contract.TOTAL_SECONDS * len(big.df) / contract.TOTAL_ROWS
+    assert contract.total_seconds(registry.enabled(), big) <= share
+
+
+def test_overlapping_checks_are_reported():
+    pairs = contract.overlaps(SPECS)
+    ids = {s.id for s in SPECS}
+    assert all(a in ids and b in ids and a != b for a, b, _ in pairs)

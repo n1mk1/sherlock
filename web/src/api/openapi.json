@@ -1346,6 +1346,15 @@
       "default": {},
       "title": "Params",
       "type": "object"
+     },
+     "scope": {
+      "default": "dataset",
+      "enum": [
+       "dataset",
+       "all"
+      ],
+      "title": "Scope",
+      "type": "string"
      }
     },
     "required": [

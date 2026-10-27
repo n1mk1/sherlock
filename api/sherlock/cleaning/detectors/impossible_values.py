@@ -17,24 +17,17 @@ import pandas as pd
 
 from sherlock.cleaning.detectors.base import DetectorSpec, Finding, Frame, Injector, examples
 from sherlock.cleaning.detectors.fixtures import clean_frame
+from sherlock.cleaning.rules.packs import name_words
 from sherlock.llm.schemas import Candidate
 from sherlock.profile.infer import NUMERIC_TYPES
 
 PACK = json.loads((Path(__file__).parents[1] / "rules" / "packs" / "plausible_values.json").read_text(encoding="utf-8"))
 EARLIEST = pd.Timestamp(PACK["dates"]["earliest"])
-CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-
-
-def name_words(name: str) -> set[str]:
-    """The whole words of a column name: split on anything but letters and digits, and at camelCase."""
-    return {w.lower() for w in re.split(r"[^0-9A-Za-z]+", CAMEL.sub(" ", name)) if w}
-
 
 def bounds(name: str) -> tuple[float | None, float | None]:
     """The plausible domain the column's name gives it: (lowest, highest), None for no bound. Where
     several rules match, the tightest bound of each side holds."""
-    words = name_words(name)
-    words |= {w[:-1] for w in words if w.endswith("s")}
+    words = name_words(name)  # whole words, each also without a final "s"
     lows, highs = [], []
     for rule in PACK["rules"]:
         if words & set(rule["words"]):
@@ -121,6 +114,7 @@ SPEC = DetectorSpec(
     "impossible_values", "impossible values",
     "Values outside the plausible domain the column's name gives it, such as a negative quantity or a future date.",
     group="records", weight=0.7, default_level="skews", scope="column", detect=detect,
+    applies_to=frozenset(("int", "float", "date", "datetime")),
     domain_rule=True, code_fix=rule_candidate,
     injectors={"negative": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "units"),
 )

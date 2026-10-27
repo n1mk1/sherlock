@@ -29,6 +29,7 @@ Version 1.3 · 2026-10-25 · Every table, column, file and index. SQLite holds a
   | `009_issue_review.sql` | `issues.detector_version`, `issues.skip_kind` (§2.8); `issue_reviews` (§2.24) |
   | `010_detector_rules.sql` | `detector_rules` and `detector_rules_dataset` (§2.25) |
   | `011_review_fingerprint.sql` | `issue_reviews.fingerprint` and `issue_reviews_fingerprint` (§2.24) |
+  | `012_rules_for_every_dataset.sql` | `detector_rules` rebuilt: `dataset_id` nullable, `user_id` references `users`; `detector_rules_user` (§2.25) |
 
   Each schema change gets its own new file. The tables below show columns added by `ALTER TABLE` at the end, in the order SQLite stores them.
 - **The doc is tested.** `api/tests/test_db.py` parses every `CREATE TABLE` block here and fails if the tables or any table's columns (in order) differ from the migrated database, so a change to §2 needs a new migration in the same commit. The test checks names only; the blocks also match the migrations' types, defaults, keys and indexes. Comments here may be longer than the SQL's.
@@ -224,7 +225,7 @@ CREATE TABLE issues (
 CREATE INDEX issues_dataset ON issues(dataset_id, version, severity DESC);
 ```
 
-- **`skip_kind`** says why a skipped issue was skipped, so the report counts by it rather than by parsing `skip_reason` (TRD §7.2, PRD CLEAN-6): `kept_by_design` (a leakage or ID column; "marked, not changed"), `left_as_is` (the diagnosis judged the values real; "checked and kept"), `failed_checks`, `disagreement`, `gate`, `model_error` and `conflict` ("couldn't fix"), `unticked` and `needs_choice` ("not attempted").
+- **`skip_kind`** says why a skipped issue was skipped, so the report counts by it rather than by parsing `skip_reason` (TRD §7.2, PRD CLEAN-6): `kept_by_design` (a leakage or ID column; "marked, not changed"), `left_as_is` (the diagnosis judged the values real; "checked and kept"), `failed_checks`, `disagreement`, `gate`, `model_error` and `conflict` ("couldn't fix"), `unticked`, `needs_choice` and `budget` (the run ended first; "not attempted").
 
 ### 2.9 widgets and layouts
 
@@ -751,8 +752,8 @@ Checks without code (PRD CLEAN-13, TRD §7.1 step 4): constraints on a dataset's
 ```sql
 CREATE TABLE detector_rules (
   id          TEXT PRIMARY KEY,                -- rul_…
-  user_id     TEXT NOT NULL,
-  dataset_id  TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dataset_id  TEXT REFERENCES datasets(id) ON DELETE CASCADE,   -- NULL: the user's check for every dataset (012)
   source      TEXT NOT NULL,                   -- user|suggested|pack
   status      TEXT NOT NULL,                   -- active|suggested|off
   spec_json   TEXT NOT NULL,                   -- {kind, column, params, action, reason?}
@@ -760,11 +761,13 @@ CREATE TABLE detector_rules (
   updated_at  TEXT NOT NULL
 );
 CREATE INDEX detector_rules_dataset ON detector_rules(dataset_id);
+CREATE INDEX detector_rules_user ON detector_rules(user_id);
 ```
 
+- **`dataset_id` NULL** is the user's check for every dataset (P2): it runs on each of their datasets, with that dataset's own checks, from the dataset's next profile, and finds nothing on a file whose column is missing or of a type its kind doesn't read. It can be switched on or off, not edited.
 - **`spec_json`** is the rule as checked when it was saved (`rules.interpreter.validate`): `kind` (`range`, `date_window`, `allowed`, `pattern`, `not_missing`, `unique`, `order`, `depends`), `column`, its `params`, `action` (`quarantine`, `flag`, `fix`), and for a suggestion the model's `reason`.
 - Only `active` rules run. `off` keeps a rule so it can be turned on again; a dismissed suggestion stays `off`, so the same kind on the same column isn't suggested again.
-- Deleted with the dataset by the foreign key cascade (§6).
+- Deleted with the dataset, and a check for every dataset with its user, by the foreign key cascades (§6).
 
 ---
 

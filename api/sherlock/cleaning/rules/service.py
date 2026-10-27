@@ -68,15 +68,18 @@ def refresh(settings: Settings, db: sqlite3.Connection, cache: VersionConnection
         emit(db, bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]})
 
 
-def add(settings, db, cache, bus, dataset: sqlite3.Row, spec: dict, source: str = "user", status: str = "active") -> dict:
-    """Validate and save a rule on the dataset (RuleError names a bad field), then refresh."""
+def add(settings, db, cache, bus, dataset: sqlite3.Row, spec: dict, source: str = "user", status: str = "active",
+        every_dataset: bool = False) -> dict:
+    """Validate and save a rule on the dataset (RuleError names a bad field), then refresh. With
+    `every_dataset` it is the owner's check for every dataset: checked against this one's columns, it
+    runs here at once and on any other dataset from its next profile."""
     from sherlock.profile import service as profile_service
 
     card = profile_service.get_or_build(settings, db, cache, dataset)
     clean = interpreter.validate(spec, columns(card))
     if spec.get("reason"):
         clean["reason"] = str(spec["reason"])[:300]
-    rule = store.create(db, dataset["user_id"], dataset["id"], clean, source, status)
+    rule = store.create(db, dataset["user_id"], None if every_dataset else dataset["id"], clean, source, status)
     if status == "active":
         refresh(settings, db, cache, bus, dataset)
     return rule
@@ -94,10 +97,11 @@ def apply(settings, db, cache, bus, dataset: sqlite3.Row, row: sqlite3.Row, ops:
     other = [o for o in ops if o.get("op") != "add_rule" and o.get("op") not in SUGGESTION_OPS]
     card = profile_service.get_or_build(settings, db, cache, dataset)
     specs = [interpreter.validate(o.get("rule") or {}, columns(card)) for o in rule_ops]
+    everywhere = [(o.get("rule") or {}).get("scope") == "all" for o in rule_ops]
     suggested = [_suggestion(db, dataset, o.get("rule_id")) for o in picks]
     plans.apply_ops(json.loads(row["items_json"]), other, columns_, source)  # a dry run: all or nothing
-    for spec in specs:
-        add(settings, db, cache, bus, dataset, spec)
+    for spec, all_datasets in zip(specs, everywhere):
+        add(settings, db, cache, bus, dataset, spec, every_dataset=all_datasets)
     said = [f"Added your check: {interpreter.words(s)}." for s in specs]
     for op, rule in zip(picks, suggested):
         keep = op["op"] == "keep_suggestion"
@@ -146,6 +150,8 @@ def change(settings, db, cache, bus, dataset: sqlite3.Row, rule: dict, params: d
 
     if status is not None and status not in ("active", "off"):
         raise RuleError("status", "The status is active or off.")
+    if rule.get("scope") == "all" and (params is not None or action is not None):
+        raise RuleError("scope", "A check for every dataset can be switched on or off; to change it, add it again.")
     spec = None
     if params is not None or action is not None:
         card = profile_service.get_or_build(settings, db, cache, dataset)

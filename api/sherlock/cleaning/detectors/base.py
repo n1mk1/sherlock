@@ -70,6 +70,7 @@ class DetectorSpec:
     default_level: str | None     # LEVELS; None for a detector whose issues are never changed (not rated)
     scope: str                    # "column", "rows" (whole rows) or "columns" (a pair or more)
     detect: Callable[[Frame], list[Finding]]
+    applies_to: frozenset[str] = frozenset()  # the column types it reads; empty = every type
     version: int = 1              # bumped when what it finds changes
     never_change: str | None = None    # its issues are marked, never changed: the reason (TRD §7.2)
     skip_text: str | None = None       # the log's detail for an issue on a column it marks

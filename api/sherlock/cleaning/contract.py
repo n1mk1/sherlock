@@ -16,6 +16,8 @@ from sherlock.stories.wording import wording_problem
 
 MAX_SECONDS = 2.0
 BIG_ROWS = 200_000
+TOTAL_ROWS = 500_000
+TOTAL_SECONDS = 60.0  # every enabled check together on 500,000 rows: inside the Profile budget (TRD §13)
 
 
 def frame(df: pd.DataFrame, spec: DetectorSpec | None = None) -> Frame:
@@ -115,6 +117,17 @@ def well_behaved(spec: DetectorSpec, big=None) -> str | None:
     return None
 
 
+def applies(spec: DetectorSpec, big=None) -> str | None:
+    """It reports only columns of the types it says it reads (`applies_to`)."""
+    if not spec.applies_to or (rated(spec) and not (spec.clean_fixture and spec.injectors)):
+        return None
+    f = damaged(spec)[0] if rated(spec) else frame(spec.found_fixture(), spec)
+    for x in spec.detect(f):
+        if x.column is not None and f.columns[x.column].type not in spec.applies_to:
+            return f"it reported {x.column}, a {f.columns[x.column].type} column, outside its types {sorted(spec.applies_to)}"
+    return None
+
+
 def big_frame(rows: int = BIG_ROWS) -> Frame:
     """A frame of every column type, for the time budget."""
     df = fixtures.clean_frame(rows=rows, seed=11)
@@ -132,8 +145,31 @@ def fast(spec: DetectorSpec, big: Frame | None = None) -> str | None:
     return None if took <= MAX_SECONDS else f"it took {took:.1f} s on {len(big.df):,} rows (budget {MAX_SECONDS:g} s)"
 
 
+def total_seconds(specs, big: Frame) -> float:
+    """Every given check, one after another, on one frame: what a profile spends on detectors."""
+    started = time.perf_counter()
+    for spec in specs:
+        spec.detect(big)
+    return time.perf_counter() - started
+
+
+def overlaps(specs) -> list[tuple[str, str, str]]:
+    """Pairs of checks that flag the same damaged column: each rated check's damage, on its fixture, run
+    through every other check (spec id, other id, column). For review, not a failure: two checks can see
+    one problem from two sides."""
+    out = []
+    for spec in specs:
+        if not (rated(spec) and spec.clean_fixture and spec.injectors):
+            continue
+        f, column, _ = damaged(spec)
+        for other in specs:
+            if other.id != spec.id and rated(other) and any(x.column == column for x in other.detect(f)):
+                out.append((spec.id, other.id, column))
+    return out
+
+
 CHECKS = {"metadata": metadata, "clean_shared": clean_shared, "clean_own": clean_own, "finds_damage": finds_damage,
-          "well_behaved": well_behaved, "fast": fast}
+          "well_behaved": well_behaved, "applies": applies, "fast": fast}
 
 
 def check(spec: DetectorSpec, big: Frame | None = None) -> list[tuple[str, str]]:

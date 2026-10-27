@@ -40,6 +40,7 @@ export interface Job {
 }
 
 export interface Issue {
+  level?: Level | null; // code's default level (PRD CLEAN-8c); null for a column that's never changed
   id: string;
   detector: string;
   column: string | null;

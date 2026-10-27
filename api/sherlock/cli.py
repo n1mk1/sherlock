@@ -225,8 +225,14 @@ def detectors_check(rows: int) -> int:
         lines.append(f"| {spec.id} | {spec.source} | {result.replace('|', '/')} |")
     refused = registry.packs()["refused"]
     lines += [f"| {p['name']} (pack) | refused | {p['reason'].replace('|', '/')} |" for p in refused]
+    total = contract.total_seconds(registry.enabled(), contract.big_frame(contract.TOTAL_ROWS))
+    slow = total > contract.TOTAL_SECONDS
+    lines += ["", f"Every enabled check on {contract.TOTAL_ROWS:,} rows: {total:.1f} s (budget {contract.TOTAL_SECONDS:g} s)"
+                  + (": over budget" if slow else "")]
+    pairs = contract.overlaps(registry.all())
+    lines += ["", "| Damage of | Also flagged by | Column |", "|---|---|---|"] + [f"| {a} | {b} | {c} |" for a, b, c in pairs]
     _print("\n".join(lines))
-    return 1 if failed or refused else 0
+    return 1 if failed or refused or slow else 0
 
 
 if __name__ == "__main__":

@@ -958,3 +958,35 @@ Slices 2 and 3 only need slice 1, so they can be built in parallel, as can slice
 | Too many plan items as checks grow | Severity groups keep the important ones on top; suggestions start unticked. |
 | Overlapping checks flag the same cells | `spec.scope` and the issue key; the contract suite reports pairs of checks that flag the same cells on the shared fixture. |
 | Extra wait before the plan | None: the plan opens with default levels and updates itself. |
+
+---
+
+## 16. Built: the plan against the code
+
+Each requirement of §3–§13, where it lives and what proves it (`api/` paths; web under `web/src`).
+
+| § | Requirement | Code | Proven by |
+|---|---|---|---|
+| 3.1 | `DetectorSpec` with every field (and `skip_text`, `found_fixture`, `fixture_rules`, `source`) | `cleaning/detectors/base.py`; a `SPEC` per module | `test_registry.py`, `test_detector_contract.py` |
+| 3.2 | `register` refusals (duplicate, group, level, scope, weight, `runs_before` unknown or cycle), all or nothing | `cleaning/registry.py` | `test_registry.py` (incl. a refused built-in stopping startup) |
+| 3.2 | `all`, `enabled`, `get` (unknown spec), `label`; packs by entry point; `DETECTORS_OFF`, `DETECTOR_PLUGINS`, `RULE_MAX_S`; `/healthz` lists packs | `registry.configure`, `config.py`, `main.py` | `test_detector_packs.py`, `test_registry.py` |
+| 3.3 | Every hard-coded map read from the registry, labels merged | `plan.py`, `loop.py`, `verifiers.py`, `datacard.py`, `actions.py`, `useDetectorLabel` | slice 1's identical eval; `test_cleaner_gaps.py` |
+| 4.1 | Eight rule kinds, three actions, key `rule:<id>\|<column>` | `cleaning/rules/kinds.py`, `interpreter.py` | `test_rules.py` (each kind) |
+| 4.2 | Shipped packs (`formats`, run by the rule detector; `plausible_values`, read by impossible_values), your checks, suggested checks, checks for every dataset (P2) | `rules/packs/`, `rules/store.py`, `review.suggest`, migration 012 | `test_rules.py`, `test_cleaning_review.py`, `test_detectors.py` |
+| 4.3 | Refused when saved; suggested → kept or dismissed; active runs every version; count at once | `rules/service.py`, `routers/rules.py` | `test_rules.py`, `test_cleaning_review.py`, e2e `plan.spec.ts` |
+| 4.4 | Vectorised; `RULE_MAX_S`; anchored, length-capped pattern with no back-reference or nested repeat, matched with a timeout; parameters fit the type | `rules/kinds.py`, `interpreter.run` | `test_rules.py` (slow rule, hostile patterns, bad parameters) |
+| 5.1–5.2 | Five levels; default level from spec and role | `cleaning/levels.py` | `test_cleaning_levels.py` |
+| 5.3 | `likely_real`; the floor at the spec's own default | `review.rated`, `review.floor` | `test_cleaning_review.py`; live rating check |
+| 5.4 | Plan grouped by level, "Worth a look" unticked; queue by level; budget ends on the least severe; report lines | `plan.py`, `loop.queue`, `loop._not_reached`, `report.py`, `CleanPlanPanel.tsx`, `CleaningReport.tsx` | `test_cleaning_levels.py`, `test_cleaner.py` (budget), vitest, e2e |
+| 6.1 | Background `review_issues` job, queued after profile and by `POST …/clean/plan`; one review per version, reused for identical findings; your edits win; a started plan unchanged; `review` field | `jobs/review.py`, `cleaning/review.py`, `plan.reviewed` | `test_cleaning_review.py`; "Reviewing…" in vitest and e2e |
+| 6.2 | Rating call: `medium`, `rate`, temperature 0, reasoning on, chunks of 40, two readings, fenced prompt, refs checked with one repair, reasons without digits | `cleaning/review.py`, `prompts/rate.txt`, `Ratings` | `test_cleaning_review.py`, `test_prompt_hygiene.py` |
+| 6.3 | Suggested checks from the DataCard summary, validated, deduplicated, counted by code, rated, editable, Keep and Dismiss | `review.suggest`, `prompts/suggest_rules.txt`, `RuleSuggestions`, `SuggestedChecks` | `test_cleaning_review.py`, vitest, e2e |
+| 7 | Your steps first, then level, then severity; `runs_before`; no model call in a run | `loop.queue` | `test_cleaning_levels.py`, `test_cleaner_gaps.py` |
+| 8 | Code finds, counts and runs everything; the model picks levels, reasons and rules | the above | `test_rules.py`, `test_cleaning_review.py` |
+| 9 | Contract: metadata, clean data, finds its damage, determinism, purity, shape, types, 2 s on 200,000 rows, the total on 500,000, overlaps, wording, generic | `cleaning/contract.py`, `sherlock detectors check` | `test_detector_contract.py`; the command |
+| 9 | Corruption eval builds damage from the injectors | `eval/corruption.py`, `registry.injector` | identical damage for all 8 sets |
+| 10.1 | Migrations 009–012: `detector_version`, `skip_kind`, `issue_reviews` (+ fingerprint), `detector_rules` (+ every dataset) | `db/migrations/` | `test_db.py` |
+| 10.2 | `GET /detectors`, `/rules` (GET, POST, PATCH), plan fields and ops (`tick_level`, `untick_level`, `add_rule`, `keep_suggestion`, `dismiss_suggestion`) | `routers/cleaning.py`, `routers/rules.py` | `test_registry.py`, `test_rules.py`, `test_cleaning_review.py`, `test_openapi.py` |
+| 10.3 | Panel groups, reasons, "(default level)", "Reviewing…", Add a check, Suggested checks; chat's level lines and `add_rule`; report lines with levels; offer ordered by level | `CleanPlanPanel.tsx`, `CleaningReport.tsx`, `CleaningOffer.tsx`, `agent/actions.py` | vitest (`cleaning.test.tsx`), e2e `plan.spec.ts`, `test_chat_actions.py` |
+| 11 | Developer guide and example pack | `cleaning/detectors/README.md`, `samples/detector_pack/` | `test_detector_packs.py` |
+| 13 | Live eval: rating, report honesty, stability | `eval/corruption.py` | the full live run recorded in the last commit message |

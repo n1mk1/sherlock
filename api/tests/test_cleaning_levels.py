@@ -73,4 +73,4 @@ def test_each_skip_kind_lands_on_its_report_line():
              "handled": ["missing|age"]}
     lines = _outcomes(state, {"missing|age", "outliers|fare", "whitespace_case|name"})
     assert lines == {"checked_and_kept": 1, "couldnt_fix": 5, "kept_by_design": 1,
-                     "not_attempted": 2 + 2}  # unticked, needs_choice, and two keys never reached
+                     "not_attempted": 3 + 2}  # unticked, needs_choice, budget, and two keys never reached

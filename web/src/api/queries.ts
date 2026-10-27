@@ -239,6 +239,9 @@ export function useCleanPlan(planId: string | null | undefined) {
     queryKey: keys.plan(planId ?? ""),
     enabled: !!planId,
     queryFn: () => request<CleanPlan>("GET", `/api/v1/clean-plans/${planId}`),
+    // While the severity review runs, read the plan again every few seconds as well as on `plan.updated`:
+    // a review can end before this tab's event stream is listening.
+    refetchInterval: (q) => (q.state.data?.review === "running" ? 3000 : false),
   });
 }
 

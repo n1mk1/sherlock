@@ -101,6 +101,7 @@ SPEC = DetectorSpec(
     "numbers_as_text", "numbers stored as text",
     "Numbers written with currency symbols, separators, locale decimals or percent signs.",
     group="types", weight=0.6, default_level="skews", scope="column", detect=detect,
+    applies_to=frozenset(("category", "text", "id")),
     type_fix=True, code_fix=parse_candidate,
     injectors={"money": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

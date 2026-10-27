@@ -6,8 +6,15 @@ import { useDatacard, useDetectorLabel } from "@/api/queries";
 import type { DataCard, Dataset, Issue } from "@/api/types";
 import { issueLine } from "./CleanPlanPanel";
 
+// The three issues to lead with: a column that's never changed first (it records the outcome or is an ID,
+// as the queue puts it), then by code's default level (PRD CLEAN-8c), breaks first, then by size. A card
+// from before levels sorts by size alone.
+const RANK: Record<string, number> = { breaks: 0, skews: 1, splits: 2, check: 3, cosmetic: 4 };
+
 export function summaryLines(card: DataCard): Issue[] {
-  return [...card.issues].sort((a, b) => b.severity - a.severity).slice(0, 3);
+  const levelled = card.issues.some((x) => x.level);
+  const rank = (i: Issue) => (!levelled ? 0 : i.level ? RANK[i.level] ?? 5 : -1);
+  return [...card.issues].sort((a, b) => rank(a) - rank(b) || b.severity - a.severity).slice(0, 3);
 }
 
 export function CleaningOffer({ dataset, actions }: { dataset: Dataset; actions?: ReactNode }) {

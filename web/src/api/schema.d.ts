@@ -1900,6 +1900,12 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+            /**
+             * Scope
+             * @default dataset
+             * @enum {string}
+             */
+            scope: "dataset" | "all";
         };
         /** RulePatch */
         RulePatch: {

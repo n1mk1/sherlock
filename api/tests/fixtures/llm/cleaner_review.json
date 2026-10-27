@@ -20,6 +20,25 @@
             "action": "quarantine"
           },
           "reason": "A count of parents and children aboard is small, so a larger one is likely a typo."
+        },
+        {
+          "rule": {
+            "kind": "allowed",
+            "column": "embarked",
+            "min": null,
+            "max": null,
+            "earliest": null,
+            "latest": null,
+            "values": [
+              "S",
+              "C",
+              "Q"
+            ],
+            "regex": null,
+            "other": null,
+            "action": "flag"
+          },
+          "reason": "Ports of embarkation are a short fixed list, so another value is a typo."
         }
       ]
     }

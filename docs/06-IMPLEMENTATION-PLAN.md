@@ -139,6 +139,7 @@ A box is ticked when everything on its line is built except what a cut removed (
 - [x] `profile/` types, roles, stats, histograms, top values, issues, value index, the typing step (D2.8). Embeddings are optional and off: the catalog has no NVIDIA embedding model
 - [x] `cleaning/detectors/*` (16 detectors)
 - [x] `cleaning/verifiers.py`, `gate.py`, `helpers/*`, `loop.py`, prompts (D3.1, D3.2); `plan.py` (CLEAN-8a, CLEAN-8b)
+- [x] The detector registry, severity levels and review, checks you write, packs and suggested checks (CLEAN-8c, CLEAN-12, CLEAN-13, CLEAN-14): built in the ten slices of `docs/plans/cleaner-detectors-and-severity.md` §14; §16 there maps each requirement to its code and tests
 - [x] `sandbox/` worker, `sherlock-sandboxd` launcher, limits, allowlist, protocol
 - [x] `steps/` commit, undo latest, undo with replay (D5.5), lineage queries, user-edited cells
 - [ ] `jobs/` runner, events, SSE, cancellation, checkpoints, purge job: the Nebius Serverless Jobs backend isn't built

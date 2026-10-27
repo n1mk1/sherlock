@@ -54,5 +54,6 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 SPEC = DetectorSpec(
     "outliers", "outliers", "Extreme values in a measure, by robust statistics.",
     group="outliers", weight=0.3, default_level="check", scope="column", detect=detect,
+    applies_to=frozenset(("int", "float")),
     injectors={"extreme": Injector(damage, share=0.03)}, clean_fixture=lambda: (clean_frame(), "amount"),
 )

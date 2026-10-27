@@ -1,0 +1,11 @@
+{
+  "pack": "formats",
+  "run_by": "rule",
+  "description": "Text formats a column's name promises: an email address, a web address. Run by the rule detector on every dataset; a column takes a rule when a whole word of its name is one of the rule's words and its type is one the rule reads. Rows that break one are flagged for review, never changed.",
+  "rules": [
+    {"id": "email", "kind": "pattern", "params": {"regex": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"}, "action": "flag",
+     "match": {"words": ["email", "mail"], "types": ["category", "text", "id"]}},
+    {"id": "web_address", "kind": "pattern", "params": {"regex": "^https?://[^\\s]+$"}, "action": "flag",
+     "match": {"words": ["url", "website", "homepage"], "types": ["category", "text", "id"]}}
+  ]
+}

@@ -52,6 +52,14 @@ def check_dataset(
 
 def resolve(conn: sqlite3.Connection, user_id: str, kind: str, obj_id: str) -> Owned:
     table, _ = BARE_ID_KINDS[kind]
+    if kind == "rule":
+        # A rule carries its user; a check for every dataset has no dataset.
+        row = conn.execute("SELECT dataset_id FROM detector_rules WHERE id = ? AND user_id = ?", (obj_id, user_id)).fetchone()
+        if row is None:
+            raise not_found("Rule not found")
+        if row["dataset_id"]:
+            check_dataset(conn, user_id, row["dataset_id"])
+        return Owned(obj_id, row["dataset_id"])
     if kind == "job":
         # Jobs carry user_id directly; a purge job has no dataset.
         row = conn.execute(

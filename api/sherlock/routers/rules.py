@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, ConfigDict
 
+from sherlock.cleaning.rules import interpreter
 from sherlock.cleaning.rules import service as rules
 from sherlock.cleaning.rules import store
 from sherlock.cleaning.rules.kinds import RuleError
@@ -25,6 +26,7 @@ class RuleIn(BaseModel):
     column: str
     params: dict[str, Any] = {}
     action: ACTION = "flag"
+    scope: Literal["dataset", "all"] = "dataset"  # "all": your check for every dataset (P2)
 
 
 class RulePatch(BaseModel):
@@ -56,7 +58,8 @@ def add_rule(request: Request, body: RuleIn, dataset: sqlite3.Row = Depends(owne
     current version, and added to an open plan."""
     settings, cache, bus = _env(request)
     try:
-        rule = rules.add(settings, db, cache, bus, dataset, body.model_dump())
+        rule = rules.add(settings, db, cache, bus, dataset, body.model_dump(exclude={"scope"}),
+                         every_dataset=body.scope == "all")
     except RuleError as exc:
         raise invalid(exc) from None
     return rules.with_counts(settings, db, cache, dataset, [rule])[0]
@@ -68,6 +71,12 @@ def patch_rule(request: Request, body: RulePatch, owned_rule: Owned = Depends(ow
     settings, cache, bus = _env(request)
     rule = store.get(db, owned_rule.id)
     dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (owned_rule.dataset_id,)).fetchone()
+    if dataset is None:  # a check for every dataset: switched on or off, then each dataset's next profile runs it
+        if body.params is not None or body.action is not None:
+            raise invalid(RuleError("scope", "A check for every dataset can be switched on or off; to change it, add it again."))
+        if body.status is not None:
+            store.update(db, rule["id"], status=body.status)
+        return {**store.get(db, rule["id"]), "words": interpreter.words(rule), "count": None, "error": None}
     try:
         rule = rules.change(settings, db, cache, bus, dataset, rule, body.params, body.action, body.status)
     except RuleError as exc:

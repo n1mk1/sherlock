@@ -56,6 +56,8 @@ def run(rule: dict, frame: Frame, max_s: float) -> tuple[Finding | None, str | N
     if column not in frame.columns or any(c not in frame.columns for c in (rule["params"].get("left"),
                                                                            rule["params"].get("from")) if c):
         return None, "A column this check reads is no longer in the file"
+    if kind.types and frame.columns[column].type not in kind.types:  # a check for every dataset, on another file
+        return None, f"{column} is {frame.columns[column].type} in this file, which a {rule['kind']} check doesn't read"
     started = time.monotonic()
     try:
         if rule["kind"] == "pattern":
@@ -70,7 +72,7 @@ def run(rule: dict, frame: Frame, max_s: float) -> tuple[Finding | None, str | N
     if not count:
         return None, None
     details = {"rule_id": rule["id"], "rule": {k: rule[k] for k in ("kind", "column", "params", "action")},
-               "words": words(rule), "default_level": kind.default_level}
+               "words": words(rule), "default_level": kind.default_level, "source": rule.get("source", "user")}
     if rule["action"] == "quarantine":
         details["domain_rule"] = True
     elif rule["action"] == "flag":
@@ -82,8 +84,11 @@ def run(rule: dict, frame: Frame, max_s: float) -> tuple[Finding | None, str | N
 def detect(frame: Frame) -> list[Finding]:
     from sherlock.config import get_settings
 
+    from sherlock.cleaning.rules.packs import rules_for
+
     max_s = get_settings().rule_max_s
-    return [f for f in (run(r, frame, max_s)[0] for r in frame.rules) if f is not None]
+    rules = list(frame.rules) + rules_for(frame)  # the dataset's checks, then the shipped packs' (PRD CLEAN-13)
+    return [f for f in (run(r, frame, max_s)[0] for r in rules) if f is not None]
 
 
 def quarantine(issue: dict) -> Candidate | None:

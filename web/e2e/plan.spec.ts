@@ -2,6 +2,7 @@
 // server with recorded model replies: the sample's plan opens at once on code's default levels, grouped by
 // level with "Worth a look" unticked; a level's box ticks the whole level; a check of your own is counted at
 // once; a suggested check is kept; nothing is cleaned until Start.
+import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { expectNoAxeViolations } from "./axe";
 
@@ -49,10 +50,31 @@ test("the plan groups fixes by level and starts worth-a-look fixes unticked", as
   await suggested.getByRole("textbox", { name: "Highest" }).fill("4");
   await suggested.getByRole("button", { name: "Save" }).click();
   await expect(suggested).toContainText("parch is between 0 and 4");
-  await suggested.getByRole("button", { name: "Keep" }).click();
-  await expect(page.getByRole("region", { name: "Suggested checks" })).toHaveCount(0);
+  await suggested.getByRole("listitem").filter({ hasText: "parch" }).getByRole("button", { name: "Keep" }).click();
   await expect(page.getByRole("checkbox", { name: "parch: your check" })).toBeVisible();
+  // Dismiss the other: it goes for good, and the group with it.
+  await expect(suggested).toContainText("embarked is one of S, C, Q");
+  await suggested.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByRole("region", { name: "Suggested checks" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Clean with AI" })).toBeVisible();
+});
+
+test("a run from the plan reports what became of each issue", async ({ page }) => {
+  // The small messy file the Cleaner's tests use, with their recorded replies (PRD CLEAN-6).
+  await page.goto("/");
+  await page.getByTestId("file-input").setInputFiles(path.join(import.meta.dirname, "messy.csv"));
+  await page.getByRole("dialog").getByRole("button", { name: /^Import/ }).click();  // the import preview
+  await page.getByRole("button", { name: "Clean with AI" }).click({ timeout: 120_000 });
+  await expect(page.getByRole("heading", { name: /Cleaning plan · v\d+/ })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: /Start cleaning \(\d+\)/ }).click();
+  const csv = page.getByRole("tab", { name: "CSV" });
+  await expect(csv).not.toHaveAttribute("aria-disabled", /.*/, { timeout: 180_000 });
+  await csv.click();
+  await page.getByRole("button", { name: "Full cleaning report" }).click({ timeout: 120_000 });
+  const report = page.getByRole("dialog");
+  await expect(report).toContainText(/step \d+ /);  // a step the run committed: a real run
+  await expect(report.getByRole("term")).toHaveText(["fixed", "flagged", "checked and kept", "couldn't fix", "not attempted"]);
+  await expect(report).toContainText(/\d+ found · \d+ marked, not changed \(leakage and ID columns\) · no rows deleted/);
 });

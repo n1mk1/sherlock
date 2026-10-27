@@ -49,5 +49,6 @@ SPEC = DetectorSpec(
     "whitespace_case", "spacing or case variants",
     "Stray spaces, and spellings of one value that differ only by case or spacing.",
     group="text", weight=0.4, default_level="splits", scope="column", detect=detect,
+    applies_to=frozenset(("category", "text", "id", "bool")),
     injectors={"case": Injector(damage)}, clean_fixture=lambda: (clean_frame(), "category"),
 )

@@ -46,6 +46,7 @@ def damage(df, column: str, rows: list[int], rng) -> dict:
 SPEC = DetectorSpec(
     "unit_mixes", "mixed units", "One column holding numbers written with different units.",
     group="types", weight=0.5, default_level="skews", scope="column", detect=detect,
+    applies_to=frozenset(("category", "text")),
     injectors={"unit": Injector(damage)},
     clean_fixture=lambda: (with_column("weight", [f"{1 + i % 40} kg" for i in range(200)]), "weight"),
 )

@@ -12,6 +12,7 @@ import { ME, mockApi, renderAt } from "@/test/render";
 import { CleanPlanPanel, DateOrder } from "./CleanPlanPanel";
 import { callsLine, CleaningProgress, collapse, LogEntry, mergeLog, mmss } from "./CleaningProgress";
 import { ReportSummary } from "./CleaningReport";
+import { summaryLines } from "./CleaningOffer";
 import { OfferActions } from "./OfferActions";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -109,6 +110,16 @@ describe("cleaning screens", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clean it myself" }));
     expect(await screen.findByText("the CSV tab")).toBeInTheDocument();
     expect(sent(calls).map((c) => c.path)).toContain("/api/v1/datasets/ds_1/use-as-is");
+  });
+
+  it("leads with never-changed columns, then the most severe issues by level, then by size", () => {
+    const i = (id: string, level: string | null, severity: number) =>
+      ({ id, detector: "missing", column: id, count: 1, severity, proposal: "", examples: [], details: {}, level });
+    const card = { issues: [i("big_check", "check", 0.9), i("skews", "skews", 0.1), i("breaks", "breaks", 0.05),
+                            i("kept", null, 1.0), i("splits", "splits", 0.2)] } as never;
+    expect(summaryLines(card).map((x) => x.id)).toEqual(["kept", "breaks", "skews"]);
+    const old = { issues: [i("a", null, 0.1), i("b", null, 0.5)] } as never;  // a card from before levels
+    expect(summaryLines(old).map((x) => x.id)).toEqual(["b", "a"]);
   });
 
   it("offers retry choices after a failed run", () => {
@@ -310,7 +321,8 @@ describe("the cleaning plan", () => {
     fireEvent.change(within(form).getByRole("combobox", { name: "Rows that break it" }), { target: { value: "quarantine" } });
     fireEvent.click(within(form).getByRole("button", { name: "Add check" }));
     await waitFor(() => expect(sent(calls).find((c) => c.method === "PATCH")?.body).toEqual({ ops: [{
-      op: "add_rule", rule: { kind: "range", column: "amount", params: { min: 0, max: null }, action: "quarantine" } }] }));
+      op: "add_rule", rule: { kind: "range", column: "amount", params: { min: 0, max: null }, action: "quarantine",
+                              scope: "dataset" } }] }));
   });
 
   it("lists suggested checks with their count and reason, and keeps or dismisses one", async () => {

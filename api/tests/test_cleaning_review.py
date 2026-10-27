@@ -318,3 +318,66 @@ def test_a_picked_date_order_is_codes_own_parse():
     assert "parse_dates_smart(df['visit_date'], order_hint='dmy')" in fix.code and "quarantine_rows(" in fix.code
     compile(fix.code, "fix", "exec")
     assert order_candidate({"detector": "ambiguous_dates", "column": "visit_date", "date_order": None}) is None
+
+
+def test_an_item_you_touched_keeps_its_tick_when_the_review_arrives():
+    from sherlock.cleaning import plan as plans
+
+    items = [{"id": "a", "key": "outliers|x", "change": True, "ticked": True, "touched": True, "sev": "check"},
+             {"id": "b", "key": "missing|y", "change": True, "ticked": False, "touched": False, "sev": "check"}]
+    rated_ = {"outliers|x": {"sev": "check", "sev_reason": "Real.", "sev_source": "model", "likely_real": True},
+              "missing|y": {"sev": "skews", "sev_reason": "Biases.", "sev_source": "model", "likely_real": False}}
+    out = {i["id"]: i for i in plans.reviewed(items, rated_)}
+    assert out["a"]["ticked"] and out["a"]["sev_reason"] == "Real."   # yours: your tick stays
+    assert out["b"]["ticked"] and out["b"]["sev"] == "skews"          # untouched: ticked as its new level starts
+
+
+def test_one_failed_chunk_keeps_its_defaults_and_the_others_apply():
+    calls = []
+
+    class FirstChunkFails:
+        def structured(self, role, messages, schema, **kw):
+            calls.append(kw["purpose"])
+            refs = re.findall(r"^(f\d+) · ", messages[1]["content"], re.M)
+            if len(calls) <= 2:  # both readings of the first chunk
+                raise StructuredOutputError("still invalid")
+            return SimpleNamespace(value=Ratings(ratings=[Rating(ref=r, level="cosmetic", reason="Fine.", likely_real=False)
+                                                          for r in refs]))
+
+    stored = {}
+
+    class DB:
+        def execute(self, *a):
+            return self
+
+        def fetchall(self):
+            return []
+
+        def executemany(self, sql, rows):
+            stored.update({r[2]: r for r in rows})
+
+    columns = [{"name": f"c{n}", "role": "dimension", "type": "category"} for n in range(45)]
+    card = {"version": 2, "row_count": 100, "columns": columns, "target_candidates": [], "leakage_candidates": [],
+            "id_columns": [], "issues": [issue("whitespace_case", f"c{n}", 0.5 - n / 100) for n in range(45)]}
+    assert review.review(get_settings(), DB(), {"id": "ds", "user_id": "u"}, card, None, llm=FirstChunkFails()) == "ready"
+    sources = [stored[f"whitespace_case|c{n}"][6] for n in range(45)]
+    assert sources[:40] == ["default"] * 40 and sources[40:] == ["model"] * 5  # chunks of 40, the most severe first
+
+
+@pytest.mark.usefixtures("reviews_on")
+def test_ratings_survive_a_re_profile_of_the_same_version(client):
+    ds, plan = _reviewed_plan(client)
+    from sherlock.db.connection import connect
+    from sherlock.profile import service as profile_service
+
+    db = connect(get_settings())
+    try:
+        before = review.stored(db, ds["id"], plan["version"])
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds["id"],)).fetchone()
+        db.execute("DELETE FROM datacards WHERE dataset_id = ? AND version = ?", (ds["id"], plan["version"]))
+        profile_service.get_or_build(get_settings(), db, client.app.state.duckdb, dataset, plan["version"])  # rewrites issues
+        assert review.stored(db, ds["id"], plan["version"]) == before
+    finally:
+        db.close()
+    again = client.get(f"{API}/clean-plans/{plan['id']}").json()
+    assert again["review"] == "ready" and any(i["sev_source"] == "model" for i in again["items"])
