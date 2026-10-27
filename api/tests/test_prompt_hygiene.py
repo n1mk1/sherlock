@@ -160,7 +160,7 @@ def test_every_prompt_keeps_the_files_text_inside_data_blocks(script, client):  
     purposes = {p for p, _ in s.prompts}
     expected = {"curate", "narrate", "overview", "route", "sql", "sql_check", "compose", "predicate", "widget", "update_widget", "stats",
                 "meaning", "plan", "edits", "plan_edits", "summary", "synthesis", "ask_story", "diagnose", "propose", "critic",
-                "rate"}
+                "rate", "suggest_rules"}
     assert expected <= purposes, expected - purposes
     for purpose, prompt in s.prompts:
         assert MARK not in outside(prompt), (purpose, outside(prompt)[:2000])

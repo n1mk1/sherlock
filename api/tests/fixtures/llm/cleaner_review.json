@@ -1,0 +1,27 @@
+[
+  {
+    "purpose": "suggest_rules",
+    "match": [
+      "parch"
+    ],
+    "content": {
+      "suggestions": [
+        {
+          "rule": {
+            "kind": "range",
+            "column": "parch",
+            "min": 0.0,
+            "max": 5.0,
+            "earliest": null,
+            "latest": null,
+            "values": null,
+            "regex": null,
+            "other": null,
+            "action": "quarantine"
+          },
+          "reason": "A count of parents and children aboard is small, so a larger one is likely a typo."
+        }
+      ]
+    }
+  }
+]

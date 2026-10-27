@@ -9,6 +9,7 @@ import json
 
 from sherlock.cleaning import plan as plans
 from sherlock.cleaning import review
+from sherlock.cleaning.rules import service as rule_service
 from sherlock.jobs.events import emit
 from sherlock.jobs.runner import JobContext, register
 from sherlock.llm.client import CallScope
@@ -25,14 +26,16 @@ def _run(ctx: JobContext) -> dict:
     card = profile_service.get_or_build(ctx.settings, ctx.db, ctx.cache, dataset, version)
     scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
                       on_wait=lambda text: ctx.log(text, icon="wait"))
-    outcome = review.review(ctx.settings, ctx.db, dataset, card, scope, progress=ctx.progress)
+    frame = rule_service.frame_for(ctx.settings, ctx.cache, ctx.db, dataset, version)
+    suggested = review.suggest(ctx.settings, ctx.db, dataset, card, frame, scope)  # first, so they're rated too
+    outcome = review.review(ctx.settings, ctx.db, dataset, card, scope, progress=ctx.progress, extra=suggested)
     pid = plans.draft_id(ctx.db, dataset["id"])
     row = plans.get(ctx.db, pid) if pid else None
     if row is not None and row["version"] == version:
         items = plans.reviewed(json.loads(row["items_json"]), review.stored(ctx.db, dataset["id"], version) or {})
         plans.save(ctx.db, row["id"], items)
         emit(ctx.db, ctx.bus, dataset["id"], dataset["user_id"], "plan.updated", {"plan_id": row["id"]}, ctx.id)
-    return {"review": outcome, "version": version}
+    return {"review": outcome, "version": version, "suggested": len(suggested)}
 
 
 async def run(ctx: JobContext) -> dict:

@@ -221,6 +221,16 @@ class RuleDraft(Strict):
     action: Literal["quarantine", "flag", "fix"]
 
 
+class RuleSuggestion(Strict):
+    rule: RuleDraft
+    reason: str = Field(description="one sentence on why the check holds for this column, no digits")
+
+
+class RuleSuggestions(Strict):
+    """Suggested checks (TRD §7.2, PRD CLEAN-14): rules the model writes and code runs."""
+    suggestions: list[RuleSuggestion] = Field(max_length=8)
+
+
 class PlanEdit(Strict):
     op: Literal["tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction", "add",
                 "remove", "add_rule"]

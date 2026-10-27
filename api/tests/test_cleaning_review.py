@@ -9,10 +9,11 @@ from types import SimpleNamespace
 import pytest
 
 from sherlock.cleaning import registry, review
+from sherlock.cleaning.rules import service as review_rules
 from sherlock.cleaning.review import _check_refs, findings, rated
 from sherlock.config import get_settings
 from sherlock.llm.client import StructuredOutputError
-from sherlock.llm.schemas import Rating, Ratings
+from sherlock.llm.schemas import Rating, Ratings, RuleSuggestions
 from tests.test_jobs import API, wait_for, wait_status
 
 CARD = {
@@ -67,17 +68,21 @@ def test_every_ref_must_be_rated_once():
 
 
 class ScriptedLLM:
-    """Rates every ref it is sent "cosmetic", except that the calls in `fail` raise."""
+    """Rates every ref it is sent "cosmetic", except that the rating calls in `fail` (counted from 1) raise;
+    suggests the checks in `suggestions`."""
 
     calls: list[str] = []
     fail: set[int] = set()
+    suggestions: list[dict] = []
 
     def __init__(self, settings=None):
         pass
 
     def structured(self, role, messages, schema, **kw):
         ScriptedLLM.calls.append(kw["purpose"])
-        if len(ScriptedLLM.calls) in ScriptedLLM.fail:
+        if kw["purpose"] == "suggest_rules":
+            return SimpleNamespace(value=RuleSuggestions(suggestions=ScriptedLLM.suggestions))
+        if ScriptedLLM.calls.count("rate") in ScriptedLLM.fail:
             raise StructuredOutputError("still invalid after the repair")
         refs = re.findall(r"^(f\d+) · ", messages[1]["content"], re.M)
         value = Ratings(ratings=[Rating(ref=r, level="cosmetic", reason="Changes no answer.", likely_real=False)
@@ -92,7 +97,7 @@ def reviews_on(monkeypatch, tmp_path, run_jobs):
     monkeypatch.setenv("CLEAN_REVIEW", "on")
     monkeypatch.setenv("LLM_MOCK", str(tmp_path / "none.json"))  # a model "answers", so the review runs
     monkeypatch.setattr(review, "LLMClient", ScriptedLLM)
-    ScriptedLLM.calls, ScriptedLLM.fail = [], set()
+    ScriptedLLM.calls, ScriptedLLM.fail, ScriptedLLM.suggestions = [], set(), []
     get_settings.cache_clear()
 
 
@@ -186,5 +191,53 @@ def test_a_started_plan_is_not_changed_by_a_later_review(client):
         _run(ctx)
         assert plans.get(db, plan["id"])["items_json"] == before
         assert json.loads(before) and dataset is not None
+    finally:
+        db.close()
+
+
+def draft(kind, column, **params):
+    base = {"kind": kind, "column": column, "min": None, "max": None, "earliest": None, "latest": None,
+            "values": None, "regex": None, "other": None, "action": "flag"}
+    return {"rule": {**base, **params}, "reason": "Families aboard are small, so a bigger count is a typo."}
+
+
+@pytest.mark.usefixtures("reviews_on")
+def test_suggested_checks_are_checked_counted_and_kept_or_dismissed(client):
+    ScriptedLLM.suggestions = [
+        draft("range", "parch", max=5.0, action="quarantine"),  # valid: some rows break it
+        draft("range", "nowhere", max=5.0),             # not a column: dropped
+        draft("not_missing", "age"),                    # repeats the built-in missing values on age: dropped
+        draft("range", "parch", max=4.0),               # the same kind on the same column again: dropped
+        {**draft("unique", "ticket"), "reason": "Has 2 problems."},  # kept, but its reason has digits: dropped
+    ]
+    ds, plan = _reviewed_plan(client)
+    got = plan["suggestions"]
+    assert [(s["kind"], s["column"]) for s in got] == [("range", "parch"), ("unique", "ticket")]
+    parch = got[0]
+    assert parch["status"] == "suggested" and parch["source"] == "suggested" and parch["count"] > 0
+    assert parch["words"] == "parch is at most 5" and parch["reason"].startswith("Families aboard")
+    assert parch["sev"] == "cosmetic" and parch["sev_reason"] == "Changes no answer."  # rated with the rest
+    assert got[1].get("reason") is None
+    assert not any(i["key"].startswith("rule:") for i in plan["items"])  # not run by the Cleaner until kept
+
+    kept = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "keep_suggestion", "rule_id": parch["id"]}]})
+    assert kept.status_code == 200 and kept.json()["summary"] == "Kept the suggested check: parch is at most 5."
+    item = next(i for i in kept.json()["items"] if i["key"] == f"rule:{parch['id']}|parch")
+    assert item["count"] == parch["count"] and item["sev_source"] == "model"
+    gone = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "dismiss_suggestion", "rule_id": got[1]["id"]}]})
+    assert gone.json()["summary"] == "Dismissed the suggested check: ticket is unique." and gone.json()["suggestions"] == []
+    again = client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "keep_suggestion", "rule_id": got[1]["id"]}]})
+    assert again.status_code == 422
+
+    # A dismissed suggestion isn't suggested again: the same kind on the same column is dropped.
+    from sherlock.db.connection import connect
+    from sherlock.profile import service as profile_service
+
+    db = connect(get_settings())
+    try:
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds["id"],)).fetchone()
+        card = profile_service.get_or_build(get_settings(), db, client.app.state.duckdb, dataset)
+        frame = review_rules.frame_for(get_settings(), client.app.state.duckdb, db, dataset)
+        assert review.suggest(get_settings(), db, dataset, card, frame, None, ScriptedLLM()) == []
     finally:
         db.close()

@@ -313,6 +313,21 @@ describe("the cleaning plan", () => {
       op: "add_rule", rule: { kind: "range", column: "amount", params: { min: 0, max: null }, action: "quarantine" } }] }));
   });
 
+  it("lists suggested checks with their count and reason, and keeps or dismisses one", async () => {
+    const suggestion = { id: "rul_s", kind: "range", column: "units", action: "quarantine", words: "units is at most 50",
+                         reason: "Orders are small, so a large count is a typo.", count: 3, error: null, sev: "skews" };
+    const calls = mockApi({
+      "GET /api/v1/clean-plans/pln_1": { ...PLAN, suggestions: [suggestion] },
+      "PATCH /api/v1/clean-plans/pln_1": PLAN,
+    });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    const group = await screen.findByRole("region", { name: "Suggested checks" });
+    expect(group).toHaveTextContent("units is at most 50suggested by Sherlock3 rows break it.Orders are small");
+    fireEvent.click(within(group).getByRole("button", { name: "Keep" }));
+    await waitFor(() => expect(sent(calls).find((c) => c.method === "PATCH")?.body)
+      .toEqual({ ops: [{ op: "keep_suggestion", rule_id: "rul_s" }] }));
+  });
+
   it("groups the fixes by level, with the review's reason or the default level, while it reviews", async () => {
     const bigFare = PLAN.items.map((i) => (i.id === "pit_fare" ? { ...i, severity: 0.5 } : i));
     mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, review: "running", items: bigFare } });

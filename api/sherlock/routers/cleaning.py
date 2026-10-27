@@ -52,11 +52,12 @@ class PlanRequest(BaseModel):
 class PlanOp(BaseModel):
     model_config = ConfigDict(extra="forbid")
     op: Literal["tick", "untick", "tick_module", "untick_module", "tick_level", "untick_level", "set_instruction",
-                "set_date_order", "add", "remove", "add_rule"]
+                "set_date_order", "add", "remove", "add_rule", "keep_suggestion", "dismiss_suggestion"]
     item_id: str | None = None
     module: str | None = None
     level: Literal["breaks", "skews", "splits", "check", "cosmetic"] | None = None  # tick_level, untick_level
     rule: RuleIn | None = None  # add_rule: a check of your own (PRD CLEAN-13)
+    rule_id: str | None = None  # keep_suggestion, dismiss_suggestion (PRD CLEAN-14)
     column: str | None = None  # add: a column of the file, or null for the rows
     instruction: str | None = Field(default=None, max_length=plans.MAX_INSTRUCTION)  # null on set_instruction resets
     order: Literal["dmy", "mdy"] | None = None  # set_date_order: day-first or month-first; null clears it
@@ -139,8 +140,11 @@ def start_clean(
 
 
 def _out(app, db: sqlite3.Connection, row: sqlite3.Row, notes: list[str] | None = None) -> dict:
-    """The `CleanPlan` with its version's review status (TRD §4.4)."""
-    return plans.to_plan(row, notes, review.status(app.state.settings, db, row["dataset_id"], row["version"]))
+    """The `CleanPlan` with its version's review status and suggested checks (TRD §4.4)."""
+    s = app.state
+    dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (row["dataset_id"],)).fetchone()
+    return {**plans.to_plan(row, notes, review.status(s.settings, db, row["dataset_id"], row["version"])),
+            "suggestions": rule_service.suggestions(s.settings, db, s.duckdb, dataset, row["version"])}
 
 
 def _card(request: Request, db: sqlite3.Connection, dataset: sqlite3.Row) -> dict:

@@ -119,6 +119,21 @@ export interface CleanPlan {
   notes?: string[];   // what a merge onto a newer version changed
   // The version's severity review: rated, still running, or every item on code's default level.
   review?: "ready" | "running" | "default";
+  suggestions?: Suggestion[]; // checks Sherlock suggests, not run until kept (PRD CLEAN-14)
+}
+
+// A suggested check: the model wrote it, code counted it on the current version.
+export interface Suggestion {
+  id: string;
+  kind: RuleKind;
+  column: string;
+  action: RuleIn["action"];
+  words: string;
+  reason?: string;
+  count: number | null;
+  error: string | null;
+  sev: Level;
+  sev_reason?: string | null;
   summary?: string;   // what a PATCH changed, written by code
 }
 
@@ -134,6 +149,7 @@ export type PlanOp =
   | { op: "tick_module" | "untick_module"; module: PlanModule }
   | { op: "tick_level" | "untick_level"; level: Level } // every fix of a level (PRD CLEAN-8c)
   | { op: "add_rule"; rule: RuleIn } // a check of your own (PRD CLEAN-13)
+  | { op: "keep_suggestion" | "dismiss_suggestion"; rule_id: string } // a suggested check (PRD CLEAN-14)
   | { op: "set_instruction"; item_id: string; instruction: string | null } // null puts Sherlock's wording back
   | { op: "set_date_order"; item_id: string; order: "dmy" | "mdy" | null } // null clears the order
   | { op: "add"; column: string | null; instruction: string };

@@ -17,7 +17,7 @@ def get(db: sqlite3.Connection, rule_id: str) -> dict | None:
 
 
 def all_for(db: sqlite3.Connection, dataset_id: str) -> list[dict]:
-    rows = db.execute("SELECT * FROM detector_rules WHERE dataset_id = ? ORDER BY created_at, id", (dataset_id,)).fetchall()
+    rows = db.execute("SELECT * FROM detector_rules WHERE dataset_id = ? ORDER BY rowid", (dataset_id,)).fetchall()  # saved order
     return [_out(r) for r in rows]
 
 

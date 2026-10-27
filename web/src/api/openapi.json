@@ -1204,7 +1204,9 @@
        "set_date_order",
        "add",
        "remove",
-       "add_rule"
+       "add_rule",
+       "keep_suggestion",
+       "dismiss_suggestion"
       ],
       "title": "Op",
       "type": "string"
@@ -1233,6 +1235,17 @@
         "type": "null"
        }
       ]
+     },
+     "rule_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rule Id"
      }
     },
     "required": [

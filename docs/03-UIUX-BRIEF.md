@@ -484,6 +484,7 @@ Behaviour, states and transitions for each screen are in the App Flow; this sect
   - With no order, one muted line says why it matters.
 - **Your steps** rows: the issue reads "your step", no count, the instruction in `--foreground`, "· from chat" (11px muted) when chat added it, and an × (ghost, 14px) removes it.
 - **"+ Add a step"**: a link button with the `plus` icon under the modules. It opens a bordered box (radius 14, 12px padding): a Column select (mono; Rows first, then the file's columns), a "What to do" textarea, then Cancel and Add (primary).
+- **Suggested checks** (PRD CLEAN-14): an overline group above Marked, not changed; each row a disabled checkbox, the check in words, "suggested by Sherlock" (11px muted), the count and the model's reason on the next line in body-sm muted, then **Keep** (secondary, sm) and **Dismiss** (ghost, sm).
 - **"+ Add a check"** beside it (PRD CLEAN-13): the same bordered box with selects (32px, `--card`, `--input` border) for Column (mono), Check and "Rows that break it", and 32px inputs for the check's values, labelled in 12px muted; Cancel and Add check (primary). A check's row has an × (ghost, 14px) that turns it off.
 - **Chat** while it's open: the bar's placeholder reads "Ask Sherlock to change the plan…".
 - **Mode**: an overline, then two radios: "Run on its own" (selected) and "Ask me before each fix" (P1), muted at 60% with "comes later" and the tooltip "Step-by-step cleaning comes in a later release".

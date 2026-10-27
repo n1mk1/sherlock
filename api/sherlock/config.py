@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     clean_max_seconds: int = 300
     # The background review that rates each finding's severity (TRD §7.2); off, every item keeps code's default level.
     clean_review: Literal["on", "off"] = "on"
+    clean_suggest: Literal["on", "off"] = "on"  # suggested checks, written in the same review job (PRD CLEAN-14)
     rule_max_s: float = 2.0  # a rule running longer on a version is stopped: "This check took too long"
     # Detector packs (TRD §7.1 step 4): installed Python entry points, run in the API process, so off unless the
     # operator allows them: "all" or a comma-separated allowlist of pack names. DETECTORS_OFF: ids that don't run.

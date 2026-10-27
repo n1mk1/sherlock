@@ -21,18 +21,24 @@ def columns(card: dict) -> dict[str, str]:
     return {c["name"]: c["type"] for c in card["columns"]}
 
 
-def counts(settings: Settings, cache: VersionConnections, dataset: sqlite3.Row, rules: list[dict], db) -> dict[str, dict]:
-    """Each rule's count on the current version and the error that stopped it, by rule id."""
+def frame_for(settings: Settings, cache: VersionConnections, db, dataset: sqlite3.Row, version: int | None = None):
+    """The detector frame of a version (the current one by default), as rules run on it."""
     from sherlock.profile.datacard import build_frame, load_frame
 
-    if not rules:
-        return {}
+    version = version or dataset["current_version"]
     row = db.execute("SELECT parquet_path FROM versions WHERE dataset_id = ? AND version = ?",
-                     (dataset["id"], dataset["current_version"])).fetchone()
-    with cache.connection(dataset["id"], dataset["current_version"],
+                     (dataset["id"], version)).fetchone()
+    with cache.connection(dataset["id"], version,
                           dataset_dir(settings, dataset["user_id"], dataset["id"]) / row["parquet_path"]) as conn:
         df, types, _ = load_frame(conn)
-    frame = build_frame(df, types)
+    return build_frame(df, types)
+
+
+def counts(settings: Settings, cache: VersionConnections, dataset: sqlite3.Row, rules: list[dict], db) -> dict[str, dict]:
+    """Each rule's count on the current version and the error that stopped it, by rule id."""
+    if not rules:
+        return {}
+    frame = frame_for(settings, cache, db, dataset)
     out = {}
     for r in rules:
         finding, error = interpreter.run(r, frame, settings.rule_max_s)
@@ -84,17 +90,53 @@ def apply(settings, db, cache, bus, dataset: sqlite3.Row, row: sqlite3.Row, ops:
     from sherlock.profile import service as profile_service
 
     rule_ops = [o for o in ops if o.get("op") == "add_rule"]
-    other = [o for o in ops if o.get("op") != "add_rule"]
+    picks = [o for o in ops if o.get("op") in SUGGESTION_OPS]
+    other = [o for o in ops if o.get("op") != "add_rule" and o.get("op") not in SUGGESTION_OPS]
     card = profile_service.get_or_build(settings, db, cache, dataset)
     specs = [interpreter.validate(o.get("rule") or {}, columns(card)) for o in rule_ops]
+    suggested = [_suggestion(db, dataset, o.get("rule_id")) for o in picks]
     plans.apply_ops(json.loads(row["items_json"]), other, columns_, source)  # a dry run: all or nothing
     for spec in specs:
         add(settings, db, cache, bus, dataset, spec)
+    said = [f"Added your check: {interpreter.words(s)}." for s in specs]
+    for op, rule in zip(picks, suggested):
+        keep = op["op"] == "keep_suggestion"
+        if keep:
+            change(settings, db, cache, bus, dataset, rule, status="active")
+        else:
+            store.update(db, rule["id"], status="off")
+        said.append(f"{'Kept' if keep else 'Dismissed'} the suggested check: {interpreter.words(rule)}.")
     row = plans.get(db, row["id"])
     items, summary = plans.apply_ops(json.loads(row["items_json"]), other, columns_, source)
     row = plans.save(db, row["id"], items)
-    said = [f"Added your check: {interpreter.words(s)}." for s in specs]
     return row, " ".join(said + ([summary] if other or not said else []))
+
+
+SUGGESTION_OPS = ("keep_suggestion", "dismiss_suggestion")
+
+
+def _suggestion(db, dataset: sqlite3.Row, rule_id) -> dict:
+    rule = store.get(db, rule_id or "")
+    if rule is None or rule["dataset_id"] != dataset["id"] or rule["status"] != "suggested":
+        raise RuleError("rule_id", "There's no suggested check with that id in this plan.")
+    return rule
+
+
+def suggestions(settings, db, cache, dataset: sqlite3.Row, version: int) -> list[dict]:
+    """A plan's suggested checks (PRD CLEAN-14): each with its words, the model's reason, its count by
+    code on the current version, and its level (the review's, or its kind's default)."""
+    from sherlock.cleaning import review
+    from sherlock.cleaning.rules.kinds import KINDS
+
+    rules = [r for r in store.all_for(db, dataset["id"]) if r["status"] == "suggested"]
+    if not rules:
+        return []
+    rated = review.stored(db, dataset["id"], version) or {}
+    out = []
+    for r in with_counts(settings, db, cache, dataset, rules):
+        level = rated.get(f"rule:{r['id']}|{r['column']}") or {}
+        out.append({**r, "sev": level.get("sev") or KINDS[r["kind"]].default_level, "sev_reason": level.get("sev_reason")})
+    return out
 
 
 def change(settings, db, cache, bus, dataset: sqlite3.Row, rule: dict, params: dict | None = None,

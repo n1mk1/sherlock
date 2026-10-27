@@ -1856,10 +1856,12 @@ export interface components {
              * Op
              * @enum {string}
              */
-            op: "tick" | "untick" | "tick_module" | "untick_module" | "tick_level" | "untick_level" | "set_instruction" | "set_date_order" | "add" | "remove" | "add_rule";
+            op: "tick" | "untick" | "tick_module" | "untick_module" | "tick_level" | "untick_level" | "set_instruction" | "set_date_order" | "add" | "remove" | "add_rule" | "keep_suggestion" | "dismiss_suggestion";
             /** Order */
             order?: ("dmy" | "mdy") | null;
             rule?: components["schemas"]["RuleIn"] | null;
+            /** Rule Id */
+            rule_id?: string | null;
         };
         /** PlanPatch */
         PlanPatch: {

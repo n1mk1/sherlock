@@ -1,6 +1,7 @@
 // The cleaning plan by severity level (PRD CLEAN-8c, App Flow §4.1), in a real browser against the same
 // server with recorded model replies: the sample's plan opens at once on code's default levels, grouped by
-// level with "Worth a look" unticked; a level's box ticks the whole level; nothing is cleaned until Start.
+// level with "Worth a look" unticked; a level's box ticks the whole level; a check of your own is counted at
+// once; a suggested check is kept; nothing is cleaned until Start.
 import { expect, test } from "@playwright/test";
 import { expectNoAxeViolations } from "./axe";
 
@@ -38,6 +39,14 @@ test("the plan groups fixes by level and starts worth-a-look fixes unticked", as
   await expect(check).toContainText(/\d+/);
   await check.getByRole("button", { name: "Turn off your check on fare" }).click();
   await expect(kept.getByText("fare is at most 100")).toHaveCount(0);
+
+  // Suggested checks (PRD CLEAN-14): the recorded reply suggests one; code counted it; Keep runs it.
+  const suggested = page.getByRole("region", { name: "Suggested checks" });
+  await expect(suggested).toContainText("parch is between 0 and 5");
+  await expect(suggested).toContainText("suggested by Sherlock");
+  await suggested.getByRole("button", { name: "Keep" }).click();
+  await expect(page.getByRole("region", { name: "Suggested checks" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: "parch: your check" })).toBeVisible();
 
   await page.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Clean with AI" })).toBeVisible();

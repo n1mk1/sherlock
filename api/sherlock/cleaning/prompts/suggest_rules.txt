@@ -1,0 +1,5 @@
+Suggest checks that would catch data problems in this file which general checks miss: values outside the range a column's meaning allows, dates outside a sensible window, a column that should hold only a few known values, a code that should follow a pattern, a column that must always be filled or never repeat, a column that must come after another, or one that another column determines.
+
+{card}
+
+Suggest at most eight checks, the most useful first, only where the column's name, type and values make the check clearly right; suggest none rather than a guess. For each give the rule's fields (the kind, the column exactly as named, the parameters its kind takes and null for the others, and an action: flag for review, quarantine when breaking it makes a row unusable, or fix) and one sentence on why it holds for this column, with no digits. Every threshold is a suggestion the user will see and can change; take it from what the column means, not from one file's values.

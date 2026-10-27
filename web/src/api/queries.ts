@@ -217,6 +217,8 @@ export function applyPlanOps(plan: CleanPlan, ops: PlanOp[]): CleanPlan {
   for (const op of ops) {
     if ("module" in op) {
       for (const i of items) if (i.module === op.module && i.change) i.ticked = op.op === "tick_module";
+    } else if ("rule_id" in op) {
+      continue; // a suggestion kept or dismissed: the server's plan follows
     } else if ("level" in op) {
       for (const i of items) if (i.sev === op.level && i.change && i.key) i.ticked = op.op === "tick_level";
     } else if ("item_id" in op) {

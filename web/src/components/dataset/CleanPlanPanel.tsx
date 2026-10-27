@@ -19,7 +19,7 @@ import {
   stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, usePlanOps, useRuleStatus, useStartCleaning,
   type CleanScope,
 } from "@/api/queries";
-import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind } from "@/api/types";
+import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind, Suggestion } from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { displayValue } from "@/lib/cells";
@@ -215,6 +215,7 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
               ? { op: on ? "tick_module" : "untick_module", module: "yours" }
               : { op: on ? "tick_level" : "untick_level", level: g.group as Level }])} />
         ))}
+        {!!plan.suggestions?.length && <SuggestedChecks items={plan.suggestions} busy={ops.isPending} send={send} />}
         {!changeable.length && <p className="text-muted-foreground">Nothing that needs cleaning yet. Add a step of your own below.</p>}
         <div className="flex flex-wrap gap-x-2">
           <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
@@ -460,6 +461,41 @@ function InstructionEditor({ item, busy, onDirty, onCancel, onSave }: {
 }
 
 /** "+ Add a step": a column of the file (or the rows) and what to do, in plain words. */
+// "Suggested checks" (PRD CLEAN-14): rules Sherlock wrote, counted by code, run only once kept.
+function SuggestedChecks({ items, busy, send }: { items: Suggestion[]; busy: boolean; send: Send }) {
+  return (
+    <section aria-labelledby="plan-group-suggested">
+      <div className="flex items-center gap-2 border-b border-border pb-1.5">
+        <h3 id="plan-group-suggested" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          Suggested checks
+        </h3>
+      </div>
+      <ul className="flex flex-col">
+        {items.map((s) => (
+          <li key={s.id} className="flex items-start gap-2 border-b border-border py-2 last:border-b-0">
+            <input type="checkbox" checked={false} disabled aria-label={`${s.words}: not run until kept`}
+              className="mt-0.5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <span>{s.words}</span>
+              <span className="ml-1.5 text-[11px] text-muted-foreground">suggested by Sherlock</span>
+              <p className="text-[12.5px] text-muted-foreground">
+                {s.error ?? (s.count === 1 ? "1 row breaks it." : `${(s.count ?? 0).toLocaleString()} rows break it.`)}
+                {s.reason && <span className="ml-1.5">{s.reason}</span>}
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => send([{ op: "keep_suggestion", rule_id: s.id }])}>
+              Keep
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => send([{ op: "dismiss_suggestion", rule_id: s.id }])}>
+              Dismiss
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 // "Add a check" (PRD CLEAN-13): a rule code runs on every version; its count shows as soon as it's saved.
 const KINDS: [RuleKind, string][] = [
   ["range", "Numbers between"], ["date_window", "Dates between"], ["allowed", "One of these values"],
