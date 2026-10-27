@@ -14,6 +14,14 @@ version), with the real model unless `LLM_MOCK` is set. Scores per set:
 The output ends with every step the Cleaner committed (its gate and confidence) and every issue it
 skipped and why, so a fix that didn't happen can be told from one that went wrong.
 
+Three checks of the severity review and the report (PRD CLEAN-8c, CLEAN-6), per set:
+- ratings: each damage the model rated (`issue_reviews`, `sev_source` model) is `breaks` or `skews` when
+  its column is the target or a measure, and `splits` or below on free text; "—" when nothing was rated
+  (recorded replies, or the review off)
+- report honest: the report's "couldn't fix" and "checked and kept" equal the skips read from their
+  reasons, so the counts aren't the classifier marking its own homework
+- stable: reviewing the same version again gives the same levels
+
 Three sets test what the Cleaner must not do: `dates_dmy` and `dates_mdy` hold the same
 kind of column, dates whose every day is 12 or less, written day-first in one and month-first in
 the other, so nothing in the data tells them apart and any fixed guess is wrong on one of them; and
@@ -178,6 +186,9 @@ class Score:
     seconds: float
     ended_by: str
     by_kind: dict = field(default_factory=dict)  # "column: kind" → [recovered, damaged, wrong]
+    ratings: list = field(default_factory=list)  # (column, damage, level, as expected), for model-rated damage
+    honest: bool | None = None                    # the report's lines agree with the skip reasons
+    stable: bool | None = None                    # a second review of the version gave the same levels
     skipped: list = field(default_factory=list)  # the report's skipped issues: (column, detector, reason)
     committed: list = field(default_factory=list)  # the report's steps: (summary, gate, confidence)
 
@@ -247,7 +258,65 @@ def run_case(client, case: Case, timeout_s: float = 900) -> Score:
     result = score(case, final, len(report["steps"]), time.monotonic() - started, report["ended_by"])
     result.skipped = [(s["column"], s["detector"], s["reason"]) for s in report["skipped"]]
     result.committed = [(s["summary"], s["gate"], s["confidence"]) for s in report["steps"]]
+    result.honest = honest(report)
+    result.ratings, result.stable = _review_checks(client, ds_id, case, report["from_version"], timeout_s)
     return result
+
+
+EXPECTED = {"target": {"breaks", "skews"}, "measure": {"breaks", "skews"}, "free_text": {"splits", "check", "cosmetic"}}
+FAILED = ("No candidate passed", "Failed", "Skipped:", "model output invalid", "Not applied", "The fix changed nothing",
+          "The data changed")
+
+
+def honest(report: dict) -> bool | None:
+    """The report's "couldn't fix" and "checked and kept" against the skips' own reasons (PRD CLEAN-6);
+    None for a report without those counts."""
+    counts = report["counts"]
+    if "couldnt_fix" not in counts:
+        return None
+    reasons = [s["reason"] for s in report["skipped"]]
+    failed = sum(1 for r in reasons if r.startswith(FAILED))
+    kept = sum(1 for r in reasons if r.startswith("Left as is"))
+    return counts["couldnt_fix"] == failed and counts["checked_and_kept"] == kept
+
+
+def expected(role: str, level: str) -> bool | None:
+    """Whether a rated level fits the column's role, or None when the role sets no expectation."""
+    want = EXPECTED.get(role)
+    return None if want is None else level in want
+
+
+def _review_checks(client, ds_id: str, case: Case, version: int | None, timeout_s: float) -> tuple[list, bool | None]:
+    from sherlock.cleaning import levels, review
+    from sherlock.config import get_settings
+    from sherlock.db.connection import connect
+    from sherlock.llm.client import CallScope
+    from sherlock.profile import service as profile_service
+
+    api = "/api/v1"
+    _wait(lambda: not [j for j in client.get(f"{api}/jobs", params={"dataset_id": ds_id}).json()
+                       if j["kind"] == "review_issues" and j["status"] in ("queued", "running")], timeout_s)
+    settings = get_settings()
+    db = connect(settings)
+    try:
+        if version is None:
+            return [], None
+        dataset = db.execute("SELECT * FROM datasets WHERE id = ?", (ds_id,)).fetchone()
+        first = review.stored(db, ds_id, version) or {}
+        if not any(r["sev_source"] == "model" for r in first.values()):
+            return [], None
+        card = profile_service.get_or_build(settings, db, client.app.state.duckdb, dataset, version)
+        out = []
+        for column, damage in sorted({(d.column, d.kind) for d in case.damage}):
+            rating = first.get(f"{damage.split(':')[0]}|{column}")
+            if rating and rating["sev_source"] == "model":
+                out.append((column, damage, rating["sev"], expected(levels.role(column, card), rating["sev"])))
+        review.review(settings, db, dataset, card, CallScope(user_id=dataset["user_id"], dataset_id=ds_id))
+        second = review.stored(db, ds_id, version) or {}
+        stable = all(second.get(k, {}).get("sev") == r["sev"] for k, r in first.items() if r["sev_source"] == "model")
+        return out, stable
+    finally:
+        db.close()
 
 
 def _final(client, ds_id: str) -> pd.DataFrame:
@@ -295,6 +364,7 @@ def run(names: list[str] | None = None) -> str:
         details = ["", "| Set | Damage | Recovered | Wrong |", "|---|---|---|---|"]
         skips = ["", "| Set | Skipped | Reason |", "|---|---|---|"]
         steps = ["", "| Set | Step | Gate | Confidence |", "|---|---|---|---|"]
+        checks = ["", "| Set | Ratings | Report honest | Stable |", "|---|---|---|---|"]
         with TestClient(create_app()) as client:
             for case in cases():
                 if names and case.name not in names:
@@ -303,7 +373,16 @@ def run(names: list[str] | None = None) -> str:
                 lines.append(result.row())
                 details += [f"| {case.name} | {k} | {r}/{n} | {w} |" for k, (r, n, w) in sorted(result.by_kind.items())]
                 skips += [f"| {case.name} | {d} in {c or 'rows'} | {why.replace('|', '/')} |" for c, d, why in result.skipped]
+                rated = [r for r in result.ratings if r[3] is not None]
+                checks.append(f"| {case.name} | {sum(1 for r in rated if r[3])} of {len(rated)} as expected"
+                              f"{'' if all(r[3] for r in rated) else ' (' + ', '.join(f'{c}: {d} {lv}' for c, d, lv, ok in rated if not ok) + ')'}"
+                              f" | {_yes(result.honest)} | {_yes(result.stable)} |" if result.ratings else
+                              f"| {case.name} | — | {_yes(result.honest)} | {_yes(result.stable)} |")
                 steps += [f"| {case.name} | {name.replace('|', '/')} | {g} | {'—' if conf is None else f'{conf:.2f}'} |"
                           for name, g, conf in result.committed]
         get_settings.cache_clear()
-    return "\n".join(lines + details + steps + skips)
+    return "\n".join(lines + details + steps + skips + checks)
+
+
+def _yes(value: bool | None) -> str:
+    return "—" if value is None else "yes" if value else "no"

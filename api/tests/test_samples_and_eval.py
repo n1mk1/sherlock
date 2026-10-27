@@ -75,3 +75,15 @@ def test_lookalike_set_holds_common_categories_that_differ_on_purpose():
     assert {"dates_dmy", "dates_mdy", "lookalikes"} <= set(cases)
     assert (cases["dates_dmy_picked"].date_order, cases["dates_mdy_picked"].date_order) == ("dmy", "mdy")
     assert cases["dates_dmy"].date_order is None
+
+
+def test_the_benchmark_checks_the_report_against_the_skip_reasons_and_the_levels_against_roles():
+    report = {"counts": {"couldnt_fix": 2, "checked_and_kept": 1},
+              "skipped": [{"reason": "No candidate passed the checks (x)"}, {"reason": "Skipped: the review objected"},
+                          {"reason": "Left as is: the values look legitimate"}, {"reason": "You left this out of the plan"}]}
+    assert corruption.honest(report) is True
+    assert corruption.honest({**report, "counts": {"couldnt_fix": 3, "checked_and_kept": 1}}) is False
+    assert corruption.honest({"counts": {"found": 1}, "skipped": []}) is None  # a report from before the counts
+    assert corruption.expected("target", "breaks") and corruption.expected("measure", "skews")
+    assert corruption.expected("measure", "check") is False and corruption.expected("free_text", "cosmetic")
+    assert corruption.expected("dimension", "splits") is None  # no expectation for other roles
