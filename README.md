@@ -10,7 +10,7 @@ Sherlock cleans a messy CSV into data you can defend, then answers any question 
 2. Open **Full cleaning report** from the Changes panel: each fix with its code, its checks and the rows it quarantined, and why.
 3. Ask in the chat bar (`/` focuses it): "average fare by class", "survival rate by sex as a chart", "is fare significantly different between men and women?", "what drives survival?". Click a number chip to see the query behind it (**How do you know?**).
 4. Select a cell and ask "set this to …": the change arrives as a proposal; **Approve** saves it as a new version, and an analysis that read that column is marked outdated. Undo it from the Changes panel.
-5. **Export notebook** (⋯ menu, Ctrl+Shift+E, or ask "export a notebook"): a `.ipynb` that rebuilds the current version from the raw CSV, step by step, then reruns each analysis. An example from the sample is in [`docs/examples/titanic3-v4.ipynb`](docs/examples/titanic3-v4.ipynb), with its raw file next to it.
+5. **Export notebook** (⋯ menu, Ctrl+Shift+E, or ask "export a notebook"): a `.ipynb` that rebuilds the current version from the raw CSV, step by step, then reruns each analysis.
 6. Then drop your own messy CSV anywhere on the page and press **Clean with AI**.
 
 ## NVIDIA models and Nebius
