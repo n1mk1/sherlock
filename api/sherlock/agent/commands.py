@@ -322,6 +322,9 @@ def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[i
                      "quarantined": run.report.quarantined}}
 
 
+SMALL = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve")
+
+
 def _reading_problem(reading: str, asked: str = "") -> str | None:
     """Why the model's reading can't be shown: empty, a number the request didn't hold, or a wording rule. Numbers
     come from code, but the user's own may be said back: live, "round fare to 2 places" and "replace double spaces"
@@ -331,6 +334,9 @@ def _reading_problem(reading: str, asked: str = "") -> str | None:
         return "it is empty"
     digits = set(re.findall(r"\d+(?:\.\d+)?", asked))
     words = {m.group(0).lower() for m in NUMBER_WORDS.finditer(asked)}
+    # "2" and "two" are one number: live (production), "round fare to 2 places" read back as "two decimal places".
+    digits |= {str(SMALL.index(w)) for w in words if w in SMALL}
+    words |= {w for n, w in enumerate(SMALL) if str(n) in digits}
     rest = re.sub(r"\d+(?:\.\d+)?", lambda m: "" if m.group(0) in digits else m.group(0), said)
     rest = NUMBER_WORDS.sub(lambda m: "" if m.group(0).lower() in words else m.group(0), rest)
     return "it has a number the request doesn't" if re.search(r"\d", rest) else wording_problem(rest)
@@ -422,6 +428,8 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
         if not d.doable:
             return
         bad = _reading_problem(d.reading, question)  # before the dry run, so a bad reading costs no sandbox run
+        if bad and got["drafts"] > 1:  # the reading helps the user check; it never blocks a change: the card drops it
+            d.reading, bad = "", None
         if bad:
             raise ValueError(f"reading must be one plain sentence saying what the code does, in the user's terms (for "
                              f"example 'Upper-case every value in sex'), with no number the request doesn't hold and no "

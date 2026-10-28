@@ -17,5 +17,15 @@
                "code": "result = df.copy()\nresult[\"sex\"] = result[\"sex\"].str.upper()"}},
   {"purpose": "step", "match": ["<data>\nshout the sex column\n</data>"],
    "content": {"reading": "Upper-case every value in sex", "doable": true, "columns": ["sex"], "new_columns": [],
+               "code": "result = df.copy()\nresult[\"sex\"] = result[\"sex\"].str.upper()"}},
+
+  {"purpose": "route", "match": ["<data>\nyell the sex column\n</data>"],
+   "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false,
+               "entities": [{"text": "sex", "kind": "column"}]}},
+  {"purpose": "step", "match": ["<data>\nyell the sex column\n</data>"],
+   "content": {"reading": "Upper-case all 1309 values in sex", "doable": true, "columns": ["sex"], "new_columns": [],
+               "code": "result = df.copy()\nresult[\"sex\"] = result[\"sex\"].str.upper()"}},
+  {"purpose": "step", "match": ["<data>\nyell the sex column\n</data>"],
+   "content": {"reading": "Upper-case the 1309 values in sex", "doable": true, "columns": ["sex"], "new_columns": [],
                "code": "result = df.copy()\nresult[\"sex\"] = result[\"sex\"].str.upper()"}}
 ]

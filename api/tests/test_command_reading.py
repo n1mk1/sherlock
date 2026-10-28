@@ -40,9 +40,18 @@ def test_the_reading_is_stored_on_the_card_and_returned_by_the_api(client, ready
     ("Round every fare to 2 decimal places", "fare → 2dp", True),           # the user's "2dp" holds the 2
     ("Set aside the 263 rows with no age", "delete the rows with no age", False),  # a count the model made up
     ("Upper-case every value in sex", "upper case sex", True),
+    ("Round every fare to two decimal places", "round fare to 2 places", True),  # "2" and "two" are one number
+    ("Round every fare to 2 decimal places", "round fare to two places", True),
+    ("Round every fare to three decimal places", "round fare to 2 places", False),
 ])
 def test_the_reading_may_say_back_the_users_own_numbers(reading, asked, ok):
     assert (commands._reading_problem(reading, asked) is None) is ok
+
+
+def test_a_reading_still_bad_after_the_repair_is_dropped_not_the_change(client, ready):  # noqa: F811
+    _, msg = send(client, ready["id"], "yell the sex column")
+    p = msg["proposal"]
+    assert p["reading"] == "" and p["summary"] == "Change 1,309 cells in 1,309 rows: sex"  # the card shows the counts
 
 
 def test_a_reading_with_because_is_repaired(client, ready):  # noqa: F811
