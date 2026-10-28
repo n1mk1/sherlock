@@ -16,8 +16,10 @@ import json
 import re
 import shutil
 import sqlite3
+import time
 import uuid
-from dataclasses import dataclass
+from contextlib import closing
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
@@ -26,6 +28,7 @@ import pandas as pd
 from sherlock.agent import prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
 from sherlock.cleaning import verifiers
+from sherlock.cleaning.helpers import _merge_key, _merge_refusal
 from sherlock.cleaning.prompts import HELPERS
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
@@ -62,6 +65,8 @@ class DryRun:
     report: verifiers.Report
     columns_changed: list[str]
     warnings: list[str]
+    warned: list[str] = field(default_factory=list)  # checks that failed but became warnings: the card shows no tick for them
+    seconds: dict = field(default_factory=dict)      # {"sandbox": …, "checks": …}, for the timing log
 
 
 def plain(code: str) -> str:
@@ -84,17 +89,9 @@ def notebook_code(code: str, rows: list[int] | None) -> str:
     return full_code(code, rows) + "df = result\n"
 
 
-def _read(path: Path) -> pd.DataFrame:
-    conn = duckdb.connect(":memory:")
-    try:
-        return conn.execute(f"SELECT * FROM read_parquet({sql_path(path)}) ORDER BY _row_id").df()
-    finally:
-        conn.close()
-
-
-def _first_failure(report: verifiers.Report) -> str:
+def _first_failure(report: verifiers.Report, skip: tuple | list = ()) -> str:
     for name, value in report.hard.items():
-        if value != "pass":
+        if value != "pass" and name not in skip:
             return f"{name.replace('_', ' ')}: {value.removeprefix('fail: ')}"
     return "a check failed"
 
@@ -104,27 +101,79 @@ def version_path(env: Env, dataset: sqlite3.Row, version: int) -> Path:
     return dataset_dir(env.settings, dataset["user_id"], dataset["id"]) / vrow["parquet_path"]
 
 
+def _s(n: int, one: str, many: str) -> str:
+    return f"{n:,} {one if n == 1 else many}"
+
+
+def _warned(report: verifiers.Report, before: pd.DataFrame, after: pd.DataFrame) -> dict[str, list[str]]:
+    """The checks the user's request outranks (R4): a failed `nan_introduced`, `placeholder_fill`, `merge_safety`, or
+    a number or date column turned into text. Each becomes card warnings, one per column, counted here from the two
+    frames by the verifiers' own rules. A check with no count to show stays a refusal."""
+    failed = {k for k in ("nan_introduced", "placeholder_fill", "merge_safety", "dtype") if report.hard.get(k, "pass") != "pass"}
+    if not failed:
+        return {}
+    b = before.set_index("_row_id")
+    a = after.set_index("_row_id").reindex(b.index)
+    shut = a["_quarantine_reason"].notna() & b["_quarantine_reason"].isna()
+    out: dict[str, list[str]] = {k: [] for k in failed}
+    user = [c for c in b.columns if c not in SYSTEM_COLUMNS]
+    for c in user:
+        bc, ac = b[c], a[c]
+        if "nan_introduced" in failed:
+            n = int((bc.notna() & ac.isna() & ~(verifiers._is_placeholder(bc) | shut)).sum())
+            if n:
+                out["nan_introduced"].append(f"This empties {_s(n, 'cell that had a value', 'cells that had values')}, in {c}.")
+        if "placeholder_fill" in failed:
+            filled = ac[bc.isna() & ac.notna()]
+            words = filled[filled.map(lambda v: isinstance(v, str) and v.strip().lower() in verifiers.PLACEHOLDER_WORDS)]
+            if len(words):
+                out["placeholder_fill"].append(f"This fills {_s(len(words), 'blank', 'blanks')} in {c} with the text "
+                                               f"'{words.mode().iloc[0]}'. Sherlock can't tell that apart from a real value.")
+        if "merge_safety" in failed and bc.dtype == object and ac.dtype == object:
+            rewritten = bc.notna() & ac.notna() & (bc.astype(str) != ac.astype(str))
+            counts = bc.dropna().astype(str).map(_merge_key).value_counts().to_dict()
+            merged: set = set()
+            for old, new in pd.DataFrame({"old": bc[rewritten], "new": ac[rewritten]}).drop_duplicates().itertuples(index=False):
+                if (isinstance(old, str) and isinstance(new, str) and _merge_key(new) in counts
+                        and _merge_refusal(old, new, counts, len(b))):
+                    merged |= {old, new}
+            if merged:
+                out["merge_safety"].append(f"This makes {len(merged):,} different values in {c} the same value.")
+        if "dtype" in failed and bc.dtype.kind in "iufM" and ac.dtype == object and not ac.dropna().empty:
+            out["dtype"].append(f"{c} becomes text: sorting and sums on it will stop working.")
+    if "dtype" in failed and any(verifiers._mixed(a[c]) and not verifiers._mixed(b[c]) for c in user):
+        out["dtype"] = []  # mixed types break the file and the grid: a refusal
+    return {k: v for k, v in out.items() if v}
+
+
 def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[int] | None,
             new_columns: list[str]) -> DryRun:
-    """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove."""
+    """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove.
+    Each file is read once, into a throwaway DuckDB that the diff and the verifiers share."""
     src = version_path(env, dataset, version)
     out = src.parent / f".chat_{uuid.uuid4().hex}.parquet"
+    t0 = time.perf_counter()
     r = sandbox.execute(env.settings, full_code(code, rows), src, out, db=env.db, dataset_id=dataset["id"])
+    seconds = {"sandbox": round(time.perf_counter() - t0, 3)}
     if not r.ok:
         out.unlink(missing_ok=True)
         said = "; ".join(r.violations) if r.violations else (r.error or "unknown error")
         raise StepFailed(f"the code failed: {said}")
+    t0 = time.perf_counter()
     try:
         check_version_file(out)
-        diff = diff_versions(src, out)
-        if diff.added_row_ids or diff.deleted_row_ids:
-            raise StepFailed("it added or removed rows; rows are set aside with quarantine_rows, never removed")
-        if diff.columns_removed:
-            raise StepFailed(f"it removed columns ({', '.join(diff.columns_removed[:5])}); a command never removes columns")
-        unexpected = sorted(set(diff.columns_added) - set(new_columns))
-        if unexpected:
-            raise StepFailed(f"it added columns that new_columns doesn't list ({', '.join(unexpected[:5])})")
-        before, after = _read(src), _read(out)
+        with closing(duckdb.connect(":memory:")) as conn:
+            for name, path in (("o", src), ("n", out)):
+                conn.execute(f"CREATE TABLE {name} AS SELECT * FROM read_parquet({sql_path(path)})")
+            diff = diff_versions(src, out, conn)
+            if diff.added_row_ids or diff.deleted_row_ids:
+                raise StepFailed("it added or removed rows; rows are set aside with quarantine_rows, never removed")
+            if diff.columns_removed:
+                raise StepFailed(f"it removed columns ({', '.join(diff.columns_removed[:5])}); a command never removes columns")
+            unexpected = sorted(set(diff.columns_added) - set(new_columns))
+            if unexpected:
+                raise StepFailed(f"it added columns that new_columns doesn't list ({', '.join(unexpected[:5])})")
+            before, after = (conn.execute(f"SELECT * FROM {t} ORDER BY _row_id").df() for t in ("o", "n"))
         report = verifiers.verify(before, after[[c for c in after.columns if c not in diff.columns_added]], None, None,
                                   requested=True)
         # The user sees how many rows a command sets aside before pressing OK, so the Cleaner's cap (a fifth of
@@ -132,8 +181,10 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         wide = report.hard.get("quarantine_scope", "pass") != "pass"
         if wide:
             report.hard["quarantine_scope"] = "pass"
-        if not report.passed:
-            raise StepFailed(f"its result failed a check ({_first_failure(report)})")
+        # The same for what the user's own request explains: the report keeps the failure, the card says it.
+        said = _warned(report, before, after)
+        if any(v != "pass" and k not in said for k, v in report.hard.items()):
+            raise StepFailed(f"its result failed a check ({_first_failure(report, list(said))})")
         if new_columns:
             added = after[new_columns]
             if added.isna().all().any():
@@ -152,7 +203,10 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         raise StepFailed("it changes nothing in this version of the file")
     warnings = [f"This sets aside {report.quarantined:,} of {len(before):,} rows. Check that's what you meant before you "
                 "press OK."] if wide else []
-    return DryRun(out, impact, diff.before_after, report, changed_cols, warnings)
+    for lines in said.values():
+        warnings += lines[:5] + ([f"The same happens in {len(lines) - 5} more columns."] if len(lines) > 5 else [])
+    seconds["checks"] = round(time.perf_counter() - t0, 3)
+    return DryRun(out, impact, diff.before_after, report, changed_cols, warnings, list(said), seconds)
 
 
 def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
@@ -174,7 +228,8 @@ def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[i
     return {"summary": summary(run.impact, run.columns_changed, rows), "code": code, "columns": columns,
             "new_columns": new_columns, "scope": {"row_ids": rows}, "impact": run.impact,
             "before_after": run.before_after, "warnings": run.warnings,
-            "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items() if k in CHECK_WORDS and v == "pass"]}
+            "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items()
+                       if k in CHECK_WORDS and v == "pass" and k not in run.warned]}
 
 
 def scope_rows(env: Env, dataset: sqlite3.Row, context: dict) -> list[int] | None:

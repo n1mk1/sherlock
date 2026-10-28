@@ -129,7 +129,7 @@ Rules:
 - Change only what the request asks for, in the columns it names or clearly means. List those columns in columns.
 - Never delete rows. When the user asks to delete, remove or drop rows, set them aside instead: `result = quarantine_rows(result, <mask>, "<a few words why>")`. They stay in the file, out of the usable rows, and can be restored.
 - To add a column, assign it on result and list its name in new_columns. Never remove or rename columns.
-- Fill missing values only when the user asks for it, and never with a placeholder word such as "Unknown".
+- Fill missing values only when the user asks for it, and never with a placeholder word such as "Unknown" unless the user names the value.
 - When you turn text into numbers or dates, set aside the rows whose values failed: `result = quarantine_rows(result, parse_failures(df[col], parsed), "parse: <column>")`.
 - Take every value and threshold from the request or the data; never invent one.
 - When no column of this file fits the request, or it isn't a change to the data (a question, a chart), set doable to false and say why in reading, without digits. Never set doable to false because you think no rows match: write the code, and code counts what it changes.

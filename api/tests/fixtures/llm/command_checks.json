@@ -1,0 +1,122 @@
+[
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nblank out the fares above 500\n</data>"
+  ],
+  "content": {
+   "intents": [
+    "clean_step"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "step",
+  "match": [
+   "<data>\nblank out the fares above 500\n</data>"
+  ],
+  "content": {
+   "reading": "Blank out the fares above the limit",
+   "doable": true,
+   "columns": [
+    "fare"
+   ],
+   "new_columns": [],
+   "code": "result = df.copy()\nresult.loc[result[\"fare\"] > 500, \"fare\"] = np.nan"
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nfill the missing cabin values with Unknown\n</data>"
+  ],
+  "content": {
+   "intents": [
+    "clean_step"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "step",
+  "match": [
+   "<data>\nfill the missing cabin values with Unknown\n</data>"
+  ],
+  "content": {
+   "reading": "Fill the empty cabins with the word Unknown",
+   "doable": true,
+   "columns": [
+    "cabin"
+   ],
+   "new_columns": [],
+   "code": "result = df.copy()\nresult[\"cabin\"] = result[\"cabin\"].fillna(\"Unknown\")"
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nmake the embarked values Q and C the same\n</data>"
+  ],
+  "content": {
+   "intents": [
+    "clean_step"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "step",
+  "match": [
+   "<data>\nmake the embarked values Q and C the same\n</data>"
+  ],
+  "content": {
+   "reading": "Turn every Q in embarked into C",
+   "doable": true,
+   "columns": [
+    "embarked"
+   ],
+   "new_columns": [],
+   "code": "result = df.copy()\nresult[\"embarked\"] = result[\"embarked\"].replace(\"Q\", \"C\")"
+  }
+ },
+ {
+  "purpose": "route",
+  "match": [
+   "<data>\nshow fare as text with a dollar sign\n</data>"
+  ],
+  "content": {
+   "intents": [
+    "clean_step"
+   ],
+   "ambiguous": false,
+   "clarification": null,
+   "multi_step": false,
+   "entities": []
+  }
+ },
+ {
+  "purpose": "step",
+  "match": [
+   "<data>\nshow fare as text with a dollar sign\n</data>"
+  ],
+  "content": {
+   "reading": "Write each fare as text with a dollar sign",
+   "doable": true,
+   "columns": [
+    "fare"
+   ],
+   "new_columns": [],
+   "code": "result = df.copy()\nresult[\"fare\"] = result[\"fare\"].map(lambda v: f\"${v:.2f}\")"
+  }
+ }
+]
