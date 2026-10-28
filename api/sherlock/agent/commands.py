@@ -170,8 +170,9 @@ def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
     return text + (f" · on {len(rows):,} selected {'row' if len(rows) == 1 else 'rows'}" if rows is not None else "")
 
 
-def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[int] | None, run: DryRun) -> dict:
-    return {"summary": summary(run.impact, run.columns_changed, rows), "code": code, "columns": columns,
+def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[int] | None, run: DryRun,
+             reading: str = "") -> dict:
+    return {"summary": summary(run.impact, run.columns_changed, rows), "reading": reading, "code": code, "columns": columns,
             "new_columns": new_columns, "scope": {"row_ids": rows}, "impact": run.impact,
             "before_after": run.before_after, "warnings": run.warnings,
             "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items() if k in CHECK_WORDS and v == "pass"]}
@@ -204,6 +205,11 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
     def check(d: StepDraft) -> None:
         if not d.doable:
             return
+        said = d.reading.strip()  # before the dry run, so a bad reading costs no sandbox run
+        bad = "it is empty" if not said else "it has a digit" if re.search(r"\d", said) else wording_problem(said)
+        if bad:
+            raise ValueError(f"reading must be one plain sentence saying what the code does, in the user's terms (for "
+                             f"example 'Upper-case every value in sex'), with no digits and no causal words: {bad}. Fix the reading.")
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
         if unknown:
             raise ValueError(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}")
@@ -239,7 +245,7 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
         raise CantAnswer("I can't make that change to this file" + (f": {said}" if said and not wording_problem(said) else "."))
     run = got["run"]
     try:
-        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run), "asked": question[:300]}
+        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run, draft.reading.strip()), "asked": question[:300]}
     finally:
         run.out.unlink(missing_ok=True)
     kind = "computed_column" if draft.new_columns else "clean_step"
@@ -288,8 +294,8 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
         raise ApiError(409, "conflict", f"Couldn't run it on version {version}: {exc}. Nothing changed.") from None
     try:
         if version != row["base_version"] and not _same(dr.impact, payload["impact"]):
-            fresh = {**_payload(payload["code"], payload["columns"], payload.get("new_columns") or [], rows, dr),
-                     "asked": payload.get("asked"), "rechecked_on": version}
+            fresh = {**_payload(payload["code"], payload["columns"], payload.get("new_columns") or [], rows, dr,
+                                 payload.get("reading") or ""), "asked": payload.get("asked"), "rechecked_on": version}
             db.execute("UPDATE proposals SET base_version = ?, payload_json = ?, status = 'pending' WHERE id = ?",
                        (version, json.dumps(fresh, default=str), row["id"]))
             return {"refreshed": to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (row["id"],)).fetchone())}
@@ -298,7 +304,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
                         notebook_code=notebook_code(payload["code"], rows), code=full_code(payload["code"], rows),
                         column_targets=list(dict.fromkeys(list(payload["columns"]) + dr.impact["columns_added"])),
                         gate="user", parse_failures=dr.report.quarantined, verifiers=dr.report.as_json(),
-                        decisions=[{"question": "What did you ask for?", "chosen": "the code shown in chat",
+                        decisions=[{"question": "What did you ask for?", "chosen": payload.get("reading") or "the code shown in chat",
                                     "alternatives": [], "reason": "you pressed OK", "asked": payload.get("asked") or ""}])
         ctx = Context(env.settings, db, env.cache, env.bus)
         step, new_version = commit_step(ctx, dataset["id"], version, spec, lambda _old, out: shutil.copyfile(dr.out, out))
