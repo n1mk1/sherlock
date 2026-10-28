@@ -406,7 +406,9 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
   );
 }
 
-type RunAnswer = { step?: { id: string }; version?: number; refreshed?: Proposal; queued?: Proposal };
+const CODE_FOLD_LINES = 15; // longer code shows this many lines until "Show all"
+
+type RunAnswer ={ step?: { id: string }; version?: number; refreshed?: Proposal; queued?: Proposal };
 
 /** A cleaning command: the code that will run, what its dry run changed, the checks it passed, then Cancel and
  * OK. OK runs the code on the data as it is then: saved as one step (Undo in the toolbar), re-checked when the
@@ -416,6 +418,7 @@ function CommandView({ proposal, dataset, onSend }: {
 }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const pendingEdits = useEdits((s) => pendingCount(s.buffers[dataset.id]));
   const decide = async (what: "approve" | "reject") => {
     if (what === "approve" && pendingEdits > 0) {
@@ -443,18 +446,35 @@ function CommandView({ proposal, dataset, onSend }: {
     }
   };
   const rows = proposal.before_after ?? [];
+  const more = proposal.impact.cells_changed - Math.min(rows.length, 8);
+  const codeLines = (proposal.code ?? "").split("\n");
+  const shownCode = showAll ? proposal.code : codeLines.slice(0, CODE_FOLD_LINES).join("\n");
   const status = {
     pending: null, approved: "Done · saved as a step you can undo", rejected: "Cancelled", expired: "Expired",
     queued: "Waiting for cleaning to finish", failed: `Couldn't run: ${proposal.error ?? "a check failed"}`,
   }[proposal.status];
   return (
     <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]" aria-label="Proposed change">
-      <p className="font-medium">{proposal.summary}</p>
+      {proposal.reading ? (
+        <>
+          <p className="font-medium">{proposal.reading}</p>
+          <p className="text-[12px] text-muted-foreground">{proposal.summary}</p>
+        </>
+      ) : (
+        <p className="font-medium">{proposal.summary}</p>
+      )}
       {proposal.rechecked_on && proposal.status === "pending" && (
         <p className="text-[12px] text-warning">Re-checked on v{proposal.rechecked_on}, since the data changed.</p>
       )}
       {proposal.code && (
-        <pre aria-label="The code that will run" className="max-h-48 overflow-auto whitespace-pre rounded-md bg-muted p-2 font-mono text-[12px]">{proposal.code}</pre>
+        <div className="flex flex-col items-start gap-1">
+          <pre aria-label="The code that will run" className="max-h-48 w-full overflow-auto whitespace-pre rounded-md bg-muted p-2 font-mono text-[12px]">{shownCode}</pre>
+          {codeLines.length > CODE_FOLD_LINES && (
+            <button type="button" className="text-[12px] text-accent hover:underline" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Show less" : `Show all (${codeLines.length} lines)`}
+            </button>
+          )}
+        </div>
       )}
       {rows.length > 0 && (
         <table className="w-full text-left text-[12px]">
@@ -472,9 +492,15 @@ function CommandView({ proposal, dataset, onSend }: {
           </tbody>
         </table>
       )}
+      {more > 0 && (
+        <p className="text-[12px] text-muted-foreground">and {more.toLocaleString()} more like {more === 1 ? "this" : "these"}</p>
+      )}
       {(proposal.checks ?? []).length > 0 && (
         <p className="text-[12px] text-muted-foreground">{(proposal.checks ?? []).map((c) => `✓ ${c}`).join("   ")}</p>
       )}
+      {(proposal.warnings ?? []).map((w) => (
+        <p key={w} className="text-[12px] text-warning">{w}</p>
+      ))}
       {proposal.then && proposal.status === "pending" && (
         <p className="text-[12px] text-muted-foreground">After it runs: “{proposal.then}”</p>
       )}

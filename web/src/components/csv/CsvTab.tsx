@@ -258,7 +258,9 @@ function HistoryButtons({ dataset, pending }: { dataset: Dataset; pending: numbe
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [go]);
-  const undoTitle = h?.undo ? `Undo: ${h.undo.summary} (Ctrl+Z)`
+  const after = h ? Math.max(h.depth_left - 1, 0) : 0; // undos still allowed once this one is done
+  const undoTitle = h?.undo
+    ? `Undo: ${h.undo.summary} (Ctrl+Z) · ${after === 0 ? "the last one in a row" : `${after} more after this`}`
     : h && h.depth_left === 0 ? "You can undo up to 3 changes in a row; older ones are in the Changes panel" : "Nothing to undo";
   const redoTitle = h?.redo ? `Redo: ${h.redo.summary} (Ctrl+Y)` : "Nothing to redo";
   return (

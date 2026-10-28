@@ -328,6 +328,7 @@ export interface Proposal {
   before_after?: { row_id: number; column: string; old: string | null; new: string | null }[];
   checks?: string[];
   warnings?: string[];
+  reading?: string | null; // the model's one plain sentence on what the code does; missing on old cards
   then?: string; // the rest of the message, sent once OK has run
   rechecked_on?: number;
   error?: string;
