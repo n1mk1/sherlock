@@ -271,6 +271,8 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
     raise ApiError(422, "invalid", f"Proposals of kind {row['kind']} aren't built.")
 
 
-def reject(db: sqlite3.Connection, row: sqlite3.Row) -> None:
+def reject(db: sqlite3.Connection, row: sqlite3.Row, settings=None) -> None:
+    if row["kind"] in commands.KINDS and settings is not None:
+        commands.discard(settings, db, row)  # the dry run the card kept
     if row["status"] in ("pending", "queued"):  # Cancel also takes a command out of the queue
         db.execute("UPDATE proposals SET status = 'rejected', resolved_at = ? WHERE id = ?", (now_iso(), row["id"]))

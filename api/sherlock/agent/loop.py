@@ -466,8 +466,7 @@ class Agent:
                 elif intent == "clean_step":
                     if proposal is not None:
                         raise CantAnswer("One change at a time: run or cancel the card above first.")
-                    self.emit("status", {"text": "Writing the code"})
-                    proposal = commands.propose(kit, q, context, types)
+                    proposal = commands.propose(kit, q, context, types, lambda t: self.emit("status", {"text": t}))
                     later = [s for _, s in steps[n:]]
                     if later:  # the rest of the message runs on the changed data, once the user presses OK
                         proposal = commands.then(self.db, proposal, later)
