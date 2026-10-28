@@ -44,7 +44,9 @@ class Outcome:
 
 
 # What the command path says when it gives no card: the router sent the message there all the same.
-COMMAND_REFUSAL = re.compile(r"safe change|can't make that change|changes nothing|nothing to change|one change at a time", re.I)
+COMMAND_REFUSAL = re.compile(r"can't make that change|nothing to change|one change at a time|no column called|"
+                             r"the code (would|leaves|i wrote)|can't add a column|the new column|couldn't turn that into a "
+                             r"change|couldn't run it on version", re.I)
 
 
 def load(path: Path = QUESTIONS) -> dict[str, list[dict]]:

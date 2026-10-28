@@ -53,6 +53,8 @@ def export_options(text: str) -> dict:
 def to_proposal(row: sqlite3.Row) -> dict:
     """The TRD §6.8 `Proposal`: `{ id, kind, base_version, summary, edits?, scope?, impact, status }`."""
     payload = json.loads(row["payload_json"])
+    for internal in ("kept", "why"):  # a command's kept run and the model's side of a failure stay on the server
+        payload.pop(internal, None)
     return {"id": row["id"], "kind": row["kind"], "base_version": row["base_version"], "status": row["status"],
             "result_step_id": row["result_step_id"], **payload}
 
@@ -271,8 +273,8 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
     raise ApiError(422, "invalid", f"Proposals of kind {row['kind']} aren't built.")
 
 
-def reject(db: sqlite3.Connection, row: sqlite3.Row, settings=None) -> None:
-    if row["kind"] in commands.KINDS and settings is not None:
+def reject(db: sqlite3.Connection, row: sqlite3.Row, settings) -> None:
+    if row["kind"] in commands.KINDS:
         commands.discard(settings, db, row)  # the dry run the card kept
     if row["status"] in ("pending", "queued"):  # Cancel also takes a command out of the queue
         db.execute("UPDATE proposals SET status = 'rejected', resolved_at = ? WHERE id = ?", (now_iso(), row["id"]))

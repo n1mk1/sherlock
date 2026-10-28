@@ -2,18 +2,23 @@
 name outranks four checks (they become card warnings), the structural checks stay refusals, and every refusal says what
 to do next in plain words. Recorded model replies (`command_checks.json`)."""
 
+import json
 import re
 import shutil
+from contextlib import closing
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import pytest
 
 from sherlock.agent import commands
 from sherlock.cleaning import verifiers
 from sherlock.config import get_settings
+from sherlock.steps.diff import diff_versions
 from tests.test_chat import send
 from tests.test_chat_commands import cell, ready, version  # noqa: F401 - `ready` is a fixture
+from tests.test_jobs import db_rows
 
 API = "/api/v1"
 LLM = Path(__file__).parent / "fixtures" / "llm"
@@ -161,6 +166,11 @@ def test_a_crash_says_the_code_did_not_run_and_never_the_exception(client, ready
     assert refused(client, ready["id"], "convert fare to a whole number") == commands.SAID["crash"]
 
 
+def test_a_repair_that_does_not_parse_does_not_repeat_the_first_drafts_reason(client, ready):  # noqa: F811
+    # The first draft looks for Fare; the repair isn't a valid reply, so "no column called Fare" would be stale.
+    assert refused(client, ready["id"], "halve the Fare values") == commands.SAID["default"]
+
+
 def test_a_refusal_when_ok_is_pressed_uses_the_same_words(client, ready):  # noqa: F811
     ds, v = ready["id"], ready["current_version"]
     cards = [send(client, ds, "round fare to whole numbers")[1]["proposal"] for _ in range(2)]
@@ -169,6 +179,8 @@ def test_a_refusal_when_ok_is_pressed_uses_the_same_words(client, ready):  # noq
     assert got.status_code == 409
     assert got.json()["error"]["message"] == (f"Couldn't run it on version {v + 1}. Nothing in this version matches that, "
                                               "so there's nothing to change. Nothing changed.")
+    [(payload,)] = db_rows("SELECT payload_json FROM proposals WHERE id = ?", cards[1]["id"])
+    assert json.loads(payload)["error"] == commands.SAID["nothing"]  # the card's "Couldn't run: …", never the model's text
 
 
 # --- the rest of the message, as typed ---------------------------------------------------------------------------

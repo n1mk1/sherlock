@@ -77,14 +77,18 @@ def test_ok_after_another_step_runs_the_code_again_and_drops_the_stale_file(clie
     assert done["version"] == v + 2 and cell(client, ds, 2, "fare") == 1 and cell(client, ds, 2, "sex") == "MALE"
     assert kept_files() == []
 
-    # An edit the command would have changed: the effect differs, so the card refreshes and keeps no file.
+    # An edit the command would have changed: the effect differs, so the card refreshes and keeps its new run,
+    # which the next OK saves with no third sandbox run.
     client.post(f"{API}/datasets/{ds}/steps/{done['step']['id']}/undo", json={"base_version": v + 2})
     v2 = version(client, ds)
     _, msg = send(client, ds, "shout every value in sex")
     p = msg["proposal"]
     client.post(f"{API}/datasets/{ds}/edits", json={"base_version": v2, "edits": [{"row_id": 1, "column": "sex", "value": "FEMALE"}]})
     got = client.post(f"{API}/proposals/{p['id']}/approve", json={}).json()
-    assert got["refreshed"]["impact"]["cells_changed"] == 1308 and kept_files() == []
+    assert got["refreshed"]["impact"]["cells_changed"] == 1308 and [f.name for f in kept_files()] == [f".chat_{p['id']}.parquet"]
+    runs = len(sandbox_calls)
+    done = client.post(f"{API}/proposals/{p['id']}/approve", json={}).json()
+    assert done["version"] == v2 + 2 and len(sandbox_calls) == runs and kept_files() == []
 
 
 def test_cancel_removes_the_kept_file(client, ready):

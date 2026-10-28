@@ -484,5 +484,22 @@
    "new_columns": [],
    "code": "result = df.copy()\nresult[\"fare\"] = result[\"fare\"].round(0)"
   }
- }
+ },
+ {"purpose": "route", "match": ["<data>\nround age to whole years\n</data>"],
+  "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}},
+ {"purpose": "step", "match": ["<data>\nround age to whole years\n</data>"],
+  "content": {"reading": "Round every age to a whole year", "doable": true, "columns": ["age"], "new_columns": [],
+              "code": "result = df.copy()\nresult[\"age\"] = result[\"age\"].round()"}},
+ {"purpose": "route", "match": ["<data>\nmake age a whole number\n</data>"],
+  "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}},
+ {"purpose": "step", "match": ["<data>\nmake age a whole number\n</data>"],
+  "content": {"reading": "Store every age as a whole number", "doable": true, "columns": ["age"], "new_columns": [],
+              "code": "result = df.copy()\nresult[\"age\"] = result[\"age\"].round().astype(\"Int64\")"}},
+ {"purpose": "route", "match": ["<data>\nhalve the Fare values\n</data>"],
+  "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": []}},
+ {"purpose": "step", "match": ["<data>\nhalve the Fare values\n</data>"],
+  "content": {"reading": "Divide every fare by a constant", "doable": true, "columns": ["fare"], "new_columns": [],
+              "code": "result = df.copy()\nresult[\"Fare\"] = result[\"Fare\"] / 2"}},
+ {"purpose": "step", "match": ["<data>\nhalve the Fare values\n</data>"],
+  "content": {"doable": true}}
 ]

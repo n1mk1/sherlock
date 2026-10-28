@@ -9,8 +9,9 @@ and the effect, written by code from the diff, never by the model.
 OK (approve) saves the dry run's file when the version hasn't moved since the card (kept as
 `.chat_<proposal id>.parquet`, no second sandbox run). When it has moved, OK runs the stored code again on the
 version that is current then: same effect, saved as one step (`created_by="chat"`, undoable, replayed and exported
-like the Cleaner's steps). A different effect refreshes the card for one more OK. A kept file is removed on Cancel,
-on failure, after the commit, when OK finds the version moved, and at startup when its card isn't pending. While a clean runs, OK queues the step, and the job applies it when it ends.
+like the Cleaner's steps). A different effect refreshes the card for one more OK, with the new run kept. A kept file
+is removed on Cancel, on failure, after the commit, when OK finds the version moved, and at startup when its card
+isn't waiting. While a clean runs, OK queues the step, and the job applies it when it ends.
 Rows are never deleted: a request to delete rows sets them aside (`quarantine_rows`).
 """
 
@@ -54,6 +55,7 @@ log = logging.getLogger("sherlock.agent")
 KINDS = ("clean_step", "computed_column")
 SYSTEM_COLUMNS = ("_row_id", "_quarantine_reason")
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,62}$")
+THEN = re.compile(r"\s*[,;.]?\s+(?:and\s+)?then\s+", re.I)  # where "round fare, then count by sex" splits
 # The hard checks the card shows, in the user's words (all of them passed, or there's no card).
 CHECK_WORDS = {"row_ledger": "no rows lost", "nan_introduced": "no new blanks", "dtype": "column types kept",
                "placeholder_fill": "no placeholder fills", "merge_safety": "no distinct values merged",
@@ -214,7 +216,7 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
     """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove.
     Each file is read once, into a throwaway DuckDB that the diff and the verifiers share."""
     src = version_path(env, dataset, version)
-    out = src.parent / f".chat_{uuid.uuid4().hex}.parquet"
+    out = kept_file(env.settings, dataset["user_id"], dataset["id"], uuid.uuid4().hex)  # where the startup sweep looks
     t0 = time.perf_counter()
     r = sandbox.execute(env.settings, full_code(code, rows), src, out, db=env.db, dataset_id=dataset["id"])
     seconds = {"sandbox": round(time.perf_counter() - t0, 3)}
@@ -255,7 +257,7 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         if any(v != "pass" and k not in said for k, v in report.hard.items()):
             raise _refusal(report, list(said))
         if new_columns:
-            added = after[new_columns]
+            added = after.reindex(columns=new_columns)  # a listed column the code didn't add is empty too
             if added.isna().all().any():
                 empty = [c for c in new_columns if added[c].isna().all()]
                 raise StepFailed(f"the new column {empty[0]} is empty in every row", SAID["empty"].format(col=empty[0]))
@@ -295,11 +297,20 @@ def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
 
 def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[int] | None, run: DryRun,
              reading: str = "") -> dict:
+    """The card. `kept` is what OK needs to commit the kept dry run without running it again (not sent to the app)."""
     return {"summary": summary(run.impact, run.columns_changed, rows), "reading": reading, "code": code, "columns": columns,
             "new_columns": new_columns, "scope": {"row_ids": rows}, "impact": run.impact,
             "before_after": run.before_after, "warnings": run.warnings,
             "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items()
-                       if k in CHECK_WORDS and v == "pass" and k not in run.warned]}
+                       if k in CHECK_WORDS and v == "pass" and k not in run.warned],
+            "kept": {"columns_changed": run.columns_changed, "verifiers": run.report.as_json(),
+                     "quarantined": run.report.quarantined}}
+
+
+def _reading_problem(reading: str) -> str | None:
+    """Why the model's reading can't be shown: empty, a digit, or a wording rule (numbers come from code)."""
+    said = reading.strip()
+    return "it is empty" if not said else "it has a digit" if re.search(r"\d", said) else wording_problem(said)
 
 
 def scope_rows(env: Env, dataset: sqlite3.Row, context: dict) -> list[int] | None:
@@ -347,13 +358,6 @@ def sweep(settings, db: sqlite3.Connection) -> int:
     return gone
 
 
-def _drop(got: dict) -> None:
-    """Remove the dry run `propose` still holds when it ends without a card."""
-    old = got.pop("run", None)
-    if old is not None:
-        old.out.unlink(missing_ok=True)
-
-
 def examples(kit: Toolkit, question: str, types: dict[str, str]) -> str:
     """The `{dtypes}` lines: every column's type, and up to three values for the columns the question names."""
     q = question.lower()
@@ -382,47 +386,42 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
     rows = scope_rows(env, dataset, context)
     if rows is not None and not rows:
         raise CantAnswer("The selection holds no rows in this version of the file, so there's nothing to change.")
-    got: dict = {}
+    got: dict = {}  # "run" only for a draft that passed every check, which ends the call: no failure holds a file
+
+    def refuse(why: str, user: str) -> ValueError:
+        """The error for the model's repair, with the user's sentence kept against it: the user sees it only when it
+        is the last error (a reply that doesn't parse after it gets the default)."""
+        got["said"] = (why, user)
+        return ValueError(why)
 
     def check(d: StepDraft) -> None:
         got["drafts"] = got.get("drafts", 0) + 1
         if not d.doable:
             return
-        said = d.reading.strip()  # before the dry run, so a bad reading costs no sandbox run
-        bad = "it is empty" if not said else "it has a digit" if re.search(r"\d", said) else wording_problem(said)
+        bad = _reading_problem(d.reading)  # before the dry run, so a bad reading costs no sandbox run
         if bad:
             raise ValueError(f"reading must be one plain sentence saying what the code does, in the user's terms (for "
                              f"example 'Upper-case every value in sex'), with no digits and no causal words: {bad}. Fix the reading.")
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
         if unknown:
-            got["said"] = no_column(unknown[0], list(types))
-            raise ValueError(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}")
+            raise refuse(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}",
+                         no_column(unknown[0], list(types)))
         for c in d.new_columns:
             if c in types or c in SYSTEM_COLUMNS or not NAME.match(c):
-                got["said"] = SAID["name"].format(col=c)
-                raise ValueError(f"{c!r} can't be a new column: it exists already or isn't a plain name")
+                raise refuse(f"{c!r} can't be a new column: it exists already or isn't a plain name", SAID["name"].format(col=c))
         d.code = plain(d.code)
         problems = static_check(d.code)
         if problems:
-            got["said"] = SAID["refused"]
-            raise ValueError("the sandbox refuses this code: " + "; ".join(str(p) for p in problems[:3]))
+            raise refuse("the sandbox refuses this code: " + "; ".join(str(p) for p in problems[:3]), SAID["refused"])
         if got["drafts"] == 1 and (plain_it := code_style(d.code)):  # only the first draft is sent back for style
             raise ValueError("Write plainer code (no sandbox run yet): " + "; ".join(plain_it[:3]))
-        old = got.pop("run", None)
-        if old is not None:
-            old.out.unlink(missing_ok=True)
         if got["drafts"] > 1:
             say("Fixing the code")
         say("Running it on a copy of the file")
         try:
             got["run"] = dry_run(env, dataset, dataset["current_version"], d.code, rows, list(d.new_columns))
         except StepFailed as exc:
-            got["said"] = exc.user
-            raise ValueError(f"When the code ran on the file, {exc}. Fix the code.") from None
-
-    def validate(d: StepDraft) -> None:  # `got["said"]` is the user's text for the last failure only
-        got.pop("said", None)
-        check(d)
+            raise refuse(f"When the code ran on the file, {exc}. Fix the code.", exc.user) from None
 
     where = (f"The request is about {len(rows):,} selected rows: write the code for every row, and code limits the "
              "change to the selection.\n") if rows is not None else ""
@@ -433,25 +432,21 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
     say("Writing the code")
     started = time.monotonic()
     try:
-        draft = kit.llm.structured("medium", messages, StepDraft, purpose="step", scope=kit.scope, validate=validate).value
-    except StructuredOutputError:
-        _drop(got)
-        raise CantAnswer(got.get("said") or SAID["default"]) from None
+        draft = kit.llm.structured("medium", messages, StepDraft, purpose="step", scope=kit.scope, validate=check).value
+    except StructuredOutputError as exc:
+        why, user = got.get("said") or ("", "")  # the client keeps the error's first line, cut at 300 characters
+        raise CantAnswer(user if why and str(exc).endswith(why.splitlines()[0][:300]) else SAID["default"]) from None
     if not draft.doable:
-        _drop(got)
         said = draft.reading.strip()
-        raise CantAnswer("I can't make that change to this file" + (f": {said}" if said and not wording_problem(said) else "."))
+        raise CantAnswer("I can't make that change to this file" + (f": {said}" if not _reading_problem(said) else "."))
     run = got["run"]
     pid = new_id("prp")
-    kept = kept_file(env.settings, dataset["user_id"], dataset["id"], pid)
     log.info("command: model and checks %.1fs; dry run %s", time.monotonic() - started,
-             {k: round(v, 2) for k, v in getattr(run, "seconds", {}).items()} or "untimed")
+             {k: round(v, 2) for k, v in run.seconds.items()})
     try:  # the passing dry run stays as the card's file: OK commits it if the version hasn't moved
         payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run, draft.reading.strip()),
-                   "asked": question[:300],
-                   "kept": {"columns_changed": run.columns_changed, "verifiers": run.report.as_json(),
-                            "quarantined": run.report.quarantined}}
-        run.out.replace(kept)
+                   "asked": question[:300]}
+        run.out.replace(kept_file(env.settings, dataset["user_id"], dataset["id"], pid))
     finally:
         run.out.unlink(missing_ok=True)
     kind = "computed_column" if draft.new_columns else "clean_step"
@@ -464,14 +459,20 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
     return to_proposal(env.db.execute("SELECT * FROM proposals WHERE id = ?", (pid,)).fetchone())
 
 
-def then(db: sqlite3.Connection, proposal: dict, questions: list[str]) -> dict:
+def then(db: sqlite3.Connection, proposal: dict, questions: list[str], message: str = "", done: int = 1) -> dict:
     """The rest of a message that asked for a change and then something else ("fix fare, then the average fare by
-    class"): stored on the card, and the app sends it as the next message once the user presses OK."""
+    class"): stored on the card, and the app sends it as the next message once the user presses OK. `done` is how many
+    of the message's steps ran, the command included. When the message splits at its "then"s into as many parts as
+    there are steps, the rest is the user's own words after the command's part; else the planner's questions."""
     from sherlock.agent.actions import to_proposal
 
     row = db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone()
-    parts = [q.strip() for q in questions if q.strip()]  # as typed: no "and" and no "?" added to the user's words
-    text = " ".join(q if q[-1] in ".?!" or i == len(parts) - 1 else q + "." for i, q in enumerate(parts))
+    cuts = list(THEN.finditer(message))
+    if len(cuts) + 1 == done + len(questions):
+        text = message[cuts[done - 1].end():].strip()
+    else:  # no "and" and no "?" added
+        parts = [q.strip() for q in questions if q.strip()]
+        text = " ".join(q if q[-1] in ".?!" or i == len(parts) - 1 else q + "." for i, q in enumerate(parts))
     payload = {**json.loads(row["payload_json"]), "then": text}
     db.execute("UPDATE proposals SET payload_json = ? WHERE id = ?", (json.dumps(payload, default=str), proposal["id"]))
     return to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone())
@@ -500,29 +501,33 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
             dr = DryRun(out=kept, impact=payload["impact"], before_after=payload.get("before_after") or [],
                         report=verifiers.Report(quarantined=k["quarantined"]), columns_changed=k["columns_changed"],
                         warnings=payload.get("warnings") or [])
-            report_json = k["verifiers"]
+            report_json = k["verifiers"]  # the dry run's report as it was, warned checks included
         else:
             kept.unlink(missing_ok=True)
             dr = dry_run(env, dataset, version, payload["code"], rows, payload.get("new_columns") or [])
             report_json = dr.report.as_json()
-    except StepFailed as exc:
+    except StepFailed as exc:  # the card shows `error`: the user's sentence; the model's text stays in `why`
         db.execute("UPDATE proposals SET status = 'failed', resolved_at = ?, payload_json = ? WHERE id = ?",
-                   (now_iso(), json.dumps({**payload, "error": str(exc)}, default=str), row["id"]))
+                   (now_iso(), json.dumps({**payload, "error": exc.user, "why": str(exc)}, default=str), row["id"]))
         raise ApiError(409, "conflict", f"Couldn't run it on version {version}. {exc.user} Nothing changed.") from None
     try:
         if version != row["base_version"] and not _same(dr.impact, payload["impact"]):
             fresh = {**_payload(payload["code"], payload["columns"], payload.get("new_columns") or [], rows, dr,
-                                 payload.get("reading") or ""), "asked": payload.get("asked"), "rechecked_on": version}
+                                 payload.get("reading") or ""), "asked": payload.get("asked"), "rechecked_on": version,
+                     **({"then": payload["then"]} if payload.get("then") else {})}
             db.execute("UPDATE proposals SET base_version = ?, payload_json = ?, status = 'pending' WHERE id = ?",
                        (version, json.dumps(fresh, default=str), row["id"]))
+            dr.out.replace(kept)  # the new card's dry run, for the next OK
             return {"refreshed": to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (row["id"],)).fetchone())}
         kind = "computed_column" if payload.get("new_columns") else "clean"
+        reading = (payload.get("reading") or "").strip().rstrip(".")
         spec = StepSpec(kind=kind, summary=summary(dr.impact, dr.columns_changed, rows), created_by="chat",
                         notebook_code=notebook_code(payload["code"], rows), code=full_code(payload["code"], rows),
                         column_targets=list(dict.fromkeys(list(payload["columns"]) + dr.impact["columns_added"])),
                         gate="user", parse_failures=dr.report.quarantined, verifiers=report_json,
-                        decisions=[{"question": "What did you ask for?", "chosen": payload.get("reading") or "the code shown in chat",
-                                    "alternatives": [], "reason": "you pressed OK", "asked": payload.get("asked") or ""}])
+                        # Read as "**What does it do?** Upper-case every value in sex. You pressed OK in chat"
+                        decisions=[{"question": "What does it do?", "chosen": reading or "It runs the code shown in chat",
+                                    "alternatives": [], "reason": "You pressed OK in chat", "asked": payload.get("asked") or ""}])
         ctx = Context(env.settings, db, env.cache, env.bus)
         step, new_version = commit_step(ctx, dataset["id"], version, spec, lambda _old, out: shutil.copyfile(dr.out, out))
     finally:

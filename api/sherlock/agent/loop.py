@@ -486,7 +486,7 @@ class Agent:
                     proposal = commands.propose(kit, q, context, types, lambda t: self.emit("status", {"text": t}))
                     later = [s for _, s in steps[n:]]
                     if later:  # the rest of the message runs on the changed data, once the user presses OK
-                        proposal = commands.then(self.db, proposal, later)
+                        proposal = commands.then(self.db, proposal, later, question, n)
                     self.emit("proposal", proposal)
                     blocks.append(text_block([{"type": "text", "text": f"{proposal['summary']}. Nothing has changed yet: "
                                                "read the code, then press OK to run it on the file, or Cancel."}]))
