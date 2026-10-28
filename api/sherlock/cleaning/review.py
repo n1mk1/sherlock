@@ -158,16 +158,46 @@ def excerpt_block(excerpts: list[dict] | None) -> str:
     return fence("\n".join(lines)) if lines else "none"
 
 
-def sourced(excerpts: list[dict] | None, number, spec: dict, note_quotes: dict[str, str]) -> dict | None:
-    """The evidence of a check that cites excerpt `number`, or None: the excerpt must exist and, by code,
-    state the check's numbers or values (`backed`)."""
-    from sherlock.cleaning.rules.evidence import backed
+def sourced(excerpts: list[dict] | None, number, spec: dict, note_quotes: dict[str, str],
+            columns: list[str] | None = None) -> dict | None:
+    """The evidence of a check, or None. The excerpt it cites (`number`) must exist and, by code, state the
+    check's numbers or values (`backed`). A check with numbers or values must be stated in what the excerpt
+    says about its own column (`stated`), so a pasted data table can't back a range. When the cited one
+    doesn't back it, or none is cited (the model often leaves it out), code looks through every excerpt for
+    one that states it about the column: the model's citation is a hint, the check is code's."""
+    from sherlock.cleaning.rules.evidence import backed, stated
 
-    found = next((e for e in excerpts or [] if isinstance(number, int) and e.get("n") == number), None)
-    if found is None or not backed(spec, str(found.get("text") or ""), note_quotes.get(spec["column"])):
+    columns = columns or [spec["column"]]
+    numbered = spec["kind"] in ("range", "date_window", "allowed")
+
+    def backs(e: dict) -> bool:
+        text = str(e.get("text") or "")
+        return stated(spec, text, columns) if numbered else backed(spec, text, note_quotes.get(spec["column"]))
+
+    cited = next((e for e in excerpts or [] if isinstance(number, int) and e.get("n") == number), None)
+    found = cited if cited is not None and backs(cited) else None
+    if found is None and numbered:
+        found = next((e for e in excerpts or [] if stated(spec, str(e.get("text") or ""), columns)), None)
+    if found is None:
         return None
     return {"url": str(found.get("url") or ""), "title": str(found.get("title") or ""), "excerpt": str(found["text"]),
             "retrieved_at": str(found.get("retrieved_at") or "")}
+
+
+def restates(spec: dict, card: dict) -> bool:
+    """An unsourced range whose bounds are the column's own lowest and highest values: it only says the file
+    is what it is, so no row can break it. The model copies them from the card's "range … to …" despite the
+    prompt (seen live), so code drops such a suggestion."""
+    if spec["kind"] != "range":
+        return False
+    stats = next((c.get("stats") or {} for c in card["columns"] if c["name"] == spec["column"]), {})
+    low, high = spec["params"].get("min"), spec["params"].get("max")
+    try:
+        same = [abs(float(a) - float(b)) <= 1e-9 * max(1.0, abs(float(b))) for a, b in ((low, stats.get("min")), (high, stats.get("max")))
+                if a is not None and b is not None]
+    except (TypeError, ValueError):
+        return False
+    return len(same) == 2 and all(same)
 
 
 def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, frame, scope: CallScope,
@@ -208,9 +238,11 @@ def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, ca
             continue
         if (spec["kind"], spec["column"]) in taken or (REPEATS.get(spec["kind"]), spec["column"]) in flagged:
             continue
+        evidence = sourced(excerpts, s.excerpt, spec, quotes, list(columns))  # a failed source never refuses it
+        if evidence is None and restates(spec, card):
+            continue
         reason = s.reason.strip()
         ok = reason and not has_digits(reason) and wording_problem(reason) is None
-        evidence = sourced(excerpts, s.excerpt, spec, quotes)  # a failed source never refuses the suggestion
         kept.append({**spec, **({"reason": reason} if ok else {}), **({"evidence": evidence} if evidence else {})})
         taken.add((spec["kind"], spec["column"]))
     for spec in sorted(kept, key=lambda r: "evidence" not in r):  # sourced first, the model's order otherwise

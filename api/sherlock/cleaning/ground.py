@@ -221,8 +221,8 @@ def ground(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
 
 def _quoted(after: list[dict], before: list[dict], read: list[list[dict]]) -> list[dict]:
     """The quotes this run's `web` notes were written from, as excerpts, so a check can cite them when no
-    dictionary page was read: a column lookup often lands on a page that lists every column ("CHAS: … = 1 if
-    the tract bounds the river; 0 otherwise"). Each quote once, and none a dictionary excerpt already holds."""
+    dictionary page was read: a column lookup often lands on a page that lists every column ("FLAG: … = 1 if
+    the row qualifies; 0 otherwise"). Each quote once, and none a dictionary excerpt already holds."""
     seen = {e["text"] for part in read for e in part}
     out = []
     for n in after:

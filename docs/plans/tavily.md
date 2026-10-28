@@ -73,6 +73,9 @@ Setting: `CLEAN_GROUND=on|off` (default `on`), next to `CLEAN_REVIEW` and `CLEAN
   - `date_window`: each bound as ISO, as digits in the usual orders, or with a month name; a year alone backs January 1 or December 31.
   - `allowed`: every value appears in the excerpt as a whole word, ignoring case.
   - `pattern`, `not_missing`, `unique`, `order`, `depends`: the excerpt must name the column, or the column's note must have been read from that excerpt.
+  - For `range`, `date_window` and `allowed`, the numbers or values must be in what the excerpt says about the check's own column (`evidence.py::stated`: from the column's name to the next column's name). A pasted data table holds plenty of numbers but describes no column, so it backs nothing.
+  - The model often leaves `excerpt` null even when one states the check (seen live), so code looks through every excerpt for one that states it (`review.py::sourced`). The model's citation is a hint; the source is code's.
+- **Code drops two kinds of bad suggestion:** an unsourced range whose bounds are the column's own lowest and highest values (`review.py::restates`: the model copied the card's range, and no row could break it), and an `allowed` list on a number column whose values aren't numbers (`interpreter.validate`).
 
   If the check passes, the rule's `spec_json` gets `evidence: {url, title, excerpt, retrieved_at}` and the plan shows **"From kaggle.com · read <day>"** and the quote in place of "suggested by Sherlock". If it fails, the evidence is dropped and the suggestion stays an unsourced suggestion. It's never refused, because the model's guess is still a guess the user can keep. No migration is needed, since `spec_json` is already JSON. An edit of a kept check's parameters keeps the evidence only if `backed` still holds (`service.change`).
 - **Order:** sourced suggestions are stored and listed first under "Suggested checks". They still start **unticked**: a source is evidence, not consent.

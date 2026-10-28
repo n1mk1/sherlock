@@ -33,6 +33,12 @@ def validate(spec: dict, columns: dict[str, str]) -> dict:
     if action not in ACTIONS:
         raise RuleError("action", f"The action is one of {', '.join(ACTIONS)}.")
     params = kind.check(spec.get("params") or {}, columns)
+    if spec["kind"] == "allowed" and columns[column] in ("int", "float"):
+        for v in params["values"]:
+            try:
+                float(v)
+            except ValueError:
+                raise RuleError("params.values", f"{column} holds numbers, so its allowed values must be numbers too.") from None
     if spec["kind"] == "order" and (columns[column] in ("int", "float")) != (params["as"] == "number"):
         raise RuleError("params.left", "Both columns of an order must be numbers, or both dates.")
     return {"kind": spec["kind"], "column": column, "params": params, "action": action}

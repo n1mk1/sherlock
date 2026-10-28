@@ -130,6 +130,54 @@ def test_the_unknown_and_the_malformed_are_not_backed():
     assert not backed(rule("range", max="lots"), "lots")
 
 
+# --- stated: numbers in what the excerpt says about the column itself -------------------------------
+
+COLS = ["FLAG", "LEFT", "MID", "RIGHT", "NEXT"]
+TABLE = ("| Column | Description | | FLAG | dummy variable (= 1 if the row qualifies; 0 otherwise) | "
+         "| NEXT | index from 1 to 24 |")
+DUMP = "LEFT MID RIGHT FLAG NEXT 0 0.538 1 296.0 24.0 1 0.469 2 242.0 21.6"
+
+
+def test_said_about_runs_from_a_columns_name_to_the_next_column():
+    assert evidence.said_about(TABLE, "FLAG", COLS).strip(" |").startswith("dummy variable")
+    assert "index" not in evidence.said_about(TABLE, "FLAG", COLS)
+    assert evidence.said_about(DUMP, "MID", COLS).strip() == ""
+
+
+def test_stated_needs_the_values_in_the_columns_own_description():
+    assert evidence.stated(rule("allowed", "FLAG", values=["0", "1"]), TABLE, COLS)
+    assert evidence.stated(rule("range", "NEXT", min=1, max=24), TABLE, COLS)
+    # A pasted data table holds the numbers, but says nothing about the column.
+    assert backed(rule("range", "MID", min=1, max=24), DUMP)
+    assert not evidence.stated(rule("range", "MID", min=1, max=24), DUMP, COLS)
+    assert not evidence.stated(rule("range", "FLAG", min=1, max=24), TABLE, COLS)
+    assert not evidence.stated(rule("not_missing", "FLAG"), TABLE, COLS)  # naming a column says nothing of it
+
+
+def test_code_finds_the_source_the_model_didnt_cite_and_refuses_a_wrong_one():
+    excerpts = [{"n": 1, "url": "https://a.example.org", "title": "A", "text": DUMP, "retrieved_at": "2026-10-28"},
+                {"n": 2, "url": "https://b.example.org", "title": "B", "text": TABLE, "retrieved_at": "2026-10-28"}]
+    flag = {**rule("allowed", "FLAG", values=["0", "1"])}
+    assert review.sourced(excerpts, None, flag, {}, COLS)["url"] == "https://b.example.org"
+    assert review.sourced(excerpts, 1, flag, {}, COLS)["url"] == "https://b.example.org"
+    assert review.sourced(excerpts, 1, rule("range", "MID", min=1, max=24), {}, COLS) is None
+
+
+def test_an_unsourced_range_that_restates_the_columns_extremes_is_dropped():
+    card = {"columns": [{"name": "x", "stats": {"min": 190.0, "max": 708.0}}]}
+    assert review.restates(rule("range", "x", min=190, max=708), card)
+    assert not review.restates(rule("range", "x", min=0, max=708), card)
+    assert not review.restates(rule("range", "x", min=190, max=None), card)
+    assert not review.restates(rule("allowed", "x", values=["1"]), card)
+
+
+def test_an_allowed_list_on_a_number_column_must_hold_numbers():
+    with pytest.raises(interpreter.RuleError):
+        interpreter.validate(rule("allowed", "n", values=[":null"]), {"n": "int"})
+    assert interpreter.validate(rule("allowed", "n", values=["0", "1"]), {"n": "int"})["params"]["values"] == ["0", "1"]
+    assert interpreter.validate(rule("allowed", "t", values=["a"]), {"t": "category"})["params"]["values"] == ["a"]
+
+
 def test_backed_knows_no_dataset_words():
     import inspect
 

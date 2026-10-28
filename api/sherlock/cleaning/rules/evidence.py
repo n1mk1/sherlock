@@ -95,6 +95,34 @@ def names(excerpt: str, column: str) -> bool:
     return bool(want) and re.search(r"(?<!\w)" + re.escape(want) + r"(?!\w)", _name(excerpt)) is not None
 
 
+SAID_CHARS = 240   # how far after a column's name its description may run, at most
+
+
+def said_about(excerpt: str, column: str, columns: list[str]) -> str:
+    """What the excerpt says right after naming the column: from each mention of its name to the next mention
+    of another of the file's columns (or `SAID_CHARS` on). "FLAG | dummy variable (= 1 if the row qualifies;
+    0 otherwise) | NEXT | …" says "= 1 … 0 otherwise" about FLAG; a pasted table header ("… LEFT MID RIGHT …"
+    then rows of numbers) says nothing about MID, so its numbers can't back a check on MID."""
+    text, want = _name(excerpt), _name(column)
+    if not want:
+        return ""
+    others = [re.compile(r"(?<!\w)" + re.escape(_name(c)) + r"(?!\w)") for c in columns if _name(c) and _name(c) != want]
+    parts = []
+    for m in re.finditer(r"(?<!\w)" + re.escape(want) + r"(?!\w)", text):
+        end = min([m.end() + SAID_CHARS] + [o.search(text, m.end()).start() for o in others if o.search(text, m.end())])
+        parts.append(text[m.end():end])
+    return " … ".join(p for p in parts if p.strip())
+
+
+def stated(spec: dict, excerpt: str, columns: list[str]) -> bool:
+    """True when the excerpt states a check with numbers or values in what it says about the check's own
+    column (`said_about`). Only those kinds: a page that merely names a column doesn't say it must be
+    filled or unique."""
+    if spec.get("kind") not in ("range", "date_window", "allowed"):
+        return False
+    return backed(spec, said_about(excerpt, str(spec.get("column") or ""), columns))
+
+
 def _same_quote(a: str, b: str) -> bool:
     a, b = _name(a), _name(b)
     return bool(a) and bool(b) and (a in b or b in a)
