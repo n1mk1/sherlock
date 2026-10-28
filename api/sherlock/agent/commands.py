@@ -48,7 +48,7 @@ from sherlock.sandbox import runner as sandbox
 from sherlock.sandbox.static_check import check as static_check
 from sherlock.sandbox.static_check import style as code_style
 from sherlock.steps.commit import Context, StepSpec, commit_step
-from sherlock.steps.diff import check_version_file, diff_versions
+from sherlock.steps.diff import NUMBER, check_version_file, diff_versions
 from sherlock.storage import dataset_dir, sql_path
 
 log = logging.getLogger("sherlock.agent")
@@ -266,10 +266,13 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         raise
     cells = [t for t in diff.lineage if t[1] != "_row"]
     changed_cols = list(dict.fromkeys(t[1] for t in cells if t[1] not in diff.columns_added))
+    # A new type is an effect of its own: "make age a whole number" on 22.0, 30.0 changes no value, only the type.
+    retyped = {c: holds(new) for c, (old, new) in diff.retyped.items() if holds(old) != holds(new)}
     impact = {"cells_changed": len([t for t in cells if t[1] not in diff.columns_added]),
               "rows_affected": len({t[0] for t in diff.lineage}),
-              "quarantined": report.quarantined, "columns_added": list(diff.columns_added)}
-    if not (impact["cells_changed"] or impact["quarantined"] or impact["columns_added"]):
+              "quarantined": report.quarantined, "columns_added": list(diff.columns_added),
+              **({"columns_retyped": retyped} if retyped else {})}
+    if not (impact["cells_changed"] or impact["quarantined"] or impact["columns_added"] or retyped):
         out.unlink(missing_ok=True)
         raise StepFailed("it changes nothing in this version of the file", SAID["nothing"])
     warnings = [f"This sets aside {report.quarantined:,} of {len(before):,} rows. Check that's what you meant before you "
@@ -280,11 +283,23 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
     return DryRun(out, impact, diff.before_after, report, changed_cols, warnings, list(said), seconds)
 
 
+def holds(duck_type: str) -> str:
+    """What a column of this DuckDB type holds, in plain words: "whole numbers", "text"."""
+    t = duck_type.upper()
+    if t.startswith(NUMBER):
+        return "whole numbers" if "INT" in t else "numbers"
+    return next((w for p, w in (("VARCHAR", "text"), ("TIMESTAMP", "dates with times"), ("DATE", "dates"), ("TIME", "times"),
+                                ("BOOLEAN", "true or false values"), ("INTERVAL", "durations")) if t.startswith(p)), t.lower())
+
+
 def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
-    """What the step does, from its counts (never the model's words)."""
+    """What the step does, from its counts and types (never the model's words)."""
     parts = []
     if impact["columns_added"]:
         parts.append(f"Add {'column' if len(impact['columns_added']) == 1 else 'columns'} {', '.join(impact['columns_added'])}")
+    retyped = impact.get("columns_retyped") or {}
+    for words in dict.fromkeys(retyped.values()):  # "Make age whole numbers"
+        parts.append(f"Make {', '.join(c for c, w in retyped.items() if w == words)} {words}")
     n, m = impact["cells_changed"], impact["rows_affected"]
     if n:
         parts.append(f"Change {n:,} {'cell' if n == 1 else 'cells'} in {m:,} {'row' if m == 1 else 'rows'}: {', '.join(changed)}")
@@ -478,8 +493,9 @@ def then(db: sqlite3.Connection, proposal: dict, questions: list[str], message: 
     return to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone())
 
 
-def _same(a: dict, b: dict) -> bool:
-    return all(a.get(k) == b.get(k) for k in ("cells_changed", "rows_affected", "quarantined", "columns_added"))
+def _same(a: dict, b: dict) -> bool:  # `or None`: `columns_retyped` is there only when a type changes
+    return all((a.get(k) or None) == (b.get(k) or None)
+               for k in ("cells_changed", "rows_affected", "quarantined", "columns_added", "columns_retyped"))
 
 
 def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:

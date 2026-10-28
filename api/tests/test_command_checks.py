@@ -188,4 +188,42 @@ def test_a_refusal_when_ok_is_pressed_uses_the_same_words(client, ready):  # noq
 
 def test_the_rest_of_a_message_is_kept_as_typed(client, ready):  # noqa: F811
     _, msg = send(client, ready["id"], "round fare to whole numbers then trim the names then count by sex")
-    assert msg["proposal"]["then"] == "trim the names. count by sex?"  # no "and", no "?" added to the command
+    assert msg["proposal"]["then"] == "trim the names then count by sex"  # the user's words, not the planner's "count by sex?"
+
+
+# --- a new type is an effect of its own ---------------------------------------------------------------------------
+
+
+def test_a_command_that_only_changes_a_type_gets_a_card_and_ok_saves_it(client, ready):  # noqa: F811
+    ds, v = ready["id"], ready["current_version"]
+    _, msg = send(client, ds, "make age a whole number")  # on the raw ages, some values change too: 28.5 → 28
+    p = msg["proposal"]
+    assert p["impact"]["columns_retyped"] == {"age": "whole numbers"} and p["impact"]["cells_changed"] > 0
+    assert p["summary"].startswith("Make age whole numbers · Change ")
+    assert all(float(c["old"]) % 1 for c in p["before_after"])  # only the ages with a fraction count as changed
+    assert client.post(f"{API}/proposals/{p['id']}/reject").status_code == 204
+
+    ok(client, send(client, ds, "round age to whole years")[1]["proposal"], v)
+    _, msg = send(client, ds, "make age a whole number")  # now 22.0 → 22: no value changes, only the type
+    p = msg["proposal"]
+    assert p["impact"]["cells_changed"] == 0 and p["summary"] == "Make age whole numbers" and "kept" not in p
+    step = ok(client, p, v + 1)["step"]
+    assert step["summary"] == "Make age whole numbers"
+    [d] = step["decisions"]
+    assert (d["question"], d["chosen"], d["reason"]) == ("What does it do?", "Store every age as a whole number",
+                                                         "You pressed OK in chat")
+    [(cols,)] = db_rows("SELECT columns_json FROM versions WHERE dataset_id = ? AND version = ?", ds, v + 2)
+    assert {c["name"]: c["type"] for c in json.loads(cols)}["age"] == "BIGINT"
+
+
+def test_a_number_to_number_type_change_compares_the_numbers(tmp_path):
+    old, new = tmp_path / "o.parquet", tmp_path / "n.parquet"
+    with closing(duckdb.connect()) as conn:
+        conn.execute("CREATE TABLE t AS SELECT * FROM (VALUES (1::BIGINT, NULL::VARCHAR, 22.0::DOUBLE), "
+                     "(2, NULL, 28.5)) v(_row_id, _quarantine_reason, age)")
+        conn.execute(f"COPY t TO '{old.as_posix()}' (FORMAT PARQUET)")
+        conn.execute(f"COPY (SELECT _row_id, _quarantine_reason, [22, 28][_row_id]::BIGINT AS age FROM t) "
+                     f"TO '{new.as_posix()}' (FORMAT PARQUET)")
+    d = diff_versions(old, new)  # cast to the new type, 28.5 would round to 28 and hide the change
+    assert d.retyped == {"age": ("DOUBLE", "BIGINT")} and [r[:4] for r in d.lineage] == [(2, "age", "28.5", "28")]
+    assert commands.holds("DECIMAL(3,1)") == "numbers" and commands.holds("BIGINT") == "whole numbers"

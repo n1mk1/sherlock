@@ -2,8 +2,10 @@
 
 A cell counts as changed only if its value changed: when a column's type changed (the typing
 step), the old value is cast to the new type before comparing, so `'22'` → `22` is not a change,
-while a value that fails the cast (or a sentinel that became NULL) is. A cell that lost its value
-in a row the same step quarantined gets the flag `quarantined`: its original text is kept here.
+while a value that fails the cast (or a sentinel that became NULL) is. Number to number compares the
+numbers as they are, so `22.0` → `22` is not a change and `28.5` → `28` is. `retyped` holds the
+columns whose type changed. A cell that lost its value in a row the same step quarantined gets the
+flag `quarantined`: its original text is kept here.
 """
 
 from collections import Counter
@@ -16,6 +18,8 @@ from sherlock.storage import sql_path
 
 SYSTEM = ("_row_id", "_quarantine_reason")
 BEFORE_AFTER = 20
+NUMBER = ("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "FLOAT",
+          "DOUBLE", "REAL", "DECIMAL")
 
 
 def _ident(name: str) -> str:
@@ -34,6 +38,7 @@ class Diff:
     quarantined: int = 0
     added_row_ids: list[int] = field(default_factory=list)
     deleted_row_ids: list[int] = field(default_factory=list)
+    retyped: dict[str, tuple[str, str]] = field(default_factory=dict)  # column → (old type, new type)
 
     @property
     def before_after(self) -> list[dict]:
@@ -78,7 +83,9 @@ def diff_versions(old: Path, new: Path, conn: duckdb.DuckDBPyConnection | None =
         for col in shared:
             old_expr = f"o.{_ident(col)}"
             if old_types[col] != new_types[col]:
-                old_expr = f"TRY_CAST(o.{_ident(col)} AS {new_types[col]})"
+                diff.retyped[col] = (old_types[col], new_types[col])
+                if not (old_types[col].startswith(NUMBER) and new_types[col].startswith(NUMBER)):
+                    old_expr = f"TRY_CAST(o.{_ident(col)} AS {new_types[col]})"
             rows = conn.execute(
                 f"SELECT o._row_id, o.{_ident(col)}::VARCHAR, n.{_ident(col)}::VARCHAR, "
                 "o._quarantine_reason IS NULL AND n._quarantine_reason IS NOT NULL "
