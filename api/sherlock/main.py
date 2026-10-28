@@ -11,6 +11,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from sherlock import __version__
+from sherlock.agent import commands
 from sherlock.config import Settings, get_settings
 from sherlock.db.connection import connect
 from sherlock.db.migrate import current_version, migrate
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
         conn = connect(settings)
         try:
             migrate(conn)
+            commands.sweep(settings, conn)  # dry runs kept by cards that no longer wait for OK
         finally:
             conn.close()
         await app.state.jobs.start()

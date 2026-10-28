@@ -1,0 +1,18 @@
+[
+  {"purpose": "route", "match": ["<data>\nshout every value in sex\n</data>"],
+   "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false,
+               "entities": [{"text": "sex", "kind": "column"}]}},
+  {"purpose": "step", "match": ["<data>\nshout every value in sex\n</data>"],
+   "content": {"reading": "Upper-case every value in sex", "doable": true, "columns": ["sex"], "new_columns": [],
+               "code": "result = df.copy()\nresult[\"sex\"] = result[\"sex\"].str.upper()"}},
+
+  {"purpose": "route", "match": ["<data>\nset aside the passengers with a blank age\n</data>"],
+   "content": {"intents": ["clean_step"], "ambiguous": false, "clarification": null, "multi_step": false,
+               "entities": [{"text": "age", "kind": "column"}]}},
+  {"purpose": "step", "match": ["<data>\nset aside the passengers with a blank age\n</data>"],
+   "content": {"reading": "Set aside the rows where age is blank", "doable": true, "columns": [], "new_columns": [],
+               "code": "result = df[df[\"age\"].notna()].copy()"}},
+  {"purpose": "step", "match": ["<data>\nset aside the passengers with a blank age\n</data>"],
+   "content": {"reading": "Set aside the rows where age is blank", "doable": true, "columns": [], "new_columns": [],
+               "code": "result = df.copy()\nresult = quarantine_rows(result, result[\"age\"].isna(), \"asked to set aside: no age\")"}}
+]

@@ -6,17 +6,22 @@ Cleaner's verifiers check the result. A failure goes back to the model once (the
 answer says why. What passes is stored as a `clean_step` (or `computed_column`) proposal. Its card shows the code
 and the effect, written by code from the diff, never by the model.
 
-OK (approve) runs the stored code again on the version that is current then: same effect, saved as one step
-(`created_by="chat"`, undoable, replayed and exported like the Cleaner's steps). A different effect refreshes the
-card for one more OK. While a clean runs, OK queues the step, and the job applies it when it ends.
+OK (approve) saves the dry run's file when the version hasn't moved since the card (kept as
+`.chat_<proposal id>.parquet`, no second sandbox run). When it has moved, OK runs the stored code again on the
+version that is current then: same effect, saved as one step (`created_by="chat"`, undoable, replayed and exported
+like the Cleaner's steps). A different effect refreshes the card for one more OK. A kept file is removed on Cancel,
+on failure, after the commit, when OK finds the version moved, and at startup when its card isn't pending. While a clean runs, OK queues the step, and the job applies it when it ends.
 Rows are never deleted: a request to delete rows sets them aside (`quarantine_rows`).
 """
 
 import json
+import logging
 import re
 import shutil
 import sqlite3
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +46,7 @@ from sherlock.steps.commit import Context, StepSpec, commit_step
 from sherlock.steps.diff import check_version_file, diff_versions
 from sherlock.storage import dataset_dir, sql_path
 
+log = logging.getLogger("sherlock.agent")
 KINDS = ("clean_step", "computed_column")
 SYSTEM_COLUMNS = ("_row_id", "_quarantine_reason")
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,62}$")
@@ -192,16 +198,76 @@ def scope_rows(env: Env, dataset: sqlite3.Row, context: dict) -> list[int] | Non
         return [r[0] for r in conn.execute(f"SELECT _row_id FROM t WHERE {where} ORDER BY _row_id").fetchall()]  # noqa: S608
 
 
-def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -> dict:
+def kept_file(settings, user_id: str, dataset_id: str, proposal_id: str) -> Path:
+    """Where a card keeps its passing dry run, next to the dataset's version files."""
+    return dataset_dir(settings, user_id, dataset_id) / f".chat_{proposal_id}.parquet"
+
+
+def discard(settings, db: sqlite3.Connection, row: sqlite3.Row) -> None:
+    """Remove the card's kept dry run (Cancel)."""
+    ds = db.execute("SELECT user_id FROM datasets WHERE id = ?", (row["dataset_id"],)).fetchone()
+    if ds:
+        kept_file(settings, ds["user_id"], row["dataset_id"], row["id"]).unlink(missing_ok=True)
+
+
+def sweep(settings, db: sqlite3.Connection) -> int:
+    """At startup: remove every `.chat_*` file under the data folder whose card isn't waiting for OK (a card
+    decided while the app was down, or a dry run that was cut off). A glob, nothing per dataset."""
+    files = list((settings.data_dir / "users").glob("*/datasets/*/.chat_*"))
+    if not files:
+        return 0
+    waiting = {r[0] for r in db.execute("SELECT id FROM proposals WHERE status IN ('pending', 'queued')")}
+    gone = 0
+    for f in files:
+        if f.name.removeprefix(".chat_").removesuffix(".parquet") not in waiting:
+            try:
+                f.unlink()
+                gone += 1
+            except OSError:
+                log.warning("couldn't remove %s", f)
+    return gone
+
+
+def _drop(got: dict) -> None:
+    """Remove the dry run `propose` still holds when it ends without a card."""
+    old = got.pop("run", None)
+    if old is not None:
+        old.out.unlink(missing_ok=True)
+
+
+def examples(kit: Toolkit, question: str, types: dict[str, str]) -> str:
+    """The `{dtypes}` lines: every column's type, and up to three values for the columns the question names."""
+    q = question.lower()
+    named = [c for c in types if c not in SYSTEM_COLUMNS and re.search(rf"(?<!\w){re.escape(c.lower())}(?!\w)", q)][:8]
+    seen: dict[str, str] = {}
+    if named:
+        try:
+            with qx.connection(kit.env, kit.dataset, kit.dataset["current_version"]) as conn:
+                for c in named:
+                    col = '"' + c.replace('"', '""') + '"'
+                    vals = [str(v[0]).replace("\n", " ")[:30] for v in
+                            conn.execute(f"SELECT DISTINCT {col} FROM t WHERE {col} IS NOT NULL LIMIT 3").fetchall()]  # noqa: S608
+                    if vals:
+                        seen[c] = ", ".join(vals)
+        except Exception:  # the examples are a help, never a reason to fail
+            log.warning("couldn't read example values", exc_info=True)
+    return "\n".join(f"- {c}: {t}" + (f" (e.g. {seen[c]})" if c in seen else "") for c, t in types.items())
+
+
+def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
+            status: Callable[[str], None] | None = None) -> dict:
     """`clean_step`: the code, its dry run and the card. A request the model can't turn into a safe change
-    is answered with the reason (CantAnswer), never a card."""
+    is answered with the reason (CantAnswer), never a card. `status` hears each stage in plain words."""
     env, dataset = kit.env, kit.dataset
+    say = status or (lambda _text: None)
+    drafts = [0]
     rows = scope_rows(env, dataset, context)
     if rows is not None and not rows:
         raise CantAnswer("The selection holds no rows in this version of the file, so there's nothing to change.")
     got: dict = {}
 
     def check(d: StepDraft) -> None:
+        drafts[0] += 1
         if not d.doable:
             return
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
@@ -217,6 +283,9 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
         old = got.pop("run", None)
         if old is not None:
             old.out.unlink(missing_ok=True)
+        if drafts[0] > 1:
+            say("Fixing the code")
+        say("Running it on a copy of the file")
         try:
             got["run"] = dry_run(env, dataset, dataset["current_version"], d.code, rows, list(d.new_columns))
         except StepFailed as exc:
@@ -224,26 +293,36 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
 
     where = (f"The request is about {len(rows):,} selected rows: write the code for every row, and code limits the "
              "change to the selection.\n") if rows is not None else ""
-    dtypes = "\n".join(f"- {c}: {t}" for c, t in types.items())
+    dtypes = examples(kit, question, types)
     messages = [{"role": "system", "content": prompts.SYSTEM},
                 {"role": "user", "content": prompts.STEP.format(context=kit.context, dtypes=fence(dtypes), helpers=HELPERS,
                                                                 scope=where, message=fence(question))}]
+    say("Writing the code")
+    started = time.monotonic()
     try:
         draft = kit.llm.structured("medium", messages, StepDraft, purpose="step", scope=kit.scope, validate=check).value
     except StructuredOutputError as exc:
+        _drop(got)
         why = str(exc).split(": ", 1)[-1]
         why = re.sub(r"^When the code ran on the file, ", "", why).removesuffix(". Fix the code.")
         raise CantAnswer(f"I couldn't write a safe change for that: {why[:300]}") from None
     if not draft.doable:
+        _drop(got)
         said = draft.reading.strip()
         raise CantAnswer("I can't make that change to this file" + (f": {said}" if said and not wording_problem(said) else "."))
     run = got["run"]
-    try:
-        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run), "asked": question[:300]}
+    pid = new_id("prp")
+    kept = kept_file(env.settings, dataset["user_id"], dataset["id"], pid)
+    log.info("command: model and checks %.1fs; dry run %s", time.monotonic() - started,
+             {k: round(v, 2) for k, v in getattr(run, "seconds", {}).items()} or "untimed")
+    try:  # the passing dry run stays as the card's file: OK commits it if the version hasn't moved
+        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run), "asked": question[:300],
+                   "kept": {"columns_changed": run.columns_changed, "verifiers": run.report.as_json(),
+                            "quarantined": run.report.quarantined}}
+        run.out.replace(kept)
     finally:
         run.out.unlink(missing_ok=True)
     kind = "computed_column" if draft.new_columns else "clean_step"
-    pid = new_id("prp")
     env.db.execute("INSERT INTO proposals (id, dataset_id, message_id, kind, base_version, payload_json, status, created_at) "
                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
                    (pid, dataset["id"], kit.scope.message_id, kind, dataset["current_version"], json.dumps(payload, default=str),
@@ -280,8 +359,18 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
         return {"queued": to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (row["id"],)).fetchone())}
     version = dataset["current_version"]
     rows = (payload.get("scope") or {}).get("row_ids")
+    kept = kept_file(env.settings, dataset["user_id"], dataset["id"], row["id"])
+    k = payload.get("kept")
     try:
-        dr = dry_run(env, dataset, version, payload["code"], rows, payload.get("new_columns") or [])
+        if k and version == row["base_version"] and kept.exists():  # nothing moved: the card's dry run is the result
+            dr = DryRun(out=kept, impact=payload["impact"], before_after=payload.get("before_after") or [],
+                        report=verifiers.Report(quarantined=k["quarantined"]), columns_changed=k["columns_changed"],
+                        warnings=payload.get("warnings") or [])
+            report_json = k["verifiers"]
+        else:
+            kept.unlink(missing_ok=True)
+            dr = dry_run(env, dataset, version, payload["code"], rows, payload.get("new_columns") or [])
+            report_json = dr.report.as_json()
     except StepFailed as exc:
         db.execute("UPDATE proposals SET status = 'failed', resolved_at = ?, payload_json = ? WHERE id = ?",
                    (now_iso(), json.dumps({**payload, "error": str(exc)}, default=str), row["id"]))
@@ -297,7 +386,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
         spec = StepSpec(kind=kind, summary=summary(dr.impact, dr.columns_changed, rows), created_by="chat",
                         notebook_code=notebook_code(payload["code"], rows), code=full_code(payload["code"], rows),
                         column_targets=list(dict.fromkeys(list(payload["columns"]) + dr.impact["columns_added"])),
-                        gate="user", parse_failures=dr.report.quarantined, verifiers=dr.report.as_json(),
+                        gate="user", parse_failures=dr.report.quarantined, verifiers=report_json,
                         decisions=[{"question": "What did you ask for?", "chosen": "the code shown in chat",
                                     "alternatives": [], "reason": "you pressed OK", "asked": payload.get("asked") or ""}])
         ctx = Context(env.settings, db, env.cache, env.bus)

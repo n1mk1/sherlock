@@ -38,6 +38,6 @@ def approve(request: Request, body: dict | None = Body(default=None), owned_prop
 def reject(request: Request, owned_proposal: Owned = Depends(owned("proposal")),
            db: sqlite3.Connection = Depends(get_db)) -> Response:
     row, dataset = _rows(db, owned_proposal)
-    actions.reject(db, row)
+    actions.reject(db, row, request.app.state.settings)
     thread_changed(db, request.app.state.bus, dataset)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
