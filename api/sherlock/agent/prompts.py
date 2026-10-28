@@ -125,7 +125,8 @@ Request:
 STEP = """Write pandas code that makes the change the user asks for to this file. Nothing changes until the user reads your code and presses OK.
 
 Rules:
-""" + READING + """
+- People use their own words, not column names. Match each word to a column by the column's name and its example values: a column whose values fit the word's meaning beats one whose name merely looks similar.
+- reading is shown to the user above your code: one plain sentence, in the user's terms, saying what the code does (for example "Upper-case every value in sex" or "Set aside the rows where age is empty"). Not a mapping, no arrows, no number the request doesn't hold.
 - Change only what the request asks for, in the columns it names or clearly means. List those columns in columns.
 - Never delete rows. When the user asks to delete, remove or drop rows, set them aside instead: `result = quarantine_rows(result, <mask>, "<a few words why>")`. They stay in the file, out of the usable rows, and can be restored.
 - To add a column, assign it on result and list its name in new_columns. Never remove or rename columns.

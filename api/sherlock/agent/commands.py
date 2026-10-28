@@ -332,6 +332,8 @@ def _reading_problem(reading: str, asked: str = "") -> str | None:
     said = reading.strip()
     if not said:
         return "it is empty"
+    if re.search(r"→|->", said):  # live (production), the reading came back as the query prompts' '"fare" → fare'
+        return "it is a mapping of words to columns, not a sentence saying what the code does"
     digits = set(re.findall(r"\d+(?:\.\d+)?", asked))
     words = {m.group(0).lower() for m in NUMBER_WORDS.finditer(asked)}
     # "2" and "two" are one number: live (production), "round fare to 2 places" read back as "two decimal places".

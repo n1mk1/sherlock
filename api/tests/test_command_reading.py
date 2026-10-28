@@ -43,6 +43,7 @@ def test_the_reading_is_stored_on_the_card_and_returned_by_the_api(client, ready
     ("Round every fare to two decimal places", "round fare to 2 places", True),  # "2" and "two" are one number
     ("Round every fare to 2 decimal places", "round fare to two places", True),
     ("Round every fare to three decimal places", "round fare to 2 places", False),
+    ('"fare" → fare', "round fare to 2 places", False),                      # a mapping, not a sentence
 ])
 def test_the_reading_may_say_back_the_users_own_numbers(reading, asked, ok):
     assert (commands._reading_problem(reading, asked) is None) is ok
