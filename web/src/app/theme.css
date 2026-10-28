@@ -1,131 +1,166 @@
 /*
- * Sherlock design tokens (UI/UX brief §2, §9).
- * Light on :root, Dark on .dark; the accent comes from <html data-accent="…">
- * (Verdigris when the attribute is missing). shadcn and Bklit names, Sherlock values.
- * Never add a color that isn't in the brief's tables.
+ * Sherlock design tokens. Light on :root, Dark on .dark. The base (warm neutrals, the type roles,
+ * the radii) stays the same in both; color lives in a set of hues, one per kind of thing:
+ *   violet — AI cleaning (the plan, Clean with AI, a run in progress)
+ *   blue   — asking (the chat, answers, computed numbers)
+ *   teal   — changes (steps, edits, history)
+ *   green  — done and ready · amber — needs a look · red — failed or destructive
+ * The user's accent (<html data-accent="…">, Verdigris when missing) marks focus and selection.
  */
 
 :root {
-  /* 2.1 Base (Light) */
-  --background: #eeece8;
-  --foreground: #2e3035;
-  --foreground-2: #4a4d52;
-  --muted: rgba(46, 48, 53, 0.04);
-  --muted-foreground: #64666b;
-  --card: #f7f6f3;
-  --card-foreground: #2e3035;
-  --popover: #fbfaf8;
+  /* Base (Light): warm neutrals, the canvas white and the chrome a shade of linen. */
+  --background: #f7f6f3;
+  --foreground: #1c1b1b;
+  --foreground-2: #3a3837;
+  --muted: rgba(28, 27, 27, 0.045);
+  --muted-foreground: #6b6865;
+  --card: #ffffff;
+  --card-foreground: #1c1b1b;
+  --popover: #ffffff;
   --popover-foreground: var(--foreground);
-  --border: rgba(46, 48, 53, 0.08);
-  --border-strong: rgba(46, 48, 53, 0.16);
-  --input: rgba(46, 48, 53, 0.12);
-  --primary: #2e3035;
-  --primary-foreground: #f7f6f3;
-  --secondary: rgba(46, 48, 53, 0.04);
+  --border: rgba(28, 27, 27, 0.08);
+  --border-strong: rgba(28, 27, 27, 0.15);
+  --input: rgba(28, 27, 27, 0.12);
+  --primary: #1c1b1b;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(28, 27, 27, 0.055);
   --secondary-foreground: var(--foreground);
-  --success: #3f6e4d;
-  --warning: #96552a;
-  --destructive: #a3362b;
-  --info: #456a91;
-  --changed: rgba(69, 106, 145, 0.18);
-  --predicted: rgba(63, 110, 77, 0.1);
+  --scrollbar: rgba(28, 27, 27, 0.18);
+  --scrollbar-hover: rgba(28, 27, 27, 0.32);
+  --scrim: rgba(28, 27, 27, 0.24);
 
-  /* 2.1 Accent (Light, Verdigris default) */
-  --accent: #2f6b62;
+  /* Hues (Light) */
+  --violet: #6b4bd6;
+  --blue: #2f62c9;
+  --teal: #13756e;
+  --green: #3f6f34;
+  --amber: #a85d06;
+  --red: #b23f1a;
 
-  /* 2.1 Charts (Light) */
-  --chart-1: #3f4247;
-  --chart-2: #55575c;
-  --chart-3: #6b6d72;
-  --chart-4: #7a7c81;
-  --chart-5: #87898d;
-  --chart-grid: rgba(46, 48, 53, 0.06);
-  --chart-foreground: #64666b;
-  --chart-label: #4a4d52;
-  --chart-crosshair: rgba(46, 48, 53, 0.3);
+  /* Accent (Light, Verdigris default) */
+  --accent: #13756e;
 
-  /* 2.3 Radius and elevation */
-  --radius: 10px;
+  /* Charts (Light): neutral series, the accent picks one out. */
+  --chart-1: #3a3837;
+  --chart-2: #57534f;
+  --chart-3: #7a7674;
+  --chart-4: #86827f;
+  --chart-5: #928e8b;
+  --chart-grid: rgba(28, 27, 27, 0.06);
+  --chart-foreground: #6b6865;
+  --chart-label: #3a3837;
+  --chart-crosshair: rgba(28, 27, 27, 0.3);
+
+  /* Radius and elevation: pills for buttons and tags, soft corners for surfaces. */
+  --radius: 12px;
   --radius-chip: 999px;
   --radius-number-chip: 6px;
-  --radius-control: 8px;
-  --radius-surface: 16px;
-  --shadow-overlay: 0 12px 32px rgba(46, 48, 53, 0.1);
+  --radius-control: 999px;
+  --radius-field: 10px;
+  --radius-surface: 20px;
+  --shadow-overlay: 0 1px 2px rgba(28, 27, 27, 0.04), 0 12px 40px rgba(28, 27, 27, 0.1);
 
-  /* 2.2 Typography */
+  /* Type roles: sans for the interface, serif for titles, mono for data and code. */
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Source Serif 4 Variable", "Source Serif 4", ui-serif, Georgia, serif;
   --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 
-  /* 2.4 Motion */
-  --duration-fast: 120ms;
-  --duration-base: 200ms;
-  --duration-slow: 320ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 350ms;
+  --ease: cubic-bezier(0.24, 0.97, 0.64, 1);
 }
 
 .dark {
-  /* 2.1 Base (Dark) */
-  --background: #1e1f22;
-  --foreground: #e6e3dd;
-  --foreground-2: #c9c6bf;
-  --muted: rgba(230, 227, 221, 0.04);
-  --muted-foreground: #9a9890;
-  --card: #25272b;
-  --card-foreground: #e6e3dd;
-  --popover: #2b2d31;
-  --border: rgba(230, 227, 221, 0.08);
-  --border-strong: rgba(230, 227, 221, 0.16);
-  --input: rgba(230, 227, 221, 0.12);
-  --primary: #e6e3dd;
-  --primary-foreground: #1e1f22;
-  --secondary: rgba(230, 227, 221, 0.04);
-  --success: #7fb08e;
-  --warning: #d89a5b;
-  --destructive: #e2786c;
-  --info: #8faacb;
-  --changed: rgba(143, 170, 203, 0.18);
-  --predicted: rgba(127, 176, 142, 0.12);
+  --background: #0c0c0c;
+  --foreground: #f4f3f1;
+  --foreground-2: #d4d1ce;
+  --muted: rgba(244, 243, 241, 0.05);
+  --muted-foreground: #9d9995;
+  --card: #151515;
+  --card-foreground: #f4f3f1;
+  --popover: #1c1c1c;
+  --border: rgba(244, 243, 241, 0.08);
+  --border-strong: rgba(244, 243, 241, 0.15);
+  --input: rgba(244, 243, 241, 0.13);
+  --primary: #f4f3f1;
+  --primary-foreground: #0c0c0c;
+  --secondary: rgba(244, 243, 241, 0.07);
+  --scrollbar: rgba(244, 243, 241, 0.16);
+  --scrollbar-hover: rgba(244, 243, 241, 0.3);
+  --scrim: rgba(0, 0, 0, 0.55);
 
-  --accent: #6fb3a6;
+  --violet: #ab95f6;
+  --blue: #84a9f4;
+  --teal: #5cc2b7;
+  --green: #9bc08a;
+  --amber: #f0a650;
+  --red: #ff8a71;
 
-  --chart-1: #e6e3dd;
-  --chart-2: #c9c6bf;
-  --chart-3: #a9a69f;
-  --chart-4: #8e8c86;
-  --chart-5: #7d7f84;
-  --chart-grid: rgba(230, 227, 221, 0.06);
-  --chart-foreground: #9a9890;
-  --chart-label: #c9c6bf;
-  --chart-crosshair: rgba(230, 227, 221, 0.3);
+  --accent: #5cc2b7;
 
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --chart-1: #f4f3f1;
+  --chart-2: #d4d1ce;
+  --chart-3: #aeaaa6;
+  --chart-4: #8c8884;
+  --chart-5: #6f6c69;
+  --chart-grid: rgba(244, 243, 241, 0.06);
+  --chart-foreground: #9d9995;
+  --chart-label: #d4d1ce;
+  --chart-crosshair: rgba(244, 243, 241, 0.3);
+
+  --shadow-overlay: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
-/* 2.1 Accent sets: one active at a time. */
-:root[data-accent="verdigris"] { --accent: #2f6b62; }
-:root[data-accent="arcane"] { --accent: #6a4c93; }
-:root[data-accent="ember"] { --accent: #9a4a2e; }
-:root[data-accent="aether"] { --accent: #2f6690; --info: #8a5a33; }
-:root[data-accent="brass"] { --accent: #8a5a33; }
+/* Accent sets: one active at a time. */
+:root[data-accent="verdigris"] { --accent: #13756e; }
+:root[data-accent="arcane"] { --accent: #6b4bd6; }
+:root[data-accent="ember"] { --accent: #b8471d; }
+:root[data-accent="aether"] { --accent: #2f62c9; }
+:root[data-accent="brass"] { --accent: #93650f; }
 
-:root.dark[data-accent="verdigris"] { --accent: #6fb3a6; }
-:root.dark[data-accent="arcane"] { --accent: #a88bd6; }
-:root.dark[data-accent="ember"] { --accent: #e08a62; }
-:root.dark[data-accent="aether"] { --accent: #6fb4d9; --info: #c9a063; }
-:root.dark[data-accent="brass"] { --accent: #c9a063; }
+:root.dark[data-accent="verdigris"] { --accent: #5cc2b7; }
+:root.dark[data-accent="arcane"] { --accent: #ab95f6; }
+:root.dark[data-accent="ember"] { --accent: #ff9a72; }
+:root.dark[data-accent="aether"] { --accent: #84a9f4; }
+:root.dark[data-accent="brass"] { --accent: #e0b25c; }
 
-/* Derived from the active accent and info (brief §2.1: fixed alphas of the same shade). */
+/* Roles and soft fills, derived from the hues and the accent. */
 :root {
+  --success: var(--green);
+  --warning: var(--amber);
+  --destructive: var(--red);
+  --info: var(--blue);
+  --changed: color-mix(in srgb, var(--teal) 16%, transparent);
+  --predicted: color-mix(in srgb, var(--green) 12%, transparent);
+
+  --violet-soft: color-mix(in srgb, var(--violet) 12%, transparent);
+  --blue-soft: color-mix(in srgb, var(--blue) 12%, transparent);
+  --teal-soft: color-mix(in srgb, var(--teal) 12%, transparent);
+  --green-soft: color-mix(in srgb, var(--green) 13%, transparent);
+  --amber-soft: color-mix(in srgb, var(--amber) 13%, transparent);
+  --red-soft: color-mix(in srgb, var(--red) 12%, transparent);
+
+  /* Ink: each hue pulled toward the text color, for small text on its own soft fill (pills) at 4.5:1. */
+  --violet-ink: color-mix(in srgb, var(--violet) 72%, var(--foreground));
+  --blue-ink: color-mix(in srgb, var(--blue) 72%, var(--foreground));
+  --teal-ink: color-mix(in srgb, var(--teal) 72%, var(--foreground));
+  --green-ink: color-mix(in srgb, var(--green) 72%, var(--foreground));
+  --amber-ink: color-mix(in srgb, var(--amber) 72%, var(--foreground));
+  --red-ink: color-mix(in srgb, var(--red) 72%, var(--foreground));
+  --accent-ink: color-mix(in srgb, var(--accent) 72%, var(--foreground));
+
   --accent-foreground: var(--primary-foreground);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --spotlight: color-mix(in srgb, var(--accent) 25%, transparent);
-  --unsaved: color-mix(in srgb, var(--accent) 26%, transparent);
+  --unsaved: color-mix(in srgb, var(--accent) 22%, transparent);
   --ring: var(--accent);
   --chart-accent: var(--accent);
   --chart-tooltip-background: var(--popover);
   --chart-tooltip-foreground: var(--foreground);
-  --info-soft: color-mix(in srgb, var(--info) 12%, transparent);
+  --info-soft: var(--blue-soft);
 
   /* The other variables Bklit's components read, mapped onto the tokens above (no new colors). */
   --chart-positive: var(--success);
@@ -153,11 +188,11 @@
   --chart-segment-background: var(--muted);
   --chart-segment-line: var(--border-strong);
 
-  /* 2.3 Spotlight: the only glow. */
+  /* Spotlight: the only glow. */
   --spotlight-shadow: 0 0 0 1px var(--accent), 0 0 7px var(--spotlight);
 }
 
-/* 2.4 / §8: reduce motion from the OS or the setting; the spotlight becomes a 1px ring. */
+/* Reduce motion from the OS or the setting; the spotlight becomes a 1px ring. */
 @media (prefers-reduced-motion: reduce) {
   :root:not([data-reduce-motion="off"]) {
     --duration-fast: 0ms;

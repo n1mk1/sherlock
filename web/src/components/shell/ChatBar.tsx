@@ -4,7 +4,7 @@
 // a status line, then its blocks, then the final message with its "How do you know?" sources and, inside
 // that, "How I worked it out": the model calls that made it.
 // The "Chat bar" setting pins it, hides it until pointed at, or hides it.
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowUp, ChevronDown, MessageCircle } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,16 +14,17 @@ import { keys, sendChat, showPlan, useMe, useThread } from "@/api/queries";
 import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
 import { Receipts } from "@/components/chat/Receipts";
+import { displayName } from "@/components/library/LibraryPanel";
 import { Button } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
 import { cn } from "@/lib/utils";
 import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 
 // The empty thread's hint names no column, so it reads right on any file (CLAUDE.md rule 4).
 export const EMPTY_THREAD_HINT =
-  "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), " +
-  "ask for a chart (“a chart of … by …”), ask what drives a column, or tell it what to change (“trim the spaces " +
-  "in …”): you see the code first, and OK runs it.";
+  "Ask for a number, the rows where something holds, a chart, or what drives a column. Or describe a change " +
+  "(“trim the spaces in …”): you see the code first, and nothing runs until you press OK.";
 
 export function ChatBar({ placeholder, className, dataset }: {
   placeholder: string; className?: string; dataset?: Dataset;
@@ -47,18 +48,28 @@ export function ChatBar({ placeholder, className, dataset }: {
 
 function Bar({ placeholder }: { placeholder: string }) {
   return (
-    <div className="flex h-[52px] w-full max-w-[680px] items-center gap-2 rounded-[14px] border border-border bg-card pl-4 pr-1.5">
+    <div className={BAR}>
       <label className="sr-only" htmlFor="chat-input">Ask Sherlock</label>
       <input id="chat-input" disabled placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground disabled:cursor-default" />
-      <span aria-hidden className="font-mono text-[12px] text-muted-foreground">/</span>
-      <button type="button" disabled aria-label="Send"
-        className="inline-flex size-10 items-center justify-center rounded-[10px] bg-primary text-primary-foreground disabled:opacity-40">
-        <ArrowRight className="size-4" strokeWidth={1.75} />
+        className="min-w-0 flex-1 bg-transparent pl-3 text-[14px] outline-none placeholder:text-muted-foreground disabled:cursor-default" />
+      <SlashHint />
+      <button type="button" disabled aria-label="Send" className={SEND}>
+        <ArrowUp className="size-4" strokeWidth={2.25} />
       </button>
     </div>
   );
 }
+
+const BAR =
+  "flex h-12 w-full max-w-[680px] items-center gap-2 rounded-full border border-border bg-card pl-2 pr-1.5 " +
+  "shadow-[0_1px_2px_rgba(0,0,0,0.04),0_6px_24px_rgba(0,0,0,0.06)] transition-[border-color,box-shadow] duration-[var(--duration-fast)] " +
+  "focus-within:border-[color-mix(in_srgb,var(--blue)_45%,transparent)] focus-within:shadow-[0_0_0_4px_var(--blue-soft)] dark:bg-popover";
+const SEND =
+  "inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-blue text-primary-foreground transition-opacity hover:opacity-90 disabled:bg-secondary disabled:text-muted-foreground";
+
+const SlashHint = () => (
+  <kbd aria-hidden className="hidden h-5 min-w-5 items-center justify-center rounded-md border border-border px-1 font-sans text-[11px] text-muted-foreground sm:inline-flex">/</kbd>
+);
 
 interface Pending {
   text: string;
@@ -184,11 +195,8 @@ function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: stri
           onSend={(m) => (busy ? setQueued((q) => [...q, m]) : void send(m))}
         />
       )}
-      <div className="flex h-[52px] w-full max-w-[680px] items-center gap-2 rounded-[14px] border border-border bg-card pl-2 pr-1.5 focus-within:border-border-strong">
-        <span className={cn("ml-1 inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[12px]",
-          csvChip ? "border-accent text-accent" : "border-border text-muted-foreground")}>
-          {csvChip ?? "All rows"}
-        </span>
+      <div className={BAR}>
+        <Pill tone={csvChip ? "accent" : "neutral"} className="ml-0.5 h-7 px-3">{csvChip ?? "All rows"}</Pill>
         <label className="sr-only" htmlFor="chat-input">Ask Sherlock</label>
         <input
           id="chat-input"
@@ -201,18 +209,18 @@ function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: stri
             if (e.key === "Enter") submit();
             if (e.key === "Escape") { setOpen(false); input.current?.blur(); }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 bg-transparent pl-1 text-[14px] outline-none placeholder:text-muted-foreground"
         />
-        <span aria-hidden className="font-mono text-[12px] text-muted-foreground">/</span>
+        <SlashHint />
         <button
           type="button"
           aria-label="Send"
           title={busy ? "Sends when this answer finishes" : undefined}
           disabled={!text.trim()}
           onClick={submit}
-          className="inline-flex size-10 items-center justify-center rounded-[10px] bg-primary text-primary-foreground disabled:opacity-40"
+          className={SEND}
         >
-          <ArrowRight className="size-4" strokeWidth={1.75} />
+          <ArrowUp className="size-4" strokeWidth={2.25} />
         </button>
       </div>
     </>
@@ -232,17 +240,18 @@ function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoi
     <div
       role="log"
       aria-label="Chat with Sherlock"
-      className="absolute bottom-[84px] z-20 flex max-h-[40vh] w-[calc(100%-48px)] max-w-[680px] flex-col rounded-[16px] border border-border bg-popover shadow-[var(--shadow-overlay)]"
+      className="absolute bottom-[76px] z-20 flex max-h-[44vh] w-[calc(100%-48px)] max-w-[680px] flex-col rounded-3xl bg-popover shadow-[var(--shadow-overlay)] dark:border dark:border-border"
     >
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pl-4 pr-1.5 text-[12px] text-muted-foreground">
-        <span>Ask about {dataset.name}</span>
-        <button type="button" aria-label="Close the thread" onClick={onClose} className="rounded p-1 hover:bg-secondary">
+      <div className="flex h-11 shrink-0 items-center justify-between pl-5 pr-2 text-[12px] text-muted-foreground">
+        <span className="flex items-center gap-1.5"><MessageCircle className="size-3.5 text-blue" aria-hidden /> Ask about {displayName(dataset.name)}</span>
+        <button type="button" aria-label="Close the thread" onClick={onClose}
+          className="inline-flex size-7 items-center justify-center rounded-full hover:bg-secondary hover:text-foreground">
           <ChevronDown className="size-4" />
         </button>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5 pt-1 text-[14px]">
         {messages.length === 0 && !pending && (
-          <p className="text-[13px] text-muted-foreground">{EMPTY_THREAD_HINT}</p>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">{EMPTY_THREAD_HINT}</p>
         )}
         {messages.map((m) => (
           <MessageView key={m.id} message={m} dataset={dataset} onChoice={m.id === lastId ? onChoice : undefined} onSend={onSend} />
@@ -253,7 +262,7 @@ function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoi
             <div className="flex flex-col gap-3">
               {pending.plan && <PlanView steps={pending.plan} />}
               {pending.blocks.map((b, i) => <BlockView key={i} block={b} datasetId={dataset.id} />)}
-              <p className="text-[13px] italic text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 {pending.status}<span className="ml-1 inline-block animate-pulse">···</span>
               </p>
             </div>
@@ -261,7 +270,7 @@ function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoi
         )}
         {queued.map((q, i) => (
           <div key={i} className="flex max-w-[80%] flex-col items-end gap-1 self-end">
-            <div className="rounded-[12px] border border-dashed border-border-strong px-3 py-2 text-[14px]">{q}</div>
+            <div className="rounded-[18px] rounded-br-md border border-dashed border-border-strong px-3.5 py-2 text-[14px]">{q}</div>
             <p className="text-[12px] text-muted-foreground">
               Queued: sends when this answer finishes ·{" "}
               <button type="button" onClick={() => onUnqueue(i)} className="underline hover:text-foreground">Cancel</button>
@@ -278,7 +287,7 @@ function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoi
 const ModelCardDrawer = lazy(() => import("@/components/ml/ModelCardDrawer").then((m) => ({ default: m.ModelCardDrawer })));
 
 const UserBubble = ({ text }: { text: string }) => (
-  <div className="max-w-[80%] self-end rounded-[12px] bg-secondary px-3 py-2 text-[14px]">{text}</div>
+  <div className="max-w-[80%] self-end rounded-[18px] rounded-br-md bg-blue px-3.5 py-2 text-[14px] text-primary-foreground">{text}</div>
 );
 
 function MessageView({ message, dataset, onChoice, onSend }: {
@@ -327,10 +336,10 @@ function MessageView({ message, dataset, onChoice, onSend }: {
 function PlanView({ steps }: { steps: PlanStep[] }) {
   const mark = { pending: "○", running: "◌", done: "✓", failed: "×" } as const;
   return (
-    <ol aria-label="Plan" className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2 text-[13px]">
+    <ol aria-label="Plan" className="flex flex-col gap-1.5 rounded-2xl bg-background px-4 py-3 text-[13px]">
       {steps.map((s, i) => (
         <li key={i} className={cn("flex gap-2", s.status === "pending" && "text-muted-foreground", s.status === "failed" && "text-warning")}>
-          <span aria-hidden className={cn("w-3 text-center", s.status === "done" && "text-accent", s.status === "running" && "animate-pulse")}>
+          <span aria-hidden className={cn("w-3 text-center", s.status === "done" && "text-blue", s.status === "running" && "animate-pulse")}>
             {mark[s.status]}
           </span>
           <span>{s.text}</span>
@@ -361,7 +370,7 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
     setBusy(what);
     try {
       const out = await request<{ version?: number } & Partial<CleanPlan>>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
-      if (what === "approve" && proposal.kind === "edit_cells") toast(`Saved as v${out?.version}. Undo it from the Changes panel.`);
+      if (what === "approve" && proposal.kind === "edit_cells") toast("Saved. Undo it from the Changes panel.");
       if (what === "approve" && proposal.kind === "clean_selection" && out?.id) {
         showPlan(qc, dataset.id, out as CleanPlan);
         setRightOpen(true);
@@ -380,7 +389,7 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
     pending: null, approved: "Approved", rejected: "Rejected", expired: "Expired: the data changed since", queued: null, failed: null,
   }[proposal.status];
   return (
-    <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]">
+    <div className="flex flex-col gap-2.5 rounded-2xl bg-background p-4 text-[13px]">
       <p className="font-medium">{proposal.summary}</p>
       {edits.length > 0 && (
         <table className="w-full text-left text-[12px]">
@@ -405,7 +414,7 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
           <Button size="sm" variant="ghost" loading={busy === "reject"} disabled={!!busy} onClick={() => void decide("reject")}>Reject</Button>
         </div>
       ) : (
-        <p className={cn("text-[12px]", proposal.status === "approved" ? "text-accent" : "text-muted-foreground")}>{label}</p>
+        <p className={cn("text-[12px]", proposal.status === "approved" ? "text-green" : "text-muted-foreground")}>{label}</p>
       )}
     </div>
   );
@@ -434,12 +443,12 @@ function CommandView({ proposal, dataset, onSend }: {
     try {
       const out = await request<RunAnswer>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
       if (what === "approve" && out?.version) {
-        toast(`Done · saved as v${out.version}. Press Undo in the toolbar (Ctrl+Z) to take it back.`);
+        toast("Done. Press Undo in the toolbar (Ctrl+Z) to take it back.");
         qc.invalidateQueries({ queryKey: keys.dataset(dataset.id) });
         qc.invalidateQueries({ queryKey: keys.history(dataset.id) });
         if (proposal.then && onSend) onSend(proposal.then);
       } else if (out?.refreshed) {
-        toast(`The data changed since, so I checked again on v${out.refreshed.rechecked_on}: the card shows the new effect. Press OK to run it.`);
+        toast("The data changed since, so I checked again: the card shows the new effect. Press OK to run it.");
       } else if (out?.queued) {
         toast("Cleaning is running: this runs as soon as it finishes.");
       }
@@ -460,7 +469,7 @@ function CommandView({ proposal, dataset, onSend }: {
     queued: "Waiting for cleaning to finish", failed: `Couldn't run: ${proposal.error ?? "a check failed"}`,
   }[proposal.status];
   return (
-    <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]" aria-label="Proposed change">
+    <div className="flex flex-col gap-2.5 rounded-2xl bg-background p-4 text-[13px]" aria-label="Proposed change">
       {proposal.reading ? (
         <>
           <p className="font-medium">{proposal.reading}</p>
@@ -470,13 +479,13 @@ function CommandView({ proposal, dataset, onSend }: {
         <p className="font-medium">{proposal.summary}</p>
       )}
       {proposal.rechecked_on && proposal.status === "pending" && (
-        <p className="text-[12px] text-warning">Re-checked on v{proposal.rechecked_on}, since the data changed.</p>
+        <p className="text-[12px] text-amber">Re-checked, since the data changed.</p>
       )}
       {proposal.code && (
         <div className="flex flex-col items-start gap-1">
-          <pre aria-label="The code that will run" className="max-h-48 w-full overflow-auto whitespace-pre rounded-md bg-muted p-2 font-mono text-[12px]">{shownCode}</pre>
+          <pre aria-label="The code that will run" className="max-h-48 w-full overflow-auto whitespace-pre rounded-xl bg-card p-3 type-data text-[12px] dark:bg-secondary">{shownCode}</pre>
           {codeLines.length > CODE_FOLD_LINES && (
-            <button type="button" className="text-[12px] text-accent hover:underline" onClick={() => setShowAll((v) => !v)}>
+            <button type="button" className="text-[12px] font-medium text-blue hover:underline" onClick={() => setShowAll((v) => !v)}>
               {showAll ? "Show less" : `Show all (${codeLines.length} lines)`}
             </button>
           )}
@@ -517,7 +526,7 @@ function CommandView({ proposal, dataset, onSend }: {
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <p className={cn("text-[12px]", proposal.status === "approved" ? "text-accent" : proposal.status === "failed" ? "text-warning" : "text-muted-foreground")}>
+          <p className={cn("text-[12px]", proposal.status === "approved" ? "text-green" : proposal.status === "failed" ? "text-warning" : "text-muted-foreground")}>
             {status}
           </p>
           {proposal.status === "queued" && (
@@ -534,17 +543,17 @@ function CommandView({ proposal, dataset, onSend }: {
 export function Sources({ sources, messageId }: { sources: Source[]; messageId: string }) {
   return (
     <details className="text-[13px]">
-      <summary className="cursor-pointer text-accent hover:underline">How do you know?</summary>
+      <summary className="w-fit cursor-pointer text-[12.5px] font-medium text-blue hover:underline">How do you know?</summary>
       <div className="mt-2 flex flex-col gap-2">
         {sources.map((s, i) => (
           <div key={i} className="flex flex-col gap-1">
             {s.url ? ( // a web source (TRD §8.2 web_context): its page, opened in a new tab
-              <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-accent hover:underline">{s.label}</a>
+              <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[12px] font-medium text-blue hover:underline">{s.label}</a>
             ) : (
               <span className="text-[12px] text-muted-foreground">{s.label}</span>
             )}
-            {s.sql && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.sql}</pre>}
-            {s.code && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.code}</pre>}
+            {s.sql && <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-background p-3 type-data text-[12px]">{s.sql}</pre>}
+            {s.code && <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-background p-3 type-data text-[12px]">{s.code}</pre>}
           </div>
         ))}
         <Receipts path={`/api/v1/chat/messages/${messageId}/calls`} />

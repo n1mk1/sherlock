@@ -27,9 +27,9 @@ export function OfflineBanner() {
   }, [offline]);
   if (!offline) return null;
   return (
-    <div role="status" className="flex shrink-0 items-center justify-center gap-2 border-b border-warning bg-[color-mix(in_srgb,var(--warning)_12%,var(--background))] px-4 py-1.5 text-[13px]">
-      <WifiOff className="size-3.5 text-warning" aria-hidden />
-      Can't reach Sherlock. Your data is safe, and unsaved CSV edits stay in this browser; this clears when the connection is back.
+    <div role="status" className="flex shrink-0 items-center justify-center gap-2 bg-amber-soft px-4 py-2 text-[13px] font-medium text-amber-ink">
+      <WifiOff className="size-3.5" aria-hidden />
+      Can't reach Sherlock. Your work is safe and this clears once you're back online.
     </div>
   );
 }

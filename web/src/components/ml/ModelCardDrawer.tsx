@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
 
 const H = ({ children }: { children: React.ReactNode }) => (
-  <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{children}</h3>
+  <h3 className="mb-1.5 type-label">{children}</h3>
 );
 
 export function ModelCardDrawer({ datasetId, runId: opened, onClose }: {
@@ -45,11 +45,11 @@ export function ModelCardDrawer({ datasetId, runId: opened, onClose }: {
       ) : (
         <div className="flex flex-col gap-5 text-[13px]">
           <section>
-            <p className="font-serif text-[20px] font-semibold leading-snug">{card.verdict_text}</p>
+            <p className="type-title">{card.verdict_text}</p>
             {run.data?.status === "outdated" && (
-              <div className="mt-2 flex items-center gap-2 rounded-lg border border-warning p-2 text-warning">
+              <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-soft p-2.5 text-amber-ink">
                 <AlertTriangle className="size-4 shrink-0" />
-                <span className="flex-1">Outdated: the data changed after this ran on v{card.version}.</span>
+                <span className="flex-1">Outdated: the data changed after this ran.</span>
                 <Button size="sm" loading={actions.rerun.isPending} onClick={() => actions.rerun.mutate(run.data!, {
                   onSuccess: (next) => opened && setRerunOf({ from: opened, to: next.id }),
                   onError: (e) => toast.error((e as Error).message),
@@ -61,7 +61,7 @@ export function ModelCardDrawer({ datasetId, runId: opened, onClose }: {
           <section>
             <H>Data</H>
             <p>
-              What drives <span className="font-medium">{card.target}</span> ({card.task}) on version <span className="font-mono">v{card.version}</span>, {scope}:{" "}
+              What drives <span className="font-medium">{card.target}</span> ({card.task}), {scope}:{" "}
               <span className="font-mono">{card.rows.train.toLocaleString("en-US")}</span> rows used of{" "}
               <span className="font-mono">{card.rows.total.toLocaleString("en-US")}</span>
               {card.rows.blank_target ? ` (${card.rows.blank_target.toLocaleString("en-US")} without ${card.target} left out)` : ""}.

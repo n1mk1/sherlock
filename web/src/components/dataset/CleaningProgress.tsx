@@ -3,7 +3,7 @@
 // budget line, and Stop. A step's line is built in code from its verifier report; the model's own
 // sentence (`note`, never with digits) and the issue's model calls (`calls`) sit under it.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, CircleDot, Clock, Flag, Redo2, X } from "lucide-react";
+import { Check, CircleDot, Clock, Flag, Redo2, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { request } from "@/api/client";
@@ -11,19 +11,20 @@ import { keys, useCancelJob, useJobs, useReport } from "@/api/queries";
 import { useEventStream } from "@/api/sse";
 import type { Dataset, JobLogEntry, JobProgressEvent, Progress } from "@/api/types";
 import { Button } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
 import { cn } from "@/lib/utils";
 
 const CHECK_LABELS: Record<string, string> = {
-  row_ledger: "Row count unchanged",
+  row_ledger: "No rows lost",
   nan_introduced: "No new blanks",
   dtype: "Types make sense",
-  pandera: "Data-card constraints (pandera)",
-  parse_quarantine: "Parse failures quarantined",
-  placeholder_fill: "No placeholder fills",
-  quarantine_scope: "Quarantine fits the issue",
+  pandera: "Fits each column's rules",
+  parse_quarantine: "Unreadable values set aside",
+  placeholder_fill: "No made-up fills",
+  quarantine_scope: "Only the affected rows set aside",
   merge_safety: "No look-alike categories merged",
   missing_fill: "Missing values stay missing",
-  lossless: "Lossless round-trip",
+  lossless: "Nothing lost in the round trip",
 };
 
 export function mmss(seconds: number) {
@@ -96,11 +97,12 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
   }, [log.length]);
 
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5 px-6 py-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-serif text-[26px] leading-tight @3xl:text-[32px]">Cleaning {dataset.name}</h2>
-          <p className="text-muted-foreground">Running on its own. You can switch CSVs; it keeps going.</p>
+    <div className="mx-auto flex h-full w-full max-w-[1120px] flex-col gap-6 px-8 pb-4 pt-8">
+      <div className="flex shrink-0 items-start justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Pill tone="violet" size="sm" icon={<Sparkles aria-hidden />} className="self-start">Cleaning</Pill>
+          <h2 className="type-display">{progress?.label || "Starting…"}</h2>
+          <p className="text-[14px] text-muted-foreground">Runs in the background, so you can open other files.</p>
         </div>
         <Button
           loading={cancel.isPending}
@@ -110,15 +112,21 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
           Stop
         </Button>
       </div>
-      <div className="-mb-3.5 flex justify-between text-[12px] text-muted-foreground">
-        <span>{progress?.label || "Starting…"}</span>
-        <span className="font-mono">{mmss(elapsed)}</span>
-      </div>
-      <div className="h-1 rounded bg-border" role="progressbar" aria-valuenow={Math.round(progress?.pct ?? 0)} aria-valuemin={0} aria-valuemax={100}>
-        <div className="h-1 rounded bg-accent transition-[width] duration-[var(--duration-base)]" style={{ width: `${progress?.pct ?? 2}%` }} />
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-valuenow={Math.round(progress?.pct ?? 0)} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full bg-violet transition-[width] duration-[var(--duration-base)] ease-[var(--ease)]" style={{ width: `${progress?.pct ?? 2}%` }} />
+        </div>
+        <span className="text-[12px] text-muted-foreground tnum">{mmss(elapsed)}</span>
       </div>
 
-      <div className="grid items-start gap-4 @3xl:grid-cols-[2fr_1fr]">
+      <dl className="grid shrink-0 grid-cols-4 gap-6">
+        <Stat value={report?.counts.found ?? 0} label="Issues found" />
+        <Stat value={report?.counts.fixed ?? 0} label="Fixed" tone="text-green" />
+        <Stat value={report?.counts.flagged ?? 0} label="Flagged" tone="text-amber" />
+        <Stat value={0} label="Rows deleted" />
+      </dl>
+
+      <div className="grid min-h-0 flex-1 gap-8 @3xl:grid-cols-[minmax(0,2fr)_minmax(240px,1fr)]">
         <ol
           ref={listRef}
           aria-label="Cleaning log"
@@ -127,43 +135,31 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
             const el = e.currentTarget;
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           }}
-          className="max-h-[60vh] overflow-y-auto rounded-2xl border border-border bg-card px-4 py-2"
+          className="min-h-0 overflow-y-auto border-t border-border"
         >
-          {log.length === 0 && <li className="py-5 text-muted-foreground">Waiting for the first step…</li>}
+          {log.length === 0 && <li className="py-5 text-[14px] text-muted-foreground">Waiting for the first step…</li>}
           {log.map((e, i) => (
             <LogEntry key={i} entry={e} started={started} />
           ))}
         </ol>
-        <aside className="flex flex-col gap-4">
-          <section className="rounded-2xl border border-border bg-card px-[22px] py-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">So far</h3>
-            <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-              <Stat value={report?.counts.found ?? 0} label="issues found" />
-              <Stat value={report?.counts.fixed ?? 0} label="fixed" />
-              <Stat value={report?.counts.flagged ?? 0} label="flagged" />
-              <Stat value={0} label="rows deleted" />
-            </div>
-          </section>
-          <section className="rounded-2xl border border-border bg-card px-[22px] py-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Checks on the latest step</h3>
-            <ul className="mt-3 flex flex-col gap-1.5">
-              {latestChecks ? (
-                Object.entries(latestChecks).map(([k, v]) => (
-                  <li key={k} className="flex items-center gap-2">
-                    {v === "pass" ? <Check className="size-4 text-success" aria-label="passed" /> : <X className="size-4 text-destructive" aria-label="failed" />}
-                    {CHECK_LABELS[k] ?? k}
-                  </li>
-                ))
-              ) : (
-                <li className="text-muted-foreground">No step checked yet.</li>
-              )}
-            </ul>
-            <p className="mt-4 border-t border-border pt-3 font-mono text-[12.5px] text-muted-foreground">
-              {report?.attempted ?? 0} of {maxSteps} issues tried · {mmss(elapsed)} of {mmss(maxSeconds)}
-            </p>
-          </section>
-          <p className="rounded-2xl border border-dashed border-border-strong px-[22px] py-5 text-[13px] text-muted-foreground">
-            When cleaning finishes, the grid opens with every fix marked, and Changes lists each step.
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto border-t border-border pt-4 max-@3xl:hidden">
+          <h3 className="type-label">Latest checks</h3>
+          <ul className="flex flex-col gap-2 text-[13px]">
+            {latestChecks ? (
+              Object.entries(latestChecks).map(([k, v]) => (
+                <li key={k} className="flex items-center gap-2">
+                  {v === "pass"
+                    ? <Check className="size-3.5 text-green" strokeWidth={2.5} aria-label="passed" />
+                    : <X className="size-3.5 text-red" strokeWidth={2.5} aria-label="failed" />}
+                  {CHECK_LABELS[k] ?? k}
+                </li>
+              ))
+            ) : (
+              <li className="text-muted-foreground">No step checked yet.</li>
+            )}
+          </ul>
+          <p className="mt-2 text-[12px] text-muted-foreground tnum">
+            {report?.attempted ?? 0} of {maxSteps} issues tried · {mmss(elapsed)} of {mmss(maxSeconds)}
           </p>
         </aside>
       </div>
@@ -212,14 +208,14 @@ export function LogEntry({ entry, started }: { entry: JobLogEntry; started: numb
   const t = started ? (Date.parse(entry.ts) - started) / 1000 : 0;
   const gate = entry.gate;
   const tone =
-    gate === "commit" ? "text-success" : gate === "flag" ? "text-warning" : entry.icon === "running" ? "text-accent" : "text-muted-foreground";
+    gate === "commit" ? "text-success" : gate === "flag" ? "text-warning" : entry.icon === "running" ? "text-violet" : "text-muted-foreground";
   return (
-    <li className="grid grid-cols-[56px_24px_minmax(0,1fr)] gap-x-2.5 border-b border-border py-3 last:border-b-0">
-      <span className="font-mono text-[12.5px] text-muted-foreground">{mmss(t)}</span>
+    <li className="grid grid-cols-[44px_20px_minmax(0,1fr)] gap-x-3 border-b border-border py-3 text-[14px] last:border-b-0">
+      <span className="pt-px text-[12px] text-muted-foreground tnum">{mmss(t)}</span>
       <Icon entry={entry} />
       <div className="min-w-0">
         <p>
-          {entry.column && <span className="font-mono text-[12.5px]">{entry.column}</span>}
+          {entry.column && <span className="type-data font-medium">{entry.column}</span>}
           <span className="text-foreground-2">{entry.column ? " · " : ""}{entry.text}</span>
         </p>
         {entry.outcome && <p className="mt-1 text-[13px] text-foreground-2">{entry.outcome}</p>}
@@ -230,8 +226,8 @@ export function LogEntry({ entry, started }: { entry: JobLogEntry; started: numb
               <span
                 key={c.label}
                 className={cn(
-                  "inline-flex h-6 items-center rounded-full border px-2 text-[12px]",
-                  c.chosen ? "border-primary bg-primary text-primary-foreground" : "border-border-strong text-foreground-2",
+                  "inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-medium",
+                  c.chosen ? "bg-primary text-primary-foreground" : "bg-secondary text-foreground-2",
                 )}
               >
                 {c.label}
@@ -240,7 +236,7 @@ export function LogEntry({ entry, started }: { entry: JobLogEntry; started: numb
           </div>
         )}
         {entry.detail && <p className={cn("mt-1.5 text-[12px]", tone)}>{entry.detail}</p>}
-        {entry.calls && <p className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">{callsLine(entry.calls)}</p>}
+        {entry.calls && <p className="mt-0.5 text-[11.5px] text-muted-foreground tnum">{callsLine(entry.calls)}</p>}
       </div>
     </li>
   );
@@ -248,19 +244,19 @@ export function LogEntry({ entry, started }: { entry: JobLogEntry; started: numb
 
 function Icon({ entry }: { entry: JobLogEntry }) {
   const cls = "mt-0.5 size-4";
-  if (entry.icon === "check") return <Check className={cn(cls, "text-success")} aria-label="committed" />;
-  if (entry.icon === "flag") return <Flag className={cn(cls, "text-warning")} aria-label="flagged" />;
+  if (entry.icon === "check") return <Check className={cn(cls, "text-green")} aria-label="committed" />;
+  if (entry.icon === "flag") return <Flag className={cn(cls, "text-amber")} aria-label="flagged" />;
   if (entry.icon === "skip") return <Redo2 className={cn(cls, "text-muted-foreground")} aria-label="skipped" />;
   if (entry.icon === "wait") return <Clock className={cn(cls, "text-warning")} aria-label="waiting" />;
   if (entry.icon === "error") return <X className={cn(cls, "text-destructive")} aria-label="error" />;
-  return <CircleDot className={cn(cls, "text-accent")} aria-label="running" />;
+  return <CircleDot className={cn(cls, "text-violet")} aria-label="running" />;
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
   return (
-    <div className="rounded-md bg-muted p-2.5">
-      <div className="font-mono text-[24px] leading-tight">{value.toLocaleString()}</div>
-      <div className="text-[12px] text-muted-foreground">{label}</div>
+    <div className="flex flex-col-reverse gap-1">
+      <dd className={cn("type-figure", value > 0 && tone)}>{value.toLocaleString()}</dd>
+      <dt className="type-label">{label}</dt>
     </div>
   );
 }

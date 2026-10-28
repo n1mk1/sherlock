@@ -11,6 +11,7 @@ import { useCreatePlan } from "@/api/queries";
 import type { Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Pill } from "@/components/ui/pill";
 import { displayValue } from "@/lib/cells";
 import { editKey, pendingCount, toBatch, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
@@ -35,12 +36,12 @@ export function SaveActions({ dataset }: { dataset: Dataset }) {
       const res = await save.mutateAsync(toBatch(current, base));
       discard(dataset.id);
       const added = Object.values(res.new_row_ids);
-      toast(`Saved as v${res.version} · ${count} ${count === 1 ? "change" : "changes"}`, {
+      toast(`Saved ${count} ${count === 1 ? "change" : "changes"}`, {
         duration: 10_000,
         action: {
           label: "Undo",
           onClick: () => undo.mutate({ stepId: res.step.id, base: res.version, confirm: true }, {
-            onSuccess: (r) => "version" in r && toast(`Undone: back to the data before step ${res.step.no} (v${r.version}).`),
+            onSuccess: (r) => "version" in r && toast("Undone: back to how it was."),
             onError: (e) => toast.error((e as Error).message),
           }),
         },
@@ -72,14 +73,14 @@ export function SaveActions({ dataset }: { dataset: Dataset }) {
   if (n === 0) return null;
   return (
     <>
-      <span className="text-[13px] text-accent">{n} unsaved {n === 1 ? "change" : "changes"}</span>
+      <Pill tone="accent">{n} unsaved</Pill>
       <Button size="sm" variant="ghost" onClick={() => setConfirmDiscard(true)}>Discard</Button>
       <Button size="sm" variant="primary" loading={save.isPending} onClick={() => send(buffer!.base)}>
         {stale ? "Rebase and save" : `Save changes (${n})`}
       </Button>
       <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <DialogContent className="max-w-[420px] gap-4 p-6">
-          <DialogTitle className="text-[17px] font-semibold">Discard {n} unsaved {n === 1 ? "change" : "changes"}?</DialogTitle>
+          <DialogTitle className="type-title">Discard {n} unsaved {n === 1 ? "change" : "changes"}?</DialogTitle>
           <DialogDescription className="text-[14px] text-muted-foreground">They were never saved, so this can't be undone.</DialogDescription>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setConfirmDiscard(false)}>Cancel</Button>
@@ -103,19 +104,19 @@ export function SaveActions({ dataset }: { dataset: Dataset }) {
   );
 }
 
-function ConflictDialog({ list, version, onCancel, onResolve }: {
+function ConflictDialog({ list, onCancel, onResolve }: {
   list: Conflict[]; version: number; onCancel: () => void; onResolve: (keepTheirs: Conflict[]) => void;
 }) {
   const [theirs, setTheirs] = useState<Set<number>>(new Set());
   return (
     <Dialog open onOpenChange={(o) => !o && onCancel()}>
       <DialogContent className="max-w-[560px] gap-4 p-6">
-        <DialogTitle className="text-[17px] font-semibold">The data changed while you edited</DialogTitle>
+        <DialogTitle className="type-title">The data changed while you edited</DialogTitle>
         <DialogDescription className="text-[14px] text-muted-foreground">
-          Version {version} also changed {list.length === 1 ? "a cell" : `${list.length} cells`} you edited. Choose which value to keep;
-          your other edits go on top of version {version}.
+          A newer change also touched {list.length === 1 ? "a cell" : `${list.length} cells`} you edited. Choose which value to keep;
+          the rest of your edits go on top.
         </DialogDescription>
-        <div className="max-h-[320px] overflow-y-auto rounded-md border border-border">
+        <div className="max-h-[320px] overflow-y-auto rounded-xl border border-border">
           <table className="w-full text-[13px]">
             <thead className="bg-muted text-left text-muted-foreground">
               <tr><th className="px-3 py-1.5 font-medium">Cell</th><th className="px-3 py-1.5 font-medium">Yours</th>

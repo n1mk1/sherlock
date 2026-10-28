@@ -38,24 +38,24 @@ export function JobTray() {
         <button
           type="button"
           aria-label={`Background jobs (${running} running)`}
-          className="relative inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring"
+          className="relative inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-[state=open]:bg-secondary"
         >
           <Activity className="size-4" strokeWidth={1.75} />
           {running > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 inline-flex min-w-4 items-center justify-center rounded-full bg-accent px-1 font-mono text-[10px] text-accent-foreground">
+            <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-violet px-1 text-[10px] font-semibold text-primary-foreground tnum">
               {running}
             </span>
           )}
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={6} className="z-50 w-[320px] rounded-lg border border-border bg-popover p-2 text-[13px] shadow-[var(--shadow-overlay)]">
+        <Popover.Content align="end" sideOffset={6} className="z-50 w-[320px] rounded-2xl bg-popover p-2 text-[13px] shadow-[var(--shadow-overlay)] dark:border dark:border-border">
           {shown.length === 0 ? (
-            <p className="px-2 py-3 text-muted-foreground">No background jobs right now.</p>
+            <p className="px-2.5 py-3 text-muted-foreground">Nothing running right now.</p>
           ) : (
             <ul className="flex flex-col gap-1">
               {shown.map((j) => (
-                <li key={j.id} className="flex flex-col gap-1.5 rounded-md px-2 py-2">
+                <li key={j.id} className="flex flex-col gap-1.5 rounded-xl px-2.5 py-2">
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{LABEL[j.kind] ?? j.kind}</span>
@@ -70,23 +70,23 @@ export function JobTray() {
                           Retry
                         </Button>
                         <button type="button" aria-label="Dismiss" onClick={() => setDismissed((d) => new Set(d).add(j.id))}
-                          className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary">
+                          className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary">
                           <X className="size-3.5" />
                         </button>
                       </>
                     )}
                   </div>
                   {j.status === "failed" ? (
-                    <span className="text-[12px] text-destructive">{j.error}</span>
+                    <span className="text-[12px] text-red">{j.error}</span>
                   ) : j.status === "done" || j.status === "cancelled" ? (
-                    <span className={j.status === "done" ? "text-[12px] text-success" : "text-[12px] text-muted-foreground"}>
+                    <span className={j.status === "done" ? "text-[12px] text-green" : "text-[12px] text-muted-foreground"}>
                       {j.status === "done" ? "Done" : "Cancelled"}
                     </span>
                   ) : (
                     <>
                       <span className="text-[12px] text-muted-foreground">{j.progress.label || (j.status === "queued" ? "Waiting to start" : "Working")}</span>
-                      <span className="block h-0.5 rounded bg-border" aria-hidden>
-                        <span className="block h-0.5 rounded bg-accent" style={{ width: `${Math.round(j.progress.pct)}%` }} />
+                      <span className="block h-1 overflow-hidden rounded-full bg-secondary" aria-hidden>
+                        <span className="block h-full rounded-full bg-violet" style={{ width: `${Math.round(j.progress.pct)}%` }} />
                       </span>
                     </>
                   )}

@@ -76,6 +76,6 @@ describe("the cleaning plan on a new version", () => {
     };
     mockApi({ "GET /api/v1/clean-plans/pln_1": plan });
     renderAt(<CleanPlanPanel dataset={DS} layout="centre" />);
-    expect(await screen.findByText("Sherlock checked v2; the data is v3. Checking the plan again…")).toBeInTheDocument();
+    expect(await screen.findByText("The data changed since this plan was made. Updating it…")).toBeInTheDocument();
   });
 });

@@ -52,7 +52,7 @@ describe("the model card", () => {
       "GET /api/v1/runs/run_2": { ...RUN, id: "run_2", version: 3, status: "running", model_card: null },
     });
     renderAt(<ModelCardDrawer datasetId="ds_1" runId="run_1" onClose={() => {}} />);
-    expect(await screen.findByText(/Outdated: the data changed after this ran on v2/)).toBeInTheDocument();
+    expect(await screen.findByText(/Outdated: the data changed after this ran/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Re-run" }));
     expect(await screen.findByText("The model card is written when the analysis finishes.")).toBeInTheDocument();
     const post = calls.mock.calls.find(([u, i]) => String(u).endsWith("/datasets/ds_1/runs") && i?.method === "POST");

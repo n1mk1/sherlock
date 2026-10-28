@@ -46,7 +46,7 @@ export interface GridHandle {
 const TOKENS = {
   accent: "--accent", accentSoft: "--accent-soft", fg: "--foreground", muted: "--muted-foreground", card: "--card",
   background: "--background", border: "--border", borderStrong: "--border-strong", info: "--info", warning: "--warning",
-  destructive: "--destructive", changed: "--changed", unsaved: "--unsaved", chart3: "--chart-3", mutedBg: "--muted",
+  destructive: "--destructive", changed: "--changed", unsaved: "--unsaved", chart5: "--chart-5", mutedBg: "--muted",
 };
 
 /** Re-resolve the tokens when the mode or accent changes (they live on <html>). */
@@ -185,7 +185,7 @@ export const Grid = forwardRef<GridHandle, {
     if (name === ROW_COL) {
       const label = at.kind === "new" ? "new" : String(at.row._row_id);
       return { kind: GridCellKind.Text, data: label, displayData: label, allowOverlay: false, readonly: true,
-               contentAlign: "right", themeOverride: { ...mono, textDark: t.muted, bgCell: t.background } };
+               contentAlign: "right", themeOverride: { ...mono, textDark: t.muted, bgCell: t.card } };
     }
     const type = types[name] ?? "VARCHAR";
     const numeric = isNumericType(type);
@@ -230,9 +230,9 @@ export const Grid = forwardRef<GridHandle, {
   const drawHeader = useCallback<DrawHeaderCallback>((args) => {
     const { ctx, rect, column } = args;
     const name = column.id as string;
-    ctx.fillStyle = t.background;
+    ctx.fillStyle = t.card;
     ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-    const x = rect.x + 8;
+    const x = rect.x + 10;
     ctx.fillStyle = t.fg;
     ctx.font = "600 13px Inter Variable, sans-serif";
     ctx.textBaseline = "alphabetic";
@@ -248,13 +248,14 @@ export const Grid = forwardRef<GridHandle, {
     const info = byName[name];
     ctx.font = "11px Inter Variable, sans-serif";
     ctx.fillStyle = t.muted;
-    const sub = `${notes[name] ? "ⓘ " : ""}${typeLabel(types[name] ?? "VARCHAR")}${info ? ` · ${info.missing_pct}% missing` : ""}`;
-    ctx.fillText(clip(ctx, sub, rect.width - 16), x, rect.y + 32);
+    const missing = info && info.missing_pct > 0 ? ` · ${info.missing_pct}% blank` : "";
+    const sub = `${notes[name] ? "ⓘ " : ""}${typeLabel(types[name] ?? "VARCHAR")}${missing}`;
+    ctx.fillText(clip(ctx, sub, rect.width - 20), x, rect.y + 32);
     const counts = info?.histogram?.counts ?? info?.top_values?.map((v) => v.count) ?? [];
     if (counts.length) {
       const top = Math.max(...counts) || 1;
-      const w = Math.max(1, (rect.width - 16) / counts.length);
-      ctx.fillStyle = t.chart3;
+      const w = Math.max(1, (rect.width - 20) / counts.length);
+      ctx.fillStyle = t.chart5;
       counts.forEach((c, i) => {
         const h = Math.max(c > 0 ? 1 : 0, (c / top) * 14);
         ctx.fillRect(x + i * w, rect.y + rect.height - 6 - h, Math.max(1, w - 1), h);
@@ -270,10 +271,10 @@ export const Grid = forwardRef<GridHandle, {
 
   const theme = useMemo<Partial<Theme>>(() => ({
     accentColor: t.accent, accentLight: t.accentSoft, textDark: t.fg, textMedium: t.muted, textLight: t.muted,
-    textHeader: t.fg, bgCell: t.card, bgCellMedium: t.mutedBg, bgHeader: t.background, bgHeaderHasFocus: t.background,
-    bgHeaderHovered: t.background, borderColor: t.border, horizontalBorderColor: t.border, headerBottomBorderColor: t.borderStrong,
+    textHeader: t.fg, bgCell: t.card, bgCellMedium: t.mutedBg, bgHeader: t.card, bgHeaderHasFocus: t.card,
+    bgHeaderHovered: t.card, borderColor: t.border, horizontalBorderColor: t.border, headerBottomBorderColor: t.border,
     fontFamily: "Inter Variable, sans-serif", baseFontStyle: "13px", headerFontStyle: "600 13px", editorFontSize: "13px",
-    cellHorizontalPadding: 10,
+    cellHorizontalPadding: 12,
   }), [t]);
 
   const getRowThemeOverride = useCallback((row: number): Partial<Theme> | undefined => {
@@ -343,6 +344,7 @@ export const Grid = forwardRef<GridHandle, {
           headerHeight={56}
           rowHeight={32}
           freezeColumns={1}
+          verticalBorder={(col) => col === 1}
           rowMarkers="none"
           theme={theme}
           gridSelection={sel}

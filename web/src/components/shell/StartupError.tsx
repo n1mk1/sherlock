@@ -9,14 +9,14 @@ export function StartupError({ error, retrying, onRetry }: { error: unknown; ret
   const message = error instanceof ApiError ? error.message : "Sherlock couldn't reach its server. Check your connection.";
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-8 text-foreground">
-      <div className="flex max-w-[420px] flex-col items-center gap-3 text-center" role="alert">
-        <AlertCircle className="size-6 text-destructive" aria-hidden />
-        <h1 className="text-[15px] font-semibold">{limited ? "Sherlock can't open a new workspace yet" : "Sherlock couldn't start"}</h1>
+      <div className="flex max-w-[400px] flex-col items-center gap-4 text-center" role="alert">
+        <span className="inline-flex size-12 items-center justify-center rounded-full bg-red-soft" aria-hidden><AlertCircle className="size-5 text-red" /></span>
+        <h1 className="type-title">{limited ? "Sherlock can't open a new workspace yet" : "Sherlock couldn't start"}</h1>
         <p className="text-muted-foreground">{message}</p>
         {limited && (
           <p className="text-[12px] text-muted-foreground">A browser that has opened Sherlock before isn't affected.</p>
         )}
-        <Button variant="secondary" onClick={onRetry} disabled={retrying}>Try again</Button>
+        <Button variant="primary" onClick={onRetry} disabled={retrying}>Try again</Button>
       </div>
     </main>
   );

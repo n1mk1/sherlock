@@ -12,7 +12,7 @@ describe("typed text in the grid", () => {
     expect(fitsType("DATE", "2024-02-30x")).toBe(false);
     expect(fitsType("VARCHAR", "anything")).toBe(true);
     expect(fitsType("BIGINT", "")).toBe(true);
-    expect(typeLabel("TIMESTAMP")).toBe("datetime");
+    expect(typeLabel("TIMESTAMP")).toBe("Date and time");
   });
 });
 

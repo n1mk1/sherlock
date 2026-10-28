@@ -131,7 +131,7 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-[520px] gap-4 p-6">
-        <DialogTitle className="font-serif text-[22px] font-semibold">Export notebook</DialogTitle>
+        <DialogTitle className="type-title">Export notebook</DialogTitle>
         <DialogDescription className="text-[14px] text-muted-foreground">
           A runnable Jupyter notebook that rebuilds <strong className="text-foreground">{dataset.name} v{preview.data?.version ?? dataset.current_version}</strong>{" "}
           from the raw file{c ? (
@@ -146,7 +146,7 @@ export function ExportDialog({ dataset }: { dataset: Dataset }) {
           </div>
         )}
         {(busy || pending > 0 || notes.length > 0) && (
-          <div className="flex gap-2.5 rounded-md bg-muted p-3 text-[13px]">
+          <div className="flex gap-2.5 rounded-2xl bg-amber-soft p-3.5 text-[13px]">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
             <div className="flex flex-col gap-2">
               {busy && <p>A job is still running. This export uses v{dataset.current_version}, the latest committed version.</p>}

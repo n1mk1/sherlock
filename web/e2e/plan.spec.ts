@@ -8,13 +8,12 @@ import { expectNoAxeViolations } from "./axe";
 
 test("the plan groups fixes by level and starts worth-a-look fixes unticked", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Try with sample (Titanic)" }).click();
+  await page.getByRole("button", { name: "Try the Titanic sample" }).click();
   await page.getByRole("button", { name: "Clean with AI" }).click({ timeout: 120_000 });
-  await expect(page.getByRole("heading", { name: /Cleaning plan · v\d+/ })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Cleaning plan" })).toBeVisible({ timeout: 60_000 });
 
-  // The recorded replies have no rating, so the review falls back: every fix shows its default level.
+  // The recorded replies have no rating, so the review falls back to code's default levels.
   await expect(page.getByText("Reviewing…")).toHaveCount(0, { timeout: 60_000 });
-  await expect(page.getByText("(default level)").first()).toBeVisible();
   const headings = await page.getByRole("heading", { level: 3 }).allTextContents();
   expect(headings).toContain("Worth a look");
   expect(headings).toContain("Marked, not changed");
@@ -67,13 +66,13 @@ test("a run from the plan reports what became of each issue", async ({ page }) =
   await page.getByRole("navigation", { name: "Your CSVs" }).getByTestId("file-input").setInputFiles(path.join(import.meta.dirname, "messy.csv"));
   await page.getByRole("dialog").getByRole("button", { name: /^Import/ }).click();  // the import preview
   await page.getByRole("button", { name: "Clean with AI" }).click({ timeout: 120_000 });
-  await expect(page.getByRole("heading", { name: /Cleaning plan · v\d+/ })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Cleaning plan" })).toBeVisible({ timeout: 60_000 });
   await page.getByRole("button", { name: /Start cleaning \(\d+\)/ }).click();
   // The run ends in `ready`: the grid opens, with Changes and its report in the right panel.
   await expect(page.getByRole("toolbar", { name: "CSV tools" })).toBeVisible({ timeout: 180_000 });
-  await page.getByRole("button", { name: "Full cleaning report" }).click();
+  await page.getByRole("button", { name: "Cleaning report" }).click();
   const report = page.getByRole("dialog");
-  await expect(report).toContainText(/step \d+ /);  // a step the run committed: a real run
+  await expect(report).toContainText(/Step \d+ /);  // a step the run committed: a real run
   await expect(report.getByRole("term")).toHaveText(["fixed", "flagged", "checked and kept", "couldn't fix", "not attempted"]);
   await expect(report).toContainText(/\d+ found · \d+ marked, not changed \(leakage and ID columns\) · no rows deleted/);
 });

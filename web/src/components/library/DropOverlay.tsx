@@ -49,9 +49,9 @@ export function DropOverlay() {
   }, []);
   if (!over) return null;
   return (
-    <div className="pointer-events-none fixed inset-3 z-40 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-soft">
+    <div className="pointer-events-none fixed inset-3 z-40 flex flex-col items-center justify-center gap-3 rounded-[28px] border-2 border-dashed border-accent bg-[color-mix(in_srgb,var(--accent)_8%,var(--card))]">
       <Upload className="size-6 text-accent" aria-hidden />
-      <p className="font-serif text-[32px] leading-tight">Drop to import</p>
+      <p className="type-display">Drop to import</p>
     </div>
   );
 }

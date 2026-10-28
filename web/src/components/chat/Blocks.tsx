@@ -41,7 +41,7 @@ export function RunView({ run }: { run: AnswerRun }) {
     return (
       <span
         title={run.unverified ? "Typed by you, not computed" : "Computed from the query below"}
-        className="mx-0.5 inline-flex items-center rounded-[6px] border border-info/35 bg-info-soft px-[5px] font-mono text-[12.5px] text-foreground"
+        className="mx-0.5 inline-flex items-center rounded-full bg-blue-soft px-2 text-[13px] font-medium text-foreground tnum"
       >
         {run.value}
       </span>
@@ -51,7 +51,7 @@ export function RunView({ run }: { run: AnswerRun }) {
   if (run.type === "cite") {
     return (
       <a href={run.url} target="_blank" rel="noopener noreferrer" title={run.title}
-        className="ml-0.5 align-super text-[10.5px] font-medium text-accent hover:underline">[{run.n}]</a>
+        className="ml-0.5 align-super text-[10.5px] font-medium text-blue hover:underline">[{run.n}]</a>
     );
   }
   return <>{run.text}</>;
@@ -62,18 +62,18 @@ export function BlockView({ block, datasetId }: { block: AnswerBlock; datasetId:
     case "number":
       return (
         <div className="flex flex-col gap-0.5">
-          <span className="font-mono text-[26px] font-medium leading-tight">{block.formatted}</span>
+          <span className="type-figure text-[32px]">{block.formatted}</span>
           <span className="text-[12px] text-muted-foreground">{block.label}</span>
         </div>
       );
     case "table":
       return (
         <div className="flex flex-col gap-1.5">
-          <div className="max-h-[260px] overflow-hidden rounded-lg border border-border">
+          <div className="max-h-[260px] overflow-hidden rounded-2xl border border-border">
             <ResultTable data={block} compact limit={20} />
           </div>
           {block.selection_id ? (
-            <Link to={`/d/${datasetId}?rows=${block.selection_id}`} className="text-[13px] text-accent hover:underline">
+            <Link to={`/d/${datasetId}?rows=${block.selection_id}`} className="text-[13px] text-blue hover:underline">
               Open {block.total > 20 ? `all ${block.total.toLocaleString("en-US")}` : "these"} rows in CSV
             </Link>
           ) : block.total > block.rows.length ? (
@@ -83,7 +83,7 @@ export function BlockView({ block, datasetId }: { block: AnswerBlock; datasetId:
       );
     case "chart":
       return (
-        <figure aria-label="Chart" className="h-[220px] overflow-hidden rounded-lg border border-border bg-card p-2">
+        <figure aria-label="Chart" className="h-[220px] overflow-hidden rounded-2xl border border-border bg-card p-3">
           <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-muted" />}>
             <ChartView spec={block.spec} data={block.data} compact />
           </Suspense>
@@ -121,7 +121,7 @@ function WebSources({ query, results, cached }: { query: string; results: WebRes
       </span>
       {results.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-accent hover:underline">
+          <summary className="cursor-pointer text-blue hover:underline">
             {results.length === 1 ? "1 source" : `${results.length} sources`}
           </summary>
           <ol className="mt-1.5 flex flex-col gap-2">
@@ -129,7 +129,7 @@ function WebSources({ query, results, cached }: { query: string; results: WebRes
               <li key={r.n} className="flex flex-col gap-0.5">
                 <span>
                   [{r.n}]{" "}
-                  <a href={r.url} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">{r.title}</a>
+                  <a href={r.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue hover:underline">{r.title}</a>
                   <span className="text-muted-foreground"> · {r.domain} · retrieved {r.retrieved_at}</span>
                 </span>
                 <q className="border-l-2 border-border pl-2 italic text-foreground-2">{r.snippet}</q>

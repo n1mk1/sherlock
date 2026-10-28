@@ -46,21 +46,20 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
   if (!report) return null;
   const c = report.counts;
   return (
-    <section className="rounded-2xl border border-border bg-card p-6" aria-labelledby="report-title">
-      <h3 id="report-title" className="font-serif text-[22px] leading-tight">{title}</h3>
-      <p className="mt-1 text-muted-foreground">
+    <section aria-labelledby="report-title">
+      <h3 id="report-title" className="type-title">{title}</h3>
+      <p className="mt-1 text-[14px] text-muted-foreground">
         {report.ended_by === "steps" && report.budget.max_steps
           ? `Stopped at the ${report.budget.max_steps}-issue budget.`
-          : ENDED[report.ended_by]}{" "}
-        v{report.from_version} → v{report.to_version}
-        {report.waited_for_model_s > 0 && ` · waited ${Math.round(report.waited_for_model_s)} s for the model`}
+          : ENDED[report.ended_by]}
+        {report.waited_for_model_s > 0 && ` Waited ${Math.round(report.waited_for_model_s)} s for the model.`}
       </p>
-      <dl className="mt-4 grid grid-cols-5 gap-2 text-center">
+      <dl className="mt-5 grid grid-cols-3 gap-x-4 gap-y-5">
         {reportCounts(c).map(
           ([label, n]) => (
-            <div key={label} className="rounded-xl bg-muted p-2">
-              <dd className="font-serif text-[24px] leading-none">{n}</dd>
-              <dt className="mt-1 text-[12px] text-muted-foreground">{label}</dt>
+            <div key={label} className="flex flex-col-reverse gap-1">
+              <dd className="type-figure">{n}</dd>
+              <dt className="type-label first-letter:uppercase">{label}</dt>
             </div>
           ),
         )}
@@ -74,11 +73,11 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
         {report.steps.slice(0, 3).map((s) => <StepLine key={s.step_id} step={s} />)}
       </ul>
       {!!report.sources?.length && <SourceList sources={report.sources} />}
-      <Button variant="link" className="mt-3" onClick={() => setOpen(true)}>View full report</Button>
+      <Button variant="secondary" size="sm" className="mt-5" onClick={() => setOpen(true)}>View full report</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-[720px]">
           <div className="border-b border-border px-6 pb-4 pt-5">
-            <DialogTitle className="font-serif text-[22px]">{title}</DialogTitle>
+            <DialogTitle className="type-title">{title}</DialogTitle>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
             <FullReport report={report} />
@@ -93,11 +92,11 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
 function SourceList({ sources }: { sources: NonNullable<CleaningReport["sources"]> }) {
   return (
     <section className="mt-4" aria-labelledby="report-sources">
-      <h4 id="report-sources" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Sources</h4>
+      <h4 id="report-sources" className="type-label">Sources</h4>
       <ul className="mt-2 flex flex-col gap-1 text-[13px]">
         {sources.map((s) => (
           <li key={s.url}>
-            <a href={s.url} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
+            <a href={s.url} target="_blank" rel="noopener noreferrer" className="font-medium text-blue hover:underline">
               {s.title || siteOf(s.url)}
             </a>
             <span className="text-muted-foreground"> · {siteOf(s.url)} · read {readDay(s.retrieved_at)}</span>
@@ -111,9 +110,9 @@ function SourceList({ sources }: { sources: NonNullable<CleaningReport["sources"
 function StepLine({ step }: { step: CleaningReport["steps"][number] }) {
   return (
     <li className="flex items-start gap-2">
-      {step.gate === "flag" ? <Flag className="mt-1 size-4 text-warning" aria-label="flagged" /> : <Check className="mt-1 size-4 text-success" aria-label="committed" />}
+      {step.gate === "flag" ? <Flag className="mt-1 size-4 text-amber" aria-label="flagged" /> : <Check className="mt-1 size-4 text-green" aria-label="committed" />}
       <span>
-        <span className="font-mono text-[12.5px] text-muted-foreground">step {step.no}</span> {step.summary}
+        <span className="text-[12px] text-muted-foreground tnum">Step {step.no}</span> {step.summary}
         <span className="text-muted-foreground"> · {step.impact.cells_changed.toLocaleString()} cells
           {step.impact.quarantined ? ` · ${step.impact.quarantined} rows quarantined` : ""}
         </span>
@@ -146,7 +145,7 @@ export function FullReport({ report }: { report: CleaningReport }) {
     <div className="flex flex-col gap-5">
       {!!report.your_steps?.length && (
         <section>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Your steps</h4>
+          <h4 className="type-label">Your steps</h4>
           <ul className="mt-2 flex flex-col gap-2">
             {report.your_steps.map((s) => (
               <li key={s.item_id} className="flex items-start gap-2">
@@ -165,7 +164,7 @@ export function FullReport({ report }: { report: CleaningReport }) {
         </section>
       )}
       <section>
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Steps</h4>
+        <h4 className="type-label">Steps</h4>
         <ul className="mt-2 flex flex-col gap-2">
           {report.steps.length ? report.steps.map((s) => <StepLine key={s.step_id} step={s} />) : <li className="text-muted-foreground">No steps were committed.</li>}
         </ul>
@@ -174,7 +173,7 @@ export function FullReport({ report }: { report: CleaningReport }) {
         const skips = report.skipped.filter((s) => s.skip_kind && kinds.includes(s.skip_kind));
         return skips.length > 0 && (
           <section key={key}>
-            <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h4>
+            <h4 className="type-label">{title}</h4>
             <SkipList skips={skips} />
           </section>
         );
@@ -182,19 +181,19 @@ export function FullReport({ report }: { report: CleaningReport }) {
       {/* A run from before skips recorded their kind lists them together. */}
       {(report.skipped.some((s) => !s.skip_kind) || !report.skipped.length) && (
         <section>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Skipped</h4>
+          <h4 className="type-label">Skipped</h4>
           {report.skipped.length ? <SkipList skips={report.skipped.filter((s) => !s.skip_kind)} />
             : <p className="mt-2 text-muted-foreground">Nothing was skipped.</p>}
         </section>
       )}
       {report.hand_edited_skipped.length > 0 && (
         <section>
-          <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Cells you edited (left as they are)</h4>
+          <h4 className="type-label">Cells you edited (left as they are)</h4>
           <p className="mt-2 text-muted-foreground">{report.hand_edited_skipped.length} cells, for example row {report.hand_edited_skipped[0].row_id} in {report.hand_edited_skipped[0].column}.</p>
         </section>
       )}
       <section>
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Decisions</h4>
+        <h4 className="type-label">Decisions</h4>
         <ul className="mt-2 flex flex-col gap-2">
           {report.decisions.map((d, i) => (
             <li key={i}>

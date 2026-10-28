@@ -1,4 +1,4 @@
-// Segmented control (UI brief §4.12): settings and the tab switcher share its look.
+// Segmented control: a soft pill track with the chosen option raised on it.
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-[11px] border border-border bg-muted p-1">
+    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap gap-0.5 rounded-full bg-secondary p-0.5">
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -20,10 +20,11 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex h-9 items-center gap-1.5 rounded-md border px-3.5 text-[14px] focus-visible:outline-2 focus-visible:outline-ring",
+              "inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-medium transition-[background-color,color] duration-[var(--duration-fast)]",
+              "focus-visible:outline-2 focus-visible:outline-ring",
               active
-                ? "border-border-strong bg-card text-foreground dark:bg-secondary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+                ? "bg-card text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] dark:bg-[color-mix(in_srgb,var(--foreground)_14%,transparent)]"
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             {o.label}

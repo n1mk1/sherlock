@@ -51,10 +51,10 @@ export function DatasetPage() {
           </>
         }
       />
-      <div className={ready ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
+      <div className={ready ? "flex min-h-0 flex-1 flex-col" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
         <ErrorBoundary label={ready ? "grid" : "CSV"} resetKey={`${dataset.id}:${dataset.status}`}>
           {ready ? (
-            <Suspense fallback={<p className="p-6 text-muted-foreground">Loading rows…</p>}>
+            <Suspense fallback={<p className="p-6 text-[13px] text-muted-foreground">Loading rows…</p>}>
               <CsvTab dataset={dataset} />
             </Suspense>
           ) : (
@@ -94,6 +94,6 @@ function OfferOrPlan({ dataset }: { dataset: Dataset }) {
 }
 
 function chatPlaceholder(d: Dataset) {
-  if (d.status === "profiling") return "Ask about this CSV (profiling in progress)";
-  return "Ask about the data, or tell Sherlock what to change…";
+  if (d.status === "profiling") return "You can ask once Sherlock has read the file";
+  return "Ask anything, or describe a change…";
 }

@@ -11,6 +11,7 @@ import { useCreatePlan, useDatacard } from "@/api/queries";
 import type { Column, Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from "@/components/ui/menu";
+import { Pill } from "@/components/ui/pill";
 import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 import { Grid, type GridHandle, type GridSelectionInfo } from "./Grid";
@@ -94,7 +95,9 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-3" role="toolbar" aria-label="CSV tools">
+      <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border px-3" role="toolbar" aria-label="CSV tools">
+        <CleanButton dataset={dataset} />
+        <Divider />
         <Button size="sm" variant="ghost" disabled={locked} title={locked ? lockedWhy : undefined} onClick={addRow}><Plus /> Add row</Button>
         <Button size="sm" variant="ghost" disabled={marked === 0 || locked} onClick={deleteRows}
           title={locked ? lockedWhy : marked === 0 ? "Select cells in the rows to delete" : undefined}>
@@ -102,16 +105,17 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         </Button>
         {restoring > 0 && (
           <Button size="sm" variant="ghost" disabled={locked} onClick={restoreRows}
-            title={locked ? lockedWhy : "Bring quarantined rows back into answers, models and the notebook"}>
+            title={locked ? lockedWhy : "Bring set-aside rows back into answers, models and the notebook"}>
             <RotateCcw /> Restore {restoring > 1 ? `${restoring} rows` : "row"}
           </Button>
         )}
-        <Button size="sm" variant="ghost" aria-pressed={findOpen} onClick={() => setFindOpen((o) => !o)}><Search /> Find</Button>
-        <CleanButton dataset={dataset} />
+        <Button size="sm" variant="ghost" aria-pressed={findOpen} className="aria-pressed:bg-secondary" onClick={() => setFindOpen((o) => !o)}><Search /> Find</Button>
+        <Divider />
         <HistoryButtons dataset={dataset} pending={pendingCount(buffer)} />
+        <Divider />
         <MenuRoot>
           <MenuTrigger asChild>
-            <Button size="sm" variant="ghost"><Download /> Download</Button>
+            <Button size="sm" variant="ghost" className="data-[state=open]:bg-secondary"><Download /> Download</Button>
           </MenuTrigger>
           <MenuContent align="start">
             <MenuItem onSelect={() => window.location.assign(`/api/v1/datasets/${dataset.id}/export.csv`)}><Download /> CSV</MenuItem>
@@ -121,7 +125,8 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         <Legend />
       </div>
       {locked && (
-        <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-4 py-1.5 text-[13px]">
+        <div role="status" className="flex shrink-0 items-center gap-2 border-b border-border bg-violet-soft px-4 py-2 text-[13px] text-violet-ink">
+          <Sparkles className="size-3.5" aria-hidden />
           Cleaning in progress · editing resumes when it finishes
         </div>
       )}
@@ -129,10 +134,8 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         <FindBar initial={found?.q ?? ""} found={found} onFind={runFind} onClear={clearFind} />
       )}
       {urlSelection && !found && (
-        <div className="flex items-center gap-2 border-b border-border px-4 py-1.5 text-[13px]">
-          <span className="inline-flex h-7 items-center rounded-full border border-accent bg-accent-soft px-2.5">
-            {shape.total.toLocaleString()} rows selected
-          </span>
+        <div className="flex items-center gap-2 border-b border-border px-4 py-2 text-[13px]">
+          <Pill tone="accent">{shape.total.toLocaleString()} rows selected</Pill>
           <Button size="sm" variant="ghost" onClick={() => setParams({})}>Show all rows</Button>
         </div>
       )}
@@ -161,20 +164,16 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   );
 }
 
+function Divider() {
+  return <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-border-strong" />;
+}
+
 function Legend() {
   return (
-    <div role="group" className="ml-auto hidden items-center gap-3 text-[12px] text-muted-foreground md:flex" aria-label="Legend">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block size-3 bg-changed shadow-[inset_0_2px_0_var(--info)]" /> changed
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-block size-3 outline outline-1 -outline-offset-1 outline-dashed outline-warning" /> flagged
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="relative inline-block size-3 bg-unsaved outline outline-1 -outline-offset-1 outline-accent">
-          <span className="absolute left-0.5 top-0.5 size-1 rounded-full bg-accent" />
-        </span> unsaved
-      </span>
+    <div role="group" className="ml-auto hidden items-center gap-1.5 @[60rem]:flex" aria-label="Legend">
+      <Pill size="sm" icon={<span className="size-2 rounded-[2px] bg-changed shadow-[inset_0_1.5px_0_var(--info)]" />}>changed</Pill>
+      <Pill size="sm" icon={<span className="size-2 rounded-[2px] outline outline-1 -outline-offset-1 outline-dashed outline-warning" />}>flagged</Pill>
+      <Pill size="sm" icon={<span className="size-2 rounded-[2px] bg-unsaved outline outline-1 -outline-offset-1 outline-accent" />}>unsaved</Pill>
     </div>
   );
 }
@@ -185,24 +184,26 @@ function FindBar({ initial, found, onFind, onClear }: {
   const [q, setQ] = useState(initial);
   return (
     <form
-      className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"
+      className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3"
       onSubmit={(e) => { e.preventDefault(); onFind(q); }}
     >
-      <Search className="size-4 text-muted-foreground" />
-      <input
-        autoFocus
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Escape") onClear(); }}
-        placeholder="Find in every cell…"
-        aria-label="Find"
-        className="h-8 w-64 rounded-md border border-input bg-card px-2.5 text-[13px] outline-none focus-visible:border-accent"
-      />
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Escape") onClear(); }}
+          placeholder="Find in every cell…"
+          aria-label="Find"
+          className="h-8 w-72 rounded-full bg-secondary pl-8 pr-3 text-[13px] outline-none placeholder:text-muted-foreground focus-visible:bg-card focus-visible:shadow-[0_0_0_1px_var(--accent)]"
+        />
+      </div>
       <Button size="sm" type="submit">Find</Button>
       {found && (
-        <span className="text-[12px] text-muted-foreground">
-          {found.count.toLocaleString()} {found.count === 1 ? "match" : "matches"} in {found.rows.toLocaleString()} {found.rows === 1 ? "row" : "rows"}; only those rows are shown
-        </span>
+        <Pill tone="accent" title="Only those rows are shown">
+          {found.count.toLocaleString()} {found.count === 1 ? "match" : "matches"} in {found.rows.toLocaleString()} {found.rows === 1 ? "row" : "rows"}
+        </Pill>
       )}
       <Button size="icon" variant="ghost" type="button" aria-label="Close find" className="ml-auto" onClick={onClear}><X /></Button>
     </form>
@@ -212,11 +213,11 @@ function FindBar({ initial, found, onFind, onClear }: {
 function StatusBar({ total, pending, selection, sort }: { total: number; pending: number; selection: GridSelectionInfo; sort: Sort | null }) {
   const cur = selection.current;
   return (
-    <div className="flex h-7 shrink-0 items-center gap-4 border-t border-border px-4 text-[12px] text-muted-foreground">
-      <span>{selection.cells > 1 ? `${selection.cells.toLocaleString()} cells` : ""}</span>
+    <div className="flex h-8 shrink-0 items-center gap-4 border-t border-border px-4 text-[12px] text-muted-foreground tnum">
+      {selection.cells > 1 && <span>{selection.cells.toLocaleString()} cells</span>}
       <span>{total.toLocaleString()} rows{sort ? ` · sorted by ${sort.column} ${sort.dir === "asc" ? "↑" : "↓"} (view only)` : ""}</span>
-      {pending > 0 && <span className="text-accent">{pending} unsaved</span>}
-      <span className="ml-auto font-mono">
+      {pending > 0 && <span className="font-medium text-accent">{pending} unsaved</span>}
+      <span className="ml-auto">
         {cur?.column ? `Row ${cur.rowId ?? "new"} · ${cur.column}` : ""}
       </span>
     </div>
@@ -237,7 +238,7 @@ function HistoryButtons({ dataset, pending }: { dataset: Dataset; pending: numbe
     if (pending > 0) return void toast(`Save or discard your ${pending} unsaved ${pending === 1 ? "edit" : "edits"} first.`);
     if (!target || move.isPending) return;
     move.mutate({ way, base: dataset.current_version }, {
-      onSuccess: (r) => toast(`${way === "undo" ? "Undid" : "Redid"}: ${target.summary} · now v${r.version}`),
+      onSuccess: () => toast(`${way === "undo" ? "Undid" : "Redid"}: ${target.summary}`),
       onError: (e) => toast.error((e as Error).message),
     });
   }, [h, busy, pending, move, dataset.current_version]);
@@ -265,10 +266,14 @@ function HistoryButtons({ dataset, pending }: { dataset: Dataset; pending: numbe
   const redoTitle = h?.redo ? `Redo: ${h.redo.summary} (Ctrl+Y)` : "Nothing to redo";
   return (
     <>
-      <Button size="sm" variant="ghost" aria-label="Undo" title={busy ?? undoTitle} disabled={!h?.undo || !!busy}
-        loading={move.isPending && move.variables?.way === "undo"} onClick={() => go("undo")}><Undo2 /> Undo</Button>
-      <Button size="sm" variant="ghost" aria-label="Redo" title={busy ?? redoTitle} disabled={!h?.redo || !!busy}
-        loading={move.isPending && move.variables?.way === "redo"} onClick={() => go("redo")}><Redo2 /> Redo</Button>
+      <Button size="icon" variant="ghost" aria-label="Undo" title={busy ?? undoTitle} disabled={!h?.undo || !!busy}
+        loading={move.isPending && move.variables?.way === "undo"} onClick={() => go("undo")}>
+        {!(move.isPending && move.variables?.way === "undo") && <Undo2 />}
+      </Button>
+      <Button size="icon" variant="ghost" aria-label="Redo" title={busy ?? redoTitle} disabled={!h?.redo || !!busy}
+        loading={move.isPending && move.variables?.way === "redo"} onClick={() => go("redo")}>
+        {!(move.isPending && move.variables?.way === "redo") && <Redo2 />}
+      </Button>
     </>
   );
 }
@@ -279,7 +284,7 @@ function CleanButton({ dataset }: { dataset: Dataset }) {
   const setRightOpen = useUi((s) => s.setRightOpen);
   const busy = busyReason(dataset);
   return (
-    <Button size="sm" variant="secondary" disabled={!!busy} title={busy ?? undefined} loading={create.isPending}
+    <Button size="sm" variant="violet" disabled={!!busy} title={busy ?? undefined} loading={create.isPending}
       onClick={() => {
         setRightOpen(true); // on a narrow window the right panel is a slide-over
         create.mutate(undefined, { onError: (e) => toast.error((e as Error).message) });

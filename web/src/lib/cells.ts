@@ -22,11 +22,12 @@ export function displayValue(v: unknown): string {
   return String(v);
 }
 
+/** A column's type in plain words, for the grid's header. */
 export function typeLabel(type: string): string {
-  if (INT.test(type)) return "int";
-  if (FLOAT.test(type)) return "float";
-  if (type === "BOOLEAN") return "bool";
-  if (type === "DATE") return "date";
-  if (type.startsWith("TIMESTAMP")) return "datetime";
-  return "text";
+  if (INT.test(type)) return "Number";
+  if (FLOAT.test(type)) return "Decimal";
+  if (type === "BOOLEAN") return "Yes / no";
+  if (type === "DATE") return "Date";
+  if (type.startsWith("TIMESTAMP")) return "Date and time";
+  return "Text";
 }

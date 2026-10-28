@@ -12,6 +12,7 @@ import { DropOverlay } from "@/components/library/DropOverlay";
 import { HomeTips } from "@/components/library/HomeTips";
 import { ImportPreviewDialog } from "@/components/library/ImportPreviewDialog";
 import { LibraryPanel } from "@/components/library/LibraryPanel";
+import { IconButton } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LEFT, RIGHT, useUi } from "@/state/ui";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -33,9 +34,9 @@ export function AppShell() {
         onResize={railed ? undefined : (w) => setPanelWidth("left", w)}>
         <ErrorBoundary label="library" resetKey={pathname}><LibraryPanel /></ErrorBoundary>
       </SidePanel>
-      <main className="@container relative flex min-w-0 flex-1 flex-col">
+      <main className="@container relative flex min-w-0 flex-1 flex-col bg-card">
         <div className="absolute left-2 top-3 z-20 flex gap-1 lg:hidden">
-          <IconButton label="Show your CSVs" onClick={() => setLeftOpen(true)}><Menu /></IconButton>
+          <IconButton label="Show your files" onClick={() => setLeftOpen(true)}><Menu /></IconButton>
         </div>
         <div className="absolute right-2 top-3 z-20 flex gap-1 lg:hidden">
           <IconButton label="Show the side panel" onClick={() => setRightOpen(true)}><PanelRight /></IconButton>
@@ -69,13 +70,12 @@ function SidePanel({ side, open, onClose, width, onResize, children }: {
 }) {
   return (
     <>
-      {open && <div className="fixed inset-0 z-30 bg-[rgba(46,48,53,0.28)] lg:hidden" onClick={onClose} aria-hidden />}
+      {open && <div className="fixed inset-0 z-30 bg-scrim lg:hidden" onClick={onClose} aria-hidden />}
       <aside
         style={{ "--panel-w": `${width}px` } as CSSProperties}
         className={cn(
           "relative z-30 h-full w-[var(--panel-w)] shrink-0 bg-background max-lg:w-[min(320px,85vw)]",
-          side === "left" ? "border-r border-border" : "border-l border-border",
-          "max-lg:fixed max-lg:top-0 max-lg:shadow-[var(--shadow-overlay)] max-lg:transition-transform max-lg:duration-[var(--duration-base)]",
+          side === "left" ? "border-r border-border" : "border-l border-border",          "max-lg:fixed max-lg:top-0 max-lg:shadow-[var(--shadow-overlay)] max-lg:transition-transform max-lg:duration-[var(--duration-base)] max-lg:ease-[var(--ease)]",
           side === "left" ? "max-lg:left-0" : "max-lg:right-0",
           !open && (side === "left" ? "max-lg:-translate-x-full" : "max-lg:translate-x-full"),
         )}
@@ -117,23 +117,9 @@ function Divider({ side, width, onResize }: { side: "left" | "right"; width: num
         window.addEventListener("pointerup", up);
       }}
       className={cn(
-        "absolute top-0 z-10 hidden h-full w-1.5 cursor-col-resize hover:bg-accent-soft focus-visible:bg-accent-soft lg:block",
+        "absolute top-0 z-10 hidden h-full w-1.5 cursor-col-resize transition-colors hover:bg-accent-soft focus-visible:bg-accent-soft lg:block",
         side === "left" ? "-right-[3px]" : "-left-[3px]",
       )}
     />
-  );
-}
-
-export function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring [&_svg]:size-4"
-    >
-      {children}
-    </button>
   );
 }

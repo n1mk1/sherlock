@@ -1,6 +1,7 @@
 // The offer's choices (App Flow §4): Clean with AI opens the cleaning plan, where nothing changes until
 // Start; Clean it myself makes the dataset ready as it is and opens the grid, to edit by hand or ask the
 // chat. "Remember my choice" writes the After upload setting, and with Clean with AI the Cleaning depth.
+import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useCreatePlan, useSaveSettings, useUseAsIs } from "@/api/queries";
@@ -22,13 +23,14 @@ export function OfferActions({ dataset, depth = 5 }: { dataset: Dataset; depth?:
   return (
     <div className="mt-6 flex flex-col gap-4">
       {failed && (
-        <p role="alert" className="text-[13px] text-destructive">
-          {dataset.error}. Your data is safe; you can use it as is or try cleaning again.
+        <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] text-red-ink">
+          {dataset.error}. Your data is safe: use it as is, or try again.
         </p>
       )}
-      <div className="flex flex-wrap gap-2">
-        <Button variant="primary" loading={plan.isPending} disabled={asIs.isPending}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="ai" loading={plan.isPending} disabled={asIs.isPending}
           onClick={() => go("always", () => plan.mutate({ depth }, { onError: fail }))}>
+          {!plan.isPending && <Sparkles aria-hidden />}
           {failed ? "Try cleaning again" : "Clean with AI"}
         </Button>
         <Button loading={asIs.isPending} disabled={plan.isPending}
@@ -37,13 +39,10 @@ export function OfferActions({ dataset, depth = 5 }: { dataset: Dataset; depth?:
           onClick={() => go("never", () => { asIs.mutateAsync().catch(fail); })}>
           {failed ? "Use as is" : "Clean it myself"}
         </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="accent-[var(--accent)]" />
+        <label className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground" title="You can change this in Settings">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
           Remember my choice
         </label>
-        <span className="text-[12px]">· You can change this in Settings</span>
       </div>
     </div>
   );

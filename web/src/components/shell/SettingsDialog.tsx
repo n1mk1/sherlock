@@ -13,11 +13,11 @@ import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
 
 const ACCENTS: { value: Settings["accent"]; label: string; light: string; dark: string }[] = [
-  { value: "verdigris", label: "Verdigris", light: "#2F6B62", dark: "#6FB3A6" },
-  { value: "arcane", label: "Arcane", light: "#6A4C93", dark: "#A88BD6" },
-  { value: "ember", label: "Ember", light: "#9A4A2E", dark: "#E08A62" },
-  { value: "aether", label: "Aether", light: "#2F6690", dark: "#6FB4D9" },
-  { value: "brass", label: "Brass", light: "#8A5A33", dark: "#C9A063" },
+  { value: "verdigris", label: "Verdigris", light: "#13756E", dark: "#5CC2B7" },
+  { value: "arcane", label: "Arcane", light: "#6B4BD6", dark: "#AB95F6" },
+  { value: "ember", label: "Ember", light: "#B8471D", dark: "#FF9A72" },
+  { value: "aether", label: "Aether", light: "#2F62C9", dark: "#84A9F4" },
+  { value: "brass", label: "Brass", light: "#93650F", dark: "#E0B25C" },
 ];
 
 export function useSettingsOpen() {
@@ -51,17 +51,17 @@ export function SettingsDialog() {
   const set = (patch: Partial<Settings>) => save.mutate(patch);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-[580px]" aria-describedby={undefined}>
-        <div className="px-6 pb-2 pt-5">
-          <DialogTitle className="font-serif text-[32px] leading-tight">Settings</DialogTitle>
+      <DialogContent className="max-w-[600px]" aria-describedby={undefined}>
+        <div className="px-7 pb-1 pt-6">
+          <DialogTitle className="type-display">Settings</DialogTitle>
         </div>
         {s && (
-          <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-4">
-            <Field label="Mode" help="System follows your computer's light or dark setting.">
+          <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto px-7 py-2">
+            <Field label="Appearance" help="System follows your computer.">
               <Segmented label="Mode" value={s.theme} onChange={(theme) => set({ theme })}
                 options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }, { value: "system", label: "System" }]} />
             </Field>
-            <Field label="Accent" help="The one color that marks what you're looking at.">
+            <Field label="Accent" help="Marks focus and what you've selected.">
               <Segmented label="Accent" value={s.accent} onChange={(accent) => set({ accent })}
                 options={ACCENTS.map((a) => ({
                   value: a.value,
@@ -74,26 +74,26 @@ export function SettingsDialog() {
                   ),
                 }))} />
             </Field>
-            <Field label="Chat bar" help="Auto-hide shows the bar when you point at it or tab to it.">
+            <Field label="Chat bar" help="Auto-hide shows it when you point at it.">
               <Segmented label="Chat bar" value={s.chatbar} onChange={(chatbar) => set({ chatbar })}
                 options={[{ value: "pinned", label: "Pinned" }, { value: "autohide", label: "Auto-hide" }, { value: "hidden", label: "Hidden" }]} />
             </Field>
-            <Field label="After upload" help="What happens once a new CSV is profiled. Nothing is cleaned until you start a plan."
+            <Field label="After upload" help="Nothing is cleaned until you start a plan."
               focus={field === "after_upload"}>
               <Segmented label="After upload" value={s.after_upload} onChange={(after_upload) => set({ after_upload })}
                 options={[{ value: "ask", label: "Ask me" }, { value: "always", label: "Open the cleaning plan" },
                           { value: "never", label: "I'll clean it myself" }]} />
             </Field>
-            <Field label="Cleaning depth" help="How deep a new cleaning plan looks. Each layer adds checks on a wider part of the data."
+            <Field label="Cleaning depth" help="Deeper layers check wider parts of the data."
               focus={field === "clean_depth"}>
               <Segmented label="Cleaning depth" value={String(s.clean_depth)}
                 onChange={(v) => set({ clean_depth: Number(v) as Depth })}
-                options={LAYERS.map((l, n) => ({ value: String(n + 1), label: `${n + 1} · ${l.name}` }))} />
+                options={LAYERS.map((l, n) => ({ value: String(n + 1), label: l.name }))} />
             </Field>
           </div>
         )}
-        <div className="flex items-center gap-3 border-t border-border px-6 py-4">
-          <span className="mr-auto text-[13px] text-muted-foreground">Saved to your Sherlock profile</span>
+        <div className="flex items-center gap-3 border-t border-border px-7 py-4">
+          <span className="mr-auto text-[13px] text-muted-foreground">Changes save as you go</span>
           <DialogClose asChild>
             <Button variant="primary">Done</Button>
           </DialogClose>
@@ -109,10 +109,12 @@ function Field({ label, help, focus = false, children }: { label: string; help: 
     if (focus) ref.current?.scrollIntoView({ block: "center" });
   }, [focus]);
   return (
-    <div ref={ref} className={cn("flex flex-col gap-1.5", focus && "-mx-3 rounded-[14px] border border-accent px-3 py-2.5")}>
-      <span className="text-[13px] font-semibold">{label}</span>
+    <div ref={ref} className={cn("flex flex-col gap-2.5 py-4", focus && "-mx-3 rounded-2xl bg-accent-soft px-3")}>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[14px] font-semibold tracking-[-0.01em]">{label}</span>
+        <span className="text-right text-[12.5px] text-muted-foreground">{help}</span>
+      </div>
       {children}
-      <span className="text-[13px] text-muted-foreground">{help}</span>
     </div>
   );
 }

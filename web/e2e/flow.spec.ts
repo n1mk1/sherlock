@@ -18,9 +18,9 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   const home = await page.goto("/");
   expect(home!.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   expect(home!.headers()["x-content-type-options"]).toBe("nosniff");
-  await expect(page.getByRole("button", { name: "Try with sample (Titanic)" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try the Titanic sample" })).toBeVisible();
   await expectNoAxeViolations(page, "the empty library");
-  await page.getByRole("button", { name: "Try with sample (Titanic)" }).click();
+  await page.getByRole("button", { name: "Try the Titanic sample" }).click();
 
   // The offer, then Clean it myself: the dataset is ready as it is, on its one view.
   await page.getByRole("button", { name: "Clean it myself" }).click({ timeout: 120_000 });
@@ -38,7 +38,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   // The right panel is the cleaning side panel: Changes, with the cleaning report one click away.
   const changes = page.getByRole("complementary").filter({ hasText: "Changes" });
   await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
-  await expect(changes.getByRole("button", { name: "Full cleaning report" })).toBeVisible();
+  await expect(changes.getByRole("button", { name: "Cleaning report" })).toBeVisible();
   await expectNoAxeViolations(page, "the grid with Changes");
 
   // A number: the answer's numbers are chips, and "How do you know?" shows the query.
@@ -68,7 +68,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   // Change a cell from chat: a proposal that applies only when approved, then the grid shows it.
   await ask(page, "set the fare of row 1 to 100");
   await page.getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText(/Saved as v\d+/)).toBeVisible();
+  await expect(page.getByText("Saved. Undo it from the Changes panel.")).toBeVisible();
   // Glide's hidden table holds only the columns on screen, and fare is scrolled off, so the new version's
   // row is read through the rows API the grid itself reads.
   await expect.poll(async () => {
@@ -92,7 +92,7 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   expect(await sexOf1()).toBe("female"); // nothing changed before OK
   await expectNoAxeViolations(page, "a command's card");
   await command.getByRole("button", { name: "OK" }).click();
-  await expect(page.getByText(/Done · saved as v\d+/)).toBeVisible();
+  await expect(page.getByText(/Done. Press Undo in the toolbar/)).toBeVisible();
   await expect.poll(sexOf1, { timeout: 30_000 }).toBe("FEMALE");
   const tools = page.getByRole("toolbar", { name: "CSV tools" });
   await expect(tools.getByRole("button", { name: "Undo" })).toBeEnabled();

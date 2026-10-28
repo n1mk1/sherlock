@@ -15,7 +15,9 @@ createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <App />
-        <Toaster position="bottom-right" toastOptions={{ className: "!bg-popover !text-foreground !border-border" }} />
+        <Toaster position="bottom-right" toastOptions={{
+          className: "!rounded-2xl !bg-popover !text-foreground !border-border !shadow-[var(--shadow-overlay)] !font-sans !text-[13px]",
+        }} />
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

@@ -1,6 +1,6 @@
-// The library (left panel, App Flow §2 and §14): your CSVs with live status, Upload, Try with sample.
+// The library (left panel, App Flow §2 and §14): your CSVs with a live status pill, Upload, Try a sample.
 import {
-  AlertCircle, Check, ChevronsLeft, ChevronsRight, Download, FlaskConical, MoreHorizontal, Pencil, Settings, Trash2, Upload,
+  AlertCircle, Check, ChevronsLeft, ChevronsRight, Download, FlaskConical, Loader2, MoreHorizontal, Pencil, Settings, Trash2, Upload,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -9,8 +9,9 @@ import { useDatasets, useSample } from "@/api/queries";
 import type { Dataset, JobProgressEvent } from "@/api/types";
 import { ConfirmDelete, useDatasetCommands } from "@/components/shell/DatasetMenu";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton, type ButtonProps } from "@/components/ui/button";
 import { MenuContent, MenuItem, MenuRoot, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { Dot, Pill, type Tone } from "@/components/ui/pill";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/state/ui";
 
@@ -26,10 +27,7 @@ export function LibraryPanel() {
   );
 }
 
-const iconBtn =
-  "inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring";
-
-/** The collapsed library (App Flow §14): dataset initials, Upload, Sample, the gear, and » to expand. */
+/** The collapsed library: each file's initials with its status dot, Upload, Sample, Settings, and » to expand. */
 function Rail() {
   const { data: datasets } = useDatasets();
   const { datasetId } = useParams();
@@ -40,11 +38,9 @@ function Rail() {
   const navigate = useNavigate();
   const input = useRef<HTMLInputElement>(null);
   return (
-    <nav aria-label="Your CSVs" className="hidden h-full flex-col items-center gap-2 py-4 lg:flex">
-      <button type="button" aria-label="Expand the library" title="Expand" onClick={() => setRailed(false)} className={iconBtn}>
-        <ChevronsRight className="size-4" />
-      </button>
-      <ul className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto">
+    <nav aria-label="Your CSVs" className="hidden h-full flex-col items-center gap-2 py-3 lg:flex">
+      <IconButton label="Expand the library" onClick={() => setRailed(false)}><ChevronsRight /></IconButton>
+      <ul className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto py-2">
         {datasets?.map((d) => (
           <li key={d.id}>
             <Link
@@ -53,30 +49,29 @@ function Rail() {
               aria-label={d.name}
               aria-current={d.id === datasetId ? "page" : undefined}
               className={cn(
-                "inline-flex size-9 items-center justify-center rounded-md border font-mono text-[12px] uppercase",
-                d.id === datasetId ? "border-border-strong bg-secondary" : "border-transparent hover:bg-secondary",
+                "relative inline-flex size-9 items-center justify-center rounded-xl text-[12px] font-semibold uppercase tracking-tight",
+                d.id === datasetId
+                  ? "bg-card text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.08)] dark:bg-secondary dark:shadow-none"
+                  : "text-muted-foreground hover:bg-secondary",
               )}
             >
               {initials(d.name)}
+              <Dot tone={statusOf(d).tone} className="absolute right-1 top-1" />
             </Link>
           </li>
         ))}
       </ul>
-      <button type="button" aria-label="Upload CSV" title="Upload CSV" onClick={() => input.current?.click()} className={iconBtn}>
-        <Upload className="size-4" />
-      </button>
+      <IconButton label="Upload CSV" onClick={() => input.current?.click()}><Upload /></IconButton>
       <input ref={input} type="file" accept={ACCEPT} className="hidden" onChange={(e) => {
         const file = e.target.files?.[0];
         if (file) openImport(file);
         e.target.value = "";
       }} />
-      <button type="button" aria-label="Try with sample" title="Try with sample" className={iconBtn}
+      <IconButton label="Try a sample"
         onClick={() => sample.mutate(undefined, { onSuccess: (ds) => navigate(`/d/${ds.id}`), onError: (e) => toast.error((e as Error).message) })}>
-        <FlaskConical className="size-4" />
-      </button>
-      <button type="button" aria-label="Settings" title="Settings" onClick={() => openSettings(true)} className={iconBtn}>
-        <Settings className="size-4" strokeWidth={1.75} />
-      </button>
+        <FlaskConical />
+      </IconButton>
+      <IconButton label="Settings" onClick={() => openSettings(true)}><Settings strokeWidth={1.75} /></IconButton>
     </nav>
   );
 }
@@ -86,6 +81,11 @@ export function initials(name: string) {
   return ((words[0]?.[0] ?? "?") + (words[1]?.[0] ?? words[0]?.[1] ?? "")).toUpperCase();
 }
 
+/** A file's name as people read it: without the .csv, .tsv or .txt (the full name is in the tooltip). */
+export function displayName(name: string) {
+  return name.replace(/\.(csv|tsv|txt)(?=$|\s)/i, "");
+}
+
 function FullPanel({ className }: { className?: string }) {
   const { data: datasets, isLoading } = useDatasets();
   const { datasetId } = useParams();
@@ -93,27 +93,22 @@ function FullPanel({ className }: { className?: string }) {
   const setRailed = useUi((s) => s.setRailed);
   const [, openSettings] = useSettingsOpen();
   return (
-    <nav aria-label="Your CSVs" className={cn("flex h-full flex-col gap-3 p-4", className)}>
-      <div className="flex items-center justify-between">
-        <Link to="/" state={{ stay: true }} className="font-serif text-[20px] font-medium leading-none">
+    <nav aria-label="Your CSVs" className={cn("flex h-full flex-col", className)}>
+      <div className="flex h-14 shrink-0 items-center justify-between pl-5 pr-2.5">
+        <Link to="/" state={{ stay: true }} className="font-serif text-[21px] leading-none tracking-[-0.02em]">
           Sherlock
         </Link>
         <div className="flex items-center">
-          <button type="button" aria-label="Settings" title="Settings" onClick={() => openSettings(true)} className={iconBtn}>
-            <Settings className="size-4" strokeWidth={1.75} />
-          </button>
-          <button type="button" aria-label="Collapse the library" title="Collapse" onClick={() => setRailed(true)}
-            className={cn(iconBtn, "max-lg:hidden")}>
-            <ChevronsLeft className="size-4" />
-          </button>
+          <IconButton label="Settings" onClick={() => openSettings(true)}><Settings strokeWidth={1.75} /></IconButton>
+          <IconButton label="Collapse the library" className="max-lg:hidden" onClick={() => setRailed(true)}><ChevronsLeft /></IconButton>
         </div>
       </div>
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Your CSVs</h2>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <h2 className="px-5 pb-2 pt-3 type-label">Library</h2>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
         {isLoading ? null : !datasets?.length ? (
-          <p className="text-[13px] text-muted-foreground">No CSVs yet.</p>
+          <p className="px-2.5 text-[13px] text-muted-foreground">No CSVs yet.</p>
         ) : (
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col gap-0.5">
             {datasets.map((d) => (
               <li key={d.id}>
                 <LibraryRow dataset={d} active={d.id === datasetId} progress={progress[d.id]} />
@@ -122,9 +117,9 @@ function FullPanel({ className }: { className?: string }) {
           </ul>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        <UploadButton className="w-full" label="Upload CSV" />
-        <SampleButton className="w-full" label="Try with sample" />
+      <div className="flex shrink-0 flex-col gap-1 p-3">
+        <UploadButton className="w-full" label="Upload CSV" variant="primary" />
+        <SampleButton className="w-full" label="Try a sample" variant="ghost" />
       </div>
     </nav>
   );
@@ -138,7 +133,7 @@ function LibraryRow({ dataset, active, progress }: { dataset: Dataset; active: b
     <div className="group relative">
       {renaming ? (
         <form
-          className="rounded-md border border-border-strong px-2.5 py-2"
+          className="rounded-xl bg-card px-3 py-2.5 shadow-[0_0_0_1px_var(--accent)]"
           onSubmit={(e) => {
             e.preventDefault();
             cmd.rename(new FormData(e.currentTarget).get("name") as string);
@@ -152,36 +147,36 @@ function LibraryRow({ dataset, active, progress }: { dataset: Dataset; active: b
             aria-label="New name"
             onBlur={(e) => { cmd.rename(e.target.value); setRenaming(false); }}
             onKeyDown={(e) => e.key === "Escape" && setRenaming(false)}
-            className="w-full bg-transparent font-medium outline-none"
+            className="w-full bg-transparent text-[13.5px] font-medium outline-none"
           />
         </form>
       ) : (
         <Link
           to={`/d/${dataset.id}`}
           aria-current={active ? "page" : undefined}
+          title={dataset.name}
           className={cn(
-            "flex flex-col gap-0.5 rounded-md border px-2.5 py-2 pr-8 hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring",
-            active ? "border-border-strong bg-secondary" : "border-transparent",
+            "flex flex-col gap-1.5 rounded-xl px-3 py-2.5 pr-9 transition-colors duration-[var(--duration-fast)] focus-visible:outline-2 focus-visible:outline-ring",
+            active ? "bg-card shadow-[0_1px_3px_rgba(0,0,0,0.07)] dark:bg-secondary dark:shadow-none" : "hover:bg-secondary",
           )}
         >
-          <span className="block truncate font-medium">{dataset.name}</span>
+          <span className="block truncate text-[13.5px] font-medium tracking-[-0.01em]">{displayName(dataset.name)}</span>
           <StatusBadge dataset={dataset} progress={progress} />
         </Link>
       )}
       {!renaming && (
         <MenuRoot>
           <MenuTrigger asChild>
-            <button
-              type="button"
-              aria-label={`Menu for ${dataset.name}`}
-              className="absolute right-1 top-1.5 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-muted focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+            <IconButton
+              label={`Menu for ${dataset.name}`}
+              className="absolute right-1.5 top-2 size-7 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
             >
-              <MoreHorizontal className="size-4" />
-            </button>
+              <MoreHorizontal />
+            </IconButton>
           </MenuTrigger>
           <MenuContent>
             <MenuItem onSelect={() => setRenaming(true)}><Pencil /> Rename</MenuItem>
-            <MenuItem onSelect={cmd.downloadRaw}><Download /> Download original CSV</MenuItem>
+            <MenuItem onSelect={cmd.downloadRaw}><Download /> Download original</MenuItem>
             <MenuSeparator />
             <MenuItem destructive onSelect={() => setDeleting(true)}><Trash2 /> Delete</MenuItem>
           </MenuContent>
@@ -192,49 +187,56 @@ function LibraryRow({ dataset, active, progress }: { dataset: Dataset; active: b
   );
 }
 
-/** Status line (App Flow §14): profiling · offer · cleaning n% · ready · v7 · failed. */
-export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?: JobProgressEvent }) {
-  const live = progress && progress.pct < 100 ? progress : undefined;
-  const pct = Math.round(live?.pct ?? dataset.cleaning_progress?.pct ?? 0);
+/** A file's status in words and a hue: reading, its issues to look at, cleaning, ready, failed. */
+export function statusOf(dataset: Dataset, pct = 0): { label: string; tone: Tone } {
   switch (dataset.status) {
-    case "ready":
-      return (
-        <span className="mt-0.5 flex items-center gap-1.5 text-[12px] text-success">
-          <Check className="size-3.5" strokeWidth={1.75} aria-hidden /> ready · v{dataset.current_version}
-        </span>
-      );
-    case "failed":
-      return (
-        <span className="mt-0.5 flex items-center gap-1 text-[12px] text-destructive" title={dataset.error ?? undefined}>
-          <AlertCircle className="size-3.5" aria-hidden /> failed
-        </span>
-      );
-    case "cleaning":
-      return (
-        <span className="mt-0.5 block text-[12px] text-muted-foreground">
-          cleaning {pct}%
-          <span className="mt-1.5 block h-0.5 rounded bg-border" aria-hidden>
-            <span className="block h-0.5 rounded bg-accent" style={{ width: `${pct}%` }} />
-          </span>
-        </span>
-      );
-    case "offer":
-      return (
-        <span className="mt-0.5 block text-[12px] text-muted-foreground">
-          offer{dataset.issue_count != null && ` · ${dataset.issue_count} ${dataset.issue_count === 1 ? "issue" : "issues"}`}
-        </span>
-      );
-    default:
-      return <span className="mt-0.5 block text-[12px] text-muted-foreground">{dataset.status}</span>;
+    case "ready": return { label: "Ready", tone: "green" };
+    case "failed": return { label: "Failed", tone: "red" };
+    case "cleaning": return { label: `Cleaning ${pct}%`, tone: "violet" };
+    case "profiling": return { label: "Reading", tone: "blue" };
+    case "offer": {
+      const n = dataset.issue_count;
+      if (n == null) return { label: "To review", tone: "amber" };
+      if (n === 0) return { label: "Looks clean", tone: "green" };
+      return { label: `${n.toLocaleString()} ${n === 1 ? "issue" : "issues"}`, tone: "amber" };
+    }
+    default: return { label: dataset.status, tone: "neutral" };
   }
 }
 
-export function UploadButton({ className, label = "Upload" }: { className?: string; label?: string }) {
+/** The row's status pill and row count; while cleaning, a thin progress line under it. */
+export function StatusBadge({ dataset, progress }: { dataset: Dataset; progress?: JobProgressEvent }) {
+  const live = progress && progress.pct < 100 ? progress : undefined;
+  const pct = Math.round(live?.pct ?? dataset.cleaning_progress?.pct ?? 0);
+  const { label, tone } = statusOf(dataset, pct);
+  const icon = dataset.status === "ready" ? <Check strokeWidth={2.5} aria-hidden />
+    : dataset.status === "failed" ? <AlertCircle aria-hidden />
+    : dataset.status === "profiling" ? <Loader2 className="animate-spin" aria-hidden /> : null;
+  return (
+    <span className="flex min-w-0 flex-col gap-1.5" title={dataset.status === "failed" ? dataset.error ?? undefined : undefined}>
+      <span className="flex min-w-0 items-center gap-2">
+        <Pill tone={tone} size="sm" icon={icon}>{label}</Pill>
+        {dataset.row_count != null && dataset.status !== "cleaning" && (
+          <span className="truncate text-[11.5px] text-muted-foreground tnum">{dataset.row_count.toLocaleString()} rows</span>
+        )}
+      </span>
+      {dataset.status === "cleaning" && (
+        <span className="block h-0.5 overflow-hidden rounded-full bg-secondary" aria-hidden>
+          <span className="block h-full rounded-full bg-violet transition-[width] duration-[var(--duration-base)]" style={{ width: `${pct}%` }} />
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function UploadButton({ className, label = "Upload", variant }: {
+  className?: string; label?: string; variant?: ButtonProps["variant"];
+}) {
   const input = useRef<HTMLInputElement>(null);
   const openImport = useUi((s) => s.openImport);
   return (
     <>
-      <Button className={className} onClick={() => input.current?.click()}>{label}</Button>
+      <Button className={className} variant={variant} onClick={() => input.current?.click()}>{label}</Button>
       <input
         ref={input}
         type="file"
@@ -251,12 +253,13 @@ export function UploadButton({ className, label = "Upload" }: { className?: stri
   );
 }
 
-export function SampleButton({ className, label }: { className?: string; label: string }) {
+export function SampleButton({ className, label, variant }: { className?: string; label: string; variant?: ButtonProps["variant"] }) {
   const sample = useSample();
   const navigate = useNavigate();
   return (
     <Button
       className={className}
+      variant={variant}
       loading={sample.isPending}
       onClick={() =>
         sample.mutate(undefined, {

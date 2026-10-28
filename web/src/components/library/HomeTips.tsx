@@ -1,19 +1,31 @@
-// The right panel on `/` (App Flow §2): what Sherlock does with a CSV, before one is open.
-const TIPS: [string, string][] = [
-  ["Clean", "Sherlock checks every column and drafts a cleaning plan. Nothing changes until you start it; every fix is a step you can undo, and rows it can't fix are quarantined, never deleted."],
-  ["Look", "The grid shows the data with each fix marked. Edit cells, add or delete rows, then save a new version."],
-  ["Ask", "Ask for a number, the rows where something holds, a chart, or what drives a column. Every number opens the query behind it."],
-  ["Export", "The whole analysis exports as a runnable Jupyter notebook."],
+// The right panel on `/` (App Flow §2): what Sherlock does with a CSV, before one is open. Each step
+// carries the hue its part of the app uses.
+import { BookOpen, MessageCircle, Sparkles, Table2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+
+const TIPS: [string, string, ReactNode, string][] = [
+  ["Clean", "Sherlock finds problems and drafts the fixes. Nothing changes until you start, and every step can be undone.",
+    <Sparkles />, "bg-violet-soft text-violet"],
+  ["Review", "Every fix is marked in the grid. Edit cells and rows yourself, too.", <Table2 />, "bg-teal-soft text-teal"],
+  ["Ask", "Ask in plain words for a number, rows, or a chart. Every answer shows its source.", <MessageCircle />, "bg-blue-soft text-blue"],
+  ["Export", "Take the whole analysis with you as a Jupyter notebook.", <BookOpen />, "bg-amber-soft text-amber"],
 ];
 
 export function HomeTips() {
   return (
-    <section aria-labelledby="tips-title" className="flex h-full flex-col gap-3 overflow-y-auto p-4">
-      <h2 id="tips-title" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">How it works</h2>
-      <ol className="flex flex-col gap-3 text-[13px]">
-        {TIPS.map(([title, text]) => (
-          <li key={title} className="rounded-2xl border border-border bg-card p-3">
-            <span className="font-medium">{title}.</span> <span className="text-muted-foreground">{text}</span>
+    <section aria-labelledby="tips-title" className="flex h-full flex-col gap-6 px-6 py-5">
+      <h2 id="tips-title" className="type-label">How it works</h2>
+      <ol className="flex flex-col gap-6">
+        {TIPS.map(([title, text, icon, tint]) => (
+          <li key={title} className="flex gap-3.5">
+            <span className={cn("inline-flex size-8 shrink-0 items-center justify-center rounded-full [&_svg]:size-4", tint)} aria-hidden>
+              {icon}
+            </span>
+            <div className="flex flex-col gap-0.5">
+              <span className="type-heading text-[14px]">{title}</span>
+              <span className="text-[13px] leading-snug text-muted-foreground">{text}</span>
+            </div>
           </li>
         ))}
       </ol>

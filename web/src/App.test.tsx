@@ -50,7 +50,7 @@ describe("App shell", () => {
     renderAt(<App />);
     expect(await screen.findByRole("heading", { name: "Drop a CSV anywhere" })).toBeInTheDocument();
     expect(screen.getByText("No CSVs yet.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Try with sample (Titanic)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try the Titanic sample" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Load a CSV to start asking")).toBeDisabled();
     expect(screen.getByRole("heading", { name: "How it works" })).toBeInTheDocument(); // the right panel on `/`
   });
@@ -72,9 +72,9 @@ describe("App shell", () => {
     });
     renderAt(<App />, "/d/ds_1/dashboard");
     const nav = await screen.findByRole("navigation", { name: "Your CSVs" });
-    expect(await within(nav).findByText("sales.csv")).toBeInTheDocument();
-    expect(within(nav).getByText(/ready · v5/)).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: /Here's what I found in titanic3.csv/ })).toBeInTheDocument();
+    expect(await within(nav).findByText("sales")).toBeInTheDocument();
+    expect(within(nav).getAllByText("Ready").length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "3 issues to look at" })).toBeInTheDocument();
     expect(await screen.findByText("1,014 missing values in cabin")).toBeInTheDocument();
     expect(screen.getByText("boat records the outcome")).toBeInTheDocument();
     expect(screen.queryByRole("tablist")).toBeNull(); // no tab switcher: one view per dataset
@@ -94,7 +94,7 @@ describe("App shell", () => {
     expect(await screen.findByTestId("grid")).toHaveAttribute("data-readonly", "false");
     expect(screen.getByRole("toolbar", { name: "CSV tools" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
-    expect(screen.getByText("v3 · 2 steps")).toBeInTheDocument();
+    expect(screen.getByText("2 changes")).toBeInTheDocument();
     expect(screen.getByLabelText("Ask Sherlock")).toBeEnabled();
   });
 });
@@ -110,8 +110,8 @@ describe("header details", () => {
     });
     renderAt(<App />, "/d/ds_1");
     const nav = await screen.findByRole("navigation", { name: "Your CSVs" });
-    expect(await within(nav).findByText("offer · 4 issues")).toBeInTheDocument();
-    expect(await screen.findByText("v2 · 1 step")).toBeInTheDocument();
+    expect(await within(nav).findByText("4 issues")).toBeInTheDocument();
+    expect(screen.getAllByText("4 issues")).toHaveLength(2); // the library row and the header's pill
     fireEvent.click(within(nav).getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("radio", { name: "Dark" }));

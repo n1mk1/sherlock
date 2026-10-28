@@ -87,15 +87,15 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
   return (
     <DialogContent className="max-w-[880px]" aria-describedby="import-detected">
       <div className="border-b border-border px-6 pb-4 pt-5">
-        <DialogTitle className="font-serif text-[22px] leading-tight">
-          Import {file.name} <span className="font-sans text-[14px] text-muted-foreground">· {formatBytes(file.size)}</span>
+        <DialogTitle className="type-title">
+          Import {file.name} <span className="font-sans text-[14px] text-muted-foreground tnum">· {formatBytes(file.size)}</span>
         </DialogTitle>
       </div>
       {settings && !tooBig && !binary && (
         <div className="grid grid-cols-2 gap-3 px-6 pt-4 sm:grid-cols-4">
           <Field label="Delimiter">
             <select
-              className="h-9 w-full rounded-md border border-input bg-card px-2"
+              className="h-9 w-full rounded-xl border border-input bg-card px-3"
               value={DELIMITERS.some((d) => d.value === settings.delimiter) ? settings.delimiter : "other"}
               onChange={(e) => set({ delimiter: e.target.value === "other" ? settings.delimiter : e.target.value })}
             >
@@ -107,7 +107,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
           </Field>
           <Field label="Encoding">
             <select
-              className="h-9 w-full rounded-md border border-input bg-card px-2"
+              className="h-9 w-full rounded-xl border border-input bg-card px-3"
               value={settings.encoding}
               onChange={(e) => set({ encoding: e.target.value })}
             >
@@ -117,7 +117,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
           <Field label="Header row">
             <input
               type="number" min={0} max={100}
-              className="h-9 w-full rounded-md border border-input bg-card px-2 font-mono"
+              className="h-9 w-full rounded-xl border border-input bg-card px-3 font-mono"
               value={settings.headerRow}
               onChange={(e) => set({ headerRow: clamp(e.target.valueAsNumber, 0, 100) })}
             />
@@ -125,7 +125,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
           <Field label="Skip rows">
             <input
               type="number" min={0} max={1000}
-              className="h-9 w-full rounded-md border border-input bg-card px-2 font-mono"
+              className="h-9 w-full rounded-xl border border-input bg-card px-3 font-mono"
               value={settings.skipRows}
               onChange={(e) => set({ skipRows: clamp(e.target.valueAsNumber, 0, 1000) })}
             />
@@ -135,7 +135,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
               <input
                 type="url" inputMode="url" maxLength={2000}
                 placeholder="https://… a page that describes the columns"
-                className="h-9 w-full rounded-md border border-input bg-card px-2"
+                className="h-9 w-full rounded-xl border border-input bg-card px-3"
                 value={dictionaryUrl}
                 onChange={(e) => setDictionaryUrl(e.target.value)}
               />
@@ -149,7 +149,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
             <thead>
               <tr>
                 {preview.columns.map((c) => (
-                  <th key={c} className="whitespace-nowrap border-b border-border bg-muted px-2 py-1.5 text-left font-semibold">{c}</th>
+                  <th key={c} className="whitespace-nowrap border-b border-border px-2.5 py-2 text-left text-[12px] font-semibold">{c}</th>
                 ))}
               </tr>
             </thead>
@@ -157,7 +157,7 @@ function PreviewBody({ file, onDone }: { file: File; onDone: () => void }) {
               {preview.rows.map((row, i) => (
                 <tr key={i}>
                   {preview.columns.map((_, j) => (
-                    <td key={j} className="max-w-[220px] truncate whitespace-nowrap border-b border-border px-2 py-1 font-mono text-[12.5px]">
+                    <td key={j} className="max-w-[220px] truncate whitespace-nowrap border-b border-border px-2.5 py-1.5 type-data text-[12px]">
                       {row[j] ?? ""}
                     </td>
                   ))}

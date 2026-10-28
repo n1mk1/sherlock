@@ -51,7 +51,7 @@ describe("a cleaning command's card", () => {
     expect(screen.getByText("new york")).toBeInTheDocument();
     expect(screen.getByText(/no rows lost/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(await screen.findByText(/Done · saved as v5/)).toBeInTheDocument();
+    expect(await screen.findByText(/Done. Press Undo in the toolbar/)).toBeInTheDocument();
     expect(posted(calls).map((c) => c.path)).toContain("/api/v1/proposals/prp_1/approve");
     expect(onSend).toHaveBeenCalledWith("the number of rows by city?");
   });
@@ -152,7 +152,7 @@ describe("Undo and Redo in the toolbar", () => {
     await waitFor(() => expect(undo).toBeEnabled());
     expect(undo).toHaveAttribute("title", "Undo: Change 12 cells in 12 rows: city (Ctrl+Z) · 1 more after this");
     fireEvent.click(undo);
-    expect(await screen.findByText("Undid: Change 12 cells in 12 rows: city · now v5")).toBeInTheDocument();
+    expect(await screen.findByText("Undid: Change 12 cells in 12 rows: city")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "y", ctrlKey: true });
     await waitFor(() => expect(posted(calls).map((c) => c.path)).toContain("/api/v1/datasets/ds_1/redo"));
   });

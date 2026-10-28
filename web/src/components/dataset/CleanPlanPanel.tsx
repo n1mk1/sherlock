@@ -11,7 +11,7 @@
 // An ambiguous-dates fix asks which order its dates are written in, with three values read both ways
 //; dates that every one reads both ways are cleaned only once the order is picked.
 import { useIsMutating } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { makeSelection } from "@/api/csv";
@@ -24,8 +24,10 @@ import {
 import type {
   CleanPlan, CleanPlanItem, Dataset, Evidence, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind, Suggestion,
 } from "@/api/types";
+import { displayName } from "@/components/library/LibraryPanel";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
+import { Dot, Pill, type Tone } from "@/components/ui/pill";
 import { displayValue } from "@/lib/cells";
 import { cn } from "@/lib/utils";
 import { pendingCount, useEdits } from "@/state/edits";
@@ -51,6 +53,11 @@ const GROUPS: [Group, string][] = [
   ["kept", "Marked, not changed"],
 ];
 
+// Each group's dot: red what breaks answers, amber what skews or splits them, blue what's worth a look.
+const GROUP_TONE: Record<Group, Tone> = {
+  yours: "teal", breaks: "red", skews: "amber", splits: "amber", check: "blue", cosmetic: "neutral", kept: "neutral",
+};
+
 export function groupOf(i: CleanPlanItem): Group {
   if (i.module === "yours" || i.module === "kept") return i.module;
   return i.sev ?? "check";
@@ -72,14 +79,18 @@ export function CleanPlanPanel({ dataset, layout }: { dataset: Dataset; layout: 
   const { data: plan } = useCleanPlan(dataset.clean_plan_id);
   useDetectors(); // fetched while the plan loads, so its items show their labels at once
   const shell = layout === "centre"
-    ? "mx-auto mt-[6vh] w-full max-w-[720px] px-4 pb-8"
-    : "flex h-full flex-col overflow-y-auto";
+    ? "mx-auto flex h-full w-full max-w-[720px] flex-col px-6 pt-8"
+    : "flex h-full flex-col";
   if (!plan || plan.status !== "draft") {
     return (
       <div className={shell}>
-        <div className={cn("flex items-center gap-3", layout === "centre" ? "rounded-2xl border border-border bg-card p-7" : "p-4")} role="status">
-          <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
-          <p className="text-[15px]">{creating || dataset.clean_plan_id ? `Diagnosing v${dataset.current_version} of ${dataset.name}…` : "No cleaning plan open."}</p>
+        <div className={cn("flex items-center gap-3", layout === "centre" ? "m-auto" : "p-5")} role="status">
+          <span className="inline-flex size-9 items-center justify-center rounded-full bg-violet-soft" aria-hidden>
+            <Loader2 className="size-4 animate-spin text-violet" />
+          </span>
+          <p className={layout === "centre" ? "type-title" : "text-[14px]"}>
+            {creating || dataset.clean_plan_id ? `Looking through ${displayName(dataset.name)}…` : "No cleaning plan open."}
+          </p>
         </div>
       </div>
     );
@@ -167,17 +178,17 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
   };
 
   return (
-    <section aria-labelledby="plan-title" className={cn(side ? "flex flex-col gap-3 p-4" : "rounded-2xl border border-border bg-card p-7")}>
-      <header>
-        <h2 id="plan-title" className={side ? "text-[15px] font-semibold" : "font-serif text-[32px] leading-tight"}>
-          Cleaning plan · v{plan.version}
-        </h2>
-        <p className={cn("text-muted-foreground", side ? "mt-1 text-[13px]" : "mt-2")}>
+    <section aria-labelledby="plan-title" className="flex min-h-0 flex-1 flex-col">
+      <header className={cn("shrink-0", side ? "px-5 pb-3 pt-4" : "pb-5")}>
+        <div className="flex items-center gap-2">
+          <h2 id="plan-title" className={side ? "type-heading" : "type-display"}>Cleaning plan</h2>
+          {plan.review === "running" && <Pill tone="violet" size="sm" className="ml-auto" icon={<Loader2 className="animate-spin" aria-hidden />}><span role="status">Reviewing…</span></Pill>}
+        </div>
+        <p className={cn("text-muted-foreground", side ? "mt-1 text-[13px]" : "mt-1.5 text-[14px]")}>
           {plan.version < dataset.current_version
             // A new version arrived while the plan was open; reading it again merges it onto that version.
-            ? `Sherlock checked v${plan.version}; the data is v${dataset.current_version}. Checking the plan again…`
-            : `Sherlock checked v${plan.version}. Untick, edit or add steps, or ask in chat.`}
-          {plan.review === "running" && <span role="status" className="ml-2 text-[12.5px]">Reviewing…</span>}
+            ? "The data changed since this plan was made. Updating it…"
+            : "Untick what you don't want, edit a fix, or ask in chat."}
         </p>
         {plan.source === "after_upload" && !side && (
           <p className="mt-2 text-[13px] text-muted-foreground">
@@ -190,9 +201,10 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
         )}
       </header>
 
+      <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", side ? "gap-4 px-5 pb-4" : "gap-6 pb-6")}>
       {side && (
         <fieldset className="flex flex-col gap-1.5 text-[13px]">
-          <legend className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Scope</legend>
+          <legend className="mb-1.5 type-label">Scope</legend>
           {([
             ...(preset ? [["preset", presetLabel(preset)] as const] : []),
             ["all", "Whole dataset"],
@@ -201,7 +213,7 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
           ] as const).map(([v, label]) => (
             <label key={v} className={cn("flex items-center gap-2", v === "selection" && selected === 0 && "opacity-40")}>
               <input type="radio" name="plan-scope" checked={scope === v} disabled={v === "selection" && selected === 0}
-                onChange={() => setScope(v)} className="accent-[var(--accent)]" />
+                onChange={() => setScope(v)} />
               {label}
             </label>
           ))}
@@ -211,7 +223,7 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
         </fieldset>
       )}
 
-      <div className={cn("flex flex-col", side ? "gap-3" : "mt-6 gap-5")}>
+      <div className={cn("flex flex-col", side ? "gap-4" : "gap-6")}>
         {groups.map((g) => (
           <PlanGroup key={g.group} group={g.group} title={g.title} items={g.items} side={side} busy={ops.isPending}
             send={send} onDirty={markDirty} planId={plan.id}
@@ -223,44 +235,45 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
           <SuggestedChecks items={plan.suggestions} busy={ops.isPending} send={send} planId={plan.id}
             onDirty={(on) => markDirty("suggestion", on)} />
         )}
-        {!changeable.length && <p className="text-muted-foreground">Nothing that needs cleaning yet. Add a step of your own below.</p>}
-        <div className="flex flex-wrap gap-x-2">
+        {!changeable.length && <p className="text-[14px] text-muted-foreground">Nothing needs cleaning yet. Add a step of your own below.</p>}
+        <div className="flex flex-wrap gap-2">
           <AddStep datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("add", on)} />
           <AddCheck datasetId={dataset.id} busy={ops.isPending} send={send} onDirty={(on) => markDirty("check", on)} />
         </div>
       </div>
 
-      <div className={cn("flex flex-col gap-1.5", side ? "border-t border-border pt-3" : "mt-6")}>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Mode</span>
-        <div role="radiogroup" aria-label="Mode" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+      <div className="flex flex-col gap-2">
+        <span className="type-label">Mode</span>
+        <div role="radiogroup" aria-label="Mode" className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[13px]">
           <label className="flex items-center gap-2">
-            <input type="radio" name={`plan-mode-${layout}`} checked readOnly className="accent-[var(--accent)]" /> Run on its own
+            <input type="radio" name={`plan-mode-${layout}`} checked readOnly /> Run on its own
           </label>
-          <label className="flex items-center gap-2 text-muted-foreground opacity-60" title="Step-by-step cleaning comes in a later release">
-            <input type="radio" name={`plan-mode-${layout}`} disabled /> Ask me before each fix <span className="text-[12px]">comes later</span>
+          <label className="flex items-center gap-2 text-muted-foreground" title="Step-by-step cleaning comes in a later release">
+            <input type="radio" name={`plan-mode-${layout}`} disabled /> Ask me before each fix <Pill size="sm">Soon</Pill>
           </label>
         </div>
       </div>
+      </div>
 
-      <footer className={cn("flex flex-col gap-2", side ? "sticky bottom-0 -mx-4 border-t border-border bg-background px-4 py-3" : "mt-6 border-t border-border pt-4")}>
-        <p className="text-[13px] text-muted-foreground">
-          {ticked} of {changeable.length} ticked
-          {ticked > ISSUE_BUDGET && ` · Sherlock tries up to ${ISSUE_BUDGET} per run; your steps first, then the most severe`}
-        </p>
+      <footer className={cn("flex shrink-0 flex-col gap-2.5 border-t border-border", side ? "bg-background px-5 py-3.5" : "bg-card py-4")}>
         {unsaved && (
-          <div className="rounded-md bg-muted p-2.5 text-[12px]">
-            Save or discard your {pending} unsaved {pending === 1 ? "change" : "changes"} first.
-            <Button size="sm" variant="ghost" className="ml-2" onClick={() => discardEdits(dataset.id)}>Discard edits</Button>
+          <div className="flex items-center gap-2 rounded-xl bg-amber-soft px-3 py-2 text-[12.5px]">
+            <span className="flex-1">Save or discard your {pending} unsaved {pending === 1 ? "change" : "changes"} first.</span>
+            <Button size="sm" variant="ghost" onClick={() => discardEdits(dataset.id)}>Discard edits</Button>
           </div>
         )}
-        <p className="text-[12px] text-muted-foreground">Cells you edited by hand are left alone and listed in the report.</p>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="mr-auto text-[13px] text-muted-foreground tnum" title="Cells you edited by hand are left as they are and listed in the report.">
+            {ticked} of {changeable.length} selected
+            {ticked > ISSUE_BUDGET && <span className="block text-[12px]">Up to {ISSUE_BUDGET} run at a time: yours first, then the most severe.</span>}
+          </p>
           <Button variant="ghost" size={side ? "sm" : "default"} loading={discard.isPending}
             onClick={() => discard.mutate(plan.id, { onError: (e) => toast.error((e as Error).message) })}>Discard</Button>
-          <Button variant="primary" size={side ? "sm" : "default"} loading={start.isPending}
+          <Button variant="ai" size={side ? "sm" : "default"} loading={start.isPending}
             disabled={ticked === 0 || unsaved || editing || ops.isPending} onClick={begin}
             title={ticked === 0 ? "Tick at least one fix" : unsaved ? "Save or discard your edits first"
               : editing ? "Save or cancel the step you're editing first" : undefined}>
+            {!start.isPending && <Sparkles aria-hidden />}
             Start cleaning ({ticked})
           </Button>
         </div>
@@ -302,7 +315,7 @@ export function DateOrder({ item, busy, onPick }: {
         {ORDERS.map(([order, label]) => (
           <button key={order} type="button" role="radio" aria-checked={chosen === order} disabled={busy}
             onClick={() => onPick(chosen === order ? null : order)}
-            className={cn("h-7 rounded-md border px-2.5 text-[12.5px]",
+            className={cn("h-7 rounded-full border px-3 text-[12.5px] font-medium",
               chosen === order ? "border-primary bg-primary text-primary-foreground" : "border-border-strong hover:bg-secondary")}>
             {label}
           </button>
@@ -331,13 +344,14 @@ function PlanGroup({ group, title, items, side, busy, send, onDirty, onTickAll, 
   const headingId = `plan-group-${group}`;
   return (
     <section aria-labelledby={headingId}>
-      <div className="flex items-center gap-2 border-b border-border pb-1.5">
+      <div className="flex items-center gap-2.5 border-b border-border pb-2">
         {!kept && (
           <input ref={box} type="checkbox" checked={on === items.length} disabled={busy}
-            aria-label={`${title}: tick all`} onChange={(e) => onTickAll(e.target.checked)} className="accent-[var(--accent)]" />
+            aria-label={`${title}: tick all`} onChange={(e) => onTickAll(e.target.checked)} />
         )}
-        <h3 id={headingId} className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
-        {!kept && <span className="ml-auto shrink-0 whitespace-nowrap font-mono text-[12px] text-muted-foreground">{on} of {items.length}</span>}
+        <Dot tone={GROUP_TONE[group]} />
+        <h3 id={headingId} className="text-[13px] font-semibold tracking-[-0.01em]">{title}</h3>
+        {!kept && <Pill size="sm" className="ml-auto">{on} of {items.length}</Pill>}
       </div>
       <ul className="flex flex-col">
         {items.map((i) => <ItemRow key={i.id} item={i} side={side} busy={busy} send={send} onDirty={(on) => onDirty(i.id, on)}
@@ -359,35 +373,33 @@ function ItemRow({ item, side, busy, send, onDirty, planId }: {
   const yours = item.key === null;
   const onTick = (on: boolean) => send([{ op: on ? "tick" : "untick", item_id: item.id }]);
   return (
-    <li className="border-b border-border py-2 last:border-b-0">
-      <div className="flex items-start gap-2">
+    <li className="border-b border-border py-3 last:border-b-0">
+      <div className="flex items-start gap-2.5">
         {item.change ? (
           <input type="checkbox" checked={item.ticked} disabled={busy} aria-label={name} onChange={(e) => onTick(e.target.checked)}
-            className="mt-0.5 shrink-0 accent-[var(--accent)]" />
+            className="mt-1 shrink-0" />
         ) : (
-          <Flag className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <Flag className="mt-0.5 size-4 shrink-0 text-amber" aria-hidden />
         )}
-        <div className={cn("min-w-0 flex-1", !side && "flex flex-wrap items-baseline gap-x-3")}>
-          <span className="font-mono text-[13px]">{item.column ?? "rows"}</span>{" "}
-          <span className={cn(!item.ticked && item.change && "text-muted-foreground")}>{label}</span>
-          {item.count !== null && <span className="ml-1.5 font-mono text-[12.5px] text-muted-foreground">{item.count.toLocaleString()}</span>}
+        <div className={cn("min-w-0 flex-1", !side && "flex flex-wrap items-center gap-x-2.5 gap-y-0.5")}>
+          <span className="type-data font-medium">{item.column ?? "rows"}</span>{" "}
+          <span className={cn("text-[14px]", !item.ticked && item.change && "text-muted-foreground")}>{label}</span>
+          {item.count !== null && <Pill size="sm" className="ml-1.5 align-[1px]">{item.count.toLocaleString()}</Pill>}
           {!item.change ? (
-            <p className={cn("text-[12.5px] text-muted-foreground", !side && "basis-full")}>{item.reason}</p>
+            <p className={cn("text-[13px] text-muted-foreground", !side && "basis-full")}>{item.reason}</p>
           ) : item.instruction && !yours ? (
-            <div className={cn("text-[12.5px]", !side && "basis-full")}>
-              <p>{item.instruction} <span className="rounded bg-accent-soft px-1 text-[11px] text-accent">edited</span></p>
+            <div className={cn("text-[13px]", !side && "basis-full")}>
+              <p>{item.instruction} <Pill tone="violet" size="sm" className="ml-1">edited</Pill></p>
               <p className="text-muted-foreground line-through decoration-muted-foreground/40">{item.action}</p>
             </div>
           ) : (
-            <p className={cn("text-[12.5px]", yours ? "text-foreground" : "text-muted-foreground", !side && "basis-full")}>
-              {item.action}{item.source === "chat" && <span className="ml-1.5 text-[11px] text-muted-foreground">· from chat</span>}
+            <p className={cn("text-[13px]", yours ? "text-foreground" : "text-muted-foreground", !side && "basis-full")}>
+              {item.action}{item.source === "chat" && <Pill tone="blue" size="sm" className="ml-1.5">from chat</Pill>}
             </p>
           )}
           {item.evidence && <EvidenceLine evidence={item.evidence} className={cn(!side && "basis-full")} />}
-          {item.change && !yours && (item.sev_reason || item.sev_source === "default") && (
-            <p className={cn("text-[12px] text-muted-foreground", !side && "basis-full")}>
-              {item.sev_reason}{item.sev_source === "default" && <span className={cn(item.sev_reason && "ml-1.5")}>(default level)</span>}
-            </p>
+          {item.change && !yours && item.sev_reason && (
+            <p className={cn("text-[12px] text-muted-foreground", !side && "basis-full")}>{item.sev_reason}</p>
           )}
         </div>
         {item.change && !editing && (
@@ -430,9 +442,9 @@ function ItemRow({ item, side, busy, send, onDirty, planId }: {
                                        () => { onDirty(false); setEditing(false); })} />
       )}
       {open && (
-        <ul className="mt-1.5 flex flex-wrap gap-1.5 pl-6" aria-label={`Examples of ${name}`}>
+        <ul className="mt-2 flex flex-wrap gap-1.5 pl-6" aria-label={`Examples of ${name}`}>
           {item.examples.map((v, n) => (
-            <li key={n} className="max-w-[240px] truncate rounded-md border border-border bg-muted px-1.5 py-0.5 font-mono text-[12px]">
+            <li key={n} className="max-w-[240px] truncate rounded-full bg-secondary px-2.5 py-0.5 type-data text-[12px]">
               {displayValue(v) || "—"}
             </li>
           ))}
@@ -476,24 +488,25 @@ function SuggestedChecks({ items, busy, send, planId, onDirty }: {
   const [editing, setEditing] = useState<string | null>(null);
   return (
     <section aria-labelledby="plan-group-suggested">
-      <div className="flex items-center gap-2 border-b border-border pb-1.5">
-        <h3 id="plan-group-suggested" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+      <div className="flex items-center gap-2.5 border-b border-border pb-2">
+        <Dot tone="violet" />
+        <h3 id="plan-group-suggested" className="text-[13px] font-semibold tracking-[-0.01em]">
           Suggested checks
         </h3>
       </div>
       <ul className="flex flex-col">
         {items.map((s) => (
-          <li key={s.id} className="flex items-start gap-2 border-b border-border py-2 last:border-b-0">
+          <li key={s.id} className="flex items-start gap-2.5 border-b border-border py-3 last:border-b-0">
             <input type="checkbox" checked={false} disabled aria-label={`${s.words}: not run until kept`}
-              className="mt-0.5 shrink-0" />
-            <div className="min-w-0 flex-1">
+              className="mt-1 shrink-0" />
+            <div className="min-w-0 flex-1 text-[14px]">
               <span>{s.words}</span>
               {s.evidence ? (
                 <EvidenceLine evidence={s.evidence} />
               ) : (
-                <span className="ml-1.5 text-[11px] text-muted-foreground">suggested by Sherlock</span>
+                <Pill tone="violet" size="sm" className="ml-1.5">suggested by Sherlock</Pill>
               )}
-              <p className="text-[12.5px] text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 {s.error ?? (s.count === 1 ? "1 row breaks it." : `${(s.count ?? 0).toLocaleString()} rows break it.`)}
                 {s.reason && <span className="ml-1.5">{s.reason}</span>}
               </p>
@@ -567,7 +580,7 @@ function SuggestionEditor({ suggestion, planId, onDirty, onDone }: {
   );
   const kind = suggestion.kind;
   return (
-    <div className="mt-2 flex flex-col gap-2 rounded-[14px] border border-border p-3" role="group" aria-label={`Edit ${suggestion.words}`}>
+    <div className="mt-2 flex flex-col gap-2 rounded-2xl bg-background p-4" role="group" aria-label={`Edit ${suggestion.words}`}>
       {kind === "range" && <div className="flex gap-2">{field("min", "Lowest")}{field("max", "Highest")}</div>}
       {kind === "date_window" && <div className="flex gap-2">{field("min", "Earliest")}{field("max", "Latest")}</div>}
       {kind === "allowed" && field("values", "Allowed values, separated by commas")}
@@ -629,7 +642,7 @@ function AddCheck({ datasetId, busy, send, onDirty }: {
   const set = (k: string, v: string) => { setF((x) => ({ ...x, [k]: v })); onDirty(true); };
   const columns = card?.columns ?? [];
   if (!open) {
-    return <Button variant="link" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus /> Add a check</Button>;
+    return <Button variant="secondary" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus /> Add a check</Button>;
   }
   const field = (k: string, label: string, placeholder = "") => (
     <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
@@ -649,7 +662,7 @@ function AddCheck({ datasetId, busy, send, onDirty }: {
     </label>
   );
   return (
-    <div className="flex w-full flex-col gap-2 rounded-[14px] border border-border p-3" role="group" aria-label="Add a check">
+    <div className="flex w-full flex-col gap-2 rounded-2xl bg-background p-4" role="group" aria-label="Add a check">
       <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
         Column
         <select value={column} onChange={(e) => { setColumn(e.target.value); onDirty(true); }}
@@ -680,7 +693,7 @@ function AddCheck({ datasetId, busy, send, onDirty }: {
       </label>
       <label className="flex items-center gap-2 text-[12.5px]">
         <input type="checkbox" checked={everywhere} onChange={(e) => setEverywhere(e.target.checked)}
-          className="accent-[var(--accent)]" />
+          />
         For every dataset of mine
       </label>
       <div className="flex justify-end gap-1.5">
@@ -705,11 +718,11 @@ function AddStep({ datasetId, busy, send, onDirty }: {
   const close = () => { setOpen(false); setText(""); setColumn(""); onDirty(false); };
   if (!open) {
     return (
-      <Button variant="link" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus /> Add a step</Button>
+      <Button variant="secondary" size="sm" className="self-start" onClick={() => setOpen(true)}><Plus /> Add a step</Button>
     );
   }
   return (
-    <div className="flex flex-col gap-2 rounded-[14px] border border-border p-3" role="group" aria-label="Add a step">
+    <div className="flex flex-col gap-2 rounded-2xl bg-background p-4" role="group" aria-label="Add a step">
       <label className="flex flex-col gap-1 text-[12px] text-muted-foreground">
         Column
         <select value={column} onChange={(e) => setColumn(e.target.value)}

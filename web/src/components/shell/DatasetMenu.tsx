@@ -45,13 +45,13 @@ export function ConfirmDelete({ dataset, open, onOpenChange, onConfirm }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[420px] gap-4 p-6">
-        <DialogTitle className="text-[17px] font-semibold">Delete {dataset.name}?</DialogTitle>
+        <DialogTitle className="type-title">Delete {dataset.name}?</DialogTitle>
         <DialogDescription className="text-[14px] text-muted-foreground">
-          Its versions, steps and chat go with it. You can undo for 10 seconds.
+          Its changes and chat go with it. You can undo for 10 seconds.
         </DialogDescription>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="primary" onClick={() => { onOpenChange(false); onConfirm(); }}>Delete</Button>
+          <Button variant="primary" className="bg-red text-primary-foreground" onClick={() => { onOpenChange(false); onConfirm(); }}>Delete</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -65,7 +65,7 @@ export function RenameDialog({ dataset, open, onOpenChange, onRename }: {
   return (
     <Dialog open={open} onOpenChange={(o) => { setName(dataset.name); onOpenChange(o); }}>
       <DialogContent className="max-w-[420px] gap-4 p-6">
-        <DialogTitle className="text-[17px] font-semibold">Rename</DialogTitle>
+        <DialogTitle className="type-title">Rename</DialogTitle>
         <DialogDescription className="sr-only">A new name for this CSV</DialogDescription>
         <form
           className="flex flex-col gap-4"
@@ -76,7 +76,7 @@ export function RenameDialog({ dataset, open, onOpenChange, onRename }: {
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-label="Name"
-            className="h-9 rounded-md border border-input bg-card px-3 text-[14px] outline-none focus-visible:border-accent"
+            className="h-10 rounded-xl border border-input bg-card px-3.5 text-[14px] outline-none focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--accent-soft)]"
           />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -101,7 +101,7 @@ export function DatasetMenu({ dataset }: { dataset: Dataset }) {
           <button
             type="button"
             aria-label="Dataset menu"
-            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring"
+            className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-[state=open]:bg-secondary"
           >
             <MoreHorizontal className="size-4" />
           </button>

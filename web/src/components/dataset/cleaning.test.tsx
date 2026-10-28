@@ -98,7 +98,7 @@ describe("cleaning screens", () => {
     expect(await (put?.[0] as Request).json()).toEqual({ after_upload: "always", clean_depth: 2 });
     expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(false); // nothing is cleaned yet
     expect(screen.queryByRole("button", { name: "Go step by step" })).toBeNull();
-    expect(screen.getByText("· You can change this in Settings")).toBeInTheDocument();
+    expect(screen.getByText("Remember my choice")).toHaveAttribute("title", "You can change this in Settings");
   });
 
   it("Clean it myself makes the dataset ready as it is, so its page shows the grid", async () => {
@@ -137,13 +137,15 @@ describe("cleaning screens", () => {
     expect(await screen.findByText(/3 issues/)).toBeInTheDocument(); // the setting's depth: every layer
     const slider = await screen.findByRole("slider", { name: "Cleaning depth" });
     fireEvent.change(slider, { target: { value: "1" } });
-    expect(screen.getByText(/1 issue · 2 more in deeper layers/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1 issue to look at" })).toBeInTheDocument();
+    expect(screen.getByText("2 more in deeper layers")).toBeInTheDocument();
     expect(screen.getByText("3 placeholder values in amount")).toBeInTheDocument();
     expect(screen.queryByText("4 duplicate rows in amount")).toBeNull();
     expect(screen.getByText("picked 1")).toBeInTheDocument();
     expect(screen.getByText(/Looks at single values: .*placeholder values/)).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: "3" } });
-    expect(screen.getByText(/2 issues · 1 more in deeper layers/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "2 issues to look at" })).toBeInTheDocument();
+    expect(screen.getByText("1 more in deeper layers")).toBeInTheDocument();
     expect(slider).toHaveAttribute("aria-valuetext", "Layer 3 of 5: Records");
   });
 
@@ -169,7 +171,7 @@ describe("cleaning screens", () => {
       },
     });
     renderAt(<ReportSummary datasetId="ds_1" />);
-    expect(await screen.findByText("Every issue was looked at. v2 → v4")).toBeInTheDocument();
+    expect(await screen.findByText("Every issue was looked at.")).toBeInTheDocument();
     expect(screen.getByText("Parse money as numbers (amount)")).toBeInTheDocument();
     expect(screen.getByText("changes more than a fifth of the data")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "View full report" }));
@@ -186,7 +188,7 @@ describe("cleaning screens", () => {
       },
     });
     renderAt(<ReportSummary datasetId="ds_1" />);
-    expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
+    expect(await screen.findByText("Stopped at the 12-issue budget.")).toBeInTheDocument();
   });
 
   it("lists the pages the run read as sources, each titled as its link", async () => {
@@ -213,7 +215,7 @@ describe("cleaning screens", () => {
     unmount();
     mockApi({ "GET /api/v1/datasets/ds_1/report": report([]) });
     renderAt(<ReportSummary datasetId="ds_1" />);
-    expect(await screen.findByText("Every issue was looked at. v2 → v4")).toBeInTheDocument();
+    expect(await screen.findByText("Every issue was looked at.")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Sources" })).toBeNull();
   });
 
@@ -324,16 +326,16 @@ describe("the cleaning plan", () => {
     let answer: (v: unknown) => void = () => {};
     mockApi({ "GET /api/v1/clean-plans/pln_1": () => new Promise((r) => { answer = r; }) });
     renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
-    expect(screen.getByRole("status")).toHaveTextContent("Diagnosing v2 of messy.csv…");
+    expect(screen.getByRole("status")).toHaveTextContent("Looking through messy…");
     answer(PLAN);
-    expect(await screen.findByRole("heading", { name: "Cleaning plan · v2" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cleaning plan" })).toBeInTheDocument();
     for (const name of ["amount: numbers stored as text", "age: missing values", "fare: outliers", "age: outliers"]) {
       expect(screen.getByRole("checkbox", { name })).toBeChecked();
     }
     // Leakage and ID columns are info rows, with no checkbox.
     expect(screen.getByText("Looks like an ID column, so it is left as is")).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /customer_id/ })).toBeNull();
-    expect(screen.getByText("4 of 4 ticked")).toBeInTheDocument();
+    expect(screen.getByText("4 of 4 selected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start cleaning (4)" })).toBeEnabled();
     expect(screen.getByRole("radio", { name: /Ask me before each fix/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Show examples of amount: numbers stored as text" }));
@@ -441,7 +443,7 @@ describe("the cleaning plan", () => {
       .toEqual({ params: { min: null, max: 40 }, action: "quarantine" }));
   });
 
-  it("groups the fixes by level, with the review's reason or the default level, while it reviews", async () => {
+  it("groups the fixes by level, with the review's reason, while it reviews", async () => {
     const bigFare = PLAN.items.map((i) => (i.id === "pit_fare" ? { ...i, severity: 0.5 } : i));
     mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, review: "running", items: bigFare } });
     renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
@@ -449,7 +451,7 @@ describe("the cleaning plan", () => {
     const headings = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
     expect(headings).toEqual(["Breaks answers", "Worth a look", "Marked, not changed"]);
     expect(screen.getByText("Averages of the measure can't be read.")).toBeInTheDocument();
-    expect(screen.getAllByText("(default level)")).toHaveLength(3); // the three fixes still on code's level
+    expect(screen.queryByText("(default level)")).toBeNull(); // code's own level needs no note
     // Within a level, the biggest first.
     const look = screen.getByRole("region", { name: "Worth a look" });
     expect(within(look).getAllByRole("checkbox").slice(1).map((b) => b.getAttribute("aria-label")))
@@ -486,7 +488,7 @@ describe("the cleaning plan", () => {
       "GET /api/v1/clean-plans/pln_1": PLAN,
     });
     const { unmount } = renderAt(<CsvSidePanel datasetId="ds_1" />);
-    expect(await screen.findByRole("heading", { name: "Cleaning plan · v2" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Cleaning plan" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Scope" })).toBeInTheDocument(); // the side layout has the scope
     unmount();
     mockApi({
@@ -507,7 +509,7 @@ describe("the cleaning plan", () => {
     });
     renderAt(<CsvSidePanel datasetId="ds_1" />);
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Cleaning plan · v2" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Cleaning plan" })).toBeNull();
   });
 });
 
@@ -634,7 +636,7 @@ describe("editing the cleaning plan (PRD CLEAN-8b)", () => {
   it("tells the chat bar which plan is open", async () => {
     mockApi({ "GET /api/v1/clean-plans/pln_1": PLAN });
     const { unmount } = renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="side" />);
-    await screen.findByRole("heading", { name: "Cleaning plan · v2" });
+    await screen.findByRole("heading", { name: "Cleaning plan" });
     expect(useUi.getState().planId).toBe("pln_1");
     unmount();
     expect(useUi.getState().planId).toBeNull();
