@@ -1,5 +1,5 @@
 [
-  {"kind": "search", "match": ["data dictionary"], "response": {"query": "q", "results": [
+  {"kind": "search", "match": ["column descriptions"], "response": {"query": "q", "results": [
     {"title": "Passenger file: data dictionary", "url": "https://codebook.example.org/passengers", "score": 0.92,
      "content": "Variable definitions for the passenger file."},
     {"title": "Unrelated", "url": "https://noise.example.org/x", "score": 0.2, "content": "nothing"}]}},

@@ -77,8 +77,10 @@ def web_rows(db):
 def test_grounding_stores_found_notes_and_returns_the_excerpts(db):
     fake = web_transport()
     got = run(db, fake)
-    assert [e["n"] for e in got] == [1, 2, 3]
+    # The dictionary page's three excerpts, then the quote the cryptic column's web note was written from.
+    assert [e["n"] for e in got] == [1, 2, 3, 4]
     assert got[0]["url"] == "https://codebook.example.org/passengers" and got[0]["text"].startswith("Pclass: the passenger class")
+    assert got[3]["url"] == "https://glossary.example.org/parch" and got[3]["text"].startswith("Parch is the number")
     assert {"n", "url", "title", "text", "retrieved_at"} == set(got[0])
     notes = {n["column"]: n for n in aw.notes_for(db, "ds_g")}
     assert {c: n["kind"] for c, n in notes.items()} == {"Pclass": "found", "SibSp": "found", "Parch": "web"}
@@ -88,7 +90,7 @@ def test_grounding_stores_found_notes_and_returns_the_excerpts(db):
     assert [c["kind"] for c in fake.calls] == ["search", "extract", "search"]
     assert [r["purpose"] for r in web_rows(db)] == ["ground_search", "dictionary", "ground_meaning"]
     first = fake.calls[0]["params"]
-    assert first["query"] == "Pclass SibSp Parch Name data dictionary codebook variable definitions"
+    assert first["query"] == "dataset columns Pclass SibSp Parch Name column descriptions"
     assert first["include_answer"] is False and all("include_answer" not in c["params"] or c["params"]["include_answer"] is False
                                                     for c in fake.calls)
     assert fake.calls[1]["params"]["urls"] == ["https://codebook.example.org/passengers"]  # the noisy result isn't read
@@ -159,7 +161,7 @@ def test_no_request_holds_a_cell_value_or_the_file_name(db):
 
 
 def test_a_query_that_would_carry_a_file_value_is_not_sent(db):
-    db.execute("INSERT INTO value_index (dataset_id, column, value, count, version) VALUES ('ds_g', 'Name', 'Variable Definitions', 1, 1)")
+    db.execute("INSERT INTO value_index (dataset_id, column, value, count, version) VALUES ('ds_g', 'Name', 'Column Descriptions', 1, 1)")
     fake = web_transport()
     assert run(db, fake) == [] and fake.calls == []
 
@@ -249,7 +251,7 @@ def test_only_a_new_column_is_grounded_later(db):
     fake = web_transport()
     card = {"columns": [*CARD["columns"], {"name": "ICD10", "type": "text", "sample_values": ["x"]}]}
     run(db, fake, card=card)
-    assert fake.calls[0]["params"]["query"] == "ICD10 data dictionary codebook variable definitions"
+    assert fake.calls[0]["params"]["query"] == "dataset columns ICD10 column descriptions"
     assert {n["column"] for n in aw.notes_for(db, "ds_g")} >= {"Pclass", "SibSp", "Parch", "ICD10"}
     # ... and a version made later with the same columns grounds nothing.
     seed_version(db, [*COLUMNS, "ICD10"], version=2)
@@ -273,7 +275,7 @@ def test_a_run_makes_at_most_nine_calls(db):
     db.execute("UPDATE versions SET columns_json = '[]'")  # none known: all are new
     # A site root every time, so each read costs an extract, a map and a second extract.
     root = WebFixtureTransport([
-        {"kind": "search", "match": ["data dictionary"], "response": {"results": [
+        {"kind": "search", "match": ["column descriptions"], "response": {"results": [
             {"url": "https://a.example.org", "title": "A", "score": 0.9, "content": "c"},
             {"url": "https://b.example.org", "title": "B", "score": 0.9, "content": "c"}]}},
         {"kind": "extract", "match": [], "response": {"results": [{"url": "https://x.example.org", "raw_content": "short"}]}},
@@ -304,7 +306,8 @@ def test_capitals_say_nothing_when_every_name_is_in_capitals():
 def test_the_search_query_is_trimmed_to_whole_names():
     names = [f"column_number_{i:03d}" for i in range(60)]
     q = gr.search_query(names)
-    assert len(q) <= 400 and q.endswith(gr.SUFFIX) and q.split(gr.SUFFIX)[0].split()[-1] in names
+    assert len(q) <= 400 and q.startswith(gr.PREFIX) and q.endswith(gr.SUFFIX)
+    assert q.split(gr.SUFFIX)[0].split()[-1] in names
 
 
 # --- the search's dates ------------------------------------------------------------------------

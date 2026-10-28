@@ -2,12 +2,13 @@
 data dictionary and explains its cryptic column names, so the columns carry a meaning and a source before
 anything is cleaned or suggested.
 
-1. One `search` for the column names plus "data dictionary codebook variable definitions".
+1. One `search` for the dataset's column descriptions, by its column names (`search_query`).
 2. The top one or two results go to `read_dictionary(kind="found")`: extract with the column names as the
    query, Super maps the excerpts to columns, and the notes are stored as `found` (a user's own dictionary
    still wins, see `notes_for`). The excerpts come back for the suggested checks.
 3. Up to four columns still without a note whose names look like codes (`looks_like_code`: a rule, not the
    model) get `column_meaning`: one search each, Super writes a cited sentence, stored as a `web` note.
+   The quotes those notes cite come back as excerpts too (`_quoted`).
 
 What goes out is column names and fixed phrases, never a cell value and never the file's name, and
 `check_query` runs on the search before it is sent. Tavily is retrieval only (`web/client.py`).
@@ -44,7 +45,11 @@ MIN_CALLS = 5          # fewer than this left of the hour's cap: skip, so chat k
 READ_CALLS = 5         # of them, the search and its dictionary reads (at most four); the rest go to cryptic columns
 MAX_READS = 2          # result pages read as a data dictionary
 MAX_CRYPTIC = 4        # columns looked up one by one
-SUFFIX = " data dictionary codebook variable definitions"
+# "Data dictionary" or "codebook" in the query finds word dictionaries (a live search for a file's column
+# names scored only dictionary entries for one of the names, all under `MIN_SCORE`); asking for a dataset's
+# column descriptions finds the pages that document it.
+PREFIX = "dataset columns "
+SUFFIX = " column descriptions"
 MAX_QUERY = 400        # Tavily's advice for a query
 
 # Words a column is plainly named by: never looked up, however short or consonant-heavy.
@@ -102,7 +107,7 @@ def cryptic(columns: list[str], skip: set[str] = frozenset()) -> list[str]:
 
 def search_query(columns: list[str]) -> str:
     """The column names that fit a query, and the fixed words that make it a search for a dictionary."""
-    room = MAX_QUERY - len(SUFFIX)
+    room = MAX_QUERY - len(PREFIX) - len(SUFFIX)
     names: list[str] = []
     for c in columns:
         if len(" ".join([*names, c])) > room:
@@ -110,7 +115,7 @@ def search_query(columns: list[str]) -> str:
         names.append(c)
     if not names and columns:
         names = [columns[0][:room]]
-    return " ".join(names) + SUFFIX
+    return PREFIX + " ".join(names) + SUFFIX
 
 
 class _Meter:
@@ -207,9 +212,26 @@ def ground(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
         _look(llm, scope, meter, db, dataset["id"], card, todo, columns, read)
     except (WebUnavailable, LLMUnavailable, BudgetExceeded, StructuredOutputError) as exc:
         log.warning("grounding stopped early: %s", exc)
-    if aw.notes_for(db, dataset["id"]) != before:
+    after = aw.notes_for(db, dataset["id"])
+    if after != before:
         emit(db, bus, dataset["id"], dataset["user_id"], "notes.updated", {}, scope.job_id)
+    read.append(_quoted(after, before, read))
     return _numbered(read)
+
+
+def _quoted(after: list[dict], before: list[dict], read: list[list[dict]]) -> list[dict]:
+    """The quotes this run's `web` notes were written from, as excerpts, so a check can cite them when no
+    dictionary page was read: a column lookup often lands on a page that lists every column ("CHAS: … = 1 if
+    the tract bounds the river; 0 otherwise"). Each quote once, and none a dictionary excerpt already holds."""
+    seen = {e["text"] for part in read for e in part}
+    out = []
+    for n in after:
+        if n["kind"] != "web" or n in before or not n.get("excerpt") or n["excerpt"] in seen:
+            continue
+        seen.add(n["excerpt"])
+        out.append({"n": 0, "url": n["source_url"], "title": n.get("source_title") or n["source_url"],
+                    "text": n["excerpt"], "retrieved_at": (n.get("retrieved_at") or "")[:10]})
+    return out
 
 
 def _look(llm, scope: CallScope, meter: _Meter, db: sqlite3.Connection, dataset_id: str, card: dict, todo: list[str],
