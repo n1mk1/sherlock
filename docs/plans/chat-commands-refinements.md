@@ -1,6 +1,14 @@
 # Plan: make chat commands dependable (no new features)
 
-**Status:** proposed, not built. Builds on `docs/plans/chat-commands.md` (built).
+**Status:** built (2026-10-27). Builds on `docs/plans/chat-commands.md` (built).
+
+**What was built, and where it differs from the plan below**
+
+- **R1 live** (Nemotron, `samples/eval/commands.yaml`, 65 phrasings, 55 with a card expected): before, 35 of 65 routed right, 23 of 55 effects right, median 11.5 s. After, 65 of 65 routed right, 51 of 55 effects right, median 6.9 s, p90 11.4 s. The 4 misses were "make age a whole number" phrasings refused as "changes nothing": the diff compared the values after casting them to the new type, so 22.0 → 22 wasn't a change. Fixed after: a new type is an effect of its own (`impact.columns_retyped`, summary "Make age whole numbers"), and number to number compares the numbers as they are (28.5 → 28 counts).
+- **R2:** the reading is also the step's decision line, so the Changes panel and the notebook say "You asked: …" then "**What does it do?** Upper-case every value in sex. You pressed OK in chat".
+- **R4:** a warned check is still recorded as "fail" in the step's verifier receipt; only the card turns it into a warning and leaves out its tick.
+- **R5:** cleanup of the kept file is lazy, as planned: a card whose version moved keeps its file until OK, Cancel or the startup sweep. A card that OK refreshes keeps its new run, so the next OK saves it without running the code again. Example values go to the prompt for the columns the message names, not the router's `resolved`.
+- **Small fixes:** `then` keeps the rest of the message as typed when it splits at "then" into as many parts as the plan has steps; otherwise the planner's questions, with nothing added. A failed OK shows the user's sentence on the card; the model's side stays on the server.
 
 **In one line:** the loop stays as it is: type a command, read the card, press OK, Undo if needed. This plan makes each part of it right more often, faster and easier to trust.
 
