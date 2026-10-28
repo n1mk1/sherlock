@@ -140,7 +140,7 @@ How the code runs:
 {helpers}
 - Start with `result = df.copy()`, assign whole columns (use `result.loc[<mask>, "<column>"]` for some rows), and leave the changed DataFrame in `result`, with the same rows.
 - No file, network or system access; no `eval`, `exec`, `open`, `getattr`, dunder names, or `read_*`/`to_*` methods other than pd.to_datetime, pd.to_numeric and pd.to_timedelta.
-- Keep it short and plain: the user reads it before it runs.
+- Keep it short and plain: the user reads it before it runs. At most 15 lines. No row loops (`for`, `while`, `iterrows`, `itertuples`, `apply(axis=1)`): work on whole columns. A string method on a column: `result["name"] = result["name"].str.strip().str.title()`. Some rows only: `result.loc[result["fare"] > 500, "fare"] = 500`.
 
 {context}
 
