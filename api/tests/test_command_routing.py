@@ -77,6 +77,12 @@ def test_a_near_miss_is_not_a_command_to_the_router_guards(message):
     assert not loop.COMMAND.search(message) and not loop.DELETE_ASK.search(message)
 
 
+@pytest.mark.parametrize("message", ["what would happen if I rounded fare?", "What if I upper-cased the region column?",
+                                     "what will change if I trim the names?"])
+def test_a_what_if_is_never_a_command(message):
+    assert loop.WHAT_IF.search(message)
+
+
 @pytest.mark.parametrize("message,routed", [("make a chart of fare by class", "ask_data"), ("how do I trim spaces?", "ask_history"),
                                             ("how do I delete rows?", "ask_model")])
 def test_a_chart_or_a_how_to_gets_no_card_and_no_step_call(client, ready, message, routed):

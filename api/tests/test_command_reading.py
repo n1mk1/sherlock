@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from sherlock.agent import commands
 from sherlock.config import get_settings
 from tests.test_chat import send
 from tests.test_chat_commands import API, ready  # noqa: F401
@@ -31,6 +32,17 @@ def test_the_reading_is_stored_on_the_card_and_returned_by_the_api(client, ready
     assert p["reading"] == GOOD  # the first draft had a digit: this is the repaired one
     assert client.get(f"{API}/proposals/{p['id']}").json()["reading"] == GOOD
     assert p["summary"] == "Change 1,309 cells in 1,309 rows: sex"  # the counts stay code-written
+
+
+@pytest.mark.parametrize("reading,asked,ok", [
+    ("Round every fare to 2 decimal places", "round fare to 2 places", True),
+    ("Replace double spaces with one space in home.dest", "replace double spaces in home.dest", True),
+    ("Round every fare to 2 decimal places", "fare → 2dp", True),           # the user's "2dp" holds the 2
+    ("Set aside the 263 rows with no age", "delete the rows with no age", False),  # a count the model made up
+    ("Upper-case every value in sex", "upper case sex", True),
+])
+def test_the_reading_may_say_back_the_users_own_numbers(reading, asked, ok):
+    assert (commands._reading_problem(reading, asked) is None) is ok
 
 
 def test_a_reading_with_because_is_repaired(client, ready):  # noqa: F811

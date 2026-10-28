@@ -180,8 +180,8 @@ class EditsDraft(Strict):
 class StepDraft(Strict):
     """A cleaning command typed in chat, as pandas code the user reads before pressing OK (`agent/commands.py`)."""
     reading: str = Field(description="one plain sentence, in the user's terms, of what the code does, for example 'Upper-case "
-                                     "every value in sex' or 'Set aside the rows where age is empty'; no digits and no "
-                                     "numbers in words; when it can't be done, why")
+                                     "every value in sex' or 'Set aside the rows where age is empty'; no number the "
+                                     "request doesn't hold, in digits or words; when it can't be done, why")
     doable: bool = Field(description="false when no column fits the request or it isn't a change to the data")
     columns: list[str] = Field(description="the existing columns the code changes, exactly as named")
     new_columns: list[str] = Field(default_factory=list, description="the names of columns the code adds, if any")

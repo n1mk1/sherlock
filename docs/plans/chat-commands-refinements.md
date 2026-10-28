@@ -5,6 +5,7 @@
 **What was built, and where it differs from the plan below**
 
 - **R1 live** (Nemotron, `samples/eval/commands.yaml`, 65 phrasings, 55 with a card expected): before, 35 of 65 routed right, 23 of 55 effects right, median 11.5 s. After, 65 of 65 routed right, 51 of 55 effects right, median 6.9 s, p90 11.4 s. The 4 misses were "make age a whole number" phrasings refused as "changes nothing": the diff compared the values after casting them to the new type, so 22.0 → 22 wasn't a change. Fixed after: a new type is an effect of its own (`impact.columns_retyped`, summary "Make age whole numbers"), and number to number compares the numbers as they are (28.5 → 28 counts).
+- **R1 final** (all slices and the review merged, one live run): 61 of 65 passed; 64 of 65 routed right, 52 of 55 effects right, median 11.9 s, p90 28.6 s. Two causes, both fixed after: the reading's no-digits rule refused the user's own numbers ("round to 2 places", "replace double spaces"), so a reading may now repeat a number the request holds; and "what would happen if I upper-cased …" made a card, so a what-if is never a command (`loop.WHAT_IF`). Re-run live, 3 of those 4 passed, and the fourth passed twice on its own: model variance.
 - **R2:** the reading is also the step's decision line, so the Changes panel and the notebook say "You asked: …" then "**What does it do?** Upper-case every value in sex. You pressed OK in chat".
 - **R4:** a warned check is still recorded as "fail" in the step's verifier receipt; only the card turns it into a warning and leaves out its tick.
 - **R5:** cleanup of the kept file is lazy, as planned: a card whose version moved keeps its file until OK, Cancel or the startup sweep. A card that OK refreshes keeps its new run, so the next OK saves it without running the code again. Example values go to the prompt for the columns the message names, not the router's `resolved`.
@@ -68,7 +69,7 @@ Order: R1 first (it measures everything else), then R4 and R2 (correctness and t
 
 - The sentence never carries a number: counts stay in the code-written summary, so the rule that numbers come from code still holds.
 
-**Tests:** `test_chat_commands.py` checks that the reading is stored and that a reading with a digit or "because" is repaired; `commands.test.tsx` checks it renders above the summary.
+**Tests:** `test_chat_commands.py` checks that the reading is stored, that a reading with a number the request lacks or "because" is repaired, and that the user's own numbers may be said back; `commands.test.tsx` checks it renders above the summary.
 
 **Done when:** every card in the R1 eval shows a reading, and the eval's `text_any` can check it for a few phrasings.
 

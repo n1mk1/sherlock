@@ -81,6 +81,9 @@ QUARANTINE_ASK = re.compile(r"\b(why|reasons?|how many|number of|count)\b[^.?!]*
                             r"\b(which|what)\b[^.?!]*\b(are|were|is|was|got|been)\s+quarantin\w*", re.I)
 # How to use the app: "how do I undo a cleaning step?" went to ask_history, "how do I re-run …" to ask_model.
 HOW_TO = re.compile(r"^\W*(how|where)\s+(do|can|could|should)\s+(i|we)\b|^\W*how\s+to\b", re.I)
+# A what-if is a question, never a change: live (commands eval), "what would happen if I upper-cased <a column>?"
+# made a card.
+WHAT_IF = re.compile(r"^\W*(what\s+(would|will|might)\s+(happen|change)|what\s+if)\b", re.I)
 # An explicit web search: "search the web for what happened to <someone>" went to ask_history ("happened").
 WEB_ASK = re.compile(r"\b(search|look\s+up|google)\b[^.?!]*\b(web|internet|online)\b|\b(on|from)\s+the\s+(web|internet)\b", re.I)
 # A request to delete or remove something from the data is a cleaning command: rows are set aside (quarantined),
@@ -392,6 +395,8 @@ class Agent:
             intents = swap(intents, ("edit_plan",), "clean_step")
         if "edit_cells" in intents and not ROW_NAMED.search(question):
             intents = swap(intents, ("edit_cells",), "clean_step")
+        if WHAT_IF.search(question):
+            intents = swap(intents, ("clean_step", "edit_cells", "clean_selection"), "ask_data")
         deleting = bool(DELETE_ASK.search(question))
         if deleting:
             intents = ["clean_step"]

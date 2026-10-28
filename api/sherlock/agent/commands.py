@@ -41,7 +41,7 @@ from sherlock.errors import ApiError
 from sherlock.jobs.events import emit
 from sherlock.llm.client import StructuredOutputError, fence
 from sherlock.llm.schemas import StepDraft
-from sherlock.llm.wording import wording_problem
+from sherlock.llm.wording import NUMBER_WORDS, wording_problem
 from sherlock.query import context as qx
 from sherlock.query.context import Env
 from sherlock.sandbox import runner as sandbox
@@ -322,10 +322,18 @@ def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[i
                      "quarantined": run.report.quarantined}}
 
 
-def _reading_problem(reading: str) -> str | None:
-    """Why the model's reading can't be shown: empty, a digit, or a wording rule (numbers come from code)."""
+def _reading_problem(reading: str, asked: str = "") -> str | None:
+    """Why the model's reading can't be shown: empty, a number the request didn't hold, or a wording rule. Numbers
+    come from code, but the user's own may be said back: live, "round fare to 2 places" and "replace double spaces"
+    were refused for the reading's "2" and "double"."""
     said = reading.strip()
-    return "it is empty" if not said else "it has a digit" if re.search(r"\d", said) else wording_problem(said)
+    if not said:
+        return "it is empty"
+    digits = set(re.findall(r"\d+(?:\.\d+)?", asked))
+    words = {m.group(0).lower() for m in NUMBER_WORDS.finditer(asked)}
+    rest = re.sub(r"\d+(?:\.\d+)?", lambda m: "" if m.group(0) in digits else m.group(0), said)
+    rest = NUMBER_WORDS.sub(lambda m: "" if m.group(0).lower() in words else m.group(0), rest)
+    return "it has a number the request doesn't" if re.search(r"\d", rest) else wording_problem(rest)
 
 
 def scope_rows(env: Env, dataset: sqlite3.Row, context: dict) -> list[int] | None:
@@ -413,10 +421,11 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
         got["drafts"] = got.get("drafts", 0) + 1
         if not d.doable:
             return
-        bad = _reading_problem(d.reading)  # before the dry run, so a bad reading costs no sandbox run
+        bad = _reading_problem(d.reading, question)  # before the dry run, so a bad reading costs no sandbox run
         if bad:
             raise ValueError(f"reading must be one plain sentence saying what the code does, in the user's terms (for "
-                             f"example 'Upper-case every value in sex'), with no digits and no causal words: {bad}. Fix the reading.")
+                             f"example 'Upper-case every value in sex'), with no number the request doesn't hold and no "
+                             f"causal words: {bad}. Fix the reading.")
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
         if unknown:
             raise refuse(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}",
@@ -453,7 +462,7 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
         raise CantAnswer(user if why and str(exc).endswith(why.splitlines()[0][:300]) else SAID["default"]) from None
     if not draft.doable:
         said = draft.reading.strip()
-        raise CantAnswer("I can't make that change to this file" + (f": {said}" if not _reading_problem(said) else "."))
+        raise CantAnswer("I can't make that change to this file" + (f": {said}" if not _reading_problem(said, question) else "."))
     run = got["run"]
     pid = new_id("prp")
     log.info("command: model and checks %.1fs; dry run %s", time.monotonic() - started,
