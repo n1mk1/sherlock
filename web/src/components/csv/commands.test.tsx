@@ -105,6 +105,14 @@ describe("a cleaning command's card", () => {
     expect(screen.getByText("and 1 more like this")).toBeInTheDocument();
   });
 
+  it("doesn't count a new column's cells among the changed ones", () => {
+    mockApi({});
+    const before_after = [0, 1, 2].map((i) => ({ row_id: i, column: "city", old: `a${i}` as string | null, new: `A${i}` }))
+      .concat([0, 1].map((i) => ({ row_id: i, column: "size", old: null, new: "1" })));
+    renderAt(<ProposalView proposal={{ ...COMMAND, before_after, impact: { ...COMMAND.impact, cells_changed: 4, columns_added: ["size"] } }} dataset={DS} />);
+    expect(screen.getByText("and 1 more like this")).toBeInTheDocument();
+  });
+
   it("says nothing more when every changed cell is shown", () => {
     mockApi({});
     renderAt(<ProposalView proposal={{ ...COMMAND, impact: { ...COMMAND.impact, cells_changed: 1 } }} dataset={DS} />);
@@ -125,8 +133,9 @@ describe("a cleaning command's card", () => {
     mockApi({});
     renderAt(<ProposalView proposal={{ ...COMMAND, status: "queued" }} dataset={DS} />);
     expect(screen.getByText("Waiting for cleaning to finish")).toBeInTheDocument();
-    renderAt(<ProposalView proposal={{ ...COMMAND, status: "failed", error: "the code failed: KeyError" }} dataset={DS} />);
-    expect(screen.getByText("Couldn't run: the code failed: KeyError")).toBeInTheDocument();
+    const error = "Nothing in this version matches that, so there's nothing to change.";  // the server's user sentence
+    renderAt(<ProposalView proposal={{ ...COMMAND, status: "failed", error }} dataset={DS} />);
+    expect(screen.getByText(`Couldn't run: ${error}`)).toBeInTheDocument();
   });
 });
 

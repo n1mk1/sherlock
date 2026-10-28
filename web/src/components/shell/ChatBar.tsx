@@ -408,7 +408,7 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
 
 const CODE_FOLD_LINES = 15; // longer code shows this many lines until "Show all"
 
-type RunAnswer ={ step?: { id: string }; version?: number; refreshed?: Proposal; queued?: Proposal };
+type RunAnswer = { step?: { id: string }; version?: number; refreshed?: Proposal; queued?: Proposal };
 
 /** A cleaning command: the code that will run, what its dry run changed, the checks it passed, then Cancel and
  * OK. OK runs the code on the data as it is then: saved as one step (Undo in the toolbar), re-checked when the
@@ -446,7 +446,8 @@ function CommandView({ proposal, dataset, onSend }: {
     }
   };
   const rows = proposal.before_after ?? [];
-  const more = proposal.impact.cells_changed - Math.min(rows.length, 8);
+  // cells_changed leaves out a new column's cells, so the ones shown from it don't count against it
+  const more = proposal.impact.cells_changed - rows.slice(0, 8).filter((e) => !(proposal.impact.columns_added ?? []).includes(e.column)).length;
   const codeLines = (proposal.code ?? "").split("\n");
   const shownCode = showAll ? proposal.code : codeLines.slice(0, CODE_FOLD_LINES).join("\n");
   const status = {
