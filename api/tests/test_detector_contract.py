@@ -1,5 +1,5 @@
 """The detector contract (TRD §14, PRD CLEAN-12): every registered detector clears `cleaning/contract.py`,
-so a new check, built in or from a pack, is held to the same bar as the 16 built-ins."""
+so a new check, built in or from a pack, is held to the same bar as the built-ins."""
 
 import random
 

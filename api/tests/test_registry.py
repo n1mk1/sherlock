@@ -23,9 +23,9 @@ def spec(id="extra_check", **changes) -> DetectorSpec:
     return replace(base, **changes)
 
 
-def test_the_sixteen_built_ins_and_the_rule_detector_register_in_run_order():
+def test_the_built_ins_and_the_rule_detector_register_in_run_order():
     assert [s.id for s in registry.all()] == [s.id for s in BUILTINS] + ["rule"]
-    assert len(BUILTINS) == 16 and registry.enabled() == registry.all()
+    assert len(BUILTINS) == 24 and registry.enabled() == registry.all()
     assert registry.get("rule:rul_123").id == "rule"  # a rule's finding is the rule detector's
     assert registry.get("sentinels").runs_before == ("impossible_values",)
 
@@ -81,7 +81,7 @@ def test_a_removed_detector_still_displays():
     assert gone not in registry.all()
 
 
-def test_get_detectors_lists_the_sixteen_and_the_rule_detector(client):
+def test_get_detectors_lists_the_built_ins_and_the_rule_detector(client):
     r = client.get("/api/v1/detectors")
     assert r.status_code == 200
     found = r.json()["detectors"]
@@ -110,9 +110,9 @@ def test_each_layer_holds_the_checks_that_look_that_wide():
     assert layers == {
         1: ["missing", "mojibake", "numbers_as_text", "sentinels", "whitespace_case"],
         2: ["ambiguous_dates", "id_candidates", "impossible_values", "mixed_types", "outliers", "unit_mixes"],
-        3: ["duplicates", "near_duplicate_categories"],
-        4: ["cross_column", "functional_dependency"],
-        5: ["leakage"],
+        3: ["blank_rows", "conflicting_keys", "duplicates", "header_rows", "near_duplicate_categories", "summary_rows"],
+        4: ["arithmetic_mismatch", "cross_column", "date_sequence", "functional_dependency"],
+        5: ["label_conflicts", "leakage", "time_gaps"],
     }
     assert registry.get("rule").depth == 1  # your checks run at every depth
     # A finding's own depth wins over its spec's, as its other settings do.

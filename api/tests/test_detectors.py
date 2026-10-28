@@ -9,11 +9,17 @@ import pytest
 from sherlock.cleaning import registry
 from sherlock.cleaning.detectors import (
     ambiguous_dates,
+    arithmetic_mismatch,
+    blank_rows,
+    conflicting_keys,
     cross_column,
+    date_sequence,
     duplicates,
     functional_dependency,
+    header_rows,
     id_candidates,
     impossible_values,
+    label_conflicts,
     leakage,
     missing,
     mixed_types,
@@ -22,6 +28,8 @@ from sherlock.cleaning.detectors import (
     numbers_as_text,
     outliers,
     sentinels,
+    summary_rows,
+    time_gaps,
     unit_mixes,
     whitespace_case,
 )
@@ -41,9 +49,9 @@ def counts(module, f, column=None):
             if column is None or x.column == column}
 
 
-def test_weights_cover_the_sixteen_detectors():
+def test_weights_cover_the_built_in_detectors():
     weights = {s.id: s.weight for s in registry.all() if s.source == "builtin" and s.id != "rule"}
-    assert len(weights) == 16
+    assert len(weights) == 24
     assert weights["leakage"] == 1.0 and weights["id_candidates"] == 0.2
 
 
@@ -237,3 +245,89 @@ def test_impossible_values_match_whole_words_of_the_name():
     assert bounds("discount_pct") == (0, 100) and bounds("years_employed") == (0, None)
     # A word inside another word isn't one: no domain for these.
     assert bounds("account_balance") == bounds("average_temp") == bounds("country") == bounds("agent") == (None, None)
+
+
+# --- batch 1 of the deeper layers (PRD §7.3.2, CLEAN-15) ---------------------------------------------
+
+
+def test_header_rows_repeat_the_column_names():
+    f = frame(item=["a", "item", "b", "Item "], price=["1", "price", "2", "PRICE"], note=["x", "y", "z", "w"])
+    found = header_rows.detect(f)
+    assert [(x.count, x.examples) for x in found] == [(2, [2, 4])]
+    assert not header_rows.detect(frame(item=["a", "item"], price=["1", "2"], note=["x", "y"]))  # one match isn't a row
+
+
+def test_blank_rows_are_empty_in_every_column():
+    f = frame(a=["x", None, "y", "N/A"], b=["1", None, "2", None])
+    assert [(x.count, x.examples) for x in blank_rows.detect(f)] == [(2, [2, 4])]  # a placeholder isn't a value
+    assert not blank_rows.detect(frame(a=["x", None, "y"]))  # one column: those are missing values
+
+
+def test_summary_rows_are_total_labels_as_a_whole_value():
+    region = ["North", "South", "East", "Total", "West", "North subtotal", "Grand Total:", "Totally Fine"] + ["North"] * 12
+    found = summary_rows.detect(frame(region=region, sales=[str(i) for i in range(20)]))
+    assert [(x.count, x.examples) for x in found] == [(3, [4, 6, 7])]
+    # A column where most values are such labels holds data, not summaries.
+    assert not summary_rows.detect(frame(kind=["Total", "Subtotal", "Total", "x"], v=["1", "2", "3", "4"]))
+
+
+def test_conflicting_keys_share_a_key_and_differ_elsewhere():
+    ids = [f"C{i}" for i in range(20)] + ["C3", "C5"]
+    city = [f"city{i}" for i in range(20)] + ["elsewhere", "city5"]
+    found = conflicting_keys.detect(frame(customer_id=ids, city=city))
+    assert [(x.count, x.details) for x in found] == [(2, {"key": "customer_id", "keys": 1})]  # C5 repeats exactly
+    assert found[0].examples == [4, 21]
+    # A column whose name doesn't say it identifies rows is never a key.
+    assert not conflicting_keys.detect(frame(name=ids, city=city))
+
+
+def test_arithmetic_mismatch_reads_the_rule_from_the_data():
+    qty = [str(1 + i % 5) for i in range(40)]
+    price = [f"{2 + i % 7}.50" for i in range(40)]
+    total = [f"{int(q) * float(p):.2f}" for q, p in zip(qty, price)]
+    total[7] = "999.00"
+    found = arithmetic_mismatch.detect(frame(qty=qty, price=price, total=total))
+    assert [(x.column, x.count, x.details["op"], x.details["parts"]) for x in found] == [("total", 1, "product", ["qty", "price"])]
+    assert found[0].examples == ["999 ≠ 7.5"]  # 3 × 2.50
+    net = [str(10 + i) for i in range(40)]
+    tax = [str(i % 3) for i in range(40)]
+    gross = [str(int(n) + int(t)) for n, t in zip(net, tax)]
+    gross[2] = "0"
+    found = arithmetic_mismatch.detect(frame(net_value=net, tax=tax, gross=gross))
+    assert [(x.column, x.details["op"]) for x in found] == [("gross", "sum")]
+    # No rule holds in almost every row: nothing to report.
+    assert not arithmetic_mismatch.detect(frame(qty=qty, price=price, total=[str(i) for i in range(40)]))
+
+
+def test_date_sequence_is_read_from_the_data_not_the_names():
+    ordered = pd.date_range("2023-01-01", periods=60, freq="D")
+    shipped = [d + pd.Timedelta(days=3) for d in ordered]
+    shipped[10] = ordered[10] - pd.Timedelta(days=2)
+    f = frame(ordered=[d.date().isoformat() for d in ordered], shipped=[d.date().isoformat() for d in shipped])
+    found = date_sequence.detect(f)
+    assert [(x.column, x.count, x.examples, x.details["earlier"]) for x in found] == [("shipped", 1, [11], "ordered")]
+    # A pair the names already order is the cross-column detector's.
+    f = frame(start_date=[d.date().isoformat() for d in ordered], end_date=[d.date().isoformat() for d in shipped])
+    assert not date_sequence.detect(f)
+
+
+def test_time_gaps_counts_missing_periods_and_is_never_changed():
+    days = [d.date().isoformat() for d in pd.date_range("2024-01-01", periods=40, freq="D") if d.day not in (10, 11, 20)]
+    found = time_gaps.detect(frame(day=days, reading=[str(i) for i in range(len(days))]))
+    assert [(x.column, x.count, x.examples, x.details) for x in found] == [
+        ("day", 3, ["2024-01-10", "2024-01-11", "2024-01-20"], {"step": "day"})]
+    months = [d.date().isoformat() for d in pd.date_range("2020-01-01", periods=30, freq="MS") if d.month != 6]
+    found = time_gaps.detect(frame(month=months))
+    assert [(x.count, x.examples, x.details["step"]) for x in found] == [(2, ["2020-06", "2021-06"], "month")]
+    # Many rows a day is a log of events, not a series with gaps.
+    log = [d.date().isoformat() for d in pd.date_range("2024-01-01", periods=30, freq="D") for _ in range(3)]
+    assert not time_gaps.detect(frame(day=log))
+    assert registry.get("time_gaps").never_change and registry.get("time_gaps").default_level is None
+
+
+def test_label_conflicts_need_every_other_column_to_match():
+    f = frame(customer=["a", "a", "b", "c"], plan=["x", "x", "y", "y"], churn=["yes", "no", "no", "yes"])
+    assert [(x.count, x.examples, x.details) for x in label_conflicts.detect(f)] == [(2, [1, 2], {"target": "churn"})]
+    # Rows that differ anywhere else are different records and may differ honestly.
+    f = frame(customer=["a", "b", "c", "d"], plan=["x", "x", "y", "y"], churn=["yes", "no", "no", "yes"])
+    assert not label_conflicts.detect(f)
