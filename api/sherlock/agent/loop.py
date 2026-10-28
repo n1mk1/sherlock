@@ -94,12 +94,28 @@ ROW_NAMED = re.compile(r"\brows?\s*(#|no\.?|number)?\s*\d", re.I)
 # live (Nemotron, 2026-10-27), "make <a column> a whole number by rounding" and "fill the missing <a column> values
 # with <a value>" went to ask_data, and "add <a name> = <a column> + <another>" to ask_code. Not a request for a
 # chart or a list ("make a chart of …"), and not a question.
+COMMAND_VERBS = (r"make|set|change|convert|turn|replace|rename|trim|strip|fill|impute|standardi[sz]e|normali[sz]e|fix|"
+                 r"correct|round|cast|split|merge|combine|upper-?case|lower-?case|title-?case|capitali[sz]e|reformat|format|"
+                 r"parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|collapse|truncate")
+# Live (2026-10-27), "could you add a <name> column = …" went to ask_data and "collapse the repeated spaces in <a column>"
+# to ask_data: the column may carry its name before the word, and "collapse" is a change like the others.
 COMMAND = re.compile(
-    r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(make|set|change|convert|turn|replace|rename|trim|strip|fill|impute|"
-    r"standardi[sz]e|normali[sz]e|fix|correct|round|cast|split|merge|combine|upper-?case|lower-?case|title-?case|"
-    r"capitali[sz]e|reformat|format|parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|"
-    r"add\s+(a\s+|an\s+)?(new\s+)?(computed\s+)?column|add\s+[\w.]+(?=\s*=)|create\s+(a\s+|an\s+)?(new\s+)?column)\b"
+    r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(" + COMMAND_VERBS + r"|"
+    r"add\s+(a\s+|an\s+)?(new\s+)?(computed\s+)?([\w.]+\s+)?column|add\s+[\w.]+(?=\s*=)|create\s+(a\s+|an\s+)?(new\s+)?column)\b"
     r"(?![^.?!]*\b(charts?|plots?|graphs?|histograms?|lists?|summary|report|notebook)\b)", re.I)
+# The same request, worded without a leading verb. Live (Nemotron, 2026-10-27, samples/eval/commands.yaml), these went
+# to ask_data and were answered as questions: a wish ("I want the empty <a column> cells filled with <a value>", "I want
+# the <records> with no <a column> gone", "I want <a column> as integers"), a problem and its fix ("the <a column> has
+# gaps, fill them with <a value>", "the <records> shouldn't be in this file, get rid of them") and a bare arrow ("<a column>
+# → 2dp"). Not a question, a chart or a list.
+COMMAND_WORDED = re.compile(
+    r"^(?![^.?!]*\b(charts?|plots?|graphs?|histograms?|lists?|summary|report|notebook)\b)(?:"
+    r"\W*(i\s+(want|need|would\s+like)|i'?d\s+like)\s+(to\s+(" + COMMAND_VERBS + r"|delete|remove|drop|get\s+rid\s+of)\b|(?!to\s)"
+    r"(?=[^?!]*\b(filled|rounded|replaced|trimmed|removed|deleted|dropped|converted|fixed|cleaned|corrected|gone|capitals|small\s+letters|"
+    r"upper\s*case|lower\s*case|integers?|whole\s+numbers?|new\s+column)\b))"
+    r"|(?!\W*(which|what|how|why|who|when|where|is|are|does|do|did)\b)[^?!]*[,;]\s*(and\s+|then\s+|so\s+)?(please\s+)?"
+    r"(" + COMMAND_VERBS + r"|add|delete|remove|drop|get\s+rid\s+of)\s+(it|them|those|these|that|this)\b"
+    r"|\W*[\w. ]{1,40}\s*(→|->)\s*\S[^?]*$|\W*new\s+column\s+[\w.]+\s*=)", re.I)
 # Analysis a single query can't do well: a fit, clusters, fuzzy matching. Live, "the slope of <a measure> against
 # <another>" went to ask_data, whose query answered something else.
 CODE_ASK = re.compile(r"\b(regress\w*|slope|trend\s*line|line\s+of\s+best\s+fit|best[- ]fit|clusters?|clustering|"
@@ -362,10 +378,11 @@ class Agent:
             intents = swap(intents, ("ask_data", "find_rows", "ask_why", "ask_stats", "ask_model"), "ask_history")
         if RANKING.search(question):
             intents = swap(intents, ("find_rows",), "ask_data")
-        analysis_only = bool(CODE_ASK.search(question) and not COMMAND.search(question))
+        command = bool(COMMAND.search(question) or COMMAND_WORDED.search(question))
+        analysis_only = bool(CODE_ASK.search(question) and not command)
         if analysis_only:  # live, "group the <records> into clusters by <a> and <b>" also ran ask_why and its model card
             intents = ["ask_code"]
-        if COMMAND.search(question) and not HOW_TO.search(question):
+        if command and not HOW_TO.search(question):
             plan_change = context.get("plan_id") and PLAN_WORDS.search(question)
             target = "edit_plan" if plan_change else "edit_cells" if ROW_NAMED.search(question) else "clean_step"
             intents = [target]
