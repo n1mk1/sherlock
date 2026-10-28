@@ -37,6 +37,7 @@ from sherlock.query import context as qx
 from sherlock.query.context import Env
 from sherlock.sandbox import runner as sandbox
 from sherlock.sandbox.static_check import check as static_check
+from sherlock.sandbox.static_check import style as code_style
 from sherlock.steps.commit import Context, StepSpec, commit_step
 from sherlock.steps.diff import check_version_file, diff_versions
 from sherlock.storage import dataset_dir, sql_path
@@ -202,6 +203,7 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
     got: dict = {}
 
     def check(d: StepDraft) -> None:
+        got["drafts"] = got.get("drafts", 0) + 1
         if not d.doable:
             return
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
@@ -214,6 +216,8 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str]) -
         problems = static_check(d.code)
         if problems:
             raise ValueError("the sandbox refuses this code: " + "; ".join(str(p) for p in problems[:3]))
+        if got["drafts"] == 1 and (plain_it := code_style(d.code)):  # only the first draft is sent back for style
+            raise ValueError("Write plainer code (no sandbox run yet): " + "; ".join(plain_it[:3]))
         old = got.pop("run", None)
         if old is not None:
             old.out.unlink(missing_ok=True)

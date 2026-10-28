@@ -6,6 +6,7 @@ while a value that fails the cast (or a sentinel that became NULL) is. A cell th
 in a row the same step quarantined gets the flag `quarantined`: its original text is kept here.
 """
 
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,7 +37,16 @@ class Diff:
 
     @property
     def before_after(self) -> list[dict]:
-        cells = [r for r in self.lineage if r[1] != "_row"][:BEFORE_AFTER]
+        """Up to 20 changed cells: one example of each distinct (column, old → new) pair, the most frequent pair first
+        (ties in row order), then further cells in row order. So a preview shows every kind of change before repeats."""
+        cells = sorted((r for r in self.lineage if r[1] != "_row"), key=lambda r: r[0])
+        count = Counter((r[1], r[2], r[3]) for r in cells)
+        firsts: dict[tuple, tuple] = {}
+        for r in cells:
+            firsts.setdefault((r[1], r[2], r[3]), r)
+        picked = sorted(firsts.values(), key=lambda r: -count[(r[1], r[2], r[3])])[:BEFORE_AFTER]  # stable: ties keep row order
+        seen = {id(r) for r in picked}
+        cells = picked + [r for r in cells if id(r) not in seen][:BEFORE_AFTER - len(picked)]
         return [{"row_id": r[0], "column": r[1], "old": r[2], "new": r[3]} for r in cells]
 
 

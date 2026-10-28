@@ -70,3 +70,35 @@ def check(code: str, modules: frozenset[str] = ALLOWED_MODULES) -> list[Violatio
         elif isinstance(node, (ast.Global, ast.Nonlocal)):
             found.append(Violation(line, "global and nonlocal are not allowed"))
     return found
+
+
+MAX_LINES = 15
+ROW_METHODS = {"iterrows", "itertuples"}
+
+
+def style(code: str) -> list[str]:
+    """Messages for code that is safe but not plain: a row loop, `iterrows`, `itertuples`, `apply(axis=1)`, or more
+    than 15 non-empty lines. Only for chat commands, which the user reads before OK; the sandbox doesn't use it. Each
+    message says the fix, so it can go straight back to the model. Code that doesn't parse is `check`'s job."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.For, ast.While)):
+            found.append(f"line {node.lineno}: a {'for' if isinstance(node, ast.For) else 'while'} loop. Use whole-column "
+                         "pandas, no row loops: a string method on the column, or result.loc[mask, column] = value")
+        elif isinstance(node, ast.Attribute) and node.attr in ROW_METHODS:
+            found.append(f"line {node.lineno}: .{node.attr}() walks the rows. Use whole-column pandas, no row loops: "
+                         "operate on the column, or result.loc[mask, column] = value")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "apply":
+            axis = next((k.value for k in node.keywords if k.arg == "axis"), None)
+            if isinstance(axis, ast.Constant) and axis.value in (1, "columns"):
+                found.append(f"line {node.lineno}: .apply(..., axis=1) runs a function on every row. Use whole-column "
+                             "pandas, no row loops: combine the columns directly, or np.where / result.loc[mask, column] = value")
+    lines = sum(1 for ln in code.splitlines() if ln.strip())
+    if lines > MAX_LINES:
+        found.append(f"Make it shorter: {lines} lines, at most {MAX_LINES}. Drop what the request doesn't need "
+                     "and use whole-column operations")
+    return found
