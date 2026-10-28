@@ -6,8 +6,11 @@ import re
 import shutil
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
+from sherlock.agent import commands
+from sherlock.cleaning import verifiers
 from sherlock.config import get_settings
 from tests.test_chat import send
 from tests.test_chat_commands import cell, ready, version  # noqa: F401 - `ready` is a fixture
@@ -31,7 +34,7 @@ def number(text: str) -> int:
 
 
 def warned_card(client, ds, ask, check_words):
-    """The card for a command, with its one warning, and the check it must not tick."""
+    """The card for a command, with its warning shown in chat too, and the check it must not tick."""
     _, msg = send(client, ds, ask)
     p = msg["proposal"]
     assert check_words not in p["checks"] and "no rows lost" in p["checks"]
@@ -45,6 +48,9 @@ def ok(client, p, v):
     assert done.status_code == 200, done.text
     assert done.json()["version"] == v + 1
     return done.json()
+
+
+# --- R4: the user's request outranks four checks -----------------------------------------------------------------
 
 
 def test_blanking_values_by_name_is_a_warning_not_a_refusal(client, ready):  # noqa: F811
@@ -81,3 +87,93 @@ def test_turning_a_number_into_text_is_a_warning(client, ready):  # noqa: F811
     assert p["warnings"] == ["fare becomes text: sorting and sums on it will stop working."]
     ok(client, p, v)
     assert cell(client, ds, 1, "fare") == "$211.34"
+
+
+# --- R3: refusals leave no card, and say what to do next, in plain words -----------------------------------------
+
+INTERNAL = re.compile(r"\w*(Error|Exception)\b|row_ledger|nan_introduced|placeholder_fill|merge_safety|parse_quarantine|"
+                      r"pandera|dtype|traceback|\bsafe\b", re.I)
+
+
+def refused(client, ds, ask):
+    v = version(client, ds)
+    _, msg = send(client, ds, ask)
+    assert "proposal" not in msg and version(client, ds) == v
+    assert not INTERNAL.search(msg["text"]), msg["text"]
+    return msg["text"]
+
+
+def test_rows_added_or_removed_are_refused_with_the_way_to_set_them_aside(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "keep only the adults") == commands.REFUSED["row_ledger"]
+
+
+def test_a_removed_column_is_refused(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "get rid of the boat column") == \
+        "The code would remove boat, and a command never removes a column."
+
+
+def test_an_unexpected_new_column_is_refused(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "mark the adults") == \
+        "The code would add a column you didn't ask for (adult). To add one, say 'add a column …'."
+
+
+def test_values_that_would_not_convert_and_are_not_set_aside_are_refused(client, ready):  # noqa: F811
+    said = refused(client, ready["id"], "make ticket a number")
+    assert said == commands.REFUSED["parse_quarantine"].format(n=number(said)) and number(said) > 100
+
+
+def test_a_changed_row_number_is_refused_as_a_broken_structure(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "number the rows from one") == commands.REFUSED["pandera"]
+
+
+def test_an_empty_new_column_is_refused(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "add a column flag") == commands.SAID["empty"].format(col="flag")
+
+
+def test_a_change_that_changes_nothing_says_so(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "make sex lower case") == \
+        "Nothing in this version matches that, so there's nothing to change."
+
+
+def test_mixed_types_stay_a_refusal_and_text_from_a_number_does_not():
+    # A Parquet file can't hold mixed types, so no recorded command reaches this check: the frames stand in.
+    before = pd.DataFrame({"_row_id": [1, 2], "_quarantine_reason": [None, None], "age": [30.0, 70.0]})
+    mixed = before.assign(age=pd.Series([30.0, "old"], dtype=object))
+    text = before.assign(age=pd.Series(["30.0", "70.0"], dtype=object))
+    report = verifiers.verify(before, mixed, None, None, requested=True)
+    assert report.hard["dtype"] != "pass" and commands._warned(report, before, mixed) == {}
+    assert commands._refusal(report).user == commands.REFUSED["dtype"]
+    report = verifiers.verify(before, text, None, None, requested=True)
+    assert commands._warned(report, before, text)["dtype"] == ["age becomes text: sorting and sums on it will stop working."]
+
+
+def test_a_column_the_file_lacks_names_the_closest_ones(client, ready):  # noqa: F811
+    said = "This file has no column called Fare. The closest is fare."
+    assert refused(client, ready["id"], "round the Fare column") == said
+    # The model listed fare but its code used Fare: the run fails with a missing key, said the same way.
+    assert refused(client, ready["id"], "round the cost of the ticket") == said
+    assert commands.no_column("fare_us", ["fare_usd", "fare_uss", "name"]) == \
+        "This file has no column called fare_us. The closest are fare_usd and fare_uss."
+    assert commands.no_column("zzz", ["fare", "name"]) == "This file has no column called zzz."
+
+
+def test_a_crash_says_the_code_did_not_run_and_never_the_exception(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "convert fare to a whole number") == commands.SAID["crash"]
+
+
+def test_a_refusal_when_ok_is_pressed_uses_the_same_words(client, ready):  # noqa: F811
+    ds, v = ready["id"], ready["current_version"]
+    cards = [send(client, ds, "round fare to whole numbers")[1]["proposal"] for _ in range(2)]
+    ok(client, cards[0], v)  # the second card's code now changes nothing
+    got = client.post(f"{API}/proposals/{cards[1]['id']}/approve", json={})
+    assert got.status_code == 409
+    assert got.json()["error"]["message"] == (f"Couldn't run it on version {v + 1}. Nothing in this version matches that, "
+                                              "so there's nothing to change. Nothing changed.")
+
+
+# --- the rest of the message, as typed ---------------------------------------------------------------------------
+
+
+def test_the_rest_of_a_message_is_kept_as_typed(client, ready):  # noqa: F811
+    _, msg = send(client, ready["id"], "round fare to whole numbers then trim the names then count by sex")
+    assert msg["proposal"]["then"] == "trim the names. count by sex?"  # no "and", no "?" added to the command
