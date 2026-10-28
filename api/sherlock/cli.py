@@ -2,7 +2,7 @@
 
     uv run sherlock clean <file.csv | sample>    import a CSV and run the Cleaner headless
     uv run sherlock eval corruption [--sets a,b] the cleaning benchmark (markdown table)
-    uv run sherlock eval ask [--sets titanic3.csv] the ask-anything eval (markdown table)
+    uv run sherlock eval ask [--sets titanic3.csv] [--file f.yaml]  the ask-anything eval (markdown table)
     uv run sherlock eval notebook [--sets a.csv,b.csv | all] export each file's notebook and run it in a fresh venv
     uv run sherlock eval ml                      the planted-truth ML cases (markdown table)
     uv run sherlock eval web [--sets a.csv] [--live | --record] web answers: on, failing and off (markdown table);
@@ -143,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     p_eval = sub.add_parser("eval", help="run a benchmark")
     p_eval.add_argument("which", choices=["corruption", "ask", "notebook", "ml", "web", *NOT_BUILT])
     p_eval.add_argument("--sets", default="", help="comma-separated benchmark sets (corruption) or sample files (ask)")
+    p_eval.add_argument("--file", default="", help="ask: a questions file (default samples/eval/ask_questions.yaml)")
     live = p_eval.add_mutually_exclusive_group()
     live.add_argument("--live", action="store_true", help="web: real Nemotron and real Tavily (needs TAVILY_API_KEY)")
     live.add_argument("--record", action="store_true", help="web: real Nemotron, recorded Tavily; rewrites the Nemotron fixtures")
@@ -165,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.which == "ask":
             from sherlock.eval.ask import run as run_ask
 
-            _print(run_ask([s for s in args.sets.split(",") if s] or None))
+            _print(run_ask([s for s in args.sets.split(",") if s] or None, args.file or None))
             return 0
         if args.which == "notebook":
             from sherlock.eval.notebook import END_TO_END
