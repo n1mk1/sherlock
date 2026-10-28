@@ -69,7 +69,7 @@ SAID = {
     "removed": "The code would remove {cols}, and a command never removes a column.",
     "extra": "The code would add a column you didn't ask for ({cols}). To add one, say 'add a column …'.",
     "empty": "The new column {col} would be empty in every row. Say how its values are worked out, for example "
-             "'add family_size = sibsp + parch + 1'.",
+             "'add total = price * quantity'.",
     "name": "I can't add a column called {col}: the name is taken or isn't a plain name. Say what to call it, using "
             "letters, digits and underscores.",
     "nothing": "Nothing in this version matches that, so there's nothing to change.",
