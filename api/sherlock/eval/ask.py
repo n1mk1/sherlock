@@ -5,10 +5,17 @@ asked in order through `POST /chat` in one thread. An answer passes when it show
 value (within the tolerance), contains the expected rows, or reports the expected row count. The
 eval also counts unsourced answers: a number, table or chart with no SQL behind it (PRD ASK-3: this
 must be 0). It uses the real model unless `LLM_MOCK` is set.
+
+`--file` runs another file in the same layout, e.g. `samples/eval/commands.yaml` (cleaning commands in many
+phrasings, docs/plans/chat-commands-refinements.md R1). Entries that expect `proposal` (kind, and any impact
+count: cells_changed, rows_affected, quarantined, columns_added) or `no_card: true` also add three totals:
+routed right, card produced and effect right.
 """
 
 import json
+import math
 import os
+import re
 import tempfile
 import time
 from dataclasses import dataclass
@@ -31,6 +38,13 @@ class Outcome:
     expected: str
     seconds: float
     unsourced: bool
+    routed: bool | None = None  # commands only: went the right way (a card or the command's own refusal; none for no_card)
+    card: bool | None = None  # a card was expected, and one came
+    effect: bool | None = None  # a card was expected, and its kind and counts are the expected ones
+
+
+# What the command path says when it gives no card: the router sent the message there all the same.
+COMMAND_REFUSAL = re.compile(r"safe change|can't make that change|changes nothing|nothing to change|one change at a time", re.I)
 
 
 def load(path: Path = QUESTIONS) -> dict[str, list[dict]]:
@@ -83,6 +97,9 @@ def check(message: dict, expect: dict) -> tuple[bool, str]:
     answer's text holds one of these words), for answers that aren't numbers."""
     if "source" in expect and not any(s.get("kind") == expect["source"] for s in message.get("sources") or []):
         return False, f"no {expect['source']} source: " + ", ".join(s.get("kind", "?") for s in message.get("sources") or [])
+    if expect.get("no_card"):  # a near miss (a chart, a how-to, a question): nothing may be proposed
+        p = message.get("proposal")
+        return not p, f"card: {p.get('kind')} {p.get('summary', '')}"[:80] if p else (message.get("text") or "")[:80]
     if "proposal" in expect:  # a cleaning command: a card with this kind and effect (docs/plans/chat-commands.md)
         p, want = message.get("proposal") or {}, expect["proposal"]
         impact = p.get("impact") or {}
@@ -120,6 +137,17 @@ def unsourced(message: dict) -> bool:
     """Data shown with nothing to trace it to: no query, model run or step behind it (PRD ASK-3)."""
     shows_data = any(b["type"] in ("number", "table", "chart") for b in message.get("blocks") or [])
     return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step", "code") for s in message.get("sources") or [])
+
+
+def command_flags(message: dict, expect: dict, ok: bool) -> tuple[bool, bool | None, bool | None] | None:
+    """(routed right, card produced, effect right) for an entry that expects a card or none, else None. `ok` is
+    `check`'s verdict. A card is expected when the entry has `proposal`; its totals ignore the near misses."""
+    if "proposal" not in expect and not expect.get("no_card"):
+        return None
+    card = bool(message.get("proposal"))
+    if expect.get("no_card"):
+        return not card, None, None
+    return card or bool(COMMAND_REFUSAL.search(message.get("text") or "")), card, ok
 
 
 def ask(client, ds_id: str, text: str, tries: int = 6) -> dict:
@@ -164,8 +192,9 @@ def evaluate(client, questions: dict[str, list[dict]], only: list[str] | None = 
             t0 = time.monotonic()
             message = ask(client, ds_id, item["q"])
             ok, got = check(message, item["expect"])
+            flags = command_flags(message, item["expect"], ok) or (None, None, None)
             out.append(Outcome(filename, item["q"], ok, got, json.dumps(item["expect"]), time.monotonic() - t0,
-                               unsourced(message)))
+                               unsourced(message), *flags))
     return out
 
 
@@ -178,10 +207,18 @@ def report(outcomes: list[Outcome]) -> str:
     median = secs[len(secs) // 2] if secs else 0
     lines += ["", f"Passed {passed} of {len(outcomes)}. Unsourced answers: {sum(o.unsourced for o in outcomes)}. "
                   f"Median {median:.1f} s per answer."]
+    cmds = [o for o in outcomes if o.routed is not None]
+    if cmds:  # cleaning commands: routed right (a card when one is expected, none for a near miss), card, effect
+        cards = [o for o in cmds if o.card is not None]
+        p90 = secs[max(0, math.ceil(0.9 * len(secs)) - 1)]
+        lines += ["", f"Routed right {sum(bool(o.routed) for o in cmds)} of {len(cmds)}. "
+                      f"Card produced {sum(bool(o.card) for o in cards)} of {len(cards)}. "
+                      f"Effect right {sum(bool(o.effect) for o in cards)} of {len(cards)}. "
+                      f"Median {median:.1f} s, p90 {p90:.1f} s."]
     return "\n".join(lines)
 
 
-def run(only: list[str] | None = None) -> str:
+def run(only: list[str] | None = None, file: str | None = None) -> str:
     from fastapi.testclient import TestClient
 
     from sherlock.config import get_settings
@@ -193,6 +230,6 @@ def run(only: list[str] | None = None) -> str:
         os.environ.setdefault("JOB_WORKERS", "2")
         get_settings.cache_clear()
         with TestClient(create_app()) as client:
-            outcomes = evaluate(client, load(), only)
+            outcomes = evaluate(client, load(Path(file) if file else QUESTIONS), only)
         get_settings.cache_clear()
     return report(outcomes)

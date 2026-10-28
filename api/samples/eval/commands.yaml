@@ -1,0 +1,175 @@
+# Cleaning commands in many phrasings (docs/plans/chat-commands-refinements.md R1), run by
+# `uv run sherlock eval ask --file samples/eval/commands.yaml`. Each group of five says the same change five ways:
+# a plain imperative, a polite "could you", a wish ("I want ..."), a terse one ("fare → 2dp") and one that starts
+# with a noun ("the names have extra spaces, fix them"). The phrasings are generic: nothing in them is tuned to
+# one dataset's wording.
+#
+# Every entry is asked on the unchanged data (the eval never presses OK), so the counts are against the typed
+# version "Use as is" builds, computed from the CSV with DuckDB. The entries are asked in order in one thread.
+#
+# Expectations (see eval/ask.py):
+#   proposal: {kind, cells_changed, rows_affected, quarantined, columns_added}: the answer carries a card of this
+#             kind whose impact has these counts (a count that is hard to pin down is left out: kind only)
+#   no_card:  true: a near miss (a chart, a how-to, a question); the answer must not carry a card
+#
+# Counts (DuckDB): titanic3.csv sex is lower case in 1309 rows; 595 fares have more than 2 decimals; 263 ages are
+# empty (the median age is 28); 696 third-class fares have decimals; 10 home.dest values hold a double space.
+# sales_dated.csv product is capitalised in 5000 rows; 366 orders are returned; 737 orders are from the West.
+
+titanic3.csv:
+  # change text: upper-case a column
+  - q: upper-case the sex column
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+  - q: could you make sex all capitals please?
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+  - q: I want the sex values in capitals
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+  - q: sex → UPPER
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+  - q: the sex column is in lower case, make it upper case
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+
+  # change numbers: round a column
+  - q: round fare to 2 decimal places
+    expect: {proposal: {kind: clean_step, cells_changed: 595}}
+  - q: could you round fare to two decimals?
+    expect: {proposal: {kind: clean_step, cells_changed: 595}}
+  - q: I want fare rounded to 2 decimal places
+    expect: {proposal: {kind: clean_step, cells_changed: 595}}
+  - q: fare → 2dp
+    expect: {proposal: {kind: clean_step, cells_changed: 595}}
+  - q: the fare values have too many decimals, round them to 2 places
+    expect: {proposal: {kind: clean_step, cells_changed: 595}}
+
+  # fill blanks
+  - q: fill the missing age values with the median age
+    expect: {proposal: {kind: clean_step, cells_changed: 263}}
+  - q: could you fill in the blank ages with the median?
+    expect: {proposal: {kind: clean_step, cells_changed: 263}}
+  - q: I want the empty age cells filled with the median age
+    expect: {proposal: {kind: clean_step, cells_changed: 263}}
+  - q: age blanks → median
+    expect: {proposal: {kind: clean_step, cells_changed: 263}}
+  - q: the age column has gaps, fill them with the median
+    expect: {proposal: {kind: clean_step, cells_changed: 263}}
+
+  # set rows aside ("delete ...")
+  - q: delete the rows where age is empty
+    expect: {proposal: {kind: clean_step, quarantined: 263}}
+  - q: could you remove the rows that have no age?
+    expect: {proposal: {kind: clean_step, quarantined: 263}}
+  - q: I want the passengers with a missing age gone
+    expect: {proposal: {kind: clean_step, quarantined: 263}}
+  - q: drop rows with a blank age
+    expect: {proposal: {kind: clean_step, quarantined: 263}}
+  - q: the passengers without an age are no use, get rid of them
+    expect: {proposal: {kind: clean_step, quarantined: 263}}
+
+  # add a column
+  - q: add a column family_size that is sibsp plus parch plus 1
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+  - q: could you add a family_size column = sibsp + parch + 1?
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+  - q: I want a new column family_size, the sum of sibsp and parch and 1
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+  - q: new column family_size = sibsp + parch + 1
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+  - q: the file needs a family size, add it as family_size from sibsp, parch and 1
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+
+  # convert a type (how many cells change depends on how the whole number is made: kind only)
+  - q: convert age to whole numbers
+    expect: {proposal: {kind: clean_step}}
+  - q: could you make age a whole number column?
+    expect: {proposal: {kind: clean_step}}
+  - q: I want age as integers
+    expect: {proposal: {kind: clean_step}}
+  - q: age → integer
+    expect: {proposal: {kind: clean_step}}
+  - q: the age column should be whole numbers, convert it
+    expect: {proposal: {kind: clean_step}}
+
+  # limit to a condition
+  - q: round fare to a whole number, only for third class
+    expect: {proposal: {kind: clean_step, cells_changed: 696}}
+  - q: could you round fare to whole numbers for third class passengers only?
+    expect: {proposal: {kind: clean_step, cells_changed: 696}}
+  - q: I want fare rounded to whole numbers, but only in third class
+    expect: {proposal: {kind: clean_step, cells_changed: 696}}
+  - q: fare → 0dp where pclass is 3
+    expect: {proposal: {kind: clean_step, cells_changed: 696}}
+  - q: third class fares have decimals, round those to whole numbers and leave the other classes alone
+    expect: {proposal: {kind: clean_step, cells_changed: 696}}
+
+  # change text: extra spaces inside a value
+  - q: collapse the repeated spaces in home.dest
+    expect: {proposal: {kind: clean_step, cells_changed: 10}}
+  - q: could you replace double spaces with single spaces in home.dest?
+    expect: {proposal: {kind: clean_step, cells_changed: 10}}
+  - q: I want the extra spaces gone from home.dest
+    expect: {proposal: {kind: clean_step, cells_changed: 10}}
+  - q: "home.dest: single spaces only"
+    expect: {proposal: {kind: clean_step, cells_changed: 10}}
+  - q: the home.dest values have extra spaces, fix them
+    expect: {proposal: {kind: clean_step, cells_changed: 10}}
+
+  # near misses: none of these may become a card
+  - q: make a chart of fare by class
+    expect: {no_card: true}
+  - q: how do I trim spaces?
+    expect: {no_card: true}
+  - q: which names have extra spaces?
+    expect: {no_card: true}
+  - q: what would happen if I rounded fare?
+    expect: {no_card: true}
+  - q: show me the passengers with no age
+    expect: {no_card: true}
+  - q: how many passengers have a missing age?
+    expect: {no_card: true}
+
+sales_dated.csv:
+  # change text: lower-case a column
+  - q: lower-case the product column
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+  - q: could you make product all lowercase?
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+  - q: I want the product names in small letters
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+  - q: product → lowercase
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+  - q: the product names are capitalised, make them lower case
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+
+  # set rows aside ("delete ...")
+  - q: delete the orders that were returned
+    expect: {proposal: {kind: clean_step, quarantined: 366}}
+  - q: could you remove all the returned orders?
+    expect: {proposal: {kind: clean_step, quarantined: 366}}
+  - q: I want the returned orders gone
+    expect: {proposal: {kind: clean_step, quarantined: 366}}
+  - q: drop the rows where returned is yes
+    expect: {proposal: {kind: clean_step, quarantined: 366}}
+  - q: the returned orders shouldn't be in this file, get rid of them
+    expect: {proposal: {kind: clean_step, quarantined: 366}}
+
+  # limit to a condition
+  - q: upper-case product, only for the West region
+    expect: {proposal: {kind: clean_step, cells_changed: 737}}
+  - q: could you make product upper case for West orders only?
+    expect: {proposal: {kind: clean_step, cells_changed: 737}}
+  - q: I want product in capitals, but only where region is West
+    expect: {proposal: {kind: clean_step, cells_changed: 737}}
+  - q: product → UPPER (West only)
+    expect: {proposal: {kind: clean_step, cells_changed: 737}}
+  - q: the West region's product names should be capitals, change just those
+    expect: {proposal: {kind: clean_step, cells_changed: 737}}
+
+  # near misses
+  - q: make a chart of revenue by region
+    expect: {no_card: true}
+  - q: how do I delete rows?
+    expect: {no_card: true}
+  - q: which orders were returned?
+    expect: {no_card: true}
+  - q: what would happen if I upper-cased the region column?
+    expect: {no_card: true}
