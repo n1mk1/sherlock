@@ -855,6 +855,21 @@
     "title": "ModelCall",
     "type": "object"
    },
+   "MoveRequest": {
+    "additionalProperties": false,
+    "properties": {
+     "base_version": {
+      "minimum": 1.0,
+      "title": "Base Version",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "base_version"
+    ],
+    "title": "MoveRequest",
+    "type": "object"
+   },
    "NewRow": {
     "additionalProperties": false,
     "properties": {
@@ -2679,6 +2694,51 @@
     ]
    }
   },
+  "/api/v1/datasets/{dataset_id}/history": {
+   "get": {
+    "description": "`{ version, undo: { step_id, no, summary } | null, redo: \u2026 | null, depth_left }` for the toolbar.",
+    "operationId": "get_history_api_v1_datasets__dataset_id__history_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get History Api V1 Datasets  Dataset Id  History Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get History",
+    "tags": [
+     "steps"
+    ]
+   }
+  },
   "/api/v1/datasets/{dataset_id}/raw.csv": {
    "get": {
     "description": "The original upload, byte for byte (TRD \u00a74.2).",
@@ -2717,6 +2777,61 @@
     "summary": "Raw Csv",
     "tags": [
      "datasets"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/redo": {
+   "post": {
+    "description": "The toolbar's Redo: `{ step, version }`; `409` when there's nothing to redo.",
+    "operationId": "redo_api_v1_datasets__dataset_id__redo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Redo Api V1 Datasets  Dataset Id  Redo Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Redo",
+    "tags": [
+     "steps"
     ]
    }
   },
@@ -3393,6 +3508,61 @@
      }
     },
     "summary": "Undo",
+    "tags": [
+     "steps"
+    ]
+   }
+  },
+  "/api/v1/datasets/{dataset_id}/undo": {
+   "post": {
+    "description": "The toolbar's Undo: `{ step, version }`; `409` when there's nothing left to undo in a row.",
+    "operationId": "undo_latest_api_v1_datasets__dataset_id__undo_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dataset_id",
+      "required": true,
+      "schema": {
+       "title": "Dataset Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/MoveRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Undo Latest Api V1 Datasets  Dataset Id  Undo Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Undo Latest",
     "tags": [
      "steps"
     ]

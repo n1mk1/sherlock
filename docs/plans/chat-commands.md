@@ -1,6 +1,6 @@
 # Plan: type it, see the code, press OK, see the CSV change
 
-**Status:** not built.
+**Status:** built. Code: `api/sherlock/agent/commands.py` (commands), `agent/analysis.py` (`ask_code`), `steps/undo.py` (`history`, `quick_undo`, `redo_step`), the card in `web/src/components/shell/ChatBar.tsx` and the buttons in `web/src/components/csv/CsvTab.tsx`. Two choices made while building: a request to delete rows becomes a command whose code sets the rows aside (it used to be refused), and a command that sets aside more than a fifth of the rows shows a warning on the card instead of being refused, since the user sees the count before OK.
 
 **The loop:**
 

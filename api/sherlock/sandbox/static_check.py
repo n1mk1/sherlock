@@ -12,6 +12,8 @@ import ast
 from dataclasses import dataclass
 
 ALLOWED_MODULES = frozenset({"pandas", "numpy", "re", "math", "datetime", "rapidfuzz", "dateparser", "ftfy"})
+# Read-only analysis for chat questions SQL can't express (`agent/analysis.py`) may also fit models and run tests.
+ANALYSIS_MODULES = ALLOWED_MODULES | {"scipy", "sklearn"}
 FORBIDDEN_NAMES = frozenset({
     "__import__", "eval", "exec", "open", "compile", "globals", "locals", "vars", "getattr", "setattr",
     "delattr", "breakpoint", "input", "exit", "quit", "memoryview",
@@ -37,7 +39,7 @@ class Violation:
         return f"line {self.line}: {self.reason}"
 
 
-def check(code: str) -> list[Violation]:
+def check(code: str, modules: frozenset[str] = ALLOWED_MODULES) -> list[Violation]:
     """All violations in `code` (empty list: allowed). A syntax error is a violation."""
     try:
         tree = ast.parse(code)
@@ -48,11 +50,11 @@ def check(code: str) -> list[Violation]:
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.split(".")[0] not in ALLOWED_MODULES:
+                if alias.name.split(".")[0] not in modules:
                     found.append(Violation(line, f"import of {alias.name!r} is not allowed"))
         elif isinstance(node, ast.ImportFrom):
             module = (node.module or "").split(".")[0]
-            if node.level or module not in ALLOWED_MODULES:
+            if node.level or module not in modules:
                 found.append(Violation(line, f"import from {node.module!r} is not allowed"))
         elif isinstance(node, ast.Name):
             if node.id in FORBIDDEN_NAMES or node.id.startswith("__"):

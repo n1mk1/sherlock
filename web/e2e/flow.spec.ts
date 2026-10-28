@@ -1,8 +1,8 @@
 // The flow a judge follows (Implementation Plan D8.6 and D9 exit), end to end in a real browser against
 // one server with recorded model replies: sample → the offer → Clean it myself → the grid with Changes →
 // a sourced number with "How do you know?" → a chart → what drives survival, with its model card → change
-// a cell from chat (a proposal, approved) and see it in the grid → Export notebook → the .ipynb downloads →
-// undo the cell edit. axe checks each screen on the way, and the app runs under its production CSP with no
+// a cell from chat (a proposal, approved) and see it in the grid → a cleaning command (its code shown, OK runs
+// it) with the toolbar's Undo and Redo → Export notebook → the .ipynb downloads → undo a step from Changes. axe checks each screen on the way, and the app runs under its production CSP with no
 // refusal.
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoAxeViolations, watchCsp } from "./axe";
@@ -79,8 +79,32 @@ test("from the sample to a downloaded notebook", async ({ page }) => {
   await expect(grid.locator('[role="gridcell"]').first()).toBeAttached();
   await expectNoAxeViolations(page, "the grid with the thread open");
 
-  // Export the notebook from the Dataset menu: it downloads.
+  // A cleaning command: the card shows the pandas code and a preview, OK runs it, and the toolbar's Undo and
+  // Redo (Ctrl+Y) move between the states.
+  const sexOf1 = async () => {
+    const rows = await (await page.request.get(`/api/v1/datasets/${datasetId}/rows?limit=1`)).json() as
+      { rows: { cells: Record<string, unknown> }[] };
+    return rows.rows[0].cells.sex;
+  };
+  await ask(page, "make the sex column upper case");
+  const command = thread.getByLabel("Proposed change").last();
+  await expect(command.getByLabel("The code that will run")).toContainText(".str.upper()", { timeout: 60_000 });
+  expect(await sexOf1()).toBe("female"); // nothing changed before OK
+  await expectNoAxeViolations(page, "a command's card");
+  await command.getByRole("button", { name: "OK" }).click();
+  await expect(page.getByText(/Done · saved as v\d+/)).toBeVisible();
+  await expect.poll(sexOf1, { timeout: 30_000 }).toBe("FEMALE");
+  const tools = page.getByRole("toolbar", { name: "CSV tools" });
+  await expect(tools.getByRole("button", { name: "Undo" })).toBeEnabled();
+  await tools.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(sexOf1, { timeout: 30_000 }).toBe("female");
+  await expect(tools.getByRole("button", { name: "Redo" })).toBeEnabled();
   await page.getByRole("button", { name: "Close the thread" }).click();
+  await page.locator("body").press("Control+y");
+  await expect.poll(sexOf1, { timeout: 30_000 }).toBe("FEMALE");
+  await expect(tools.getByRole("button", { name: "Redo" })).toBeDisabled();
+
+  // Export the notebook from the Dataset menu: it downloads.
   await page.getByRole("button", { name: "Dataset menu" }).click();
   await page.getByRole("menuitem", { name: /Export notebook/ }).click();
   const dialog = page.getByRole("dialog", { name: "Export notebook" });

@@ -68,7 +68,8 @@ class Entity(Strict):
 
 INTENTS = Literal[
     "ask_data", "find_rows", "ask_history", "ask_why", "ask_stats",
-    "ask_model", "ask_meaning", "app_help", "edit_cells", "clean_selection", "edit_plan", "web_context",
+    "ask_model", "ask_meaning", "app_help", "edit_cells", "clean_step", "clean_selection", "edit_plan", "web_context",
+    "ask_code",
 ]
 
 
@@ -174,6 +175,24 @@ class CellDraft(Strict):
 class EditsDraft(Strict):
     reading: str = Field(description="which rows and columns the request means, and the new values, in a few words")
     edits: list[CellDraft] = Field(min_length=1, max_length=200)
+
+
+class StepDraft(Strict):
+    """A cleaning command typed in chat, as pandas code the user reads before pressing OK (`agent/commands.py`)."""
+    reading: str = Field(description="what the request means for this file, in a few words: '<their word> → <column>' and "
+                                     "the change; when it can't be done, why")
+    doable: bool = Field(description="false when no column fits the request or it isn't a change to the data")
+    columns: list[str] = Field(description="the existing columns the code changes, exactly as named")
+    new_columns: list[str] = Field(default_factory=list, description="the names of columns the code adds, if any")
+    code: str = Field(description="pandas code that reads df and leaves the changed DataFrame in result")
+
+
+class AnalysisDraft(Strict):
+    """A question SQL can't express, as read-only pandas analysis code (`agent/analysis.py`)."""
+    reading: str = Field(description="what the question means for this file, in a few words: '<their word> → <column>'")
+    answerable: bool = Field(description="false when no column of this file records what the question asks about")
+    code: str = Field(description="pandas code that reads df and leaves the answer in result: a DataFrame, a Series or "
+                                  "a single value")
 
 
 class RuleDraft(Strict):

@@ -16,6 +16,7 @@ export const keys = {
   datacard: (id: string, version?: number) => ["datacard", id, version ?? "current"] as const,
   jobs: (id: string) => ["jobs", id] as const,
   steps: (id: string) => ["steps", id] as const,
+  history: (id: string) => ["history", id] as const,
   report: (id: string, jobId?: string) => ["report", id, jobId ?? "latest"] as const,
   allJobs: ["jobs", "all"] as const,
   chat: (id: string) => ["chat", id] as const,
@@ -424,6 +425,7 @@ export function useDatasetEvents(datasetId: string) {
       qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
       qc.invalidateQueries({ queryKey: keys.datasets, exact: true }); // the library row's "v3"
       qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
+      qc.invalidateQueries({ queryKey: keys.history(datasetId) });
       qc.invalidateQueries({ queryKey: ["datacard", datasetId] });
       qc.invalidateQueries({ queryKey: keys.jobs(datasetId) });
       // An open cleaning plan was made on the version before: read again, it's merged onto this one.

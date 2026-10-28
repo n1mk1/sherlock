@@ -17,7 +17,7 @@ from pathlib import Path
 from sherlock.config import Settings
 from sherlock.db.util import now_iso
 from sherlock.sandbox import sandboxd
-from sherlock.sandbox.static_check import check
+from sherlock.sandbox.static_check import ALLOWED_MODULES, ANALYSIS_MODULES, check
 
 WALL_FACTOR = 2      # wall-clock timeout = CPU limit × 2 (+5 s for start-up)
 STARTUP_S = 5
@@ -38,6 +38,7 @@ class SandboxResult:
     wall_ms: int = 0
     timed_out: bool = False
     cancelled: bool = False
+    truncated: bool = False  # an analysis answer cut to the worker's row cap
 
 
 def sandbox_root(settings: Settings) -> Path:
@@ -65,13 +66,15 @@ def execute(
     job_id: str | None = None,
     skip_static_check: bool = False,
     should_stop=None,
+    analysis: bool = False,
 ) -> SandboxResult:
     """Run `code` on the version at `input_parquet`; on success the result is at `output_parquet`.
     `should_stop()` is polled while the worker runs: when it turns true (the job was cancelled) the
     worker is killed and the result has `cancelled`. `skip_static_check` exists only for tests of
     the worker's own defences."""
     started = time.monotonic()
-    violations = [] if skip_static_check else [str(v) for v in check(code)]
+    modules = ANALYSIS_MODULES if analysis else ALLOWED_MODULES  # analysis only reads, and may fit models
+    violations = [] if skip_static_check else [str(v) for v in check(code, modules)]
     if violations:
         result = SandboxResult(ok=False, error="The code uses something the sandbox doesn't allow.", violations=violations)
         _log(db, dataset_id, job_id, code, result)
@@ -87,6 +90,7 @@ def execute(
             "code": code,
             "cpu_s": settings.sandbox_cpu_s,
             "mem_mb": settings.sandbox_mem_mb,
+            **({"mode": "analysis"} if analysis else {}),
         }
         timeout_s = settings.sandbox_cpu_s * WALL_FACTOR + STARTUP_S
         if settings.sandboxd_socket:
@@ -122,7 +126,7 @@ def _parse(stdout: str, stderr: str, returncode: int, timed_out: bool) -> Sandbo
         ok=bool(data.get("ok")), error=data.get("error"), rows_in=data.get("rows_in"), rows_out=data.get("rows_out"),
         columns_added=data.get("columns_added") or [], columns_removed=data.get("columns_removed") or [],
         traceback_tail=data.get("traceback_tail"), stdout_tail=data.get("stdout_tail"),
-        flags=data.get("flags") or {},
+        flags=data.get("flags") or {}, truncated=bool(data.get("truncated")),
     )
 
 

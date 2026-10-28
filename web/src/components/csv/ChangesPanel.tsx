@@ -26,7 +26,7 @@ export function ChangesPanel({ datasetId }: { datasetId: string }) {
   const [report, setReport] = useState(false);
   const setExportOpen = useUi((s) => s.setExportOpen);
   if (!dataset) return null;
-  const latestActive = steps?.find((s) => s.active && s.kind !== "undo");
+  const latestActive = steps?.find((s) => s.active && s.kind !== "undo" && s.kind !== "redo");
   return (
     <section aria-labelledby="changes-title" className="flex h-full flex-col overflow-y-auto">
       <div className="flex items-center gap-2 px-4 pb-2 pt-4">
@@ -122,7 +122,7 @@ function StepCard({ step, dataset, latest }: { step: Step; dataset: Dataset; lat
   const [open, setOpen] = useState(false);
   const [ask, setAsk] = useState<{ replay: number[]; typing: boolean } | null>(null);
   const undo = useUndo(dataset.id);
-  const canUndo = step.active && step.kind !== "undo";
+  const canUndo = step.active && step.kind !== "undo" && step.kind !== "redo";
 
   const run = (confirm: boolean) =>
     undo.mutate({ stepId: step.id, base: dataset.current_version, confirm }, {
@@ -152,8 +152,8 @@ function StepCard({ step, dataset, latest }: { step: Step; dataset: Dataset; lat
         </button>
         <span className="mt-px font-mono text-[12px] text-muted-foreground">{step.no}</span>
         <div className="min-w-0 flex-1">
-          <p className={cn("text-[13.5px] font-medium leading-snug", !step.active && "text-muted-foreground", !step.active && step.kind !== "undo" && "line-through")}>{step.summary}</p>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">{detailLine(step)}{!step.active && step.kind !== "undo" ? " · undone" : ""}</p>
+          <p className={cn("text-[13.5px] font-medium leading-snug", !step.active && "text-muted-foreground", !step.active && step.kind !== "undo" && step.kind !== "redo" && "line-through")}>{step.summary}</p>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">{detailLine(step)}{!step.active && step.kind !== "undo" && step.kind !== "redo" ? " · undone" : ""}</p>
         </div>
         {canUndo && (
           <Button size="sm" variant="secondary" className="h-7" loading={undo.isPending && !ask} onClick={() => run(false)}>Undo</Button>
@@ -201,7 +201,7 @@ function StepDetailView({ datasetId, stepId }: { datasetId: string; stepId: stri
           {e.restore_row_ids.map((r) => <li key={`r${r}`}>Restored row {r}</li>)}
           {e.edits.length > 50 && <li className="text-muted-foreground">and {e.edits.length - 50} more</li>}
         </ul>
-      ) : s.kind !== "undo" ? (
+      ) : s.kind !== "undo" && s.kind !== "redo" ? (
         <pre className="max-h-[260px] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2.5 font-mono text-[12px] leading-relaxed">
           {s.notebook_code}
         </pre>

@@ -125,7 +125,7 @@ def apply(ctx: Context, dataset: sqlite3.Row, step: sqlite3.Row, old: Path, out:
         overrides = _edit(ctx, step, old, out)
     elif step["kind"] == "clean" and step["created_by"] == "system":
         _typing(ctx, step, old, out)
-    elif step["kind"] == "clean":
+    elif step["kind"] in ("clean", "computed_column"):
         _clean(ctx, dataset, step, old, out)
     else:
         raise ReplayError(step, f"a {step['kind']} step can't be replayed")

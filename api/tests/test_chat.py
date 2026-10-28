@@ -177,8 +177,12 @@ def test_eval_checks():
     assert ask_eval.check({"blocks": [{"type": "number", "value": 38.2}]}, {"value": 0.38197, "tol": 0.01})[0]
     assert not ask_eval.check({"blocks": [{"type": "number", "value": 12}]}, {"value": 13})[0]
     assert ask_eval.unsourced({"blocks": [{"type": "number", "value": 1}], "sources": []})
+    assert not ask_eval.unsourced({"blocks": [{"type": "number", "value": 1}], "sources": [{"kind": "code", "code": "result = 1"}]})
+    card = {"proposal": {"kind": "clean_step", "impact": {"cells_changed": 3}}}
+    assert ask_eval.check(card, {"proposal": {"kind": "clean_step", "cells_changed": 3}})[0]
+    assert not ask_eval.check(card, {"proposal": {"kind": "computed_column"}})[0]
     questions = ask_eval.load()
-    assert sum(len(q) for q in questions.values()) == 61  # D8.4: about fifty, every ASK-2 area; 11 more from the live test
+    assert sum(len(q) for q in questions.values()) == 67  # D8.4: about fifty, every ASK-2 area; 11 from the live test; 6 commands and code
     assert ask_eval.check({"text": "See Undo in the help.", "sources": [{"kind": "help"}], "blocks": []},
                           {"source": "help", "text_any": ["undo"]})[0]
     assert not ask_eval.check({"text": "x", "sources": [{"kind": "sql"}], "blocks": []}, {"source": "run"})[0]

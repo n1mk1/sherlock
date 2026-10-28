@@ -90,16 +90,18 @@ def block_network() -> None:
         os.environ[var] = "http://127.0.0.1:9"
 
 
-def restricted_globals(df):
+def restricted_globals(df, analysis: bool = False):
     import numpy as np
     import pandas as pd
 
-    from sherlock.sandbox.static_check import ALLOWED_MODULES
+    from sherlock.sandbox.static_check import ALLOWED_MODULES, ANALYSIS_MODULES
+
+    modules = ANALYSIS_MODULES if analysis else ALLOWED_MODULES
 
     real_import = builtins.__import__
 
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if level or name.split(".")[0] not in ALLOWED_MODULES:
+        if level or name.split(".")[0] not in modules:
             raise ImportError(f"import of {name!r} is not allowed in the sandbox")
         return real_import(name, globals, locals, fromlist, level)
 
@@ -152,6 +154,44 @@ def output_select(result, input_types: dict[str, str]) -> str:
 
 
 
+ANALYSIS_ROWS = 500
+
+
+def _analysis(result, request: dict, rows_in: int, stdout: str) -> dict:
+    """A read-only answer (`agent/analysis.py`): a Series becomes a table with its index, a value a one-cell
+    table; at most `ANALYSIS_ROWS` rows. Column names are text; values pandas can't store become text."""
+    import duckdb
+    import numpy as np
+    import pandas as pd
+
+    if result is None:
+        return {"ok": False, "error": "the code must leave its answer in `result`", "rows_in": rows_in,
+                "stdout_tail": stdout[-STDOUT_CHARS:]}
+    if isinstance(result, pd.Series):
+        frame = result.reset_index()
+        if frame.columns[-1] == 0:
+            frame.columns = [*frame.columns[:-1], result.name or "value"]
+    elif isinstance(result, pd.DataFrame):
+        frame = result.reset_index() if not isinstance(result.index, pd.RangeIndex) else result
+    elif isinstance(result, (int, float, np.number, np.bool_, str, bool)):
+        frame = pd.DataFrame({"value": [result.item() if isinstance(result, np.generic) else result]})
+    else:
+        return {"ok": False, "error": f"`result` is a {type(result).__name__}; leave a DataFrame, a Series or a value",
+                "rows_in": rows_in, "stdout_tail": stdout[-STDOUT_CHARS:]}
+    truncated = len(frame) > ANALYSIS_ROWS
+    frame = frame.head(ANALYSIS_ROWS).copy()
+    frame.columns = [str(c) for c in frame.columns]
+    for c in frame.columns:
+        if frame[c].dtype == object:
+            frame[c] = frame[c].map(lambda v: v if v is None or isinstance(v, (str, int, float, bool)) else str(v))
+    writer = duckdb.connect(":memory:")
+    writer.register("result_frame", frame)
+    writer.execute(f"COPY (SELECT * FROM result_frame) TO '{request['output'].replace(chr(39), chr(39) * 2)}' (FORMAT PARQUET)")
+    writer.close()
+    return {"ok": True, "rows_in": rows_in, "rows_out": len(frame), "error": None, "traceback_tail": None,
+            "stdout_tail": stdout[-STDOUT_CHARS:], "truncated": truncated}
+
+
 def run(request: dict) -> dict:
     apply_cpu_limit(int(request.get("cpu_s", 30)))
     import duckdb  # loaded before the network block; it only reads and writes the two files
@@ -162,7 +202,8 @@ def run(request: dict) -> dict:
     input_types = {r[0]: str(r[1]) for r in reader.execute("DESCRIBE SELECT * FROM read_parquet(?)", [request["input"]]).fetchall()}
     reader.close()
     rows_in, columns_in = len(df), list(df.columns)
-    scope = restricted_globals(df)
+    analysis = request.get("mode") == "analysis"
+    scope = restricted_globals(df, analysis)
     out = io.StringIO()
     try:
         with contextlib.redirect_stdout(out), memory_budget(int(request.get("mem_mb", 2048))):
@@ -177,6 +218,8 @@ def run(request: dict) -> dict:
     import pandas as pd
 
     result = scope.get("result")
+    if analysis:  # an answer, not a version: any table, Series or value, written as it is
+        return _analysis(result, request, rows_in, out.getvalue())
     if not isinstance(result, pd.DataFrame):
         return {"ok": False, "error": "the code must leave a DataFrame in `result`", "rows_in": rows_in,
                 "stdout_tail": out.getvalue()[-STDOUT_CHARS:]}

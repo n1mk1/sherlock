@@ -10,6 +10,7 @@ from collections import defaultdict
 import pandas as pd
 
 UNDO_CODE = "# Undo of step {no}: the exported notebook applies the version's effective chain instead.\n"
+REDO_CODE = "# Redo of step {no}: the exported notebook applies the version's effective chain instead.\n"
 
 
 def typed(value, dtype: str):

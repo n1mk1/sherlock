@@ -291,7 +291,8 @@ export interface WebResult {
 }
 
 export interface Source {
-  kind: "sql" | "run" | "step" | "help" | "general" | "web";
+  kind: "sql" | "code" | "run" | "step" | "help" | "general" | "web";
+  code?: string; // pandas that answered a question SQL couldn't express (read-only)
   run_id?: string;
   url?: string; // a web source's address
   title?: string;
@@ -308,17 +309,36 @@ export interface MessageAction {
   options?: Partial<Record<"include_data" | "include_runs", boolean>>;
 }
 
-/** A change chat proposed (TRD §6.8): nothing applies until it's approved. */
+/** A change chat proposed (TRD §6.8): nothing applies until it's approved. A cleaning command
+ * (`clean_step`, `computed_column`) carries its pandas code and the effect of a dry run; OK runs it on the
+ * version current then (docs/plans/chat-commands.md). */
 export interface Proposal {
   id: string;
   kind: "edit_cells" | "clean_selection" | "clean_step" | "computed_column";
   base_version: number;
-  status: "pending" | "approved" | "rejected" | "expired";
+  status: "pending" | "approved" | "rejected" | "expired" | "queued" | "failed";
   summary: string;
   edits?: { row_id: number; column: string; value: string | null; before: unknown }[];
-  scope?: { kind: "all" | "selection"; selection_id: string | null };
-  impact: { cells_changed: number; rows_affected: number };
+  scope?: { kind?: "all" | "selection"; selection_id?: string | null; row_ids?: number[] | null };
+  impact: { cells_changed: number; rows_affected: number; quarantined?: number; columns_added?: string[] };
   result_step_id?: string | null;
+  code?: string;
+  columns?: string[];
+  new_columns?: string[];
+  before_after?: { row_id: number; column: string; old: string | null; new: string | null }[];
+  checks?: string[];
+  warnings?: string[];
+  then?: string; // the rest of the message, sent once OK has run
+  rechecked_on?: number;
+  error?: string;
+}
+
+/** What the toolbar's Undo and Redo would do now (GET /datasets/{id}/history). */
+export interface History {
+  version: number;
+  undo: { step_id: string; no: number; summary: string } | null;
+  redo: { step_id: string; no: number; summary: string } | null;
+  depth_left: number;
 }
 
 export interface PlanStep {

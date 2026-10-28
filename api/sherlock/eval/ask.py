@@ -83,6 +83,13 @@ def check(message: dict, expect: dict) -> tuple[bool, str]:
     answer's text holds one of these words), for answers that aren't numbers."""
     if "source" in expect and not any(s.get("kind") == expect["source"] for s in message.get("sources") or []):
         return False, f"no {expect['source']} source: " + ", ".join(s.get("kind", "?") for s in message.get("sources") or [])
+    if "proposal" in expect:  # a cleaning command: a card with this kind and effect (docs/plans/chat-commands.md)
+        p, want = message.get("proposal") or {}, expect["proposal"]
+        impact = p.get("impact") or {}
+        got = f"{p.get('kind')} {json.dumps(impact)}" if p else (message.get("text") or "")[:80]
+        if p.get("kind") != want["kind"] or any(impact.get(k) != v for k, v in want.items() if k != "kind"):
+            return False, got
+        return True, got
     if "text_any" in expect:
         text = (message.get("text") or "").lower()
         if not any(w.lower() in text for w in expect["text_any"]):
@@ -112,7 +119,7 @@ def check(message: dict, expect: dict) -> tuple[bool, str]:
 def unsourced(message: dict) -> bool:
     """Data shown with nothing to trace it to: no query, model run or step behind it (PRD ASK-3)."""
     shows_data = any(b["type"] in ("number", "table", "chart") for b in message.get("blocks") or [])
-    return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step") for s in message.get("sources") or [])
+    return shows_data and not any(s.get("sql") or s.get("kind") in ("run", "step", "code") for s in message.get("sources") or [])
 
 
 def ask(client, ds_id: str, text: str, tries: int = 6) -> dict:

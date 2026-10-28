@@ -1,9 +1,9 @@
 // The CSV tab's API (TRD §4.3, §4.4): row pages, find, edits, step detail and undo, scoped cleaning,
 // selections. The grid keeps its own page cache, so pages are plain requests, not queries.
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request } from "./client";
 import { keys } from "./queries";
-import type { Column, Dataset } from "./types";
+import type { Column, Dataset, History, Step } from "./types";
 
 export interface RowsPage {
   version: number;
@@ -93,9 +93,28 @@ export function useAfterCommit(datasetId: string) {
   return () => {
     qc.invalidateQueries({ queryKey: keys.dataset(datasetId) });
     qc.invalidateQueries({ queryKey: keys.steps(datasetId) });
+    qc.invalidateQueries({ queryKey: keys.history(datasetId) });
     qc.invalidateQueries({ queryKey: ["datacard", datasetId] });
     qc.invalidateQueries({ queryKey: keys.datasets });
   };
+}
+
+/** The toolbar's Undo and Redo: what each would do now, and how many undos are left in a row. */
+export function useHistory(datasetId: string, version: number) {
+  return useQuery({
+    queryKey: [...keys.history(datasetId), version],
+    queryFn: () => request<History>("GET", `/api/v1/datasets/${datasetId}/history`),
+  });
+}
+
+/** Undo (back one state, at most `undo_depth` in a row) or Redo (forward again), from the toolbar or Ctrl+Z / Ctrl+Y. */
+export function useMove(datasetId: string) {
+  const after = useAfterCommit(datasetId);
+  return useMutation({
+    mutationFn: ({ way, base }: { way: "undo" | "redo"; base: number }) =>
+      request<{ step: Step; version: number }>("POST", `/api/v1/datasets/${datasetId}/${way}`, { base_version: base }),
+    onSuccess: after,
+  });
 }
 
 export function useSaveEdits(datasetId: string) {

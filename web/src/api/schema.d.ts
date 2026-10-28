@@ -405,6 +405,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/datasets/{dataset_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get History
+         * @description `{ version, undo: { step_id, no, summary } | null, redo: … | null, depth_left }` for the toolbar.
+         */
+        get: operations["get_history_api_v1_datasets__dataset_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/datasets/{dataset_id}/raw.csv": {
         parameters: {
             query?: never;
@@ -419,6 +439,26 @@ export interface paths {
         get: operations["raw_csv_api_v1_datasets__dataset_id__raw_csv_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/redo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Redo
+         * @description The toolbar's Redo: `{ step, version }`; `409` when there's nothing to redo.
+         */
+        post: operations["redo_api_v1_datasets__dataset_id__redo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -615,6 +655,26 @@ export interface paths {
         put?: never;
         /** Undo */
         post: operations["undo_api_v1_datasets__dataset_id__steps__step_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/datasets/{dataset_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Latest
+         * @description The toolbar's Undo: `{ step, version }`; `409` when there's nothing left to undo in a row.
+         */
+        post: operations["undo_latest_api_v1_datasets__dataset_id__undo_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1350,6 +1410,11 @@ export interface components {
             role: string;
             /** Tokens */
             tokens: number;
+        };
+        /** MoveRequest */
+        MoveRequest: {
+            /** Base Version */
+            base_version: number;
         };
         /** NewRow */
         NewRow: {
@@ -2337,6 +2402,39 @@ export interface operations {
             };
         };
     };
+    get_history_api_v1_datasets__dataset_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     raw_csv_api_v1_datasets__dataset_id__raw_csv_get: {
         parameters: {
             query?: never;
@@ -2355,6 +2453,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    redo_api_v1_datasets__dataset_id__redo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -2742,6 +2877,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UndoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_latest_api_v1_datasets__dataset_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveRequest"];
             };
         };
         responses: {

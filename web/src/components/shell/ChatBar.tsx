@@ -15,12 +15,14 @@ import { BlockView } from "@/components/chat/Blocks";
 import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { pendingCount, useEdits } from "@/state/edits";
 import { useUi } from "@/state/ui";
 
 // The empty thread's hint names no column, so it reads right on any file (CLAUDE.md rule 4).
 export const EMPTY_THREAD_HINT =
   "Ask about the data (“the average of one column for each value of another”), find rows (“the rows where …”), " +
-  "ask for a chart (“a chart of … by …”), or ask what drives a column.";
+  "ask for a chart (“a chart of … by …”), ask what drives a column, or tell it what to change (“trim the spaces " +
+  "in …”): you see the code first, and OK runs it.";
 
 export function ChatBar({ placeholder, className, dataset }: {
   placeholder: string; className?: string; dataset?: Dataset;
@@ -178,6 +180,7 @@ function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: stri
           onUnqueue={unqueue}
           onClose={() => setOpen(false)}
           onChoice={(m, choice) => void send(choice, { clarification_of: m.id, choice })}
+          onSend={(m) => (busy ? setQueued((q) => [...q, m]) : void send(m))}
         />
       )}
       <div className="flex h-[52px] w-full max-w-[680px] items-center gap-2 rounded-[14px] border border-border bg-card pl-2 pr-1.5 focus-within:border-border-strong">
@@ -215,9 +218,9 @@ function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: stri
   );
 }
 
-function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoice }: {
+function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoice, onSend }: {
   dataset: Dataset; messages: Message[]; pending: Pending | null; queued: string[]; onUnqueue: (i: number) => void;
-  onClose: () => void; onChoice: (m: Message, choice: string) => void;
+  onClose: () => void; onChoice: (m: Message, choice: string) => void; onSend: (text: string) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -241,7 +244,7 @@ function Thread({ dataset, messages, pending, queued, onUnqueue, onClose, onChoi
           <p className="text-[13px] text-muted-foreground">{EMPTY_THREAD_HINT}</p>
         )}
         {messages.map((m) => (
-          <MessageView key={m.id} message={m} dataset={dataset} onChoice={m.id === lastId ? onChoice : undefined} />
+          <MessageView key={m.id} message={m} dataset={dataset} onChoice={m.id === lastId ? onChoice : undefined} onSend={onSend} />
         ))}
         {pending && (
           <>
@@ -277,8 +280,8 @@ const UserBubble = ({ text }: { text: string }) => (
   <div className="max-w-[80%] self-end rounded-[12px] bg-secondary px-3 py-2 text-[14px]">{text}</div>
 );
 
-function MessageView({ message, dataset, onChoice }: {
-  message: Message; dataset: Dataset; onChoice?: (m: Message, choice: string) => void;
+function MessageView({ message, dataset, onChoice, onSend }: {
+  message: Message; dataset: Dataset; onChoice?: (m: Message, choice: string) => void; onSend?: (text: string) => void;
 }) {
   const [card, setCard] = useState<string | null>(null);
   if (message.role === "user") return <UserBubble text={message.text} />;
@@ -298,7 +301,7 @@ function MessageView({ message, dataset, onChoice }: {
       )}
       {message.plan && <PlanView steps={message.plan.steps} />}
       {message.blocks.map((b, i) => <BlockView key={i} block={b} datasetId={dataset.id} />)}
-      {message.proposal && <ProposalView proposal={message.proposal} dataset={dataset} />}
+      {message.proposal && <ProposalView proposal={message.proposal} dataset={dataset} onSend={onSend} />}
       {modelCard?.run_id && (
         <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>
       )}
@@ -334,8 +337,18 @@ function PlanView({ steps }: { steps: PlanStep[] }) {
 }
 
 /** A proposed change (PRD ASK-10): what would change, with Approve and Reject. Nothing applies before.
- * Approving a clean opens the cleaning plan for those rows; the user starts it (PRD CLEAN-1). */
-export function ProposalView({ proposal, dataset }: { proposal: Proposal; dataset: Dataset }) {
+ * Approving a clean opens the cleaning plan for those rows; the user starts it (PRD CLEAN-1). A cleaning command
+ * shows its code and the effect of its dry run, with OK and Cancel (docs/plans/chat-commands.md). */
+export function ProposalView({ proposal, dataset, onSend }: {
+  proposal: Proposal; dataset: Dataset; onSend?: (text: string) => void;
+}) {
+  if (proposal.kind === "clean_step" || proposal.kind === "computed_column") {
+    return <CommandView proposal={proposal} dataset={dataset} onSend={onSend} />;
+  }
+  return <EditProposalView proposal={proposal} dataset={dataset} />;
+}
+
+function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: Dataset }) {
   const qc = useQueryClient();
   const setRightOpen = useUi((s) => s.setRightOpen);
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
@@ -358,7 +371,9 @@ export function ProposalView({ proposal, dataset }: { proposal: Proposal; datase
     }
   };
   const edits = proposal.edits ?? [];
-  const label = { pending: null, approved: "Approved", rejected: "Rejected", expired: "Expired: the data changed since" }[proposal.status];
+  const label = {
+    pending: null, approved: "Approved", rejected: "Rejected", expired: "Expired: the data changed since", queued: null, failed: null,
+  }[proposal.status];
   return (
     <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]">
       <p className="font-medium">{proposal.summary}</p>
@@ -391,6 +406,97 @@ export function ProposalView({ proposal, dataset }: { proposal: Proposal; datase
   );
 }
 
+type RunAnswer = { step?: { id: string }; version?: number; refreshed?: Proposal; queued?: Proposal };
+
+/** A cleaning command: the code that will run, what its dry run changed, the checks it passed, then Cancel and
+ * OK. OK runs the code on the data as it is then: saved as one step (Undo in the toolbar), re-checked when the
+ * data changed since, or queued while a clean runs. The rest of the message, if any, is sent after. */
+function CommandView({ proposal, dataset, onSend }: {
+  proposal: Proposal; dataset: Dataset; onSend?: (text: string) => void;
+}) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const pendingEdits = useEdits((s) => pendingCount(s.buffers[dataset.id]));
+  const decide = async (what: "approve" | "reject") => {
+    if (what === "approve" && pendingEdits > 0) {
+      toast(`You have ${pendingEdits} unsaved ${pendingEdits === 1 ? "edit" : "edits"} in the grid. Save or discard them first, then press OK.`);
+      return;
+    }
+    setBusy(what);
+    try {
+      const out = await request<RunAnswer>("POST", `/api/v1/proposals/${proposal.id}/${what}`, what === "approve" ? {} : undefined);
+      if (what === "approve" && out?.version) {
+        toast(`Done · saved as v${out.version}. Press Undo in the toolbar (Ctrl+Z) to take it back.`);
+        qc.invalidateQueries({ queryKey: keys.dataset(dataset.id) });
+        qc.invalidateQueries({ queryKey: keys.history(dataset.id) });
+        if (proposal.then && onSend) onSend(proposal.then);
+      } else if (out?.refreshed) {
+        toast(`The data changed since, so I checked again on v${out.refreshed.rechecked_on}: the card shows the new effect. Press OK to run it.`);
+      } else if (out?.queued) {
+        toast("Cleaning is running: this runs as soon as it finishes.");
+      }
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+      qc.invalidateQueries({ queryKey: keys.chat(dataset.id) });
+    }
+  };
+  const rows = proposal.before_after ?? [];
+  const status = {
+    pending: null, approved: "Done · saved as a step you can undo", rejected: "Cancelled", expired: "Expired",
+    queued: "Waiting for cleaning to finish", failed: `Couldn't run: ${proposal.error ?? "a check failed"}`,
+  }[proposal.status];
+  return (
+    <div className="flex flex-col gap-2 rounded-[12px] border border-dashed border-accent p-3 text-[13px]" aria-label="Proposed change">
+      <p className="font-medium">{proposal.summary}</p>
+      {proposal.rechecked_on && proposal.status === "pending" && (
+        <p className="text-[12px] text-warning">Re-checked on v{proposal.rechecked_on}, since the data changed.</p>
+      )}
+      {proposal.code && (
+        <pre aria-label="The code that will run" className="max-h-48 overflow-auto whitespace-pre rounded-md bg-muted p-2 font-mono text-[12px]">{proposal.code}</pre>
+      )}
+      {rows.length > 0 && (
+        <table className="w-full text-left text-[12px]">
+          <thead className="text-muted-foreground">
+            <tr><th className="font-normal">Row</th><th className="font-normal">Column</th><th className="font-normal">Now</th><th className="font-normal">After</th></tr>
+          </thead>
+          <tbody className="font-mono">
+            {rows.slice(0, 8).map((e) => (
+              <tr key={`${e.row_id}:${e.column}`}>
+                <td>{e.row_id}</td><td className="font-sans">{e.column}</td>
+                <td className="text-muted-foreground line-through">{e.old === null ? "empty" : e.old}</td>
+                <td>{e.new === null ? "empty" : e.new}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {(proposal.checks ?? []).length > 0 && (
+        <p className="text-[12px] text-muted-foreground">{(proposal.checks ?? []).map((c) => `✓ ${c}`).join("   ")}</p>
+      )}
+      {proposal.then && proposal.status === "pending" && (
+        <p className="text-[12px] text-muted-foreground">After it runs: “{proposal.then}”</p>
+      )}
+      {proposal.status === "pending" ? (
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" loading={busy === "reject"} disabled={!!busy} onClick={() => void decide("reject")}>Cancel</Button>
+          <Button size="sm" variant="primary" loading={busy === "approve"} disabled={!!busy} onClick={() => void decide("approve")}>OK</Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <p className={cn("text-[12px]", proposal.status === "approved" ? "text-accent" : proposal.status === "failed" ? "text-warning" : "text-muted-foreground")}>
+            {status}
+          </p>
+          {proposal.status === "queued" && (
+            <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void decide("reject")}>Cancel</Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** "How do you know?": each source's label and SQL, then the answer's receipt (every assistant message
  * has one, so a clarification or a failed answer shows its calls too). */
 export function Sources({ sources, messageId }: { sources: Source[]; messageId: string }) {
@@ -406,6 +512,7 @@ export function Sources({ sources, messageId }: { sources: Source[]; messageId: 
               <span className="text-[12px] text-muted-foreground">{s.label}</span>
             )}
             {s.sql && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.sql}</pre>}
+            {s.code && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[12px]">{s.code}</pre>}
           </div>
         ))}
         <Receipts path={`/api/v1/chat/messages/${messageId}/calls`} />

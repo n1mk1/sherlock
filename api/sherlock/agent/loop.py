@@ -4,8 +4,9 @@ Per message: context → route (`small`, schema `Route`, reasoning off) → clar
 resolve names → run up to two intents → compose → verify → save the message with its focus. The
 intents are `ask_data`, `find_rows` and `ask_history` (D4.3), `ask_stats`, `ask_why`, `ask_model`, `ask_meaning`
 and `app_help` (D7.3, `insight.py`), `web_context` (outside-world questions answered from a web search, PRD
-ASK-11, `web.py`), and the actions `edit_cells` and `clean_selection` (TRD §8.2), plus `edit_plan` while a
-cleaning plan is open (`context.plan_id`, PRD CLEAN-8b).
+ASK-11, `web.py`), `ask_code` (questions SQL can't express, as read-only pandas, `analysis.py`), and the actions
+`edit_cells`, `clean_step` (a cleaning command: pandas code the user reads, then runs with OK, `commands.py`) and
+`clean_selection` (TRD §8.2), plus `edit_plan` while a cleaning plan is open (`context.plan_id`, PRD CLEAN-8b).
 Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
 the message is saved even if nobody is listening any more.
 
@@ -19,6 +20,7 @@ import time
 from collections.abc import Callable
 
 from sherlock.agent import actions as acts
+from sherlock.agent import analysis, commands
 from sherlock.agent import insight, prompts
 from sherlock.agent import web as aw
 from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, stem_linked
@@ -43,7 +45,7 @@ NOT_YET: dict[str, str] = {}
 # The tools (TRD §8.2): the answerers, then the actions. A cell edit and a clean of the selection are proposals.
 ANSWERERS = ("ask_data", "find_rows", "ask_history", "ask_why", "ask_stats", "ask_model", "ask_meaning", "app_help",
              "web_context")
-TOOLS = ANSWERERS + ("edit_cells", "clean_selection")
+TOOLS = ANSWERERS + ("ask_code", "edit_cells", "clean_step", "clean_selection")
 PLAN_TOOLS = ("edit_plan",)  # added to the tools while a cleaning plan is open (`context.plan_id`)
 ELSEWHERE = {
     "edit_plan": "Changing a cleaning plan from chat works while the plan is open; press Clean with AI to open one.",
@@ -51,7 +53,8 @@ ELSEWHERE = {
 STEP_LABELS = {"ask_data": "Query the data", "find_rows": "Find the rows",
                "ask_history": "Look at the history", "ask_why": "Find what drives it", "ask_stats": "Run a test",
                "ask_model": "Read the model card", "ask_meaning": "Look at the column", "app_help": "Look in the help",
-               "edit_cells": "Propose the edits", "clean_selection": "Propose a clean", "edit_plan": "Change the plan"}
+               "edit_cells": "Propose the edits", "clean_step": "Write the change", "clean_selection": "Propose a clean",
+               "edit_plan": "Change the plan", "ask_code": "Work it out in code"}
 SUMMARY_EVERY = 10  # older messages are folded into the running summary ten at a time (TRD §8.1 step 1)
 INSIGHT = ("ask_stats", "ask_why", "ask_model", "ask_meaning", "app_help", "web_context")
 # A significance test only when the message asks about one: live (D8.4 eval), Nano sent "what is the
@@ -80,12 +83,30 @@ QUARANTINE_ASK = re.compile(r"\b(why|reasons?|how many|number of|count)\b[^.?!]*
 HOW_TO = re.compile(r"^\W*(how|where)\s+(do|can|could|should)\s+(i|we)\b|^\W*how\s+to\b", re.I)
 # An explicit web search: "search the web for what happened to <someone>" went to ask_history ("happened").
 WEB_ASK = re.compile(r"\b(search|look\s+up|google)\b[^.?!]*\b(web|internet|online)\b|\b(on|from)\s+the\s+(web|internet)\b", re.I)
-# A request to delete rows: chat never deletes (Rule 3); live, "delete all the <records> …" only listed them.
+# A request to delete or remove something from the data is a cleaning command: rows are set aside (quarantined),
+# never deleted, and the user reads the code before it runs. Live, "delete all the <records> …" only listed them.
 DELETE_ASK = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(delete|remove|drop|erase|purge|wipe|get\s+rid\s+of)\b"
-                        r"(?![^.?!]*\b(filters?|charts?|notes?|steps?|selections?|columns?)\b)", re.I)
-DELETE_NOTE = ("I can't delete rows from chat, and there's no chat proposal to quarantine them either: data only changes "
-               "through a step you make. These are the rows that match; open them in the CSV tab, where Delete row takes "
-               "them out as a step you can undo.")
+                        r"(?![^.?!]*\b(filters?|charts?|notes?|steps?|selections?|columns?|plans?|fix(es)?|rules?)\b)", re.I)
+# A cell edit names its rows by number; a change by rule ("make these empty", "fix the typo in <a value>") is a
+# cleaning command, which has no limit on how many cells it changes.
+ROW_NAMED = re.compile(r"\brows?\s*(#|no\.?|number)?\s*\d", re.I)
+# A message that starts by telling Sherlock to change the data is a cleaning command, whatever the router said:
+# live (Nemotron, 2026-10-27), "make <a column> a whole number by rounding" and "fill the missing <a column> values
+# with <a value>" went to ask_data, and "add <a name> = <a column> + <another>" to ask_code. Not a request for a
+# chart or a list ("make a chart of …"), and not a question.
+COMMAND = re.compile(
+    r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(make|set|change|convert|turn|replace|rename|trim|strip|fill|impute|"
+    r"standardi[sz]e|normali[sz]e|fix|correct|round|cast|split|merge|combine|upper-?case|lower-?case|title-?case|"
+    r"capitali[sz]e|reformat|format|parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|"
+    r"add\s+(a\s+|an\s+)?(new\s+)?(computed\s+)?column|add\s+[\w.]+(?=\s*=)|create\s+(a\s+|an\s+)?(new\s+)?column)\b"
+    r"(?![^.?!]*\b(charts?|plots?|graphs?|histograms?|lists?|summary|report|notebook)\b)", re.I)
+# Analysis a single query can't do well: a fit, clusters, fuzzy matching. Live, "the slope of <a measure> against
+# <another>" went to ask_data, whose query answered something else.
+CODE_ASK = re.compile(r"\b(regress\w*|slope|trend\s*line|line\s+of\s+best\s+fit|best[- ]fit|clusters?|clustering|"
+                      r"k-?means|fuzzy|principal\s+components?|pca)\b", re.I)
+# With a plan open, a message about the plan's fixes changes the plan; any other change to the data is a command.
+PLAN_WORDS = re.compile(r"^\W*also\b|\b(plan|fix(es)?|untick|tick|don'?t\s+touch|leave\s+[^.?!]*\balone|leave\s+out|put\s+back|"
+                        r"skip|instead|worth\s+a\s+look|cosmetic)\b", re.I)
 # Records that meet a numeric condition are a row list: live (ask eval), Nano sent "which <records> paid more than
 # <an amount>?" to ask_data, which answered with a table, not the rows. Not when it asks for a number about them, or
 # a ranking; a group ("which <a group column> has more than …") is checked against the resolved names.
@@ -341,18 +362,31 @@ class Agent:
             intents = swap(intents, ("ask_data", "find_rows", "ask_why", "ask_stats", "ask_model"), "ask_history")
         if RANKING.search(question):
             intents = swap(intents, ("find_rows",), "ask_data")
+        analysis_only = bool(CODE_ASK.search(question) and not COMMAND.search(question))
+        if analysis_only:  # live, "group the <records> into clusters by <a> and <b>" also ran ask_why and its model card
+            intents = ["ask_code"]
+        if COMMAND.search(question) and not HOW_TO.search(question):
+            plan_change = context.get("plan_id") and PLAN_WORDS.search(question)
+            target = "edit_plan" if plan_change else "edit_cells" if ROW_NAMED.search(question) else "clean_step"
+            intents = [target]
+        elif context.get("plan_id") and "clean_step" in intents and PLAN_WORDS.search(question):
+            intents = swap(intents, ("clean_step",), "edit_plan")
+        elif context.get("plan_id") and "edit_plan" in intents and not PLAN_WORDS.search(question):
+            intents = swap(intents, ("edit_plan",), "clean_step")
+        if "edit_cells" in intents and not ROW_NAMED.search(question):
+            intents = swap(intents, ("edit_cells",), "clean_step")
         deleting = bool(DELETE_ASK.search(question))
         if deleting:
-            intents = ["find_rows"]
+            intents = ["clean_step"]
         steps = [(i, question) for i in intents]
-        if route.multi_step and not deleting:
+        if route.multi_step and not deleting and not analysis_only:
             steps = self._plan(question, ctx_text, scope, tools) or steps
         plan = [{"text": f"{STEP_LABELS.get(i, i)}: {q}" if q != question else STEP_LABELS.get(i, i), "status": "pending"}
                 for i, q in steps] if len(steps) > 1 else None
         if plan:
             self.emit("plan", {"steps": plan})
         proposal = None
-        for n, (intent, q) in enumerate(steps, 1):
+        for n, (intent, q) in enumerate(steps, 1):  # noqa: B007 - `n` also counts the steps a command defers
             if kit.calls[0] >= MAX_CALLS or time.monotonic() - self.started > WALL_S:
                 notes.append("I stopped early to stay within this answer's budget.")
                 break
@@ -374,15 +408,32 @@ class Agent:
                     computed += [r.id for r in reply.results]
                     focus_out.update(reply.focus)
                     continue
-                if intent in ("ask_data", "find_rows"):
-                    self.emit("status", {"text": "Running a query" if intent == "ask_data" else "Finding rows"})
+                if intent in ("ask_data", "find_rows", "ask_code"):
+                    self.emit("status", {"text": {"ask_data": "Running a query", "find_rows": "Finding rows",
+                                                  "ask_code": "Working it out in code"}[intent]})
                     rid = f"r{len(results) + len(computed) + 1}"
-                    res = kit.ask_data(q, rid) if intent == "ask_data" else kit.find_rows(q, rid, columns)
+                    if intent == "ask_code":
+                        res = analysis.ask_code(kit, q, rid)
+                    elif intent == "find_rows":
+                        res = kit.find_rows(q, rid, columns)
+                    else:
+                        try:
+                            res = kit.ask_data(q, rid)
+                        except (CantAnswer, StructuredOutputError) as exc:
+                            # SQL couldn't express it (not "no column records it"): pandas gets one try.
+                            if isinstance(exc, Clarify) or not (isinstance(exc, StructuredOutputError) or getattr(exc, "sql_failed", False)):
+                                raise
+                            self.emit("status", {"text": "Working it out in code"})
+                            res = analysis.ask_code(kit, q, rid)
                     results.append(res)
                     streamed.append(table_block(res))
                     self.emit("block", streamed[-1])  # the first block, before the prose is written
                     label = f"Query ({res.id})" + (f", reading {res.extra['reading']}" if res.extra.get("reading") else "")
-                    sources.append({"kind": "sql", "sql": res.sql, "label": label, "result": res.id})
+                    if res.extra.get("code"):
+                        label = f"Code ({res.id})" + (f", reading {res.extra['reading']}" if res.extra.get("reading") else "")
+                        sources.append({"kind": "code", "code": res.extra["code"], "label": label, "result": res.id})
+                    else:
+                        sources.append({"kind": "sql", "sql": res.sql, "label": label, "result": res.id})
                     if res.selection_id:
                         actions.append({"kind": "open_rows", "selection_id": res.selection_id})
                 elif intent == "ask_history":
@@ -412,6 +463,23 @@ class Agent:
                     self.emit("status", {"text": "Changing the plan"})
                     summary = acts.edit_plan(kit, q, context)
                     blocks.append(text_block([{"type": "text", "text": summary}]))  # the panel follows plan.updated
+                elif intent == "clean_step":
+                    if proposal is not None:
+                        raise CantAnswer("One change at a time: run or cancel the card above first.")
+                    self.emit("status", {"text": "Writing the code"})
+                    proposal = commands.propose(kit, q, context, types)
+                    later = [s for _, s in steps[n:]]
+                    if later:  # the rest of the message runs on the changed data, once the user presses OK
+                        proposal = commands.then(self.db, proposal, later)
+                    self.emit("proposal", proposal)
+                    blocks.append(text_block([{"type": "text", "text": f"{proposal['summary']}. Nothing has changed yet: "
+                                               "read the code, then press OK to run it on the file, or Cancel."}]))
+                    for warning in proposal.get("warnings") or []:  # said by code
+                        blocks.append(text_block([{"type": "text", "text": warning}]))
+                    if later:
+                        blocks.append(text_block([{"type": "text", "text": "The rest of your message runs on the changed "
+                                                   "data once you press OK."}]))
+                        break
                 elif intent in ("edit_cells", "clean_selection"):
                     if proposal is not None:
                         raise CantAnswer("One change at a time: approve or reject the proposal above first.")
@@ -470,8 +538,6 @@ class Agent:
                 composed = [b for b in composed
                             if not (b["type"] == "table" and b.get("result") in computed and b["result"] not in cited)]
             blocks = composed + blocks
-        if deleting:  # the refusal first, then the rows it would have deleted
-            blocks.insert(0, text_block([{"type": "text", "text": DELETE_NOTE}]))
         if results:
             queried = [r for r in results if r.id not in computed]
             if queried:

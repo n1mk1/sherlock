@@ -1,4 +1,4 @@
-"""Steps (TRD §4.4): list, get, undo."""
+"""Steps (TRD §4.4): list, get, undo; the toolbar's Undo and Redo, up to `undo_depth` states back."""
 
 import json
 import sqlite3
@@ -10,7 +10,7 @@ from sherlock.db.connection import get_db
 from sherlock.errors import not_found
 from sherlock.ownership import owned_dataset
 from sherlock.steps.commit import Context, current_version_row, load_step
-from sherlock.steps.undo import undo_step
+from sherlock.steps.undo import history, quick_undo, redo_step, undo_step
 
 router = APIRouter(tags=["steps"])
 
@@ -19,6 +19,12 @@ class UndoRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     confirm: bool = False
+    base_version: int = Field(ge=1)
+
+
+class MoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     base_version: int = Field(ge=1)
 
 
@@ -53,3 +59,25 @@ def undo(
 ) -> dict:
     ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
     return undo_step(ctx, row["id"], step_id, body.base_version, body.confirm)
+
+
+@router.get("/datasets/{dataset_id}/history")
+def get_history(request: Request, row: sqlite3.Row = Depends(owned_dataset), db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """`{ version, undo: { step_id, no, summary } | null, redo: … | null, depth_left }` for the toolbar."""
+    return history(db, row["id"], request.app.state.settings.undo_depth)
+
+
+@router.post("/datasets/{dataset_id}/undo")
+def undo_latest(body: MoveRequest, request: Request, row: sqlite3.Row = Depends(owned_dataset),
+                db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """The toolbar's Undo: `{ step, version }`; `409` when there's nothing left to undo in a row."""
+    ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
+    return quick_undo(ctx, row["id"], body.base_version)
+
+
+@router.post("/datasets/{dataset_id}/redo")
+def redo(body: MoveRequest, request: Request, row: sqlite3.Row = Depends(owned_dataset),
+         db: sqlite3.Connection = Depends(get_db)) -> dict:
+    """The toolbar's Redo: `{ step, version }`; `409` when there's nothing to redo."""
+    ctx = Context(request.app.state.settings, db, request.app.state.duckdb, request.app.state.bus)
+    return redo_step(ctx, row["id"], body.base_version)

@@ -68,5 +68,8 @@
   {"purpose": "route", "match": ["<data>\nset the age of row 5 to 200\n</data>"],
    "content": {"intents": ["edit_cells"], "ambiguous": false, "clarification": null, "multi_step": false, "entities": [{"text": "age", "kind": "column"}]}},
   {"purpose": "edits", "match": ["Request:\n<data>\nset the age of row 5 to 200\n</data>"],
-   "content": {"reading": "row 5, age, the new value", "edits": [{"row_id": 5, "column": "age", "value": "200"}]}}
+   "content": {"reading": "row 5, age, the new value", "edits": [{"row_id": 5, "column": "age", "value": "200"}]}},
+  {"purpose": "step", "match": ["<data>\ndelete all the male passengers\n</data>"],
+   "content": {"reading": "rows where sex is male, set aside", "doable": true, "columns": [], "new_columns": [],
+               "code": "result = df.copy()\nresult = quarantine_rows(result, result[\"sex\"] == \"male\", \"asked to delete: male passengers\")"}}
 ]

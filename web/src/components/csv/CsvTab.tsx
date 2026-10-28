@@ -2,11 +2,11 @@
 // add and delete row, sort, find, Save (with conflicts) and Discard, Clean with AI (it opens the cleaning
 // plan in the right panel), Restore for quarantined rows, and the Download menu. Toolbar 40px, grid,
 // status bar 28px. While a clean owns the data the grid is read-only, with a banner.
-import { BookOpen, Download, Plus, RotateCcw, Search, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, Download, Plus, Redo2, RotateCcw, Search, Sparkles, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { busyReason, find, makeSelection, type Sort } from "@/api/csv";
+import { busyReason, find, makeSelection, useHistory, useMove, type Sort } from "@/api/csv";
 import { useCreatePlan, useDatacard } from "@/api/queries";
 import type { Column, Dataset } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -108,6 +108,7 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
         )}
         <Button size="sm" variant="ghost" aria-pressed={findOpen} onClick={() => setFindOpen((o) => !o)}><Search /> Find</Button>
         <CleanButton dataset={dataset} />
+        <HistoryButtons dataset={dataset} pending={pendingCount(buffer)} />
         <MenuRoot>
           <MenuTrigger asChild>
             <Button size="sm" variant="ghost"><Download /> Download</Button>
@@ -219,6 +220,54 @@ function StatusBar({ total, pending, selection, sort }: { total: number; pending
         {cur?.column ? `Row ${cur.rowId ?? "new"} · ${cur.column}` : ""}
       </span>
     </div>
+  );
+}
+
+/** Undo and Redo (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z): back one state at a time, at most `undo_depth` in a row, and
+ * forward again through what was undone. A new change clears Redo; older steps are in the Changes panel. Unsaved
+ * grid edits are saved or discarded first, and both wait while a clean runs. */
+function HistoryButtons({ dataset, pending }: { dataset: Dataset; pending: number }) {
+  const history = useHistory(dataset.id, dataset.current_version);
+  const move = useMove(dataset.id);
+  const h = history.data;
+  const busy = busyReason(dataset);
+  const go = useCallback((way: "undo" | "redo") => {
+    const target = way === "undo" ? h?.undo : h?.redo;
+    if (busy) return void toast(busy);
+    if (pending > 0) return void toast(`Save or discard your ${pending} unsaved ${pending === 1 ? "edit" : "edits"} first.`);
+    if (!target || move.isPending) return;
+    move.mutate({ way, base: dataset.current_version }, {
+      onSuccess: (r) => toast(`${way === "undo" ? "Undid" : "Redid"}: ${target.summary} · now v${r.version}`),
+      onError: (e) => toast.error((e as Error).message),
+    });
+  }, [h, busy, pending, move, dataset.current_version]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const editing = t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+      if (editing || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) {
+        e.preventDefault();
+        go("undo");
+      } else if (k === "y" || (k === "z" && e.shiftKey)) {
+        e.preventDefault();
+        go("redo");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go]);
+  const undoTitle = h?.undo ? `Undo: ${h.undo.summary} (Ctrl+Z)`
+    : h && h.depth_left === 0 ? "You can undo up to 3 changes in a row; older ones are in the Changes panel" : "Nothing to undo";
+  const redoTitle = h?.redo ? `Redo: ${h.redo.summary} (Ctrl+Y)` : "Nothing to redo";
+  return (
+    <>
+      <Button size="sm" variant="ghost" aria-label="Undo" title={busy ?? undoTitle} disabled={!h?.undo || !!busy}
+        loading={move.isPending && move.variables?.way === "undo"} onClick={() => go("undo")}><Undo2 /> Undo</Button>
+      <Button size="sm" variant="ghost" aria-label="Redo" title={busy ?? redoTitle} disabled={!h?.redo || !!busy}
+        loading={move.isPending && move.variables?.way === "redo"} onClick={() => go("redo")}><Redo2 /> Redo</Button>
+    </>
   );
 }
 

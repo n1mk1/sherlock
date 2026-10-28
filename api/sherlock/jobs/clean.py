@@ -10,10 +10,12 @@ import asyncio
 import json
 import sqlite3
 
+from sherlock.agent import commands
 from sherlock.cleaning.loop import Cleaner
 from sherlock.jobs.events import EventBus, set_dataset_status
-from sherlock.jobs.runner import JobContext, register
+from sherlock.jobs.runner import JobCancelled, JobContext, register
 from sherlock.llm.client import LLMClient
+from sherlock.query import context as qx
 
 
 def is_whole(params: dict) -> bool:
@@ -26,10 +28,21 @@ def _clean(ctx: JobContext) -> dict:
         return {"skipped": "dataset deleted"}
     if is_whole(ctx.params):
         ctx.set_dataset_status("cleaning")
-    result = Cleaner(ctx, LLMClient(ctx.settings)).run()
+    try:
+        result = Cleaner(ctx, LLMClient(ctx.settings)).run()
+    except JobCancelled:  # Stop: the data is ready with the committed steps, then the queued commands run
+        if is_whole(ctx.params):
+            _end(ctx, dataset["id"])
+        raise
     if is_whole(ctx.params):
-        mark_ready(ctx.db, ctx.bus, dataset["id"])
+        _end(ctx, dataset["id"])
     return result
+
+
+def _end(ctx: JobContext, dataset_id: str) -> None:
+    """Ready, then the chat commands the user OK'd while the clean ran, in order (`agent/commands.py`)."""
+    mark_ready(ctx.db, ctx.bus, dataset_id)
+    commands.run_queued(qx.Env(ctx.settings, ctx.db, ctx.cache, ctx.bus), dataset_id)
 
 
 def mark_ready(db: sqlite3.Connection, bus: EventBus | None, dataset_id: str) -> None:
@@ -49,6 +62,9 @@ def on_failure(db: sqlite3.Connection, bus: EventBus | None, job: sqlite3.Row, m
         mark_ready(db, bus, job["dataset_id"])
     else:
         set_dataset_status(db, bus, job["dataset_id"], "offer", f"Cleaning stopped: {message}")
+        # Commands OK'd while it ran wait for another OK on the data as it is now.
+        db.execute("UPDATE proposals SET status = 'pending', resolved_at = NULL WHERE dataset_id = ? AND status = 'queued'",
+                   (job["dataset_id"],))
 
 
 register("clean", run, on_failure)

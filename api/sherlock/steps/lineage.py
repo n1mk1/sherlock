@@ -136,7 +136,7 @@ def changes(db: sqlite3.Connection, dataset_id: str, since: int, version: int) -
                 everything = True
             if r["edits_json"] and json.loads(r["edits_json"]).get("restore_row_ids"):
                 everything = True
-        if s["kind"] == "undo" and s["undone_step_id"]:
+        if s["kind"] in ("undo", "redo") and s["undone_step_id"]:
             u = db.execute("SELECT * FROM steps WHERE id = ?", (s["undone_step_id"],)).fetchone()
             cols.update(json.loads(u["column_targets_json"]))
             impact = json.loads(u["impact_json"])

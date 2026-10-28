@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     sample_seed_dir: str = ""
     sandbox_cpu_s: int = 30
     sandbox_mem_mb: int = 2048
+    undo_depth: int = 3  # how many states the toolbar's Undo goes back in a row (Redo goes forward again)
     # Unix socket of sherlock-sandboxd (the image sets it); empty: workers start directly (dev, tests).
     sandboxd_socket: str = ""
     # Where workers' temp directories go, outside DATA_DIR; empty: <system temp>/sherlock-sandbox.

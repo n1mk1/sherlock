@@ -246,12 +246,12 @@ def test_a_group_over_an_amount_isnt_a_row_list():
 
 # --- 12: edit requests -----------------------------------------------------------------------------
 
-def test_delete_requests_say_chat_cant_delete_and_list_the_rows(client, ready):
+def test_delete_requests_become_a_command_that_sets_the_rows_aside(client, ready):
     q = "delete all the male passengers"
     _, msg = send(client, ready["id"], q)
-    assert msg["text"].startswith("I can't delete rows from chat") and "proposal" not in msg
-    assert blocks_of(msg, "table")[0]["total"] == 843
-    assert any(a["kind"] == "open_rows" for a in msg["actions"])
+    p = msg["proposal"]  # rows are never deleted: the code quarantines them, and nothing runs before OK
+    assert p["kind"] == "clean_step" and p["impact"]["quarantined"] == 843 and "quarantine_rows" in p["code"]
+    assert msg["text"].startswith("Set aside 843 rows (quarantined, not deleted).")
     in_eval(msg, q)
     assert loop.DELETE_ASK.search("please remove the rows with no age")
     assert not loop.DELETE_ASK.search("remove the filter") and not loop.DELETE_ASK.search("what did cleaning remove?")

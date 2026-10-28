@@ -188,7 +188,9 @@ class Toolkit:
             try:
                 res = self._read_as(self._run(draft.sql, rid), draft.reading)
             except ApiError:
-                raise self._unanswered(self._try_naming("that")) from None
+                exc = self._unanswered(self._try_naming("that"))
+                exc.sql_failed = True  # SQL couldn't express it: the chat tries pandas next (`analysis.ask_code`)
+                raise exc from None
         return self._checked(res, messages, draft, rid, question)
 
     def _checked(self, res: Result, messages: list[dict], draft: SqlDraft, rid: str, question: str = "") -> Result:

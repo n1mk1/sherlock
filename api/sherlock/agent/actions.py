@@ -12,7 +12,7 @@ import json
 import re
 import sqlite3
 
-from sherlock.agent import prompts
+from sherlock.agent import commands, prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
 from sherlock.agent.compose import fmt, fmt_kind
 from sherlock.cleaning import plan as plans
@@ -250,6 +250,8 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
 
     if row["status"] != "pending":
         raise ApiError(409, "conflict", f"This proposal was already {row['status']}.")
+    if row["kind"] in commands.KINDS:  # code runs on the version current now, so it never expires
+        return commands.run(qx.Env(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, row)
     if row["base_version"] != dataset["current_version"]:
         db.execute("UPDATE proposals SET status = 'expired', resolved_at = ? WHERE id = ?", (now_iso(), row["id"]))
         raise ApiError(409, "conflict", f"The data changed since this was proposed (now version {dataset['current_version']}). "
@@ -270,5 +272,5 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
 
 
 def reject(db: sqlite3.Connection, row: sqlite3.Row) -> None:
-    if row["status"] == "pending":
+    if row["status"] in ("pending", "queued"):  # Cancel also takes a command out of the queue
         db.execute("UPDATE proposals SET status = 'rejected', resolved_at = ? WHERE id = ?", (now_iso(), row["id"]))

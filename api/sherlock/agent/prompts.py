@@ -19,7 +19,9 @@ INTENT_LINES = {
     "ask_meaning": "ask_meaning: what a column of this file, or a code in one of its columns, means (\"what does <a column> mean?\", \"what is <a code> in <a column>?\"). A term that is neither a column nor one of its values is web_context.",
     "web_context": "web_context: a question about the outside world that any file would get the same answer to: what a term, score or abbreviation means in general, how something works, typical values elsewhere, rules and standards, history, or recent events (\"what is <a term>?\", \"what does <an abbreviation> stand for?\", \"what is a typical <measure> for <a kind of business>?\", \"historically, what was <something>?\", \"what are the latest <topic> trends?\"). It searches the web. A question about this file's own numbers or rows is never web_context, and what a column of this file means is ask_meaning.",
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I undo a cleaning step?\", \"how do I export a notebook?\")",
-    "edit_cells": "edit_cells: change values in particular cells or rows (\"set <a column> of row <n> to <a value>\", \"make these empty\", \"fix the typo in <a value>\"), as a proposal the user approves",
+    "edit_cells": "edit_cells: change the values of particular rows named by their row number (\"set <a column> of row <n> to <a value>\"), as a proposal the user approves",
+    "clean_step": "clean_step: change the data by a rule, as code the user reads and runs: fix, convert, replace, trim, rename values, fill, split or combine, in a column or in every row that matches a condition (\"trim the spaces in <a column>\", \"make <a column> a number\", \"replace <a value> with <another> in <a column>\", \"fill missing <a column> with <a value>\", \"title-case <a column>\", \"make these empty\"), add a computed column (\"add <a name> = <a column> + <another>\"), or set rows aside (\"delete the rows where …\")",
+    "ask_code": "ask_code: a question a single SQL query can't answer: fit a regression or a trend line, cluster or segment the records, a custom statistic, fuzzy matching of near-duplicate spellings, or a calculation in several dependent steps. Plain counts, averages, rates, breakdowns and rankings are ask_data.",
     "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file (\"clean these rows\", \"clean up the selection\")",
     "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave <a column> alone\", \"also trim spaces in <a column>\", \"fill <a column> by <a group> instead\")",
 }
@@ -118,6 +120,56 @@ Rules:
 {context}
 {cells}
 Request:
+{message}"""
+
+STEP = """Write pandas code that makes the change the user asks for to this file. Nothing changes until the user reads your code and presses OK.
+
+Rules:
+""" + READING + """
+- Change only what the request asks for, in the columns it names or clearly means. List those columns in columns.
+- Never delete rows. When the user asks to delete, remove or drop rows, set them aside instead: `result = quarantine_rows(result, <mask>, "<a few words why>")`. They stay in the file, out of the usable rows, and can be restored.
+- To add a column, assign it on result and list its name in new_columns. Never remove or rename columns.
+- Fill missing values only when the user asks for it, and never with a placeholder word such as "Unknown".
+- When you turn text into numbers or dates, set aside the rows whose values failed: `result = quarantine_rows(result, parse_failures(df[col], parsed), "parse: <column>")`.
+- Take every value and threshold from the request or the data; never invent one.
+- When no column of this file fits the request, or it isn't a change to the data (a question, a chart), set doable to false and say why in reading, without digits. Never set doable to false because you think no rows match: write the code, and code counts what it changes.
+
+How the code runs:
+- `df` is a pandas DataFrame with every column of the file, plus `_row_id` (never change it) and `_quarantine_reason` (text; None for usable rows; set-aside rows are included).
+- `pd`, `np` and these helpers are already in scope (no imports needed; `re`, `math`, `datetime`, `rapidfuzz`, `dateparser` and `ftfy` may be imported):
+{helpers}
+- Start with `result = df.copy()`, assign whole columns (use `result.loc[<mask>, "<column>"]` for some rows), and leave the changed DataFrame in `result`, with the same rows.
+- No file, network or system access; no `eval`, `exec`, `open`, `getattr`, dunder names, or `read_*`/`to_*` methods other than pd.to_datetime, pd.to_numeric and pd.to_timedelta.
+- Keep it short and plain: the user reads it before it runs.
+
+{context}
+
+Columns and their types:
+{dtypes}
+{scope}
+Request:
+{message}"""
+
+ANALYSIS = """Write pandas code that answers the question below, which a single SQL query can't answer well (a regression, clustering, a custom statistic, fuzzy matching, a calculation in several steps). The code only reads the data; nothing is saved.
+
+Rules:
+""" + READING + """
+- Use only the usable rows unless the question is about set-aside rows: `d = df[df["_quarantine_reason"].isna()]`.
+- Leave the answer in `result`: a DataFrame with short, readable column names (a table or a breakdown), a Series, or a single value. At most fifty rows.
+- Rates and shares are fractions between 0 and 1. Round nothing: the app formats numbers.
+- Answer the quantity the question asks for. When no column of this file records it, set answerable to false; never put another column in its place.
+
+How the code runs:
+- `df` is a pandas DataFrame with every column of the file, plus `_row_id` and `_quarantine_reason`.
+- `pd` and `np` are in scope; `re`, `math`, `datetime`, `scipy`, `sklearn` and `rapidfuzz` may be imported.
+- No file, network or system access; no `eval`, `exec`, `open`, `getattr`, dunder names, or `read_*`/`to_*` methods other than pd.to_datetime, pd.to_numeric and pd.to_timedelta.
+
+{context}
+
+Columns and their types:
+{dtypes}
+
+Question:
 {message}"""
 
 PLAN_EDITS = """Turn the message into changes to the cleaning plan below. Nothing is cleaned until the user presses Start; your changes apply to the plan at once.

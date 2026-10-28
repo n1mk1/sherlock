@@ -94,11 +94,17 @@ titanic3.csv:
   - q: Why did first class passengers survive more often?
     expect: {source: run, rows: {"1": 0.61920, "3": 0.25529}}
   - q: delete all the male passengers
-    expect: {text_any: ["can't delete"]}
+    expect: {text_any: ["set aside"]}
   - q: set the age of row 5 to 200
     expect: {text_any: ["outside the range"]}
   - q: What will the survival rate be next year?
     expect: {text_any: ["can't forecast"]}
+  - q: make the sex column upper case
+    expect: {proposal: {kind: clean_step, cells_changed: 1309}}
+  - q: add family_size = sibsp + parch + 1
+    expect: {proposal: {kind: computed_column, columns_added: [family_size]}}
+  - q: what is the slope of fare against age?
+    expect: {source: code, value: 0.692, tol: 0.01}
 
 sales_dated.csv:
   - q: What is the total revenue?
@@ -123,6 +129,12 @@ sales_dated.csv:
     expect: {rows: {"Central": 0.05383, "East": 0.06693, "North": 0.07605, "South": 0.07744, "West": 0.08141}}
   - q: What is the average revenue per order?
     expect: {value: 205.1964}
+  - q: make the region column upper case
+    expect: {proposal: {kind: clean_step, cells_changed: 5000}}
+  - q: add a column line_total = units * unit_price
+    expect: {proposal: {kind: computed_column, columns_added: [line_total]}}
+  - q: what is the slope of revenue against units?
+    expect: {source: code, value: 22.6596, tol: 0.01}
   - q: How many orders were returned?
     expect: {value: 366}
   - q: What was the revenue from Gizmo in the North region?
