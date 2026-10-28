@@ -50,11 +50,16 @@ class Diff:
         return [{"row_id": r[0], "column": r[1], "old": r[2], "new": r[3]} for r in cells]
 
 
-def diff_versions(old: Path, new: Path) -> Diff:
-    conn = duckdb.connect(":memory:")
+def diff_versions(old: Path, new: Path, conn: duckdb.DuckDBPyConnection | None = None) -> Diff:
+    """`conn` (optional): a connection that already holds the two versions as tables `o` and `n`, so a caller that
+    needs the rows too reads each file once. It stays open; the caller closes it."""
+    own = conn is None
+    if own:
+        conn = duckdb.connect(":memory:")
     try:
-        conn.execute(f"CREATE VIEW o AS SELECT * FROM read_parquet({sql_path(old)})")
-        conn.execute(f"CREATE VIEW n AS SELECT * FROM read_parquet({sql_path(new)})")
+        if own:
+            conn.execute(f"CREATE VIEW o AS SELECT * FROM read_parquet({sql_path(old)})")
+            conn.execute(f"CREATE VIEW n AS SELECT * FROM read_parquet({sql_path(new)})")
         old_types = {r[0]: r[1] for r in conn.execute("DESCRIBE o").fetchall()}
         new_types = {r[0]: r[1] for r in conn.execute("DESCRIBE n").fetchall()}
         rows_in = conn.execute("SELECT count(*) FROM o").fetchone()[0]
@@ -108,7 +113,8 @@ def diff_versions(old: Path, new: Path) -> Diff:
         diff.deleted_row_ids = [r[0] for r in deleted]
         return diff
     finally:
-        conn.close()
+        if own:
+            conn.close()
 
 
 def check_version_file(path: Path) -> tuple[int, int | None]:

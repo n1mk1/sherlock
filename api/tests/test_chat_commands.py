@@ -85,7 +85,7 @@ def test_ok_after_the_data_changed_reruns_the_code_and_refreshes_when_the_effect
     assert done["version"] == v + 2 and cell(client, ds, 2, "fare") == 1 and cell(client, ds, 2, "sex") == "MALE"
 
     _, msg = send(client, ds, "make the sex column upper case")
-    assert "proposal" not in msg and "changes nothing" in msg["text"]  # already upper case
+    assert "proposal" not in msg and "nothing to change" in msg["text"]  # already upper case
 
     # An edit that the command would have changed: the effect differs, so the card refreshes for another OK.
     client.post(f"{API}/datasets/{ds}/steps/{done['step']['id']}/undo", json={"base_version": v + 2})
@@ -159,7 +159,7 @@ def test_a_request_nothing_fits_or_unsafe_code_gets_the_reason_not_a_card(client
     _, msg = send(client, ds, "repaint the unicorns in colour")
     assert "proposal" not in msg and msg["text"].startswith("I can't make that change to this file")
     _, msg = send(client, ds, "strip the titles from name")
-    assert "proposal" not in msg and "couldn't write a safe change" in msg["text"] and "not allowed" in msg["text"]
+    assert "proposal" not in msg and msg["text"] == commands.SAID["refused"]
     assert version(client, ds) == v
 
 

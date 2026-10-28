@@ -22,15 +22,18 @@ import sqlite3
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from contextlib import closing
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import duckdb
 import pandas as pd
+from rapidfuzz import fuzz, process, utils
 
 from sherlock.agent import prompts
 from sherlock.agent.answerers import CantAnswer, Toolkit
 from sherlock.cleaning import verifiers
+from sherlock.cleaning.helpers import _merge_key, _merge_refusal
 from sherlock.cleaning.prompts import HELPERS
 from sherlock.db.util import new_id, now_iso
 from sherlock.errors import ApiError
@@ -57,8 +60,48 @@ CHECK_WORDS = {"row_ledger": "no rows lost", "nan_introduced": "no new blanks", 
                "parse_quarantine": "unreadable values set aside"}
 
 
+# What a refused check says to the user (all of it written here, never by the model): what the code would have done,
+# and what to say instead. `{n}` is a count from the report.
+REFUSED = {
+    "row_ledger": "The code would add or lose rows, and a command never does that. To get rows out of the way, say "
+                  "'delete the rows where …' and I'll set them aside.",
+    "dtype": "The code would leave text mixed in with numbers or dates in one column. Say what the column should hold, "
+             "for example 'make fare a number'.",
+    "parse_quarantine": "The code leaves {n} values it couldn't read as the new type. Ask me to set the ones that don't "
+                        "convert aside as well.",
+    "pandera": "The code would break the file's structure (its row numbers or set-aside marks).",
+}
+SAID = {
+    "removed": "The code would remove {cols}, and a command never removes a column.",
+    "extra": "The code would add a column you didn't ask for ({cols}). To add one, say 'add a column …'.",
+    "empty": "The new column {col} would be empty in every row. Say how its values are worked out, for example "
+             "'add total = price * quantity'.",
+    "name": "I can't add a column called {col}: the name is taken or isn't a plain name. Say what to call it, using "
+            "letters, digits and underscores.",
+    "nothing": "Nothing in this version matches that, so there's nothing to change.",
+    "crash": "The code I wrote didn't run. Try naming the column and what to do with it.",
+    "crash_column": "The code I wrote didn't run (it looked for a column that isn't there). Try naming the column.",
+    "slow": "The code I wrote took too long on this file, so I stopped it. Try a smaller change.",
+    "refused": "The code I wrote tried something a command isn't allowed to do. Try saying it another way.",
+    "default": "I couldn't turn that into a change I could check. Try naming the column and what to do with it.",
+}
+
+
 class StepFailed(Exception):
-    """The code failed to run, or its result failed a check; the message says why, in plain words."""
+    """The code failed to run, or its result failed a check. `str(exc)` says why, for the model (the repair
+    message); `exc.user` says it to the user in plain words, with what to do next."""
+
+    def __init__(self, why: str, user: str = ""):
+        super().__init__(why)
+        self.user = user or SAID["default"]
+
+
+def no_column(name: str, columns: list[str]) -> str:
+    """"This file has no column called Fare. The closest are fare and fare_usd." (closest by rapidfuzz)"""
+    close = [c for c, _, _ in process.extract(name, [c for c in columns if c not in SYSTEM_COLUMNS], scorer=fuzz.WRatio,
+                                              processor=utils.default_process, score_cutoff=70, limit=2)]
+    return f"This file has no column called {name}." + (f" The closest {'is' if len(close) == 1 else 'are'} "
+                                                        f"{' and '.join(close)}." if close else "")
 
 
 @dataclass
@@ -69,6 +112,8 @@ class DryRun:
     report: verifiers.Report
     columns_changed: list[str]
     warnings: list[str]
+    warned: list[str] = field(default_factory=list)  # checks that failed but became warnings: the card shows no tick for them
+    seconds: dict = field(default_factory=dict)      # {"sandbox": …, "checks": …}, for the timing log
 
 
 def plain(code: str) -> str:
@@ -91,19 +136,13 @@ def notebook_code(code: str, rows: list[int] | None) -> str:
     return full_code(code, rows) + "df = result\n"
 
 
-def _read(path: Path) -> pd.DataFrame:
-    conn = duckdb.connect(":memory:")
-    try:
-        return conn.execute(f"SELECT * FROM read_parquet({sql_path(path)}) ORDER BY _row_id").df()
-    finally:
-        conn.close()
-
-
-def _first_failure(report: verifiers.Report) -> str:
+def _refusal(report: verifiers.Report, skip: list[str] = ()) -> StepFailed:
+    """The first failed check that is not a warning, as a StepFailed: the model's text and the user's sentence."""
     for name, value in report.hard.items():
-        if value != "pass":
-            return f"{name.replace('_', ' ')}: {value.removeprefix('fail: ')}"
-    return "a check failed"
+        if value != "pass" and name not in skip:
+            return StepFailed(f"its result failed a check ({name.replace('_', ' ')}: {value.removeprefix('fail: ')})",
+                              REFUSED.get(name, SAID["default"]).format(n=report.parse_failures))
+    return StepFailed("a check failed")
 
 
 def version_path(env: Env, dataset: sqlite3.Row, version: int) -> Path:
@@ -111,27 +150,99 @@ def version_path(env: Env, dataset: sqlite3.Row, version: int) -> Path:
     return dataset_dir(env.settings, dataset["user_id"], dataset["id"]) / vrow["parquet_path"]
 
 
+def _crash(r: sandbox.SandboxResult, src: Path) -> str:
+    """A failed run in plain words: no exception name. A key the file doesn't have gets the closest columns."""
+    if r.violations:
+        return SAID["refused"]
+    if r.timed_out:
+        return SAID["slow"]
+    named = re.match(r"KeyError: ['\"](.+)['\"]$", r.error or "")
+    if named:
+        with closing(duckdb.connect(":memory:")) as conn:
+            columns = [row[0] for row in conn.execute(f"DESCRIBE SELECT * FROM read_parquet({sql_path(src)})").fetchall()]
+        return no_column(named.group(1), columns) if named.group(1) not in columns else SAID["crash_column"]
+    return SAID["crash"]
+
+
+def _s(n: int, one: str, many: str) -> str:
+    return f"{n:,} {one if n == 1 else many}"
+
+
+def _warned(report: verifiers.Report, before: pd.DataFrame, after: pd.DataFrame) -> dict[str, list[str]]:
+    """The checks the user's request outranks (R4): a failed `nan_introduced`, `placeholder_fill`, `merge_safety`, or
+    a number or date column turned into text. Each becomes card warnings, one per column, counted here from the two
+    frames by the verifiers' own rules. A check with no count to show stays a refusal."""
+    failed = {k for k in ("nan_introduced", "placeholder_fill", "merge_safety", "dtype") if report.hard.get(k, "pass") != "pass"}
+    if not failed:
+        return {}
+    b = before.set_index("_row_id")
+    a = after.set_index("_row_id").reindex(b.index)
+    shut = a["_quarantine_reason"].notna() & b["_quarantine_reason"].isna()
+    out: dict[str, list[str]] = {k: [] for k in failed}
+    user = [c for c in b.columns if c not in SYSTEM_COLUMNS]
+    for c in user:
+        bc, ac = b[c], a[c]
+        if "nan_introduced" in failed:
+            n = int((bc.notna() & ac.isna() & ~(verifiers._is_placeholder(bc) | shut)).sum())
+            if n:
+                out["nan_introduced"].append(f"This empties {_s(n, 'cell that had a value', 'cells that had values')}, in {c}.")
+        if "placeholder_fill" in failed:
+            filled = ac[bc.isna() & ac.notna()]
+            words = filled[filled.map(lambda v: isinstance(v, str) and v.strip().lower() in verifiers.PLACEHOLDER_WORDS)]
+            if len(words):
+                out["placeholder_fill"].append(f"This fills {_s(len(words), 'blank', 'blanks')} in {c} with the text "
+                                               f"'{words.mode().iloc[0]}'. Sherlock can't tell that apart from a real value.")
+        if "merge_safety" in failed and bc.dtype == object and ac.dtype == object:
+            rewritten = bc.notna() & ac.notna() & (bc.astype(str) != ac.astype(str))
+            counts = bc.dropna().astype(str).map(_merge_key).value_counts().to_dict()
+            merged: set = set()
+            for old, new in pd.DataFrame({"old": bc[rewritten], "new": ac[rewritten]}).drop_duplicates().itertuples(index=False):
+                if (isinstance(old, str) and isinstance(new, str) and _merge_key(new) in counts
+                        and _merge_refusal(old, new, counts, len(b))):
+                    merged |= {old, new}
+            if merged:
+                out["merge_safety"].append(f"This makes {len(merged):,} different values in {c} the same value.")
+        if "dtype" in failed and bc.dtype.kind in "iufM" and ac.dtype == object and not ac.dropna().empty:
+            out["dtype"].append(f"{c} becomes text: sorting and sums on it will stop working.")
+    if "dtype" in failed and any(verifiers._mixed(a[c]) and not verifiers._mixed(b[c]) for c in user):
+        out["dtype"] = []  # mixed types break the file and the grid: a refusal
+    return {k: v for k, v in out.items() if v}
+
+
 def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[int] | None,
             new_columns: list[str]) -> DryRun:
-    """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove."""
+    """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove.
+    Each file is read once, into a throwaway DuckDB that the diff and the verifiers share."""
     src = version_path(env, dataset, version)
     out = src.parent / f".chat_{uuid.uuid4().hex}.parquet"
+    t0 = time.perf_counter()
     r = sandbox.execute(env.settings, full_code(code, rows), src, out, db=env.db, dataset_id=dataset["id"])
+    seconds = {"sandbox": round(time.perf_counter() - t0, 3)}
     if not r.ok:
         out.unlink(missing_ok=True)
         said = "; ".join(r.violations) if r.violations else (r.error or "unknown error")
-        raise StepFailed(f"the code failed: {said}")
+        raise StepFailed(f"the code failed: {said}", _crash(r, src))
+    t0 = time.perf_counter()
     try:
-        check_version_file(out)
-        diff = diff_versions(src, out)
-        if diff.added_row_ids or diff.deleted_row_ids:
-            raise StepFailed("it added or removed rows; rows are set aside with quarantine_rows, never removed")
-        if diff.columns_removed:
-            raise StepFailed(f"it removed columns ({', '.join(diff.columns_removed[:5])}); a command never removes columns")
-        unexpected = sorted(set(diff.columns_added) - set(new_columns))
-        if unexpected:
-            raise StepFailed(f"it added columns that new_columns doesn't list ({', '.join(unexpected[:5])})")
-        before, after = _read(src), _read(out)
+        try:
+            check_version_file(out)
+        except ValueError as exc:  # the code touched _row_id or dropped a system column
+            raise StepFailed(str(exc), REFUSED["pandera"]) from None
+        with closing(duckdb.connect(":memory:")) as conn:
+            for name, path in (("o", src), ("n", out)):
+                conn.execute(f"CREATE TABLE {name} AS SELECT * FROM read_parquet({sql_path(path)})")
+            diff = diff_versions(src, out, conn)
+            if diff.added_row_ids or diff.deleted_row_ids:
+                raise StepFailed("it added or removed rows; rows are set aside with quarantine_rows, never removed",
+                                 REFUSED["row_ledger"])
+            if diff.columns_removed:
+                raise StepFailed(f"it removed columns ({', '.join(diff.columns_removed[:5])}); a command never removes columns",
+                                 SAID["removed"].format(cols=", ".join(diff.columns_removed[:5])))
+            unexpected = sorted(set(diff.columns_added) - set(new_columns))
+            if unexpected:
+                raise StepFailed(f"it added columns that new_columns doesn't list ({', '.join(unexpected[:5])})",
+                                 SAID["extra"].format(cols=", ".join(unexpected[:5])))
+            before, after = (conn.execute(f"SELECT * FROM {t} ORDER BY _row_id").df() for t in ("o", "n"))
         report = verifiers.verify(before, after[[c for c in after.columns if c not in diff.columns_added]], None, None,
                                   requested=True)
         # The user sees how many rows a command sets aside before pressing OK, so the Cleaner's cap (a fifth of
@@ -139,13 +250,15 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         wide = report.hard.get("quarantine_scope", "pass") != "pass"
         if wide:
             report.hard["quarantine_scope"] = "pass"
-        if not report.passed:
-            raise StepFailed(f"its result failed a check ({_first_failure(report)})")
+        # The same for what the user's own request explains: the report keeps the failure, the card says it.
+        said = _warned(report, before, after)
+        if any(v != "pass" and k not in said for k, v in report.hard.items()):
+            raise _refusal(report, list(said))
         if new_columns:
             added = after[new_columns]
             if added.isna().all().any():
                 empty = [c for c in new_columns if added[c].isna().all()]
-                raise StepFailed(f"the new column {empty[0]} is empty in every row")
+                raise StepFailed(f"the new column {empty[0]} is empty in every row", SAID["empty"].format(col=empty[0]))
     except Exception:
         out.unlink(missing_ok=True)
         raise
@@ -156,10 +269,13 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
               "quarantined": report.quarantined, "columns_added": list(diff.columns_added)}
     if not (impact["cells_changed"] or impact["quarantined"] or impact["columns_added"]):
         out.unlink(missing_ok=True)
-        raise StepFailed("it changes nothing in this version of the file")
+        raise StepFailed("it changes nothing in this version of the file", SAID["nothing"])
     warnings = [f"This sets aside {report.quarantined:,} of {len(before):,} rows. Check that's what you meant before you "
                 "press OK."] if wide else []
-    return DryRun(out, impact, diff.before_after, report, changed_cols, warnings)
+    for lines in said.values():
+        warnings += lines[:5] + ([f"The same happens in {len(lines) - 5} more columns."] if len(lines) > 5 else [])
+    seconds["checks"] = round(time.perf_counter() - t0, 3)
+    return DryRun(out, impact, diff.before_after, report, changed_cols, warnings, list(said), seconds)
 
 
 def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
@@ -182,7 +298,8 @@ def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[i
     return {"summary": summary(run.impact, run.columns_changed, rows), "reading": reading, "code": code, "columns": columns,
             "new_columns": new_columns, "scope": {"row_ids": rows}, "impact": run.impact,
             "before_after": run.before_after, "warnings": run.warnings,
-            "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items() if k in CHECK_WORDS and v == "pass"]}
+            "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items()
+                       if k in CHECK_WORDS and v == "pass" and k not in run.warned]}
 
 
 def scope_rows(env: Env, dataset: sqlite3.Row, context: dict) -> list[int] | None:
@@ -278,13 +395,16 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
                              f"example 'Upper-case every value in sex'), with no digits and no causal words: {bad}. Fix the reading.")
         unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
         if unknown:
+            got["said"] = no_column(unknown[0], list(types))
             raise ValueError(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}")
         for c in d.new_columns:
             if c in types or c in SYSTEM_COLUMNS or not NAME.match(c):
+                got["said"] = SAID["name"].format(col=c)
                 raise ValueError(f"{c!r} can't be a new column: it exists already or isn't a plain name")
         d.code = plain(d.code)
         problems = static_check(d.code)
         if problems:
+            got["said"] = SAID["refused"]
             raise ValueError("the sandbox refuses this code: " + "; ".join(str(p) for p in problems[:3]))
         if got["drafts"] == 1 and (plain_it := code_style(d.code)):  # only the first draft is sent back for style
             raise ValueError("Write plainer code (no sandbox run yet): " + "; ".join(plain_it[:3]))
@@ -297,7 +417,12 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
         try:
             got["run"] = dry_run(env, dataset, dataset["current_version"], d.code, rows, list(d.new_columns))
         except StepFailed as exc:
+            got["said"] = exc.user
             raise ValueError(f"When the code ran on the file, {exc}. Fix the code.") from None
+
+    def validate(d: StepDraft) -> None:  # `got["said"]` is the user's text for the last failure only
+        got.pop("said", None)
+        check(d)
 
     where = (f"The request is about {len(rows):,} selected rows: write the code for every row, and code limits the "
              "change to the selection.\n") if rows is not None else ""
@@ -308,12 +433,10 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
     say("Writing the code")
     started = time.monotonic()
     try:
-        draft = kit.llm.structured("medium", messages, StepDraft, purpose="step", scope=kit.scope, validate=check).value
-    except StructuredOutputError as exc:
+        draft = kit.llm.structured("medium", messages, StepDraft, purpose="step", scope=kit.scope, validate=validate).value
+    except StructuredOutputError:
         _drop(got)
-        why = str(exc).split(": ", 1)[-1]
-        why = re.sub(r"^When the code ran on the file, ", "", why).removesuffix(". Fix the code.")
-        raise CantAnswer(f"I couldn't write a safe change for that: {why[:300]}") from None
+        raise CantAnswer(got.get("said") or SAID["default"]) from None
     if not draft.doable:
         _drop(got)
         said = draft.reading.strip()
@@ -347,7 +470,9 @@ def then(db: sqlite3.Connection, proposal: dict, questions: list[str]) -> dict:
     from sherlock.agent.actions import to_proposal
 
     row = db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone()
-    payload = {**json.loads(row["payload_json"]), "then": " and ".join(q.strip().rstrip("?.") for q in questions) + "?"}
+    parts = [q.strip() for q in questions if q.strip()]  # as typed: no "and" and no "?" added to the user's words
+    text = " ".join(q if q[-1] in ".?!" or i == len(parts) - 1 else q + "." for i, q in enumerate(parts))
+    payload = {**json.loads(row["payload_json"]), "then": text}
     db.execute("UPDATE proposals SET payload_json = ? WHERE id = ?", (json.dumps(payload, default=str), proposal["id"]))
     return to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone())
 
@@ -383,7 +508,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
     except StepFailed as exc:
         db.execute("UPDATE proposals SET status = 'failed', resolved_at = ?, payload_json = ? WHERE id = ?",
                    (now_iso(), json.dumps({**payload, "error": str(exc)}, default=str), row["id"]))
-        raise ApiError(409, "conflict", f"Couldn't run it on version {version}: {exc}. Nothing changed.") from None
+        raise ApiError(409, "conflict", f"Couldn't run it on version {version}. {exc.user} Nothing changed.") from None
     try:
         if version != row["base_version"] and not _same(dr.impact, payload["impact"]):
             fresh = {**_payload(payload["code"], payload["columns"], payload.get("new_columns") or [], rows, dr,
