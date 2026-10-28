@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="docs/images/banner.jpg" alt="Holmes sketching the events to Watson in a railway carriage" width="100%">
+  <br>
+  <sub><i>"Holmes gave me a sketch of the events." Sidney Paget, 1892, public domain.</i></sub>
+</p>
+
 # Sherlock
 
 **An AI data analyst you can audit.** Sherlock cleans a messy CSV into data you can defend, then answers any question about it. Every change is a step you can undo, every number in an answer comes from a query you can open, and the whole thing exports as a Jupyter notebook that rebuilds it from the raw file.
@@ -36,12 +42,17 @@ It's for analysts, researchers, students and operations people who get a CSV fro
 | **Changes data on request** | "Trim the spaces in name" or "add family_size = sibsp + parch + 1" arrives as a card with the code, the counts and a before-and-after preview. Nothing changes until you press OK. |
 | **Proves it** | **How do you know?** on every answer shows the SQL or code that ran and the data version it ran on. Every step can be undone. **Export notebook** gives you a `.ipynb` that rebuilds the current version from the raw CSV and checks that it matches. |
 
+![The dataset view: the grid in the centre, the chat bar below, and every cleaning step in the Changes panel with Undo](docs/images/03-dataset-view.png)
+
 ## Using Sherlock
 
 ### Your first five minutes
 
 1. Open the [live app](https://sherlock-anw3.onrender.com) and click **Try with sample (Titanic)**. It opens straight away: the rows in the grid in the centre, the chat bar below, and the cleaning steps in the **Changes** panel on the right.
 2. Open **Full cleaning report** from the Changes panel. You'll see each fix with its code, the checks it passed, and any rows it quarantined and why.
+
+   <img src="docs/images/05-cleaning-report.png" alt="The cleaning report: fixed, flagged and skipped issues, and no rows deleted" width="100%">
+
 3. Ask in the chat bar (`/` focuses it):
    - "average fare by class"
    - "survival rate by sex as a chart"
@@ -50,9 +61,22 @@ It's for analysts, researchers, students and operations people who get a CSV fro
    - "what does sibsp mean?"
 
    Click any number to see the query behind it.
-4. Select a cell and say "set this to …". The change arrives as a proposal. **Approve** saves it as a new version, and any analysis that read that column is marked outdated. Undo it from the Changes panel.
+
+   | | |
+   |---|---|
+   | ![How do you know? shows the exact SQL behind an answer](docs/images/06-sourced-answer.png) | ![A chart answer whose numbers are chips filled from a query](docs/images/07-chart-answer.png) |
+   | **How do you know?** shows the exact SQL that ran | Every number is a chip filled in from a query |
+   | ![What drives survival: sex alone does nearly as well as the model](docs/images/08-what-drives.png) | ![The model card: baselines, excluded columns, cross-validation and importance](docs/images/09-model-card.png) |
+   | "What drives survival?" compares the model with simple baselines | The model card lists excluded columns and why |
+
+4. Select a cell and say "set this to …", or ask for a change in your own words ("I want sex in capitals"). The change arrives as a proposal with its code, a before-and-after preview and the checks it passed. **Approve** saves it as a new version, and any analysis that read that column is marked outdated. Undo it from the Changes panel.
+
+   <img src="docs/images/10-change-proposal.png" alt="A change proposal: the code, a before-and-after preview and the checks it passed, waiting for OK" width="100%">
+
 5. **Export notebook** (⋯ menu, Ctrl+Shift+E, or ask "export a notebook").
 6. Drop your own CSV anywhere on the page.
+
+   <img src="docs/images/02-home.png" alt="The home screen: drop a CSV anywhere, or try the Titanic sample" width="100%">
 
 ### The flow for your own file
 
@@ -74,6 +98,9 @@ flowchart LR
   - Press the pencil to say in your own words what to do instead.
   - **Add a step** to add your own.
   - ID columns and outcome columns are listed under *Marked, not changed* and are never touched.
+
+  <img src="docs/images/04-cleaning-plan.png" alt="The cleaning plan: issues grouped by how much they matter, each with its reason, ready to untick or reword" width="100%">
+
 - **The live clean.** The grid is read-only while the cleaner works, and the log shows each issue as it goes. **Stop** keeps what has been committed so far.
 - **The CSV tab.** Edit cells, add rows, find and sort. Edits stay in your browser until **Save changes**, which makes a new version. After saving new rows, **Clean them** opens the plan for just those rows.
 - **Chat.** Answers apply to all rows, or only to the rows you selected (the chip on the left of the bar says which). An answer about rows links to them in the grid. Ambiguous questions get buttons to choose from rather than a guess.
@@ -92,6 +119,11 @@ Sherlock runs two agents over one shared spine: the **Cleaner**, which turns a r
 3. **Code runs in a sandbox, data changes as versions.** Model-written pandas runs in an isolated subprocess with no network. A change becomes a new Parquet version plus a step you can undo. Nothing is edited in place, and rows are never deleted.
 4. **Proposals, not actions.** Chat never changes data by itself. It shows a card, and you approve it.
 5. **Everything is logged.** Every model call and web request is a row in `llm_calls`, and every sandbox run is a row in `sandbox_runs`. Each answer and each clean shows its calls under "How I worked it out": model, time, tokens, repairs.
+
+![Architecture: the browser, one FastAPI process with the Cleaner, the Chat agent, the job runner, the sandbox, DuckDB and SQLite, and the Nemotron and Tavily services](docs/images/11-architecture.png)
+
+<details>
+<summary>View as text</summary>
 
 ```mermaid
 flowchart TB
@@ -119,7 +151,14 @@ flowchart TB
   CL & CA --> TV
 ```
 
+</details>
+
 ### The Cleaner
+
+![The Cleaner: ingest, typing, detectors, grounding, review and your plan once per file, then diagnose, propose, sandbox, verify, critic and gate for each issue](docs/images/12-cleaner-agent.png)
+
+<details>
+<summary>View as text</summary>
 
 ```mermaid
 flowchart TD
@@ -141,6 +180,8 @@ flowchart TD
   ST --> Q
   RP --> Q
 ```
+
+</details>
 
 1. **Ingest** ([`ingest/`](api/sherlock/ingest)). Works out the encoding: BOM, then strict UTF-8, then charset-normalizer, with cp1252 guards for common Windows exports. DuckDB's `sniff_csv`, checked against Python's `csv.Sniffer`, finds the delimiter, header and rows to skip. Everything is read as text into `v1.parquet`, with a stable `_row_id` and a `_quarantine_reason` column. Rows with too many fields are quarantined at import.
 2. **Typing** ([`profile/typing.py`](api/sherlock/profile/typing.py)). Code only, no model. A column is cast only where at least 99% of its values convert without loss. Rows whose values fail are quarantined, not coerced. This is step 1 of every dataset.
@@ -173,6 +214,11 @@ The model never counts anything. The log's numbers come from the verifier report
 
 ### The Chat agent
 
+![The Chat agent: your message, route with Nano, plan with Super, the right tool, checks in code, compose with chips, and the answer with How do you know?](docs/images/13-chat-agent.png)
+
+<details>
+<summary>View as text</summary>
+
 ```mermaid
 flowchart LR
   M[Message] --> F{"Handled<br/>in code?"}
@@ -188,6 +234,8 @@ flowchart LR
   C --> CO["Compose · Super<br/>words around chips"]
   CO --> A["Answer<br/>+ How do you know?"]
 ```
+
+</details>
 
 1. **Before routing.** Some requests never reach a model: export a notebook, use a data dictionary at a URL, and forecasting, which Sherlock says plainly it can't do.
 2. **Route** (Nano, reasoning off, about 1.4 s). Picks one or two of 14 intents, flags ambiguity, and pulls out the column and value names. Keyword guards then correct the router. Each guard is a regex added for a routing miss seen in a live run, and the code comment says which.
@@ -225,6 +273,9 @@ flowchart LR
    - Click a chip to open its query and the data version it ran on.
    - Charts are built in code from the result.
    - If composing fails, the raw tables are shown instead.
+
+   ![How every number is sourced: Super writes text runs and chips, the query result supplies the values, and the answer links back to its SQL](docs/images/14-sourced-numbers.png)
+
 8. **Remember.** The last six messages go into the context, each tagged with the data version it was written on. Older ones are folded into a running summary by Nano.
 
 **Guardrails on every message.**

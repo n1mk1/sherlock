@@ -16,6 +16,12 @@ not listed.
 **Bklit Studio is not used.** Only the open-source Bklit UI components above are in the repository;
 nothing references Bklit Studio (checked by searching the code and dependencies on 2026-10-25).
 
+## Images
+
+| What | Where | License |
+|---|---|---|
+| Sidney Paget's illustration "Holmes gave me a sketch of the events" (*The Strand Magazine*, 1892), cropped | `docs/images/banner.jpg` | Public domain |
+
 ## Sample data
 
 | File | Source | License |
