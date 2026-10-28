@@ -324,6 +324,7 @@
      "kind": {
       "enum": [
        "dictionary",
+       "found",
        "web"
       ],
       "title": "Kind",

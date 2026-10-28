@@ -1,0 +1,7 @@
+[
+  {"purpose": "dictionary", "match": [], "content": {"notes": [
+    {"column": "Pclass", "description": "The class of the passenger's ticket.", "excerpt": 1},
+    {"column": "SibSp", "description": "How many siblings or spouses the passenger had aboard.", "excerpt": 2}]}},
+  {"purpose": "meaning_web", "match": [], "content": {"prose": [
+    {"text": "Parch records how many parents or children the passenger had aboard"}, {"cite": 1}], "unanswered": false}}
+]

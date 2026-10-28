@@ -9,6 +9,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { request } from "@/api/client";
+import { periodActions } from "@/api/period";
 import { keys, sendChat, showPlan, useMe, useThread } from "@/api/queries";
 import type { AnswerBlock, CleanPlan, Dataset, Message, PlanStep, Proposal, Source } from "@/api/types";
 import { BlockView } from "@/components/chat/Blocks";
@@ -301,6 +302,10 @@ function MessageView({ message, dataset, onChoice, onSend }: {
       )}
       {message.plan && <PlanView steps={message.plan.steps} />}
       {message.blocks.map((b, i) => <BlockView key={i} block={b} datasetId={dataset.id} />)}
+      {periodActions(message).map((a) => (
+        <Button key={a.label} size="sm" className="self-start" disabled={!onChoice} title="Searches the news for that period; not from your data"
+          onClick={() => onChoice?.(message, a.label)}>{a.label}</Button>
+      ))}
       {message.proposal && <ProposalView proposal={message.proposal} dataset={dataset} onSend={onSend} />}
       {modelCard?.run_id && (
         <Button size="sm" className="self-start" onClick={() => setCard(modelCard.run_id!)}>Model card</Button>

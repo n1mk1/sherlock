@@ -1,7 +1,7 @@
 """The cleaning report (TRD §6.8, PRD CLEAN-6), assembled for one clean job from its checkpointed
 state (`jobs.state_json`), the steps it committed, and the issues it handled. A run from a cleaning
 plan adds `your_steps`: each step the user added, fix they rewrote or date order they picked, with
-its outcome (PRD CLEAN-8b).
+its outcome (PRD CLEAN-8b). `sources` lists each page the column notes and the checks cite, once (plan §3.5).
 
 The counts say what became of each issue (PRD CLEAN-6): fixed, flagged, checked and kept (the Cleaner
 looked and judged the values real), couldn't fix, not attempted (unticked, waiting on the user's
@@ -66,9 +66,31 @@ def build_report(db: sqlite3.Connection, dataset_id: str, job_id: str | None = N
         "skipped": state.get("skipped", []),
         "hand_edited_skipped": state.get("hand_edited_skipped", []),
         "decisions": [{"step_id": s["id"], **d} for s in steps for d in json.loads(s["decisions_json"])],
+        "sources": _sources(db, dataset_id, steps),
         "your_steps": _your_steps(job, state),
         "error": job["error"],
     }
+
+
+def _sources(db: sqlite3.Connection, dataset_id: str, steps: list[sqlite3.Row]) -> list[dict]:
+    """The pages the dataset's column notes and the run's checks cite, each once by address, with its title and the
+    day it was read (docs/plans/tavily.md §3.5). The notes come first, then the steps' evidence in step order."""
+    seen: set[str] = set()
+    out: list[dict] = []
+
+    def add(url: str | None, title: str | None, retrieved_at: str | None) -> None:
+        if url and url not in seen:
+            seen.add(url)
+            out.append({"url": url, "title": title, "retrieved_at": (retrieved_at or "")[:10]})
+
+    for n in db.execute("SELECT source_url, source_title, retrieved_at FROM column_notes WHERE dataset_id = ? "
+                        "ORDER BY column, kind", (dataset_id,)).fetchall():
+        add(n["source_url"], n["source_title"], n["retrieved_at"])
+    for s in steps:
+        for d in json.loads(s["decisions_json"]):
+            evidence = d.get("evidence") or {}
+            add(evidence.get("url"), evidence.get("title"), evidence.get("retrieved_at"))
+    return out
 
 
 def _outcomes(state: dict, start_keys: set[str]) -> dict:

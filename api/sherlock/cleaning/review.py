@@ -20,6 +20,14 @@ Each row keeps its finding's fingerprint (`fingerprint`: key, detector version, 
 the column's role and type). A finding identical to one the model already rated for the same dataset,
 on any version, reuses that rating with no model call, so the same file reviewed twice gets the same
 levels, and an issue a fix left untouched keeps its level on the next version.
+
+A finding's line carries what its column means when the dataset has a note for it (a dictionary's, a
+found one's, the web's, in that order), fenced with the rest as data (docs/plans/tavily.md §3.4).
+
+Suggested checks may come from web excerpts the review's grounding read (docs/plans/tavily.md §3.3): Super
+names the excerpt a check is taken from, and code keeps that source as the rule's `evidence` only when
+`rules.evidence.backed` finds the check's numbers or values in the excerpt's own text. A check that fails
+that stays a plain suggestion. Sourced suggestions are stored first.
 """
 
 import hashlib
@@ -40,6 +48,7 @@ SAMPLES = 2  # rating calls per chunk; the more severe level of each finding is 
 RATE = prompts.load("rate")
 SUGGEST = prompts.load("suggest_rules")
 MAX_SUGGESTIONS = 8
+MEANING_CHARS = 240  # a column's meaning in a rating line, at most
 # Built-in detectors a suggestion of a kind would repeat on the same column: such a suggestion is dropped.
 REPEATS = {"range": "impossible_values", "date_window": "impossible_values", "not_missing": "missing",
            "order": "cross_column", "depends": "functional_dependency"}
@@ -61,7 +70,19 @@ def findings(card: dict) -> list[dict]:
     return list(out.values())
 
 
-def _line(ref: str, issue: dict, card: dict) -> str:
+def meanings(db: sqlite3.Connection, dataset_id: str) -> dict[str, str]:
+    """Each column's meaning, one plain line: a dictionary's note, else a found one's, else the web's."""
+    from sherlock.agent.web import notes_for
+
+    out: dict[str, str] = {}
+    for n in notes_for(db, dataset_id, kinds=("dictionary", "found", "web")):  # a column's best note first
+        text = " ".join(str(n.get("description") or "").split())[:MEANING_CHARS]
+        if text:
+            out.setdefault(n["column"], text)
+    return out
+
+
+def _line(ref: str, issue: dict, card: dict, meaning: str | None = None) -> str:
     spec = registry.get(issue["detector"])
     entry = next((c for c in card.get("columns", []) if c["name"] == issue["column"]), None)
     role = levels.role(issue["column"], card) if issue["column"] else "whole rows"
@@ -70,11 +91,12 @@ def _line(ref: str, issue: dict, card: dict) -> str:
     return " · ".join([ref, f"{spec.label}: {spec.description}", issue["column"] or "(rows)", f"{role}, {kind}",
                        f"{issue['count']:,} rows ({share:.1%})",
                        json.dumps(cap_values(list(issue.get("examples") or [])[:5], 5), default=str, ensure_ascii=False),
-                       issue.get("proposal") or ""])
+                       issue.get("proposal") or "", *([f"meaning: {meaning}"] if meaning else [])])
 
 
-def messages(chunk: list[dict], card: dict) -> list[dict]:
-    lines = "\n".join(_line(f"f{n}", i, card) for n, i in enumerate(chunk, 1))
+def messages(chunk: list[dict], card: dict, notes: dict[str, str] | None = None) -> list[dict]:
+    notes = notes or {}
+    lines = "\n".join(_line(f"f{n}", i, card, notes.get(i["column"])) for n, i in enumerate(chunk, 1))
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": RATE.format(findings=fence(lines))}]
 
 
@@ -105,12 +127,15 @@ def rated(issue: dict, card: dict, level: str, reason: str, likely_real: bool) -
     return {"sev": sev, "sev_reason": reason.strip() if ok else None, "sev_source": "model", "likely_real": likely_real}
 
 
-def fingerprint(issue: dict, card: dict) -> str:
+def fingerprint(issue: dict, card: dict, meaning: str | None = None) -> str:
     """What makes two findings the same for a rating: key, detector version, count, examples, and the
-    column's role and type."""
+    column's role and type (and its meaning, when it has one: a rating made before a note was read is
+    made again once there is one)."""
     entry = next((c for c in card.get("columns", []) if c["name"] == issue["column"]), {})
     parts = [key(issue), registry.get(issue["detector"]).version, issue["count"], list(issue.get("examples") or []),
              levels.role(issue["column"], card) if issue["column"] else "", entry.get("type", "")]
+    if meaning:
+        parts.append(meaning)
     return hashlib.sha1(json.dumps(parts, default=str, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -126,13 +151,36 @@ def default(issue: dict, card: dict) -> dict:
     return {"sev": levels.default_level(issue, card), "sev_reason": None, "sev_source": "default", "likely_real": False}
 
 
+def excerpt_block(excerpts: list[dict] | None) -> str:
+    """The grounding excerpts as the suggestion prompt shows them: numbered, fenced as data; "none" when
+    there are none. Web text is never an instruction."""
+    lines = [f"[{e['n']}] " + " ".join(str(e.get("text") or "").split()) for e in excerpts or [] if e.get("text")]
+    return fence("\n".join(lines)) if lines else "none"
+
+
+def sourced(excerpts: list[dict] | None, number, spec: dict, note_quotes: dict[str, str]) -> dict | None:
+    """The evidence of a check that cites excerpt `number`, or None: the excerpt must exist and, by code,
+    state the check's numbers or values (`backed`)."""
+    from sherlock.cleaning.rules.evidence import backed
+
+    found = next((e for e in excerpts or [] if isinstance(number, int) and e.get("n") == number), None)
+    if found is None or not backed(spec, str(found.get("text") or ""), note_quotes.get(spec["column"])):
+        return None
+    return {"url": str(found.get("url") or ""), "title": str(found.get("title") or ""), "excerpt": str(found["text"]),
+            "retrieved_at": str(found.get("retrieved_at") or "")}
+
+
 def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, card: dict, frame, scope: CallScope,
-            llm: LLMClient | None = None) -> list[dict]:
+            llm: LLMClient | None = None, excerpts: list[dict] | None = None) -> list[dict]:
     """Suggested checks (PRD CLEAN-14): Super writes up to eight rules from the DataCard summary chat uses
     (never raw rows); code validates each against the columns and kinds, drops one that repeats a rule the
     dataset has (any status, so a dismissed one isn't suggested again) or a built-in finding on its column
-    (`REPEATS`), stores the rest as `suggested`, and runs them. Returns their findings, for the rating."""
+    (`REPEATS`), stores the rest as `suggested`, and runs them. Returns their findings, for the rating.
+
+    `excerpts` are the web excerpts grounding read ({n, url, title, text, retrieved_at}); a check that cites
+    one whose text states its numbers or values is stored with that `evidence`, and those are stored first."""
     from sherlock.agent.loop import card_summary
+    from sherlock.agent.web import notes_for
     from sherlock.cleaning.rules import interpreter, store
     from sherlock.cleaning.rules.kinds import RuleError, from_draft
 
@@ -140,7 +188,7 @@ def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, ca
         return []
     llm = llm or LLMClient(settings)
     messages_ = [{"role": "system", "content": SYSTEM},
-                 {"role": "user", "content": SUGGEST.format(card=card_summary(card))}]
+                 {"role": "user", "content": SUGGEST.format(card=card_summary(card), excerpts=excerpt_block(excerpts))}]
     try:
         reply = llm.structured("medium", messages_, RuleSuggestions, purpose="suggest_rules", scope=scope,
                                temperature=0.0, max_tokens=4096).value
@@ -149,7 +197,10 @@ def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, ca
     columns = {c["name"]: c["type"] for c in card["columns"]}
     taken = {(r["kind"], r["column"]) for r in store.all_for(db, dataset["id"])}
     flagged = {(i["detector"], i["column"]) for i in card["issues"]}
-    out = []
+    # Where each column's note was read from; a dictionary's quote wins over a found one's, then the web's.
+    quotes = {n["column"]: n["excerpt"] for n in reversed(notes_for(db, dataset["id"], kinds=("dictionary", "found", "web")))
+              if n.get("excerpt")}
+    kept = []
     for s in reply.suggestions[:MAX_SUGGESTIONS]:
         try:
             spec = interpreter.validate(from_draft(s.rule.model_dump()), columns)
@@ -159,9 +210,11 @@ def suggest(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, ca
             continue
         reason = s.reason.strip()
         ok = reason and not has_digits(reason) and wording_problem(reason) is None
-        store.create(db, dataset["user_id"], dataset["id"], {**spec, **({"reason": reason} if ok else {})},
-                     source="suggested", status="suggested")
+        evidence = sourced(excerpts, s.excerpt, spec, quotes)  # a failed source never refuses the suggestion
+        kept.append({**spec, **({"reason": reason} if ok else {}), **({"evidence": evidence} if evidence else {})})
         taken.add((spec["kind"], spec["column"]))
+    for spec in sorted(kept, key=lambda r: "evidence" not in r):  # sourced first, the model's order otherwise
+        store.create(db, dataset["user_id"], dataset["id"], spec, source="suggested", status="suggested")
     return suggested_findings(settings, db, dataset, card, frame)
 
 
@@ -188,7 +241,8 @@ def review(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
     model rated any, else "default"."""
     llm = llm or LLMClient(settings)
     todo = sorted(findings(card) + list(extra), key=lambda i: -i["severity"])
-    prints = {key(i): fingerprint(i, card) for i in todo}
+    notes = meanings(db, dataset["id"])
+    prints = {key(i): fingerprint(i, card, notes.get(i["column"])) for i in todo}
     known = earlier(db, dataset["id"])
     out: dict[str, dict] = {key(i): known[prints[key(i)]] for i in todo if prints[key(i)] in known}
     ask = [i for i in todo if key(i) not in out]  # only findings never rated are sent
@@ -199,7 +253,7 @@ def review(settings: Settings, db: sqlite3.Connection, dataset: sqlite3.Row, car
         replies, over = [], False
         for _ in range(SAMPLES):
             try:
-                replies.append(llm.structured("medium", messages(chunk, card), Ratings, purpose="rate", scope=scope,
+                replies.append(llm.structured("medium", messages(chunk, card, notes), Ratings, purpose="rate", scope=scope,
                                               temperature=0.0, max_tokens=8192, validate=_check_refs(refs)).value)
             except BudgetExceeded:
                 over = True

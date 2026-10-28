@@ -2,7 +2,7 @@
 
 Tavily's own model never writes text a user reads (CLAUDE.md Rule 2), so `research()` and
 `include_answer` are never used: every parameter the client sends is fixed here, and a caller chooses
-only the query (or URL), the topic and a time range. What goes out is built by the caller from the
+only the query (or URL), the topic, a time range and a start and end day. What goes out is built by the caller from the
 user's own words and column names, never from cell values (`agent/web.py` checks it).
 
 Every web feature fails soft. No key, `WEB_SEARCH=off`, the hourly limit, too little time left before
@@ -21,7 +21,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sherlock.config import Settings
 from sherlock.db.connection import connect
@@ -138,6 +138,16 @@ def cache_key(kind: str, params: dict) -> str:
     return hashlib.sha1((kind + "\n" + json.dumps(params, sort_keys=True, ensure_ascii=False)).encode("utf-8")).hexdigest()
 
 
+def _is_date(value: object) -> bool:
+    """A real calendar day written YYYY-MM-DD (what Tavily's start_date and end_date take)."""
+    if not isinstance(value, str) or len(value) != 10:
+        return False
+    try:
+        return date.fromisoformat(value).isoformat() == value
+    except ValueError:
+        return False
+
+
 def _ago(seconds: float) -> str:
     return (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -171,13 +181,18 @@ class WebClient:
     # --- the three calls ----------------------------------------------------------------------
 
     def search(self, query: str, *, scope: CallScope, purpose: str, topic: str = "general",
-               time_range: str | None = None) -> WebResponse:
+               time_range: str | None = None, start_date: str | None = None,
+               end_date: str | None = None) -> WebResponse:
         query = " ".join(query.split())[:MAX_QUERY_CHARS]
         if not query:
             raise WebUnavailable("failed", "empty query")
         params = {"query": query, **SEARCH, "topic": topic if topic in TOPICS else "general"}
         if time_range in TIME_RANGES:
             params["time_range"] = time_range
+        # A period built by code (chat's "what happened around then"): dates that aren't a real YYYY-MM-DD are dropped.
+        for name, value in (("start_date", start_date), ("end_date", end_date)):
+            if _is_date(value):
+                params[name] = value
         return self._call("search", params, scope, purpose)
 
     def extract(self, urls: list[str], *, query: str, scope: CallScope, purpose: str) -> WebResponse:
@@ -259,17 +274,27 @@ class WebClient:
         finally:
             db.close()
 
-    def _over_limit(self, scope: CallScope) -> bool:
-        limit = self.settings.web_rate_limit
-        if limit <= 0 or not scope.user_id:
-            return False
+    def _used(self, scope: CallScope) -> int | None:
+        """Uncached Tavily calls the scope's user made in the last hour; None when nothing counts them
+        (no cap, or no user)."""
+        if self.settings.web_rate_limit <= 0 or not scope.user_id:
+            return None
         db = connect(self.settings)
         try:
-            used = db.execute("SELECT count(*) FROM llm_calls WHERE role = 'web' AND cached = 0 AND user_id = ? AND created_at >= ?",
+            return db.execute("SELECT count(*) FROM llm_calls WHERE role = 'web' AND cached = 0 AND user_id = ? AND created_at >= ?",
                               (scope.user_id, _ago(RATE_WINDOW_S))).fetchone()[0]
         finally:
             db.close()
-        return used >= limit
+
+    def _over_limit(self, scope: CallScope) -> bool:
+        used = self._used(scope)
+        return used is not None and used >= self.settings.web_rate_limit
+
+    def calls_left(self, scope: CallScope) -> int | None:
+        """Uncached Tavily calls the scope's user has left this hour (grounding backs off when few remain);
+        None when there is no cap or no user."""
+        used = self._used(scope)
+        return None if used is None else max(0, self.settings.web_rate_limit - used)
 
     def _record(self, scope: CallScope, kind: str, purpose: str, latency_ms: int, ok: bool, error: str | None,
                 cached: bool, results: int | None) -> None:

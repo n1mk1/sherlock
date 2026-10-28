@@ -38,6 +38,22 @@ def validate(spec: dict, columns: dict[str, str]) -> dict:
     return {"kind": spec["kind"], "column": column, "params": params, "action": action}
 
 
+EVIDENCE_KEYS = ("url", "title", "excerpt", "retrieved_at")
+
+
+def source_of(spec: dict) -> dict:
+    """What a rule carries beside its check, kept through validation, Keep and an edit: the model's
+    `reason` and the web `evidence` (url, title, excerpt, retrieved_at) docs/plans/tavily.md §3.3 gave it.
+    Anything of another shape is dropped."""
+    out = {}
+    if isinstance(spec.get("reason"), str) and spec["reason"].strip():
+        out["reason"] = spec["reason"].strip()[:300]
+    ev = spec.get("evidence")
+    if isinstance(ev, dict) and all(isinstance(ev.get(k), str) for k in EVIDENCE_KEYS) and ev["excerpt"].strip():
+        out["evidence"] = {k: ev[k] for k in EVIDENCE_KEYS}
+    return out
+
+
 def words(rule: dict) -> str:
     return KINDS[rule["kind"]].words(rule["column"], rule["params"])
 
@@ -73,6 +89,8 @@ def run(rule: dict, frame: Frame, max_s: float) -> tuple[Finding | None, str | N
         return None, None
     details = {"rule_id": rule["id"], "rule": {k: rule[k] for k in ("kind", "column", "params", "action")},
                "words": words(rule), "default_level": kind.default_level, "source": rule.get("source", "user")}
+    if rule.get("evidence"):  # a sourced check: its plan item shows the page (docs/plans/tavily.md §3.3)
+        details["evidence"] = rule["evidence"]  # web text: the Cleaner's prompts leave it out (`loop._details`)
     if rule["action"] == "quarantine":
         details["domain_rule"] = True
     elif rule["action"] == "flag":

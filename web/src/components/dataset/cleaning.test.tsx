@@ -189,6 +189,34 @@ describe("cleaning screens", () => {
     expect(await screen.findByText("Stopped at the 12-issue budget. v2 → v9")).toBeInTheDocument();
   });
 
+  it("lists the pages the run read as sources, each titled as its link", async () => {
+    const report = (sources?: unknown) => ({
+      job_id: "job_1", status: "done", from_version: 2, to_version: 4, ended_by: "done", waited_for_model_s: 0,
+      attempted: 4, budget: { max_steps: 20, max_seconds: 300 }, started_at: null, finished_at: null, error: null,
+      counts: { found: 5, fixed: 1, flagged: 0, skipped: 4, rows_deleted: 0 }, steps: [], skipped: [], hand_edited_skipped: [],
+      decisions: [], ...(sources === undefined ? {} : { sources }),
+    });
+    mockApi({
+      "GET /api/v1/datasets/ds_1/report": report([
+        { url: "https://www.kaggle.com/datasets/titanic", title: "Titanic: data dictionary", retrieved_at: "2026-10-27T09:30:00Z" },
+        { url: "https://codebook.example.org/units", title: "", retrieved_at: "2026-10-27" },
+      ]),
+    });
+    const { unmount } = renderAt(<ReportSummary datasetId="ds_1" />);
+    const sources = await screen.findByRole("region", { name: "Sources" });
+    const first = within(sources).getByRole("link", { name: "Titanic: data dictionary" });
+    expect(first).toHaveAttribute("href", "https://www.kaggle.com/datasets/titanic");
+    expect(first).toHaveAttribute("rel", "noopener noreferrer");
+    expect(sources).toHaveTextContent("Titanic: data dictionary · kaggle.com · read 2026-10-27");
+    // A page with no title is named by its site.
+    expect(within(sources).getByRole("link", { name: "codebook.example.org" })).toBeInTheDocument();
+    unmount();
+    mockApi({ "GET /api/v1/datasets/ds_1/report": report([]) });
+    renderAt(<ReportSummary datasetId="ds_1" />);
+    expect(await screen.findByText("Every issue was looked at. v2 → v4")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Sources" })).toBeNull();
+  });
+
   it("says what became of each issue, and lists the skips under their lines with their levels", async () => {
     const skip = (id: string, kind: string, level: string | null, reason: string) =>
       ({ issue_id: id, column: id, detector: "missing", reason, skip_kind: kind, level });
@@ -363,6 +391,37 @@ describe("the cleaning plan", () => {
     fireEvent.click(within(group).getByRole("button", { name: "Keep" }));
     await waitFor(() => expect(sent(calls).find((c) => c.method === "PATCH")?.body)
       .toEqual({ ops: [{ op: "keep_suggestion", rule_id: "rul_s" }] }));
+  });
+
+  it("says where a suggested check's numbers came from, and keeps the old label for one without a source", async () => {
+    const sourced = { id: "rul_s", kind: "allowed", column: "embarked", action: "quarantine", words: "embarked is C, Q or S",
+                      params: { values: ["C", "Q", "S"] }, count: 2, error: null, sev: "breaks",
+                      evidence: { url: "https://www.kaggle.com/datasets/titanic", title: "Titanic", excerpt: "Port of embarkation: C, Q or S.",
+                                  retrieved_at: "2026-10-27T09:30:00Z" } };
+    const plain = { id: "rul_p", kind: "range", column: "units", action: "quarantine", words: "units is at most 50",
+                    reason: "Orders are small.", count: 3, error: null, sev: "skews" };
+    mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, suggestions: [sourced, plain] } });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    const group = await screen.findByRole("region", { name: "Suggested checks" });
+    const link = within(group).getByRole("link", { name: "From kaggle.com" });
+    expect(link).toHaveAttribute("href", "https://www.kaggle.com/datasets/titanic");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(group).getByText(/read 2026-10-27/)).toBeInTheDocument();
+    expect(within(group).getByText("“Port of embarkation: C, Q or S.”").tagName).toBe("BLOCKQUOTE");
+    // Only the sourced check loses the label; the other keeps "suggested by Sherlock".
+    expect(within(group).getAllByText("suggested by Sherlock")).toHaveLength(1);
+  });
+
+  it("shows the source of a kept check that came from a page", async () => {
+    const kept = item({ id: "pit_kept", key: "rule:rul_k", detector: "rule:rul_k", column: "units", module: "yours", sev: null,
+                        sev_source: null, action: "Quarantine rows over 50", count: 4,
+                        evidence: { url: "https://codebook.example.org/units", title: "Units", excerpt: "Orders are at most 50 units.",
+                                    retrieved_at: "2026-10-27" } });
+    mockApi({ "GET /api/v1/clean-plans/pln_1": { ...PLAN, items: [...PLAN.items, kept] } });
+    renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
+    expect(await screen.findByRole("link", { name: "From codebook.example.org" })).toHaveAttribute("href", "https://codebook.example.org/units");
+    expect(screen.getByText("“Orders are at most 50 units.”")).toBeInTheDocument();
   });
 
   it("edits a suggested check's values before keeping it", async () => {

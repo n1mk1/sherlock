@@ -1,0 +1,12 @@
+[
+  {"kind": "search", "match": ["data dictionary"], "response": {"query": "q", "results": [
+    {"title": "Passenger file: data dictionary", "url": "https://codebook.example.org/passengers", "score": 0.92,
+     "content": "Variable definitions for the passenger file."},
+    {"title": "Unrelated", "url": "https://noise.example.org/x", "score": 0.2, "content": "nothing"}]}},
+  {"kind": "extract", "match": [], "response": {"results": [
+    {"url": "https://codebook.example.org/passengers", "title": "Passenger file: data dictionary",
+     "raw_content": "Pclass: the passenger class of the ticket, where 1 = first, 2 = second and 3 = third [...] SibSp: the number of siblings or spouses the passenger had aboard [...] Name: the passenger's full name, as written on the ticket and listed in the passenger register of the voyage, surname first"}]}},
+  {"kind": "search", "match": ["meaning"], "response": {"query": "q", "results": [
+    {"title": "Parch explained", "url": "https://glossary.example.org/parch", "score": 0.8,
+     "content": "Parch is the number of parents or children aboard with the passenger."}]}}
+]

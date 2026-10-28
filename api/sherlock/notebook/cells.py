@@ -9,6 +9,7 @@ import re
 
 from nbformat.v4 import new_code_cell, new_markdown_cell
 
+from sherlock.notebook.scan import redact
 from sherlock.steps.replay import TYPING_SQL
 
 PLOT_HELPERS = '''# Charts: one function draws every chart the way the app does (greys, the point in the accent).
@@ -144,6 +145,77 @@ print(f"Loaded {{len(df):,}} rows and {{len(df.columns) - 2}} columns.")
     return [new_code_cell(code, metadata={"tags": ["load"]})]
 
 
+# The characters Markdown reads as markup in a page's words: a `*`, a `[link](…)`, an `&frac34;` (which renders as a
+# number) or a `$` that opens an equation. Each is backslash-escaped so it shows as written.
+MD_MARKUP = re.compile(r"([\\`*_\[\]<>|~#$&])")
+# Where a column's note came from, in the order a column takes one (the dictionary the user linked first), with the
+# label its group carries in the notebook (docs/plans/tavily.md §3.5).
+NOTE_KINDS = {"dictionary": "From the data dictionary you linked:", "found": "From a data dictionary Sherlock found:",
+              "web": "From the web:"}
+
+
+def md_text(text) -> str:
+    """Text for a Markdown cell: its markup is escaped and its line breaks become spaces, so a page's words show as
+    written and a quote stays on its bullet's line (docs/plans/tavily.md §3.5). It's for web text, so whatever looks
+    like a secret is redacted first (`scan.redact`): a quote can't make the export's secret scan fail."""
+    flat = " ".join(str(text).split()) if text is not None else ""
+    return MD_MARKUP.sub(r"\\\1", redact(flat))
+
+
+def _read(retrieved_at) -> str:
+    """The day a page was read, `read YYYY-MM-DD`; nothing when it isn't known."""
+    return f"read {str(retrieved_at)[:10]}" if retrieved_at else ""
+
+
+def _note_line(n: dict) -> str:
+    """One column's bullet: what the source says it means, the source's own words, and the page's title, address and
+    the day it was read."""
+    quote = f" — “{md_text(n['excerpt'])}”" if n.get("excerpt") else ""
+    where = [md_text(n.get("source_title")), md_text(n.get("source_url")), _read(n.get("retrieved_at"))]
+    return f"- **{md_text(n['column'])}**: {md_text(n['description'])}{quote} ({', '.join(p for p in where if p)})"
+
+
+def column_notes(notes: list[dict], columns: list[str]) -> list:
+    """The "What the columns mean" cell, placed after the load (docs/plans/tavily.md §3.5): one bullet per column,
+    grouped by where its meaning came from. It's written from the stored notes, never fetched again on run. A column
+    with several notes shows the first kind present: a dictionary the user linked, then one Sherlock found, then the
+    web. Nothing when there are no notes. `notes` are `notes_for`'s rows; `columns` orders the bullets as the file does."""
+    rank = {kind: i for i, kind in enumerate(NOTE_KINDS)}
+    chosen: dict[str, dict] = {}
+    for n in notes:
+        if n["column"] not in chosen or rank.get(n["kind"], len(rank)) < rank.get(chosen[n["column"]]["kind"], len(rank)):
+            chosen[n["column"]] = n
+    if not chosen:
+        return []
+    position = {c: i for i, c in enumerate(columns)}
+    lines = ["## What the columns mean", "",
+             "What each column means, in the source's own words. Sherlock read these pages earlier; the notebook "
+             "doesn't fetch them again.", ""]
+    for kind, label in NOTE_KINDS.items():
+        group = sorted((n for n in chosen.values() if n["kind"] == kind),
+                       key=lambda n: position.get(n["column"], len(position)))
+        if group:
+            lines += [f"*{label}*", ""] + [_note_line(n) for n in group] + [""]
+    return [new_markdown_cell("\n".join(lines).rstrip())]
+
+
+def _checked_against(decisions: list[dict]) -> list[str]:
+    """A line for each quote a step's checks were taken from (docs/plans/tavily.md §3.5): the page, the day it was read
+    and the words the check rests on. A line that repeats another is shown once."""
+    lines: list[str] = []
+    for d in decisions:
+        e = d.get("evidence")
+        if not e or not e.get("url"):
+            continue
+        page = f"{md_text(e['title'])} ({md_text(e['url'])})" if e.get("title") else md_text(e["url"])
+        read = _read(e.get("retrieved_at"))
+        quote = f": “{md_text(e['excerpt'])}”" if e.get("excerpt") else ""
+        line = f"Checked against: {page}" + (f", {read}" if read else "") + quote
+        if line not in lines:
+            lines.append(line)
+    return lines
+
+
 def _impact_line(impact: dict) -> str:
     parts = [f"{impact.get('rows_in', 0):,} rows in, {impact.get('rows_out', 0):,} out",
              f"{impact.get('cells_changed', 0):,} cells changed"]
@@ -172,6 +244,8 @@ def step(s: dict) -> list:
         if d.get("asked"):  # a step the user asked for in the cleaning plan, in their words
             lines += ["", f"You asked: {d['asked']}"]
         lines += ["", f"- **{d.get('question', '')}** {d.get('chosen', '')}" + (f". {d['reason']}" if d.get("reason") else "")]
+    for line in _checked_against(s.get("decisions") or []):  # a check taken from a page cites the page (plan §3.5)
+        lines += ["", line]
     md = new_markdown_cell("\n".join(lines))
     typing = TYPING_SQL.match(s.get("code") or "") if s["kind"] == "clean" and s["created_by"] == "system" else None
     if typing:

@@ -1,13 +1,19 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ColumnNote } from "@/api/columnNotes";
 import { mockApi, renderAt } from "@/test/render";
-import { drawMarks, Grid } from "./Grid";
+import { drawMarks, Grid, NoteTooltip } from "./Grid";
 
-// Glide draws on a canvas, which jsdom lacks: the editor is a stand-in that shows it was drawn.
+// Glide draws on a canvas, which jsdom lacks: the editor is a stand-in that shows it was drawn, and it keeps
+// the hover handler so a test can hover a header.
+const editor = vi.hoisted(() => ({ onItemHovered: undefined as undefined | ((args: unknown) => void) }));
 vi.mock("@glideapps/glide-data-grid", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@glideapps/glide-data-grid")>()),
-  DataEditor: () => <div data-testid="editor" />,
+  DataEditor: (props: { onItemHovered?: (args: unknown) => void }) => {
+    editor.onItemHovered = props.onItemHovered;
+    return <div data-testid="editor" />;
+  },
 }));
 vi.mock("@/lib/tokens", () => ({ resolveTokens: (names: Record<string, string>) => names })); // reads colours off a canvas
 
@@ -91,5 +97,41 @@ describe("the CSV grid's view", () => {
     onSelection.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "v3 arrives" }));
     expect(onSelection).toHaveBeenCalledWith(expect.objectContaining({ rowIds: [], cells: 0, current: null }));
+  });
+});
+
+describe("the column notes under a header", () => {
+  const note = (kind: ColumnNote["kind"]): ColumnNote => ({
+    column: "fare", kind, description: "The price paid for the ticket.", excerpt: "Fare: price paid, in pounds.",
+    source_url: "https://www.codebook.example.org/vars", source_title: "Titanic codebook", retrieved_at: "2026-10-27",
+  });
+
+  it.each([
+    ["dictionary", "From the data dictionary you linked at codebook.example.org, retrieved 2026-10-27."],
+    ["found", "From a data dictionary Sherlock found at codebook.example.org, retrieved 2026-10-27."],
+    ["web", "From the web at codebook.example.org, retrieved 2026-10-27."],
+  ] as const)("says where a %s note is from", (kind, line) => {
+    renderAt(<NoteTooltip note={note(kind)} bounds={{ x: 0, y: 0, width: 110, height: 32 }} />);
+    expect(screen.getByTestId("column-note")).toHaveTextContent(line);
+    expect(screen.getByTestId("column-note")).toHaveTextContent("Not computed from your data.");
+  });
+
+  it("shows a found dictionary's note when its column's header is hovered", async () => {
+    const props = {
+      datasetId: "ds_1", sort: null, onSort: () => {}, selectionId: null, matches: new Set<string>(), card: [],
+      buffer: undefined, onEdit: () => {}, onLoaded: () => {}, version: 2, onSelection: () => {},
+    };
+    mockApi({
+      "GET /api/v1/datasets/ds_1/rows": { version: 2, offset: 0, total: 1, columns: [{ name: "_row_id", type: "BIGINT" }, { name: "fare", type: "DOUBLE" }],
+        rows: [{ _row_id: 1, cells: { fare: 7.25 }, marks: {}, quarantined: false }] },
+      "GET /api/v1/datasets/ds_1/column-notes": { notes: [note("found")] },
+    });
+    renderAt(<Grid {...props} />);
+    await screen.findByTestId("editor");
+    // The notes arrive after the rows: hover again until the handler has them (column 1 is `fare`).
+    await waitFor(() => {
+      act(() => editor.onItemHovered?.({ kind: "header", location: [1, -1], bounds: { x: 0, y: 0, width: 110, height: 32 } }));
+      expect(screen.getByTestId("column-note")).toHaveTextContent("From a data dictionary Sherlock found");
+    });
   });
 });

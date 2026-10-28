@@ -214,6 +214,10 @@ class RuleDraft(Strict):
 class RuleSuggestion(Strict):
     rule: RuleDraft
     reason: str = Field(description="one sentence on why the check holds for this column, no digits")
+    # docs/plans/tavily.md §3.3: a check taken from a web excerpt names it; code then looks for the check's
+    # numbers and values in that excerpt, and keeps the source only if they are there.
+    excerpt: int | None = Field(description="the number of the web excerpt the check is taken from, or null when it "
+                                            "comes from no excerpt")
 
 
 class RuleSuggestions(Strict):

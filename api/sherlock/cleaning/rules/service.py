@@ -10,6 +10,7 @@ import sqlite3
 
 from sherlock.cleaning import plan as plans
 from sherlock.cleaning.rules import interpreter, store
+from sherlock.cleaning.rules.evidence import backed
 from sherlock.cleaning.rules.kinds import RuleError
 from sherlock.config import Settings
 from sherlock.jobs.events import emit
@@ -48,7 +49,8 @@ def counts(settings: Settings, cache: VersionConnections, dataset: sqlite3.Row, 
 
 def with_counts(settings, db, cache, dataset, rules: list[dict]) -> list[dict]:
     got = counts(settings, cache, dataset, [r for r in rules if r["status"] != "off"], db)
-    return [{**r, **got.get(r["id"], {"count": None, "error": None}), "words": interpreter.words(r)} for r in rules]
+    return [{**r, **got.get(r["id"], {"count": None, "error": None}), "words": interpreter.words(r),
+             "evidence": r.get("evidence") or None} for r in rules]
 
 
 def refresh(settings: Settings, db: sqlite3.Connection, cache: VersionConnections, bus, dataset: sqlite3.Row) -> None:
@@ -77,8 +79,7 @@ def add(settings, db, cache, bus, dataset: sqlite3.Row, spec: dict, source: str 
 
     card = profile_service.get_or_build(settings, db, cache, dataset)
     clean = interpreter.validate(spec, columns(card))
-    if spec.get("reason"):
-        clean["reason"] = str(spec["reason"])[:300]
+    clean |= interpreter.source_of(spec)  # the reason and the web evidence stay with the check
     rule = store.create(db, dataset["user_id"], None if every_dataset else dataset["id"], clean, source, status)
     if status == "active":
         refresh(settings, db, cache, bus, dataset)
@@ -128,7 +129,9 @@ def _suggestion(db, dataset: sqlite3.Row, rule_id) -> dict:
 
 def suggestions(settings, db, cache, dataset: sqlite3.Row, version: int) -> list[dict]:
     """A plan's suggested checks (PRD CLEAN-14): each with its words, the model's reason, its count by
-    code on the current version, and its level (the review's, or its kind's default)."""
+    code on the current version, its level (the review's, or its kind's default), and its `evidence`
+    ({url, title, excerpt, retrieved_at} or null): the page its threshold was found in, checked by code
+    (docs/plans/tavily.md §3.3). Sourced suggestions come first."""
     from sherlock.cleaning import review
     from sherlock.cleaning.rules.kinds import KINDS
 
@@ -140,7 +143,7 @@ def suggestions(settings, db, cache, dataset: sqlite3.Row, version: int) -> list
     for r in with_counts(settings, db, cache, dataset, rules):
         level = rated.get(f"rule:{r['id']}|{r['column']}") or {}
         out.append({**r, "sev": level.get("sev") or KINDS[r["kind"]].default_level, "sev_reason": level.get("sev_reason")})
-    return out
+    return sorted(out, key=lambda r: r["evidence"] is None)  # stable: the order they were saved otherwise
 
 
 def change(settings, db, cache, bus, dataset: sqlite3.Row, rule: dict, params: dict | None = None,
@@ -157,7 +160,12 @@ def change(settings, db, cache, bus, dataset: sqlite3.Row, rule: dict, params: d
         card = profile_service.get_or_build(settings, db, cache, dataset)
         draft = {k: rule[k] for k in ("kind", "column", "params", "action")}
         draft.update({k: v for k, v in (("params", params), ("action", action)) if v is not None})
-        spec = interpreter.validate(draft, columns(card)) | ({"reason": rule["reason"]} if rule.get("reason") else {})
+        spec = interpreter.validate(draft, columns(card))
+        carried = interpreter.source_of(rule)
+        # A source says what the page states: an edit that leaves the check no longer in the excerpt drops it.
+        if "evidence" in carried and not backed(spec, carried["evidence"]["excerpt"]):
+            del carried["evidence"]
+        spec |= carried
     updated = store.update(db, rule["id"], spec, status)
     refresh(settings, db, cache, bus, dataset)
     return updated

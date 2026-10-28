@@ -3,6 +3,7 @@ Write pandas code for up to three candidate fixes of this issue, one per approac
 <data>
 Issue: {issue_line}
 Column: {column}
+Column meaning: {meaning}
 Diagnosis: {cause}
 Approaches: {approaches}
 Columns and pandas dtypes of df: {dtypes}

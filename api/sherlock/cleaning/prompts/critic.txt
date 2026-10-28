@@ -3,6 +3,7 @@ Review a proposed cleaning step before it is applied. Decide whether it changed 
 <data>
 Issue: {issue_line}
 Column: {column}
+Column meaning: {meaning}
 Chosen fix: {label}
 Code:
 {code}

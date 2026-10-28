@@ -15,12 +15,15 @@ import { ChevronDown, ChevronRight, Flag, Loader2, Pencil, Plus, X } from "lucid
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { makeSelection } from "@/api/csv";
+import { readDay, siteOf } from "@/api/columnNotes";
 import {
   stalePlan, useCleanPlan, useDatacard, useDetectorLabel, useDetectors, useDiscardPlan, useEditRule, usePlanOps, useRuleStatus,
   useStartCleaning,
   type CleanScope,
 } from "@/api/queries";
-import type { CleanPlan, CleanPlanItem, Dataset, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind, Suggestion } from "@/api/types";
+import type {
+  CleanPlan, CleanPlanItem, Dataset, Evidence, Issue, Level, PlanOp, PlanScope, RuleIn, RuleKind, Suggestion,
+} from "@/api/types";
 import { useSettingsOpen } from "@/components/shell/SettingsDialog";
 import { Button } from "@/components/ui/button";
 import { displayValue } from "@/lib/cells";
@@ -380,6 +383,7 @@ function ItemRow({ item, side, busy, send, onDirty, planId }: {
               {item.action}{item.source === "chat" && <span className="ml-1.5 text-[11px] text-muted-foreground">· from chat</span>}
             </p>
           )}
+          {item.evidence && <EvidenceLine evidence={item.evidence} className={cn(!side && "basis-full")} />}
           {item.change && !yours && (item.sev_reason || item.sev_source === "default") && (
             <p className={cn("text-[12px] text-muted-foreground", !side && "basis-full")}>
               {item.sev_reason}{item.sev_source === "default" && <span className={cn(item.sev_reason && "ml-1.5")}>(default level)</span>}
@@ -484,7 +488,11 @@ function SuggestedChecks({ items, busy, send, planId, onDirty }: {
               className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
               <span>{s.words}</span>
-              <span className="ml-1.5 text-[11px] text-muted-foreground">suggested by Sherlock</span>
+              {s.evidence ? (
+                <EvidenceLine evidence={s.evidence} />
+              ) : (
+                <span className="ml-1.5 text-[11px] text-muted-foreground">suggested by Sherlock</span>
+              )}
               <p className="text-[12.5px] text-muted-foreground">
                 {s.error ?? (s.count === 1 ? "1 row breaks it." : `${(s.count ?? 0).toLocaleString()} rows break it.`)}
                 {s.reason && <span className="ml-1.5">{s.reason}</span>}
@@ -508,6 +516,23 @@ function SuggestedChecks({ items, busy, send, planId, onDirty }: {
           onDirty={onDirty} onDone={() => { onDirty(false); setEditing(null); }} />
       )}
     </section>
+  );
+}
+
+/** Where a check's numbers came from (docs/plans/tavily.md §3.3), for a suggested check or a kept one: the page's
+ * domain as a link, the page's own words in a quote (two lines; the whole quote is in its title), and the day read. */
+function EvidenceLine({ evidence, className }: { evidence: Evidence; className?: string }) {
+  return (
+    <div className={cn("mt-0.5 min-w-0", className)}>
+      <p className="text-[12px]">
+        <a href={evidence.url} target="_blank" rel="noopener noreferrer" title={evidence.title}
+          className="text-accent hover:underline">From {siteOf(evidence.url)}</a>
+        <span className="text-muted-foreground"> · read {readDay(evidence.retrieved_at)}</span>
+      </p>
+      <blockquote title={evidence.excerpt} className="mt-0.5 line-clamp-2 border-l-2 border-border pl-2 text-[12.5px] italic text-foreground-2">
+        “{evidence.excerpt}”
+      </blockquote>
+    </div>
   );
 }
 

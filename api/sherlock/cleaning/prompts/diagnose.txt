@@ -8,6 +8,7 @@ Issue: {issue_line}
 Column: {column}
 Columns and types: {columns}
 Column profile: {column_card}
+Column meaning: {meaning}
 Sample of the column's values: {samples}
 Examples of the issue: {examples}
 Detector details: {details}

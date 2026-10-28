@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { api, ApiError, request, toApiError, unreadable, unwrap } from "./client";
+import { columnNotesKey } from "./columnNotes";
 import { useEventStream } from "./sse";
 import type {
   CleaningReport, CleanPlan, DataCard, Dataset, Depth, Detector, RuleIn, DatasetStatusEvent, Issue, Job,
@@ -450,6 +451,8 @@ export function useDatasetEvents(datasetId: string) {
     "job.progress": (data) => {
       if ((data as { kind?: string }).kind === "ml_run") qc.invalidateQueries({ queryKey: ["run"] });
     },
+    // Grounding found what a column means (a dictionary or the web): the header hovers read the notes again.
+    "notes.updated": () => qc.invalidateQueries({ queryKey: columnNotesKey(datasetId) }),
   }, undefined, onReopen);
 }
 

@@ -70,6 +70,15 @@ export interface DataCard {
   leakage_candidates: { column: string; target: string; reason: string }[];
 }
 
+/** A web page a check was taken from (docs/plans/tavily.md §3.3): the excerpt is the page's own words, and
+ * code found the check's numbers in it. `retrieved_at` is when Sherlock read the page. */
+export interface Evidence {
+  url: string;
+  title: string;
+  excerpt: string;
+  retrieved_at: string;
+}
+
 // The cleaning plan (TRD §4.4, PRD CLEAN-8a): what Clean with AI will try, editable before it starts.
 export type PlanModule = "yours" | "types" | "missing" | "text" | "records" | "outliers" | "other" | "kept";
 // What a finding does to an analysis (PRD CLEAN-8c), most severe first.
@@ -98,6 +107,8 @@ export interface CleanPlanItem {
   sev_reason?: string | null;
   sev_source?: "model" | "default" | null;
   likely_real?: boolean;
+  // A kept check that came from a web page: where its numbers are from (null or missing for the rest).
+  evidence?: Evidence | null;
   // An ambiguous-dates item: the order the user picked, up to three values read both ways,
   // and whether every date reads both ways, so it's cleaned only with an order.
   date_order?: "dmy" | "mdy" | null;
@@ -137,6 +148,7 @@ export interface Suggestion {
   sev: Level;
   sev_reason?: string | null;
   summary?: string;   // what a PATCH changed, written by code
+  evidence?: Evidence | null; // the web page its numbers were taken from, when code found them in it
 }
 
 export interface PlanScope {
@@ -219,6 +231,8 @@ export interface CleaningReport {
   }[];
   hand_edited_skipped: { row_id: number; column: string }[];
   decisions: { step_id: string; question: string; chosen: string; reason: string; asked?: string }[];
+  // Every web page grounding and the checks read in this run's dataset (docs/plans/tavily.md §3.5); missing on older reports.
+  sources?: { url: string; title: string; retrieved_at: string }[];
   // A run from a cleaning plan: each step the user added or fix they rewrote, and what became of it.
   your_steps?: {
     item_id: string; column: string | null; instruction: string; source: string; detector: string;
@@ -302,7 +316,7 @@ export interface Source {
 }
 
 export interface MessageAction {
-  kind: "open_rows" | "open_export" | "open_model_card";
+  kind: "open_rows" | "open_export" | "open_model_card" | "ask_period";
   block_index?: number;
   run_id?: string;
   selection_id?: string;

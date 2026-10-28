@@ -380,12 +380,12 @@ def test_read_dictionary_maps_a_site_root_then_extracts_its_dictionary_page(db):
 def test_read_dictionary_fails_soft(db):
     kit = kit_for(db, [])
     assert aw.read_dictionary(kit.llm, kit.scope, WebClient(get_settings()), db, "ds_web", "https://e.org", COLUMNS) == \
-        {"notes": [], "note": wc.NOTES["off"]}
+        {"notes": [], "note": wc.NOTES["off"], "excerpts": []}
     bad = aw.read_dictionary(kit.llm, kit.scope, WebClient(get_settings(), fixture()), db, "ds_web", "file:///etc/passwd", COLUMNS)
     assert bad["notes"] == [] and "http" in bad["note"]
     timeout = aw.read_dictionary(kit.llm, kit.scope, WebClient(get_settings(), FailingTransport("timeout")), db, "ds_web",
                                  "https://e.org", COLUMNS)
-    assert timeout == {"notes": [], "note": wc.NOTES["timeout"]}
+    assert timeout == {"notes": [], "note": wc.NOTES["timeout"], "excerpts": []}
 
 
 def test_only_a_url_the_user_typed_is_read():

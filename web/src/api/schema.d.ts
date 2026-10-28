@@ -1262,7 +1262,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "dictionary" | "web";
+            kind: "dictionary" | "found" | "web";
             /** Retrieved At */
             retrieved_at: string;
             /** Source Title */

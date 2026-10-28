@@ -26,6 +26,16 @@ class ScanError(ValueError):
     pass
 
 
+REDACTED = "[redacted]"
+
+
+def redact(text: str) -> str:
+    """Quoted web text with whatever looks like a secret (`SECRET`) replaced, so a page that shows "Bearer …" or
+    "sk-…" can't fail the scan and block the export. The scan itself is unchanged: the pattern still runs on
+    every cell, and a configured key's exact value is still refused anywhere in the file."""
+    return SECRET.sub(REDACTED, text)
+
+
 def _check_code(source: str, where: str) -> None:
     lines = [ln for ln in source.splitlines() if not ln.lstrip().startswith(("%", "!"))]
     if len(lines) != len(source.splitlines()):

@@ -4,6 +4,7 @@
 // out": the run's model calls) one click away. The Changes panel links here (D5.4).
 import { Check, Flag, Redo2 } from "lucide-react";
 import { useState } from "react";
+import { readDay, siteOf } from "@/api/columnNotes";
 import { useReport } from "@/api/queries";
 import type { CleaningReport, Level } from "@/api/types";
 import { Receipts } from "@/components/chat/Receipts";
@@ -72,6 +73,7 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
       <ul className="mt-4 flex flex-col gap-1.5">
         {report.steps.slice(0, 3).map((s) => <StepLine key={s.step_id} step={s} />)}
       </ul>
+      {!!report.sources?.length && <SourceList sources={report.sources} />}
       <Button variant="link" className="mt-3" onClick={() => setOpen(true)}>View full report</Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-[720px]">
@@ -83,6 +85,25 @@ export function ReportSummary({ datasetId, title = "Cleaning report" }: { datase
           </div>
         </DialogContent>
       </Dialog>
+    </section>
+  );
+}
+
+/** The pages this dataset's grounding and checks read (docs/plans/tavily.md §3.5): each title links to its page. */
+function SourceList({ sources }: { sources: NonNullable<CleaningReport["sources"]> }) {
+  return (
+    <section className="mt-4" aria-labelledby="report-sources">
+      <h4 id="report-sources" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Sources</h4>
+      <ul className="mt-2 flex flex-col gap-1 text-[13px]">
+        {sources.map((s) => (
+          <li key={s.url}>
+            <a href={s.url} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">
+              {s.title || siteOf(s.url)}
+            </a>
+            <span className="text-muted-foreground"> · {siteOf(s.url)} · read {readDay(s.retrieved_at)}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

@@ -37,6 +37,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from sherlock.agent.web import notes_for
 from sherlock.cleaning import gate, levels, prompts, registry, verifiers
 from sherlock.cleaning.plan import (
     DATE_ORDERS, DEPTH, USER_DETECTOR, both_ways, key, needs_order, never_change, order_instruction, run_params,
@@ -57,6 +58,11 @@ from sherlock.llm.wording import number_in_words
 from sherlock.storage import dataset_dir, sql_path
 
 SAMPLE_ROWS = 2000
+# Where a column's meaning comes from, best first: a dictionary the user linked, one Sherlock found, the web
+# (docs/plans/tavily.md §3.4).
+MEANING_KINDS = ("dictionary", "found", "web")
+MEANING_CHARS = 300  # a note's sentence, at most, in a prompt
+EVIDENCE_KEYS = ("url", "title", "excerpt", "retrieved_at")
 NOT_IN_PLAN = "You left this out of the plan"
 TOO_DEEP = "Deeper than the cleaning depth you chose"
 # Why an issue was skipped (Schema §2.8 `issues.skip_kind`), and the report line each lands on (PRD CLEAN-6).
@@ -254,6 +260,12 @@ def _json(value, limit: int = 1500) -> str:
     return _safe(text if len(text) <= limit else text[: limit - 1] + "…")
 
 
+def _details(issue: dict) -> str:
+    """The detector's details for the prompts' data block, without a check's web `evidence`: a page's own words
+    never reach the code-writing prompts raw (docs/plans/tavily.md §3.1 rule 4)."""
+    return _json({k: v for k, v in (issue.get("details") or {}).items() if k != "evidence"}, 600)
+
+
 def _instruction(issue: dict) -> str:
     """The user's instruction for the prompts' data block, or "none"."""
     return _safe(issue.get("instruction") or "none")
@@ -291,6 +303,7 @@ class Cleaner:
         self.work = self.settings.data_dir / ".clean" / ctx.id
         self.work.mkdir(parents=True, exist_ok=True)
         self.calls_after: int | None = None  # while an issue runs: the last `llm_calls` id before it
+        self._meanings: dict[str, str] | None = None  # each column's note sentence, read once per run
 
     # --- data access ----------------------------------------------------------------------------
 
@@ -689,8 +702,10 @@ class Cleaner:
         decision = gate.decide([s for _, s, *_ in scored], compared.agreement, review_ok, affected, total_cells,
                                requested=requested, domain_rule=rule is not None)
         if overruled:
-            decision = (gate.overrule(decision, (issue.get("details") or {}).get("rule")) if rule is not None
-                        else gate.overrule_parse(decision))
+            d = issue.get("details") or {}
+            # The rule in words: a domain rule's own sentence, or a check's `words` (its `rule` is the spec).
+            said = d["rule"] if isinstance(d.get("rule"), str) else d.get("words")
+            decision = gate.overrule(decision, said) if rule is not None else gate.overrule_parse(decision)
         elif decision.gate == "commit" and (issue.get("details") or {}).get("review_pairs"):
             decision = gate.review(decision, issue["details"]["review_pairs"])
         if decision.gate == "skip":
@@ -712,7 +727,8 @@ class Cleaner:
                                      f"How to fix {issue['detector'].replace('_', ' ')} in {column or 'the rows'}?"),
                         "chosen": best.label, "alternatives": [c.label for c, *_ in scored if c is not best],
                         "reason": prose(diagnosis.cause), "review": concerns,
-                        **({"asked": issue["instruction"]} if requested else {})}],
+                        **({"asked": issue["instruction"]} if requested else {}),
+                        **({"evidence": evidence} if (evidence := self._evidence(issue)) else {})}],
             verifiers=full_report.as_json(), job_id=self.ctx.id,
         )
         try:
@@ -765,7 +781,37 @@ class Cleaner:
         decisions = [json.loads(r[0]) for r in self.db.execute(
             "SELECT decisions_json FROM steps WHERE dataset_id = ? AND created_by = 'cleaner' ORDER BY no DESC LIMIT 10",
             (self.dataset["id"],))]
-        return {"entry": entry, "samples": samples, "decisions": [d for ds in decisions for d in ds][:10]}
+        # An earlier step's decision may cite a page (`evidence`): its words stay out of the prompt (§3.1 rule 4).
+        return {"entry": entry, "samples": samples,
+                "decisions": [{k: v for k, v in d.items() if k != "evidence"} for ds in decisions for d in ds][:10],
+                "meaning": self._meaning(column)}
+
+    def _meaning(self, column: str | None) -> str | None:
+        """The column's note sentence for the prompts (docs/plans/tavily.md §3.4, §3.1 rule 4): Super's digit-free
+        `description`, never the source's `excerpt`, a dictionary's before one Sherlock found before the web's. One
+        query per run; a missing table or row means no meaning, never a failed clean."""
+        if self._meanings is None:
+            self._meanings = {}
+            try:
+                for n in notes_for(self.db, self.dataset["id"], MEANING_KINDS):  # a column's best note first
+                    text = " ".join(str(n["description"] or "").split())
+                    if text:
+                        self._meanings.setdefault(n["column"], text[:MEANING_CHARS])
+            except sqlite3.Error:
+                pass
+        return self._meanings.get(column) if column else None
+
+    def _evidence(self, issue: dict) -> dict | None:
+        """The page a rule's check was taken from (docs/plans/tavily.md §3.3), for the step that enforces it:
+        `{url, title, excerpt, retrieved_at}` from the rule's `spec_json`, or None for any other issue."""
+        rule_id = (issue.get("details") or {}).get("rule_id")
+        if issue.get("user") or not rule_id:
+            return None
+        rule = next((r for r in self.rules if r["id"] == rule_id), None)
+        found = rule.get("evidence") if rule else None
+        if not isinstance(found, dict) or not found.get("url"):
+            return None
+        return {k: found.get(k) for k in EVIDENCE_KEYS}
 
     def _track(self, completion) -> None:
         self.state.waited_for_model_s += completion.waited_s
@@ -775,8 +821,9 @@ class Cleaner:
         columns = ", ".join(f"{c['name']} ({c['type']})" for c in card["columns"])
         user = prompts.DIAGNOSE.format(
             issue_line=_safe(issue_line(issue)), detector=issue["detector"], column=_safe(issue["column"] or "(rows)"),
-            rows=card["row_count"], columns=_safe(columns), column_card=_json(cc["entry"]), samples=_json(cc["samples"]),
-            examples=_json(cap_values(issue["examples"], 10)), details=_json(issue.get("details") or {}, 600),
+            rows=card["row_count"], columns=_safe(columns), column_card=_json(cc["entry"]), meaning=_safe(cc["meaning"] or "unknown"),
+            samples=_json(cc["samples"]),
+            examples=_json(cap_values(issue["examples"], 10)), details=_details(issue),
             decisions=_json(cc["decisions"], 1200) if cc["decisions"] else "none yet", instruction=_instruction(issue),
         )
         if registry.get(issue["detector"]).vote and not issue.get("date_order"):  # a picked order needs no vote
@@ -804,9 +851,10 @@ class Cleaner:
         samples = cap_values(df[column].dropna().astype(str).drop_duplicates().head(20)) if column in df else []
         user = prompts.PROPOSE.format(
             issue_line=_safe(issue_line(issue)), column=_safe(column or "(rows)"), cause=_safe(diagnosis.cause),
+            meaning=_safe(self._meaning(column) or "unknown"),
             approaches=_safe("; ".join(approaches)), dtypes=_json({c: str(t) for c, t in df.dtypes.items()}, 2000),
             samples=_json(samples), examples=_json(cap_values(issue["examples"], 10)), helpers=prompts.HELPERS,
-            details=_json(issue.get("details") or {}, 600), instruction=_instruction(issue),
+            details=_details(issue), instruction=_instruction(issue),
         )
         out = self.llm.structured("large", self._messages(user), Candidates, purpose="propose", scope=self.scope,
                                   max_tokens=6000)
@@ -828,7 +876,7 @@ class Cleaner:
             effect += f"; the issue went from {report.issue_before} to {report.issue_after}"
         user = prompts.CRITIC.format(issue_line=_safe(issue_line(issue)), column=_safe(column or "(rows)"), label=_safe(best.label),
                                      code=_safe(best.code), effect=_safe(effect), changes=_json(changes), checks=_json(report.hard),
-                                     instruction=_instruction(issue))
+                                     meaning=_safe(self._meaning(column) or "unknown"), instruction=_instruction(issue))
         out = self.llm.structured("medium", self._messages(user), Critique, purpose="critic", scope=self.scope)
         self._track(out.completion)
         return out.value

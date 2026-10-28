@@ -7,7 +7,8 @@ and `app_help` (D7.3, `insight.py`), `web_context` (outside-world questions answ
 ASK-11, `web.py`), `ask_code` (questions SQL can't express, as read-only pandas, `analysis.py`), and the actions
 `edit_cells`, `clean_step` (a cleaning command: pandas code the user reads, then runs with OK, `commands.py`) and
 `clean_selection` (TRD §8.2), plus `edit_plan` while a cleaning plan is open (`context.plan_id`, PRD CLEAN-8b).
-Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
+A dated answer with a clear jump also offers "What happened around <period>?", and its press is a dated news search
+(`period.py`, docs/plans/tavily.md §3.6). Intents that aren't built yet get an honest reply instead (ASK-8). Events go to `emit(type, data)` as they happen (§5.3), and
 the message is saved even if nobody is listening any more.
 
 Budgets per message: 8 answerer and action calls, `MESSAGE_TOKEN_BUDGET` tokens, 90 s.
@@ -21,7 +22,7 @@ from collections.abc import Callable
 
 from sherlock.agent import actions as acts
 from sherlock.agent import analysis, commands
-from sherlock.agent import insight, prompts
+from sherlock.agent import insight, period, prompts
 from sherlock.agent import web as aw
 from sherlock.agent.answerers import CantAnswer, Clarify, Scope, Toolkit, ask_history, stem_linked
 from sherlock.agent.compose import compose, runs_text, table_block, text_block
@@ -297,7 +298,9 @@ class Agent:
                           on_wait=lambda t: self.emit("status", {"text": t}), deadline=self.started + WALL_S)
         question = text
         chosen = None  # what the picked option of a code-built clarification stands for
-        if clarification_of:
+        # "What happened around <period>?" (docs/plans/tavily.md §3.6): a press of the offer saved on that message.
+        pressed = self._period_offer(clarification_of, choice or text) if clarification_of else None
+        if clarification_of and not pressed:
             asked = self.db.execute("SELECT * FROM messages WHERE id = ? AND dataset_id = ?", (clarification_of, dataset["id"])).fetchone()
             original = self.db.execute(
                 "SELECT text FROM messages WHERE dataset_id = ? AND role = 'user' AND created_at <= ? AND id != ? "
@@ -311,6 +314,8 @@ class Agent:
             question = f"{original['text']}\n(Clarified: {said})" if original else picked
 
         try:
+            if pressed:
+                return self._period(mid, *pressed, context, scope)
             return self._answer(mid, question, context, scope, history, focus, clarified=bool(clarification_of), chosen=chosen)
         except (LLMUnavailable, BudgetExceeded) as exc:
             self.emit("error", {"code": exc.code, "message": exc.message})
@@ -582,6 +587,11 @@ class Agent:
                 text = f"{number['label']}: {number['formatted']}"
             elif results:
                 text = f"Here is the result ({results[0].row_count} rows)."
+        if self.web.enabled:  # a dated answer with a clear jump offers "What happened around <period>?" (tavily.md §3.6)
+            button = next((o for r in results if r.id not in computed and not r.extra.get("code")
+                           for o in [period.offer(r)] if o), None)
+            if button:
+                actions.append(button)
         unique = []
         for a in actions:  # two intents may offer the same action
             if a not in unique:
@@ -607,6 +617,40 @@ class Agent:
         out = self._save(mid, "assistant", clar["question"], clarification=clar, context=context,
                          focus={**kept, "clarify": {"name": asking.name, "means": asking.means}},
                          route=route.model_dump(), tokens=scope.message_tokens[0], plan={"steps": plan} if plan else None)
+        self.emit("message", out)
+        return out
+
+    def _period_offer(self, message_id: str, label: str) -> tuple[dict, dict] | None:
+        """(the offer, the message's focus) when `label` is the text of an "ask_period" button saved on that
+        assistant message. The period comes from the saved offer, never from what the request says."""
+        row = self.db.execute("SELECT focus_json FROM messages WHERE id = ? AND dataset_id = ? AND role = 'assistant'",
+                              (message_id, self.dataset["id"])).fetchone()
+        focus = json.loads(row["focus_json"]) if row and row["focus_json"] else {}
+        offer = next((a for a in focus.get("actions") or [] if a.get("kind") == "ask_period" and a.get("label") == label), None)
+        return (offer, focus) if offer else None
+
+    def _period(self, mid: str, offer: dict, asked: dict, context: dict, scope: CallScope) -> dict:
+        """The press of "What happened around <period>?": one dated news search (`period.period_context`),
+        without a routing call. A failure is one line, as for any web answer. The focus stays the data answer's,
+        so a follow-up still continues that question."""
+        self.emit("status", {"text": "Searching the news for that period"})
+        card = profile_service.get_or_build(self.env.settings, self.db, self.env.cache, self.dataset)
+        kit = Toolkit(self.env, self.llm, scope, self.dataset, "", Scope())
+        question = asked.get("question") or offer["label"]
+        try:
+            reply = period.period_context(kit, self.web, question, offer["measure"], [c["name"] for c in card["columns"]],
+                                          offer["start_date"], offer["end_date"])
+            blocks, sources, web_focus = reply.blocks, reply.sources, reply.focus
+        except CantAnswer as exc:
+            blocks, sources, web_focus = [text_block([{"type": "text", "text": str(exc)}])], [], {}
+        for b in blocks:
+            self.emit("block", b)
+        if sources:
+            self.emit("sources", {"sources": sources})
+        text = " ".join(runs_text(p["runs"]) for b in blocks if b["type"] == "text" for p in b["body"]["blocks"]).strip()
+        focus = {**{k: v for k, v in asked.items() if k not in ("actions", "clarify")}, **web_focus}
+        out = self._save(mid, "assistant", text, blocks=blocks, sources=sources, context=context, focus=focus,
+                         tokens=scope.message_tokens[0])
         self.emit("message", out)
         return out
 

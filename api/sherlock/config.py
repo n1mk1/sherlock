@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     # The background review that rates each finding's severity (TRD §7.2); off, every item keeps code's default level.
     clean_review: Literal["on", "off"] = "on"
     clean_suggest: Literal["on", "off"] = "on"  # suggested checks, written in the same review job (PRD CLEAN-14)
+    # Grounding (docs/plans/tavily.md §3.2): at the start of the review job, Tavily finds the file's data dictionary
+    # and explains cryptic column names, sending column names only. Also needs a Tavily key and a model.
+    clean_ground: Literal["on", "off"] = "on"
     rule_max_s: float = 2.0  # a rule running longer on a version is stopped: "This check took too long"
     # Detector packs (TRD §7.1 step 4): installed Python entry points, run in the API process, so off unless the
     # operator allows them: "all" or a comma-separated allowlist of pack names. DETECTORS_OFF: ids that don't run.

@@ -198,7 +198,7 @@ def test_a_started_plan_is_not_changed_by_a_later_review(client):
 def draft(kind, column, **params):
     base = {"kind": kind, "column": column, "min": None, "max": None, "earliest": None, "latest": None,
             "values": None, "regex": None, "other": None, "action": "flag"}
-    return {"rule": {**base, **params}, "reason": "Families aboard are small, so a bigger count is a typo."}
+    return {"rule": {**base, **params}, "reason": "Families aboard are small, so a bigger count is a typo.", "excerpt": None}
 
 
 @pytest.mark.usefixtures("reviews_on")

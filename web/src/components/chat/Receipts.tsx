@@ -18,7 +18,7 @@ const DID: Record<string, string> = {
   stats: "Chose the test", meaning: "Explained the column", edits: "Drafted the edits",
   plan_edits: "Changed the cleaning plan", summary: "Summarized the thread",
   diagnose: "Diagnosed an issue", propose: "Proposed fixes", critic: "Reviewed a fix",
-  web_query: "Wrote the web search", web_answer: "Wrote the answer from the web pages",
+  web_query: "Wrote the web search", period_query: "Wrote the news search", web_answer: "Wrote the answer from the web pages",
   meaning_web: "Explained the column from the web pages", dictionary: "Matched the dictionary to the columns",
 };
 // A web request (`role: "web"`) is named by its tool.

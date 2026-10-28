@@ -2,8 +2,8 @@
 runnable Jupyter notebook that rebuilds it from the raw file.
 
 `build()` assembles the cells; the `export_notebook` job writes the file and the `exports` row. An
-export is cached by sha1(kind, version, state_rev, options): a new version or a run's change bumps
-`state_rev`, so a repeat export of the same state is instant. An analysis that can't be emitted
+export is cached by sha1(kind, version, state_rev, options): a new version, a run's change or a new
+column note bumps `state_rev`, so a repeat export of the same state is instant. An analysis that can't be emitted
 becomes a Markdown cell saying why, so one run never fails the export.
 """
 
@@ -119,6 +119,10 @@ def build(settings: Settings, db: sqlite3.Connection, cache: VersionConnections,
     nb.cells += cells.helpers(helpers_cell(used))
     nb.cells += cells.load(import_options, [c["name"] for c in v1_columns if c["name"] not in ("_row_id", "_quarantine_reason")],
                            {c["name"]: c["type"] for c in v1_columns})
+    from sherlock.agent.web import notes_for  # the notes are per dataset: every kind, a dictionary's first (plan §3.5)
+
+    nb.cells += cells.column_notes(notes_for(db, dataset["id"], kinds=("dictionary", "found", "web")),
+                                   [c["name"] for c in v1_columns])
     for s in chain:
         nb.cells += cells.step(s)
     in_chain = {s["id"] for s in chain}

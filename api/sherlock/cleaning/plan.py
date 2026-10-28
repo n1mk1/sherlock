@@ -118,6 +118,9 @@ def _item(issue: dict, card: dict, item_id: str | None = None, rating: dict | No
     }
     if kept:
         item["reason"] = kept[0]
+    evidence = (issue.get("details") or {}).get("evidence")
+    if evidence:  # a check taken from a web page (docs/plans/tavily.md §3.3): the item shows the page
+        item["evidence"] = evidence
     if rating and not kept:  # the review's level and reason (TRD §7.2)
         item.update(rating)
     if not kept:

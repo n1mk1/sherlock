@@ -516,9 +516,9 @@ def ask_meaning(kit: Toolkit, question: str, resolved: dict, card: dict, rid: st
     from sherlock.agent import web as aw
 
     focus = {"columns": [col["name"]]}
-    linked = next((n for n in aw.notes_for(kit.env.db, kit.dataset["id"], kinds=("dictionary",)) if n["column"] == col["name"]),
-                  None)
-    if linked:  # the user's own data dictionary wins over a search
+    linked = next((n for n in aw.notes_for(kit.env.db, kit.dataset["id"], kinds=("dictionary", "found"))
+                   if n["column"] == col["name"]), None)
+    if linked:  # a data dictionary, the user's or one Sherlock found, wins over a search
         return Reply(blocks=[*blocks, aw.note_block(linked)], sources=[*sources, aw.note_source(linked)], focus=focus)
     if web is not None and web.enabled:
         got = aw.web_meaning(kit, web, col["name"], list(cols), about)

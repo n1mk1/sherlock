@@ -1,0 +1,22 @@
+[
+  {"purpose": "diagnose", "match": ["Column: amount", "numbers_as_text"],
+   "content": {"cause": "Money was typed with currency signs and thousands separators.", "approach_options": ["Parse as numbers and quarantine what doesn't parse", "Leave as text"], "preferred_option": 0, "risk": "low", "leave_as_is": false}},
+  {"purpose": "propose", "match": ["Column: amount"],
+   "content": {"candidates": [
+     {"label": "Parse money as numbers", "code": "result = df.copy()\nparsed = parse_numbers(df['amount'])\nresult['amount'] = parsed\nresult = quarantine_rows(result, parse_failures(df['amount'], parsed), 'parse: amount')\n", "expected_effect": "Turns amounts into numbers and quarantines the one value that isn't a number."}
+   ]}},
+  {"purpose": "diagnose", "match": ["Column: region"],
+   "content": {"cause": "The same region is written with different case and stray spaces.", "approach_options": ["Normalize spacing and use title case", "Keep the most frequent spelling"], "preferred_option": 0, "risk": "low", "leave_as_is": false}},
+  {"purpose": "propose", "match": ["Column: region"],
+   "content": {"candidates": [
+     {"label": "Normalize whitespace and case", "code": "result = df.copy()\nresult['region'] = normalize_whitespace_case(df['region'], mode='title')\n", "expected_effect": "Merges spelling variants of each region."}
+   ]}},
+  {"purpose": "propose", "match": ["Column: age"],
+   "content": {"candidates": [
+     {"label": "Leave the ages", "code": "result = df.copy()\n", "expected_effect": "Keeps every age."}
+   ]}},
+  {"purpose": "diagnose",
+   "content": {"cause": "These values look legitimate.", "approach_options": ["Leave as is", "Fill from a rule"], "preferred_option": 0, "risk": "medium", "leave_as_is": true}},
+  {"purpose": "critic",
+   "content": {"changed_something_it_shouldnt": false, "concerns": []}}
+]

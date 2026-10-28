@@ -249,7 +249,7 @@ def _minutes_ago(minutes: int) -> str:
 
 class ColumnNote(BaseModel):
     column: str
-    kind: Literal["dictionary", "web"]
+    kind: Literal["dictionary", "found", "web"]  # found: a dictionary Sherlock looked up itself
     description: str             # Sherlock's sentence from the source, with no digits
     excerpt: str | None          # the source's own words, as the page has them
     source_url: str

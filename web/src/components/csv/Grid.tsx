@@ -3,9 +3,9 @@
 // pending row, struck through when quarantined or marked for deletion). Cells show the marks from
 // the rows API (changed, flagged, invalid) and the pending edits from the buffer (unsaved), each
 // drawn so it doesn't rely on color alone. Clicking a header sorts by it (asc → desc → none); sorting
-// is a view, never a change to the data. A column with a note (a data dictionary the user linked, or
-// the web) has ⓘ in its header, and hovering the header shows the note and its quoted source. A new
-// view (version, sort, selection) clears the selected cells, since they're row positions that now hold
+// is a view, never a change to the data. A column with a note (a data dictionary the user linked, one
+// Sherlock found, or the web) has ⓘ in its header, and hovering the header shows the note and its quoted
+// source. A new view (version, sort, selection) clears the selected cells, since they're row positions that now hold
 // other rows. A page that fails is asked for twice more before the grid says so, with Retry.
 import "@glideapps/glide-data-grid/dist/index.css";
 import {
@@ -14,7 +14,7 @@ import {
   type GridColumn, type GridMouseEventArgs, type GridSelection, type Item, type Rectangle, type Theme,
 } from "@glideapps/glide-data-grid";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { notesByColumn, useColumnNotes, type ColumnNote } from "@/api/columnNotes";
+import { notesByColumn, siteOf, useColumnNotes, type ColumnNote } from "@/api/columnNotes";
 import { fetchRows, type RowsPage, type Sort } from "@/api/csv";
 import type { ColumnCard, Column } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -370,12 +370,16 @@ export const Grid = forwardRef<GridHandle, {
   );
 });
 
+// Who said what a column means: the user's own dictionary, one Sherlock found on the web, or a web page.
+const FROM: Record<ColumnNote["kind"], string> = {
+  dictionary: "From the data dictionary you linked",
+  found: "From a data dictionary Sherlock found",
+  web: "From the web",
+};
+
 /** A column's note under its header: Sherlock's sentence, the source's own words quoted, and where they're from. */
-function NoteTooltip({ note, bounds }: { note: ColumnNote; bounds: Rectangle }) {
-  let host = note.source_url;
-  try {
-    host = new URL(note.source_url).hostname.replace(/^www\./, "");
-  } catch { /* shown as given */ }
+export function NoteTooltip({ note, bounds }: { note: ColumnNote; bounds: Rectangle }) {
+  const host = siteOf(note.source_url);
   return (
     <div
       role="tooltip"
@@ -386,7 +390,7 @@ function NoteTooltip({ note, bounds }: { note: ColumnNote; bounds: Rectangle }) 
       <p className="text-foreground">{note.description}</p>
       {note.excerpt && <p className="mt-1 border-l-2 border-border pl-2 italic text-foreground-2">“{note.excerpt}”</p>}
       <p className="mt-1 text-[11.5px] text-muted-foreground">
-        {note.kind === "dictionary" ? "From the data dictionary" : "From the web"} at {host}, retrieved {note.retrieved_at}. Not computed from your data.
+        {FROM[note.kind] ?? FROM.web} at {host}, retrieved {note.retrieved_at}. Not computed from your data.
       </p>
     </div>
   );

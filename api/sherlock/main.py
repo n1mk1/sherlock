@@ -30,6 +30,7 @@ from sherlock.llm.models import LLMReachability, validate_model_roles
 from sherlock.ratelimit import RateLimiter, rate_limit
 from sherlock.routers import chat, proposals, cleaning, datasets, exports, jobs, me, rows, rules, runs, selections, steps, streams
 from sherlock.storage import VersionConnections, clear_spill
+from sherlock.web.client import WebClient
 from sherlock.storage_check import check_storage
 
 
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
             "storage": storage,
             "llm": {"reachable": app.state.llm_reachability.check()},
             "models": settings.models,
+            "web": {"enabled": WebClient(settings).enabled},
             "detectors": registry.packs(),
         }
 
