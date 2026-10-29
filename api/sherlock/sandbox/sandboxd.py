@@ -62,23 +62,42 @@ POLL_S = 0.5
 
 def run_worker(command: list[str], worker_request: dict, cwd: Path, timeout_s: float, env: dict,
                preexec=None, should_stop: Callable[[], bool] | None = None) -> dict:
-    """Run one worker; kill it at the timeout, or as soon as `should_stop()` is true (a cancelled job)."""
+    """Run one worker; kill it at the timeout, or as soon as `should_stop()` is true (a cancelled job). On POSIX the
+    worker leads its own process group, and the whole group is killed when the run ends, so nothing it started
+    outlives the run and sees the runs after it."""
+    group = os.name == "posix"
     proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, cwd=cwd, env=env, preexec_fn=preexec)
+                            text=True, cwd=cwd, env=env, preexec_fn=preexec, start_new_session=group)
     deadline = time.monotonic() + timeout_s
     payload: str | None = json.dumps(worker_request)
-    while True:
-        try:
-            out, err = proc.communicate(input=payload, timeout=POLL_S)
-            return {"stdout": out, "stderr": err[-4000:], "returncode": proc.returncode, "timed_out": False}
-        except subprocess.TimeoutExpired:
-            payload = None  # sent with the first call
-            timed_out = time.monotonic() > deadline
-            if timed_out or (should_stop is not None and should_stop()):
-                proc.kill()
-                proc.communicate()
-                return {"stdout": "", "stderr": "", "returncode": -9 if timed_out else CANCELLED_RC,
-                        "timed_out": timed_out, "cancelled": not timed_out}
+    try:
+        while True:
+            try:
+                out, err = proc.communicate(input=payload, timeout=POLL_S)
+                return {"stdout": out, "stderr": err[-4000:], "returncode": proc.returncode, "timed_out": False}
+            except subprocess.TimeoutExpired:
+                payload = None  # sent with the first call
+                timed_out = time.monotonic() > deadline
+                if timed_out or (should_stop is not None and should_stop()):
+                    if group:
+                        _kill_group(proc)
+                    else:
+                        proc.kill()
+                    proc.communicate()
+                    return {"stdout": "", "stderr": "", "returncode": -9 if timed_out else CANCELLED_RC,
+                            "timed_out": timed_out, "cancelled": not timed_out}
+    finally:
+        if group:
+            _kill_group(proc)
+
+
+def _kill_group(proc: subprocess.Popen) -> None:
+    import signal
+
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass  # the group is already gone
 
 
 def request(socket_path: str, worker_request: dict, workdir: Path, timeout_s: float,
@@ -191,9 +210,10 @@ def _peer_uid(conn: socket.socket) -> int | None:
 
 
 def _chown_tree(root: Path, uid: int, gid: int) -> None:
-    os.chown(root, uid, gid)
+    """Without following links: a worker could leave a link to `/data` in its directory for root to hand over."""
+    os.chown(root, uid, gid, follow_symlinks=False)
     for path in root.rglob("*"):
-        os.chown(path, uid, gid)
+        os.chown(path, uid, gid, follow_symlinks=False)
 
 
 def _unshare_works() -> bool:

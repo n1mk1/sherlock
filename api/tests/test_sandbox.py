@@ -63,6 +63,7 @@ def test_allowed_code_passes():
     "pd.read_csv('x')", "df.to_csv('x')", "df.to_parquet('x')", "df.to_pickle('x')",
     "np.load('x')", "np.fromfile('x')", "pd.io.common.os.system('ls')", "np.lib.npyio",
     "global df", "result = df[",
+    "result = df.query('age > 0')", "result = df.eval('a = 1')", "pd.core.computation.expr.Expr('1')",
 ])
 def test_forbidden_code_is_rejected(code):
     assert check(code), code
@@ -105,11 +106,36 @@ def test_forbidden_import_never_starts_a_worker(version, tmp_path):
     ("open('x')", "NameError"),
     ("eval('1')", "NameError"),
     ("result = pd.read_csv('http://127.0.0.1:9/x.csv')", ""),
+    # query's string is code in which `@pd` reaches the OS (the review of 2026-10-29 created a directory this way)
+    ("result = df.query('@pd.io.common.os.getcwd() is None', engine='python')", "PermissionError"),
+    ("result = df.eval('@pd.io.common.os.getcwd()', engine='python')", "PermissionError"),
+    ("result = pd.eval('1 + 1')", "PermissionError"),
+    ("result = pd.core.computation.expr.Expr('1')", "PermissionError"),
 ])
 def test_worker_defences_hold_without_the_static_check(version, tmp_path, code, error):
     result = execute(settings(), code, version, tmp_path / "out.parquet", skip_static_check=True)
     assert not result.ok
     assert error in (result.error or "")
+
+
+def test_a_method_named_in_a_string_cannot_evaluate_or_write(version, tmp_path):
+    """pandas looks a method up by its name (`df.agg("query")`), which the static check can't see: the worker refuses
+    the string evaluator and the file writers however they're reached."""
+    escaped, written = tmp_path / "escaped", tmp_path / "written.pkl"
+    for code in (f"result = df.agg('query', expr=\"@pd.io.common.os.makedirs('{escaped.as_posix()}') is None\", engine='python')",
+                 f"df.agg('to_pickle', path={str(written)!r})\nresult = df",
+                 f"df['age'].agg('to_csv', path_or_buf={str(written)!r})\nresult = df",
+                 f"df.apply('to_string', buf={str(written)!r})\nresult = df"):
+        assert check(code) == [], code
+        result = execute(settings(), code, version, tmp_path / "out.parquet")
+        assert not result.ok and "PermissionError" in result.error, (code, result.error)
+    assert not escaped.exists() and not written.exists()
+
+
+def test_printing_a_frame_still_works(version, tmp_path):
+    result = execute(settings(), "print(df.head(3))\nprint(df['age'].head(3))\nresult = df", version, tmp_path / "out.parquet")
+    assert result.ok, result.error
+    assert "name" in result.stdout_tail and "age" in result.stdout_tail
 
 
 def test_errors_are_reported_with_a_traceback(version, tmp_path):

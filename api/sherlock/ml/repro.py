@@ -31,32 +31,39 @@ def core_source() -> str:
     return "\n\n\n".join(parts)
 
 
+def comment(text) -> str:
+    """`text` made safe for one comment line: a column name comes from the CSV header, which may hold a line break,
+    and a line break in a comment would start a line of code that `execute` runs in the API process."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text)).split())
+
+
 def render(plan: Plan, model: str, alternatives: list[dict], run_id: str, version: int, n_folds: int = core.FOLDS) -> str:
-    """The run's `repro.py`."""
-    excluded = "\n".join(f"#   {e['column']}: {e['reason']}" for e in plan.excluded) or "#   none"
-    others = ", ".join(f"{core.MODEL_LABELS.get(a['model'], a['model'])} ({a['metric']} {a['mean']:.3f})" for a in alternatives) \
-        or "none"
+    """The run's `repro.py`. Names and reasons go in comments through `comment` and in code through `repr`, never raw."""
+    excluded = "\n".join(f"#   {comment(e['column'])}: {comment(e['reason'])}" for e in plan.excluded) or "#   none"
+    others = comment(", ".join(f"{core.MODEL_LABELS.get(a['model'], a['model'])} ({a['metric']} {a['mean']:.3f})"
+                               for a in alternatives) or "none")
     sample = ""
     if plan.sample:
-        how = f"stratified by {plan.sample['stratify_column']}, " if plan.sample.get("stratify_column") else ""
-        sample = (f"    # The scope had more than {plan.sample['n']:,} rows, so the run used a random sample of them ({how}seed {plan.sample['seed']}).\n"
-                  f"    data = sample(data, {plan.target!r}, {plan.task!r}, {plan.sample['n']}, seed)\n")
+        how = f"stratified by {comment(plan.sample['stratify_column'])}, " if plan.sample.get("stratify_column") else ""
+        sample = (f"    # The scope had more than {int(plan.sample['n']):,} rows, so the run used a random sample of them ({how}seed {int(plan.sample['seed'])}).\n"
+                  f"    data = sample(data, {plan.target!r}, {plan.task!r}, {int(plan.sample['n'])}, seed)\n")
     sql = f"SELECT * FROM t WHERE {plan.rows_sql} ORDER BY _row_id"
-    group = (f"    # Rows that share a {plan.group} stay in one fold, so a held-out row's group isn't in its training rows.\n"
+    group = (f"    # Rows that share a {comment(plan.group)} stay in one fold, so a held-out row's group isn't in its training rows.\n"
              if plan.group else "")
-    return f'''# Reproduces Sherlock run {run_id} (driver analysis on version {version}).
-# Auto tried: {others}. The winner, {core.MODEL_LABELS.get(model, model)}, is reproduced here.
+    return f'''# Reproduces Sherlock run {comment(run_id)} (driver analysis on version {int(version)}).
+# Auto tried: {others}. The winner, {comment(core.MODEL_LABELS.get(model, model))}, is reproduced here.
 import duckdb
 
 {core_source()}
 
 
 def reproduce(df, seed=42):
-    """What drives {plan.target}: the same rows, features, folds and model as the app."""
+    """What drives the target: the same rows, features, folds and model as the app."""
+    # Target: {comment(plan.target)}
     t = df
     data = duckdb.sql({sql!r}).df()  # the run's rows (quarantined rows excluded)
     data = data[data[{plan.target!r}].notna()]
-{sample}    # Features used: {", ".join(plan.features)}
+{sample}    # Features used: {comment(", ".join(plan.features))}
     # Left out, with the reason:
 {excluded}
 {group}    return run(data, {plan.target!r}, {plan.numeric!r}, {plan.categorical!r}, {plan.high_card!r}, {plan.task!r}, {model!r}, seed,

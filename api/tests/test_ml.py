@@ -2,6 +2,7 @@
 end to end on a planted file: recipes with reasons, the setup preview, a run with its model card,
 results, reproduction code and cache, and runs marked outdated by the edit that changes their columns."""
 
+import os
 import time
 
 import numpy as np
@@ -170,6 +171,23 @@ def test_the_reproduction_code_gives_the_model_cards_numbers():
     again = repro.execute(a.code, planted.as_version(planted.drivers()))
     assert again["metrics"]["value"] == a.card["model"]["value"]
     assert "def reproduce(df, seed=42):" in a.code and "#   leak: records the outcome" in a.code or "#   leak:" in a.code
+
+
+def test_column_names_never_become_code_in_the_reproduction(monkeypatch):
+    """The reproduction runs in the API process, and its column names come from the CSV header: a name that closes
+    the docstring, or holds a line break into a comment, must stay text (the review of 2026-10-29 ran code this way)."""
+    monkeypatch.delenv("SHERLOCK_PWNED", raising=False)
+    plant = '__import__("os").environ.__setitem__("SHERLOCK_PWNED", "{}")'
+    target = 'out"""+str(' + plant.format("docstring") + ')+"""come'
+    feature = "strong\n    " + plant.format("feature")
+    excluded = "code\r" + plant.format("excluded")
+    df = planted.drivers().rename(columns={"outcome": target, "strong": feature, "code": excluded})
+    a = _analyze(df, target, features=[feature, "moderate"])  # the rest are left out, `excluded` among them
+    assert feature in a.plan.features and excluded in {e["column"] for e in a.plan.excluded}
+    again = repro.execute(a.code, planted.as_version(df))
+    assert "SHERLOCK_PWNED" not in os.environ
+    assert again["metrics"]["value"] == a.card["model"]["value"]
+    assert 'strong __import__("os")' in a.code  # the line break became a space, inside the comment
 
 
 # --- the runs API ----------------------------------------------------------------------------------

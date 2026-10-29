@@ -3,7 +3,8 @@
 Rejected: imports outside the allowlist; calls to `__import__`, `eval`, `exec`, `open`,
 `compile` and other escape hatches; any dunder attribute or name; any `read_*` / `to_*`
 attribute except `to_datetime`, `to_numeric`, `to_timedelta`; attributes that reach the OS or
-the file system through a library (`pd.io.common.os`, `np.load`, …). This is the first barrier,
+the file system through a library (`pd.io.common.os`, `np.load`, …); `query` and `eval`, whose
+string is code this check never sees. This is the first barrier,
 not the only one: the worker restricts builtins and imports again, and on Linux runs as a user
 that can't read `/data`.
 """
@@ -26,6 +27,9 @@ FORBIDDEN_ATTRIBUTES = frozenset({
     "load", "loads", "save", "savez", "savez_compressed", "savetxt", "loadtxt", "fromfile", "tofile",
     "memmap", "genfromtxt", "DataSource", "lib", "ctypeslib", "testing", "f2py", "distutils",
     "open", "get_handle", "urlopen", "pipe",
+    # `query` and pandas' expression engine evaluate a string, where `@pd.io.common.os` reaches the OS (the worker
+    # disables them too)
+    "query", "computation",
 })
 ALLOWED_TO = frozenset({"to_datetime", "to_numeric", "to_timedelta"})
 

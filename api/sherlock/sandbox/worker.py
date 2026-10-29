@@ -12,7 +12,8 @@ that loses nothing. `flags` is `result.attrs["sherlock_flags"]` from `flag_rows`
 
 Defences inside the process, on top of the static check: CPU and address-space limits (POSIX),
 sockets disabled, proxies pointed nowhere, a builtins table without file, eval or import escape
-hatches, and imports limited to the allowlist.
+hatches, imports limited to the allowlist, and pandas' string evaluator and file writers disabled
+(`lock_pandas`).
 """
 
 import builtins
@@ -88,6 +89,41 @@ def block_network() -> None:
     socket.create_connection = lambda *a, **k: (_ for _ in ()).throw(PermissionError("network access is disabled"))
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"):
         os.environ[var] = "http://127.0.0.1:9"
+
+
+FILE_WRITERS = ("to_csv", "to_json", "to_parquet", "to_pickle", "to_feather", "to_hdf", "to_sql", "to_stata", "to_orc",
+                "to_excel", "to_clipboard", "to_xml", "to_html", "to_latex", "to_markdown")
+
+
+def lock_pandas() -> None:
+    """Turn off what the static check can't see: pandas resolves a method from its name (`df.agg("query", …)`,
+    `df.apply("to_pickle", …)`), and `query`/`eval` run their string as code in which `@pd` reaches the OS.
+    So the string evaluator and the file writers raise, however they're reached. `to_string` stays for `print`,
+    but not into a file."""
+    import pandas as pd
+    import pandas.core.computation.api as computation_api
+    import pandas.core.computation.eval as computation
+    import pandas.core.computation.expr as computation_expr
+
+    def refuse(name):
+        def refused(*args, **kwargs):
+            raise PermissionError(f"{name} is disabled in the sandbox")
+        return refused
+
+    computation.eval = computation_api.eval = pd.eval = refuse("pandas eval")
+    computation_expr.Expr.__init__ = refuse("pandas expressions")  # what every string-expression parser builds
+    for cls in (pd.DataFrame, pd.Series):
+        for name in ("query", "eval", *FILE_WRITERS):
+            if hasattr(cls, name):
+                setattr(cls, name, refuse(name))
+        to_string = cls.to_string
+
+        def to_string_in_memory(self, buf=None, *args, _to_string=to_string, **kwargs):
+            if isinstance(buf, (str, bytes, os.PathLike)):
+                raise PermissionError("to_string into a file is disabled in the sandbox")
+            return _to_string(self, buf, *args, **kwargs)
+
+        cls.to_string = to_string_in_memory
 
 
 def restricted_globals(df, analysis: bool = False):
@@ -203,6 +239,7 @@ def run(request: dict) -> dict:
     reader.close()
     rows_in, columns_in = len(df), list(df.columns)
     analysis = request.get("mode") == "analysis"
+    lock_pandas()
     scope = restricted_globals(df, analysis)
     out = io.StringIO()
     try:
