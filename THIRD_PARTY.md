@@ -10,7 +10,7 @@ not listed.
 
 | What | Where | License |
 |---|---|---|
-| Bklit UI chart components (bar, line, area, pie and their parts), copied through the `@bklit` shadcn registry and edited (TRD §2) | `web/src/components/charts/` | MIT, Copyright (c) 2026 uixmat, https://github.com/bklit/bklit-ui |
+| Bklit UI chart components (bar, line, area, pie and their parts), copied through the `@bklit` shadcn registry and edited | `web/src/components/charts/` | MIT, Copyright (c) 2026 uixmat, https://github.com/bklit/bklit-ui |
 | shadcn/ui component patterns (button, dialog, menu, drawer, segmented control) | `web/src/components/ui/` | MIT, https://github.com/shadcn-ui/ui |
 
 **Bklit Studio is not used.** Only the open-source Bklit UI components above are in the repository;
@@ -28,7 +28,7 @@ nothing references Bklit Studio (checked by searching the code and dependencies 
 |---|---|---|
 | `api/samples/titanic3.csv` | OpenML dataset 40945, "Titanic" (the `titanic3` passenger list) | Listed by OpenML as **Public** (checked with the OpenML API on 2026-10-25) |
 | `api/samples/sales_dated.csv`, `wide_messy.csv`, `reviews_text.csv`, `broken_latin1.txt` | Synthetic, generated once from seeded code | MIT, part of this project |
-| `api/samples/seed/titanic3/` | The cached sample (D9.1): the Titanic file after Sherlock's own pipeline | Public (data) and MIT (Sherlock's outputs) |
+| `api/samples/seed/titanic3/` | The cached sample: the Titanic file after Sherlock's own pipeline | Public (data) and MIT (Sherlock's outputs) |
 
 ## Models
 
@@ -39,7 +39,7 @@ API, under Nebius's and NVIDIA's terms of service. No model weights are in this 
 
 With `TAVILY_API_KEY` set, Sherlock calls Tavily's search, extract and map API (`tavily-python`, above),
 under Tavily's terms of service, for outside-world questions, column meanings and a data dictionary the
-user links (TRD §3.6). It uses retrieval only: Tavily's own answer and research features, which a
+user links. It uses retrieval only: Tavily's own answer and research features, which a
 non-NVIDIA model writes, are never called. Search results are shown as quoted excerpts with their URL.
 
 ## Fonts
@@ -122,7 +122,7 @@ and never reach the browser.
 | RapidFuzz | 3.10.1 | MIT License | direct |
 | scikit-learn | 1.5.2 | BSD 3-Clause License | direct |
 | sqlglot | 30.24.0 | MIT | direct |
-| tavily-python | 0.8.5 | MIT | direct: web search, extract and map (TRD §3.6); off until `TAVILY_API_KEY` is set |
+| tavily-python | 0.8.5 | MIT | direct: web search, extract and map; off until `TAVILY_API_KEY` is set |
 | uvicorn | 0.54.0 | BSD-3-Clause | direct |
 | annotated-doc | 0.0.5 | MIT | |
 | annotated-types | 0.8.0 | MIT | |

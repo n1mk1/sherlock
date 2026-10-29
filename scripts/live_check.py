@@ -1,11 +1,11 @@
-"""Check a deployed Sherlock from the outside (Implementation Plan D9.2, D9.5). Each `httpx` client is a
+"""Check a deployed Sherlock from the outside. Each `httpx` client is a
 fresh browser: its own cookie, so its own anonymous user.
 
     uv run --project api python scripts/live_check.py [--url https://sherlock-anw3.onrender.com] [--files all|none]
 
 It checks: /healthz; "Try with sample" is ready at once, already cleaned; a second user can't see the
 first's data; the per-user rate limits answer 429; a chat answer is sourced; a cell edit saves as a new
-version. With `--files all` it also uploads the five-file end-to-end set (Implementation Plan §6),
+version. With `--files all` it also uploads the five-file end-to-end set,
 cleans or takes each as it is, exports each notebook and runs it here top to
 bottom (the `%pip` cell skipped: this venv has the pins), checking it rebuilds the version.
 """
@@ -77,7 +77,7 @@ def sample_checks(url: str) -> None:
     b2 = b.post(f"{API}/datasets/sample").json()
     check("the second browser gets its own copy", b2["id"] != ds["id"])
 
-    # Rate limits (TRD §15): 10 model-bearing requests a minute. Aimed at a dataset that doesn't exist,
+    # Rate limits: 10 model-bearing requests a minute. Aimed at a dataset that doesn't exist,
     # so no model is called: the limit is checked before the route looks the dataset up.
     codes = [b.post(f"{API}/datasets/ds_nope/chat", json={"text": "hi"}).status_code for _ in range(11)]
     check("the per-user model rate limit answers 429", codes[:10] == [404] * 10 and codes[10] == 429, str(codes))

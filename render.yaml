@@ -1,14 +1,14 @@
-# Render Blueprint: Sherlock's host (PRD §9, TRD §11).
+# Render Blueprint: Sherlock's host.
 # One Docker web service built from api/Dockerfile, serving the API and the web app from one
 # origin, with a persistent disk at /data. A service with a disk is single-instance, which the
-# app requires (one process holds the job runner and the SSE bus, TRD §3.1).
+# app requires (one process holds the job runner and the SSE bus).
 # The Nebius alternative is scripts/deploy.sh.
 services:
   - type: web
     name: sherlock
     runtime: docker
     region: frankfurt
-    # Standard (1 CPU, 2 GB) since 2026-10-25, for the sandbox and the Cleaner (TRD §11).
+    # Standard (1 CPU, 2 GB) since 2026-10-25, for the sandbox and the Cleaner.
     plan: standard
     dockerfilePath: ./api/Dockerfile
     dockerContext: .
@@ -30,7 +30,7 @@ services:
         value: "8080"
       # Standard has 2 GB for everything: the API, its DuckDB connections and one sandbox
       # worker. Each cap stays well under that, so a runaway step fails with MemoryError
-      # instead of getting the whole container killed (TRD §10).
+      # instead of getting the whole container killed.
       - key: DUCKDB_MEMORY_MB
         value: "512"
       # The sandbox's extra memory per step (the 2048 default assumes a 16 GB host).
@@ -53,7 +53,7 @@ services:
         value: ""
       - key: LLM_TOOLS_MODE
         value: native
-      # Web search, extract and map through Tavily (TRD §3.6). Empty or unset: every web feature is off and
+      # Web search, extract and map through Tavily. Empty or unset: every web feature is off and
       # says so in one line. Set it in the Render dashboard to turn web on; never in the repo.
       - key: TAVILY_API_KEY
         sync: false

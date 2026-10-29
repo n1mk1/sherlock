@@ -1,4 +1,4 @@
-# One image serves the API and the built web app from one origin (TRD §11).
+# One image serves the API and the built web app from one origin.
 # Build from the repo root:  docker build -f api/Dockerfile -t sherlock .
 
 # --- Stage 1: the web app -----------------------------------------------------
@@ -25,13 +25,13 @@ COPY api/pyproject.toml api/uv.lock api/.python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY api/sherlock ./sherlock
 COPY api/samples ./samples
-# The chat's app_help answers from these pages (TRD §8.2); config.REPO_ROOT is /app.
+# The chat's app_help answers from these pages; config.REPO_ROOT is /app.
 COPY docs/help /app/docs/help
 RUN uv sync --frozen --no-dev
 
 COPY --from=web /web/dist /app/web
 
-# `app` runs the API; `sandbox` will run cleaning workers (TRD §3.4, Implementation Plan D2.4).
+# `app` runs the API; `sandbox` will run cleaning workers.
 RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin app \
  && useradd --system --uid 10002 --no-create-home --shell /usr/sbin/nologin sandbox
 

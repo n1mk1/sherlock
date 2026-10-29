@@ -1,4 +1,4 @@
-# Local dev: API and web with hot reload (TRD §11). The production image is api/Dockerfile.
+# Local dev: API and web with hot reload. The production image is api/Dockerfile.
 services:
   api:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim

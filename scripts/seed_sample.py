@@ -1,4 +1,4 @@
-"""Make the cached sample (Implementation Plan D9.1): run the whole pipeline on Titanic once with the real
+"""Make the cached sample: run the whole pipeline on Titanic once with the real
 model, then save it as the seed that "Try with sample" clones (`api/samples/seed/titanic3/`).
 
     uv run --project api python scripts/seed_sample.py [--out DIR] [--keep-data]

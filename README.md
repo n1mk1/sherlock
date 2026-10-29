@@ -48,7 +48,7 @@ It's for analysts, researchers, students and operations people who get a CSV fro
 
 ### Your first five minutes
 
-1. Open the [live app](https://sherlock-anw3.onrender.com) and click **Try with sample (Titanic)**. It opens straight away: the rows in the grid in the centre, the chat bar below, and the cleaning steps in the **Changes** panel on the right.
+1. Open the [live app](https://sherlock-anw3.onrender.com) and click **Try a sample** (the Titanic passenger list). It opens straight away: the rows in the grid in the centre, the chat bar below, and the cleaning steps in the **Changes** panel on the right.
 2. Open **Full cleaning report** from the Changes panel. You'll see each fix with its code, the checks it passed, and any rows it quarantined and why.
 
    <img src="docs/images/05-cleaning-report.png" alt="The cleaning report: fixed, flagged and skipped issues, and no rows deleted" width="100%">
@@ -334,7 +334,7 @@ Each event is written to `job_events` and then published to the browser over Ser
 | **Web app** | React 18, TypeScript, Vite, Tailwind CSS 4, Radix UI, TanStack Query, Zustand, React Router, `openapi-fetch` with types generated from the API's OpenAPI schema |
 | **Grid and charts** | Glide Data Grid (canvas grid), visx and d3 with Bklit UI chart components, Motion |
 | **Tests** | pytest with recorded model replies, Vitest and Testing Library, Playwright end-to-end, axe-core |
-| **Hosting** | One Docker image (web build plus API) on Render, Frankfurt, with a persistent disk. Also runs as a Nebius Serverless Endpoint |
+| **Hosting** | One Docker image (web build plus API) on Render, Frankfurt, with a persistent disk. `scripts/deploy.sh` targets a Nebius Serverless Endpoint, not deployed yet ([why](#nebius-alternative)) |
 
 ### Repository layout
 
@@ -366,8 +366,7 @@ scripts/       seed the sample, live checks, Nebius deploy
 | Notebook (no model): export each end-to-end file and run it top to bottom in a fresh virtualenv | 5 of 5 rebuild their version after an undo with replay (107–198 s each, including installs) | `uv run sherlock eval notebook --sets all` |
 | Web retrieval, live: real Nemotron and Tavily | **0 outbound requests held a cell value**; web answered 14 of 20; no answer ended in an error (2026-10-26) | `uv run sherlock eval web --live` |
 | End-to-end browser flow (Playwright, recorded model replies) | sample → clean it myself → a number, a chart and a driver → approved edit → notebook → undo, 19 s | `pnpm e2e` |
-| The deployed site from fresh browsers | not re-run since the dashboard was removed | `uv run --project api python scripts/live_check.py --files all` |
-| Three questions on `titanic3.csv`, Sherlock versus a spreadsheet by hand | Sherlock (live): about 31 s and 4 steps in all, 3 of 3 answers traceable to their SQL. The by-hand half isn't measured yet | |
+| Three questions on `titanic3.csv` on the live site | about 31 s and 4 steps in all; 3 of 3 answers traceable to their SQL | |
 
 ## Known limitations
 
@@ -413,8 +412,8 @@ scripts/       seed the sample, live checks, Nebius deploy
 
 **Proof**
 - A cold-start user test with three people who have never seen Sherlock.
-- The by-hand half of the spreadsheet comparison.
-- Re-run the live site check.
+- Time the same three questions answered by hand in a spreadsheet, to set against Sherlock's 31 s.
+- Run `scripts/live_check.py` against the deployed site from fresh browsers.
 
 ---
 
@@ -445,7 +444,7 @@ cd api && uv sync && uv run uvicorn sherlock.main:app --reload --port 8000   # t
 cd web && pnpm install && pnpm dev                                           # terminal 2: http://localhost:5173
 ```
 
-"Try with sample" clones the seed in `api/samples/seed/titanic3/`. To rebuild it with the real models: `uv run --project api python scripts/seed_sample.py`.
+"Try a sample" clones the seed in `api/samples/seed/titanic3/`. To rebuild it with the real models: `uv run --project api python scripts/seed_sample.py`.
 
 ## Deploy
 
@@ -468,7 +467,9 @@ If you wait for a deploy from a script, poll `/healthz`. A loop on `/api/…` wi
 
 ### Nebius alternative
 
-The same image runs as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`), with a Nebius shared filesystem mounted at `/data` and the Token Factory key stored as a Nebius secret. This needs an active Nebius AI Cloud tenant.
+`scripts/deploy.sh` sets the same image up as one container on a CPU-only Nebius Serverless Endpoint (`cpu-d3`, `4vcpu-16gb`), with a Nebius shared filesystem mounted at `/data` and the Token Factory key stored as a Nebius secret. It needs an active Nebius AI Cloud tenant.
+
+We haven't deployed it there. Our new AI Cloud tenant started out suspended, so no registry, filesystem or endpoint could be created before the deadline, and the live app runs on Render instead. Inference runs on Token Factory either way.
 
 It also needs bash, Docker, `jq`, `curl` and the [Nebius CLI](https://docs.nebius.com/cli/install). On Windows, use WSL.
 

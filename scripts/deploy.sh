@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Sherlock to a Nebius Serverless Endpoint (TRD §11, Implementation Plan D1.3).
+# Deploy Sherlock to a Nebius Serverless Endpoint.
 #
 #   ./scripts/deploy.sh setup   first time: registry, /data filesystem, LLM key secret,
 #                               build + push, create the endpoint, print its URL
@@ -141,7 +141,7 @@ check() {
     && [ "$user_before" = "$user_after" ]; then
     echo "PASS: /data survived the restart, SQLite locking works, the cookie user persisted"
   else
-    echo "FAIL: switch to the AI Cloud VM fallback (TRD §3.2)" >&2
+    echo "FAIL: switch to the AI Cloud VM fallback" >&2
     exit 1
   fi
 }
