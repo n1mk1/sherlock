@@ -40,7 +40,7 @@ TIMEOUT_S = {"large": 60.0, "medium": 30.0, "small": 30.0}
 BACKOFF_S = (2.0, 4.0, 8.0)          # 3 retries
 TOTAL_CAP_S = 120.0                  # per call, retries included
 MAX_TOKENS_CAP = 8192                # a reply cut off at its token cap is asked again once, with twice the cap up to this
-# Purposes whose schema passed the smoke test with reasoning off (FEEDBACK.md, Day 1).
+# Purposes whose schema passed the smoke test with reasoning off (Day 1 smoke test).
 REASONING_OFF_OK = frozenset({"route"})
 MAX_SAMPLE_VALUES = 20
 # The fallback (TRD §3.5): a role's breaker opens after 3 transient failures within 60 s and closes 30 s

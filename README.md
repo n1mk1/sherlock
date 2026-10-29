@@ -297,10 +297,10 @@ Every model call goes to **NVIDIA Nemotron on Nebius Token Factory**, through th
 | `small` | `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | Chat routing (reasoning off) and the thread summary | route 1.4 s |
 | `embed` | none | Token Factory has no NVIDIA embedding model, so name matching uses `rapidfuzz` | |
 
-- **Why these sizes.** Ultra writes the code that changes data, where a wrong fix costs most. Super does most of the reasoning over facts and SQL. Nano only classifies, where speed matters. In trials Nano typed chip markup into prose, so composing moved to Super ([`FEEDBACK.md`](FEEDBACK.md)).
+- **Why these sizes.** Ultra writes the code that changes data, where a wrong fix costs most. Super does most of the reasoning over facts and SQL. Nano only classifies, where speed matters. In trials Nano typed chip markup into prose, so composing moved to Super.
 - **Cost.** Cleaning the sample takes Ultra about 35,000 tokens. A chat answer takes 2,700–7,400 tokens (median 6,717), a fraction of a cent at Super's listed $0.30 / $0.90 per million input / output tokens.
 - **Why Token Factory helped.** One OpenAI-compatible endpoint serves all three sizes, so moving a purpose between Ultra, Super and Nano is a one-word change. Strict JSON-schema decoding worked on every Nemotron model.
-- **Usage log.** `uv run sherlock llm stats` (in `api/`) sums the call log by purpose and role. [`FEEDBACK.md`](FEEDBACK.md) has the smoke tests, the benchmarks and our feedback to NVIDIA and Nebius.
+- **Usage log.** `uv run sherlock llm stats` (in `api/`) sums the call log by purpose and role.
 
 ### Web retrieval (Tavily)
 

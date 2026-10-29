@@ -1,6 +1,6 @@
 // Design tokens as concrete colors for canvas drawing (the CSV grid): a canvas can't read
 // `var(--accent)` or `color-mix()`, so each token is resolved through a probe element and a 1 × 1
-// canvas to `rgba()` (FEEDBACK.md, Glide check).
+// canvas to `rgba()`.
 export function resolveToken(name: string): string {
   if (typeof document === "undefined") return "rgba(0,0,0,1)";
   const probe = document.createElement("span");
