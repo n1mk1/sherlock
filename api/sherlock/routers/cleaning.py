@@ -46,6 +46,9 @@ class CleanRequest(BaseModel):
     scope: CleanScope = Field(default_factory=CleanScope)
     include_user_edited: bool = False
     plan_id: str | None = None  # a draft cleaning plan: run what it ticks (PRD CLEAN-8a)
+    # The plan items the user saw ticked: when the plan's own differ (the review or chat changed it as Start
+    # was pressed), it's shown again instead of run.
+    ticked: list[str] | None = None
 
 
 class PlanRequest(BaseModel):
@@ -108,8 +111,8 @@ def start_clean(
     db: sqlite3.Connection = Depends(get_db),
 ) -> dict:
     """Queue a clean job on the current version. With `plan_id`, the job runs that draft plan: its
-    items are frozen into the job's params and the plan becomes `started`. Step-by-step mode is P1
-    (PRD CLEAN-10)."""
+    items are frozen into the job's params and the plan becomes `started`; with `ticked`, a plan whose
+    ticked items differ answers 409 with the plan instead. Step-by-step mode is P1 (PRD CLEAN-10)."""
     if body.mode == "stepwise":
         raise ApiError(422, "invalid", "Step-by-step cleaning isn't available yet. Use auto.")
     if body.scope.kind == "selection" and not body.scope.selection_id:
@@ -132,6 +135,9 @@ def start_clean(
             raise ApiError(409, "conflict", "The data changed since the plan was made, so it was checked again. "
                            "Look it over, then start.", extra={"plan": _out(request.app, db, merged, notes)})
         items = json.loads(row["items_json"])
+        if body.ticked is not None and sorted(body.ticked) != sorted(i["id"] for i in plans.ticked(items)):
+            raise ApiError(409, "conflict", "The plan changed as you pressed Start. Look it over, then start.",
+                           extra={"plan": _out(request.app, db, row)})
         if not plans.ticked(items):
             raise ApiError(422, "invalid", "Nothing in the plan is ticked, so there's nothing to clean.")
         params["plan"] = {"id": row["id"], "version": row["version"], "items": items, "depth": row["depth"]}

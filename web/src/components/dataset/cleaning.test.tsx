@@ -471,8 +471,10 @@ describe("the cleaning plan", () => {
     renderAt(<CleanPlanPanel dataset={WITH_PLAN} layout="centre" />);
     fireEvent.click(await screen.findByRole("button", { name: "Start cleaning (4)" }));
     await waitFor(() => expect(sent(calls).some((c) => c.path.endsWith("/clean"))).toBe(true));
+    // With the items the screen shows ticked, so a plan the review changed meanwhile is shown again instead.
     expect(sent(calls).find((c) => c.path.endsWith("/clean"))?.body).toEqual({
-      mode: "auto", scope: { kind: "all" }, include_user_edited: false, plan_id: "pln_1" });
+      mode: "auto", scope: { kind: "all" }, include_user_edited: false, plan_id: "pln_1",
+      ticked: PLAN.items.filter((i) => i.change && i.ticked).map((i) => i.id) });
   });
 
   it("says why it opened when the After upload setting opened it", async () => {

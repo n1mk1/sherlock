@@ -172,8 +172,8 @@ export interface paths {
         /**
          * Start Clean
          * @description Queue a clean job on the current version. With `plan_id`, the job runs that draft plan: its
-         *     items are frozen into the job's params and the plan becomes `started`. Step-by-step mode is P1
-         *     (PRD CLEAN-10).
+         *     items are frozen into the job's params and the plan becomes `started`; with `ticked`, a plan whose
+         *     ticked items differ answers 409 with the plan instead. Step-by-step mode is P1 (PRD CLEAN-10).
          */
         post: operations["start_clean_api_v1_datasets__dataset_id__clean_post"];
         delete?: never;
@@ -1227,6 +1227,8 @@ export interface components {
             /** Plan Id */
             plan_id?: string | null;
             scope?: components["schemas"]["CleanScope"];
+            /** Ticked */
+            ticked?: string[] | null;
         };
         /** CleanScope */
         CleanScope: {

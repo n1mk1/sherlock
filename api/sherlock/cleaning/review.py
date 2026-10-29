@@ -9,7 +9,8 @@ down: two reviews of a file agree more often than two single calls. A chunk whos
 still invalid after the client's one repair, or fail, time out or run over the job's token budget,
 keeps code's default levels; the others still apply. Leakage and ID findings (`plan.never_change`) are never sent and have no level.
 
-Code then applies `likely_real` (the level becomes "check") and the floor: on the target or a measure
+Code then applies `likely_real` (the level becomes "check", except on a finding about how values are
+written, `FORMAT_DETECTORS`, where real-looking values are still inconsistent) and the floor: on the target or a measure
 a level is never less severe than the detector's own default (`spec.default_level`), so the model can
 lower it there by one step at most, and never into "Worth a look" unless the spec starts there. The
 floor wins over `likely_real`.
@@ -49,6 +50,10 @@ RATE = prompts.load("rate")
 SUGGEST = prompts.load("suggest_rules")
 MAX_SUGGESTIONS = 8
 MEANING_CHARS = 240  # a column's meaning in a rating line, at most
+# Findings about how values are written, not whether they're plausible: "Berlin" and "berlin" both look
+# real, so the model's likely_real says nothing about them, and it would untick every such fix.
+FORMAT_DETECTORS = frozenset({"whitespace_case", "numbers_as_text", "mixed_types", "mojibake", "ambiguous_dates",
+                              "blank_rows", "header_rows", "summary_rows", "unit_mixes"})
 # Built-in detectors a suggestion of a kind would repeat on the same column: such a suggestion is dropped.
 REPEATS = {"range": "impossible_values", "date_window": "impossible_values", "not_missing": "missing",
            "order": "cross_column", "depends": "functional_dependency"}
@@ -120,9 +125,9 @@ def floor(issue: dict, card: dict, level: str) -> str:
 
 
 def rated(issue: dict, card: dict, level: str, reason: str, likely_real: bool) -> dict:
-    """A rating as stored: likely_real makes it "check", the floor holds, and a reason with digits or a
-    wording problem is dropped (the level stays)."""
-    sev = floor(issue, card, "check" if likely_real else level)
+    """A rating as stored: likely_real makes it "check" (except on a format finding), the floor holds, and
+    a reason with digits or a wording problem is dropped (the level stays)."""
+    sev = floor(issue, card, "check" if likely_real and issue["detector"] not in FORMAT_DETECTORS else level)
     ok = reason.strip() and not has_digits(reason) and wording_problem(reason) is None
     return {"sev": sev, "sev_reason": reason.strip() if ok else None, "sev_source": "model", "likely_real": likely_real}
 

@@ -281,6 +281,21 @@ def test_a_plan_made_before_a_hand_edit_is_merged_before_it_starts(client):
     assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).status_code == 201
 
 
+def test_start_shows_the_plan_again_when_its_ticks_changed_since_it_was_drawn(client):
+    # The review can land between the screen's last read of the plan and Start: run only what the user saw.
+    ds = offered(client)
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    seen = [i["id"] for i in plan["items"] if i["change"] and i["ticked"]]
+    region = item(plan, "whitespace_case|region")
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [{"op": "untick", "item_id": region["id"]}]})
+    changed = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"], "ticked": seen})
+    assert changed.status_code == 409 and "plan changed" in changed.json()["error"]["message"]
+    assert not item(changed.json()["error"]["plan"], "whitespace_case|region")["ticked"]
+    assert client.get(f"{API}/clean-plans/{plan['id']}").json()["status"] == "draft"
+    now = [i for i in seen if i != region["id"]]
+    assert client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"], "ticked": now[::-1]}).status_code == 201
+
+
 def test_a_plan_for_new_rows_keeps_its_scope_and_cleans_nothing_until_start(client):
     # PRD CLEAN-1: the new-rows toast's "Clean them" opens the plan for those rows instead of cleaning.
     ds = offered(client)

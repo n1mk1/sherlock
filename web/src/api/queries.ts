@@ -183,14 +183,15 @@ export function useSample() {
 
 export type CleanScope = { kind: "all" | "selection" | "new_rows"; selection_id?: string; row_ids?: number[] };
 
-/** Start Clean with AI from a cleaning plan (PRD CLEAN-8a). A plan made on an older version answers
- * 409 with the merged plan: the cache takes it and the error says so (`stalePlan`). */
+/** Start Clean with AI from a cleaning plan (PRD CLEAN-8a). `ticked` is the items the screen shows ticked.
+ * A plan made on an older version, or whose ticks changed since it was drawn, answers 409 with the plan:
+ * the cache takes it and the error says so (`stalePlan`). */
 export function useStartCleaning(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ plan_id, scope }: { plan_id: string; scope?: CleanScope }) =>
+    mutationFn: ({ plan_id, scope, ticked }: { plan_id: string; scope?: CleanScope; ticked?: string[] }) =>
       request<Job>("POST", `/api/v1/datasets/${datasetId}/clean`, {
-        mode: "auto", scope: scope ?? { kind: "all" }, include_user_edited: false, plan_id,
+        mode: "auto", scope: scope ?? { kind: "all" }, include_user_edited: false, plan_id, ticked,
       }),
     onSuccess: (_, { plan_id }) => {
       setDatasetPlan(qc, datasetId, null);

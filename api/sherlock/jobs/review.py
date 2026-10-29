@@ -4,12 +4,16 @@ review yet and none is waiting (`review.queue`). When it ends, an open draft pla
 takes the levels and reasons (items the user ticked, unticked or reworded keep their choice) and
 `plan.updated` goes out; a plan already started isn't changed.
 
+The job's model calls share one deadline, `WALL_S` after it starts, so the plan's "Reviewing…" can't
+spin for minutes when Super is slow: a call the deadline cuts off leaves its findings at code's levels.
+
 Grounding runs first (`cleaning/ground.py`, docs/plans/tavily.md §3.2): Tavily looks up what the columns mean
 (`notes.updated` goes out when notes were stored), and the excerpts it read go to the suggested checks."""
 
 import asyncio
 import json
 import logging
+import time
 
 from sherlock.cleaning import plan as plans
 from sherlock.cleaning import review
@@ -22,6 +26,8 @@ from sherlock.profile import service as profile_service
 
 log = logging.getLogger("sherlock.review")
 
+WALL_S = 60.0  # a review usually takes 40–55 s; one Super timeout and retry took it past 100 s
+
 
 def _run(ctx: JobContext) -> dict:
     dataset = ctx.db.execute("SELECT * FROM datasets WHERE id = ?", (ctx.dataset_id,)).fetchone()
@@ -32,7 +38,7 @@ def _run(ctx: JobContext) -> dict:
         return {"skipped": "already reviewed"}
     card = profile_service.get_or_build(ctx.settings, ctx.db, ctx.cache, dataset, version)
     scope = CallScope(user_id=dataset["user_id"], dataset_id=dataset["id"], job_id=ctx.id,
-                      on_wait=lambda text: ctx.log(text, icon="wait"))
+                      on_wait=lambda text: ctx.log(text, icon="wait"), deadline=time.monotonic() + WALL_S)
     frame = rule_service.frame_for(ctx.settings, ctx.cache, ctx.db, dataset, version)
     # Grounding first (docs/plans/tavily.md §3.2): column notes and the excerpts the suggested checks are written from.
     try:

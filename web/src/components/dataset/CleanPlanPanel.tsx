@@ -169,10 +169,11 @@ function PlanBody({ dataset, plan, layout }: { dataset: Dataset; plan: CleanPlan
       } else if (side && scope === "new_rows") {
         s = { kind: "new_rows" };
       }
-      await start.mutateAsync({ plan_id: plan.id, scope: s });
+      const ticked = plan.items.filter((i) => i.change && i.ticked).map((i) => i.id);
+      await start.mutateAsync({ plan_id: plan.id, scope: s, ticked });
       if (side) toast("Cleaning started. Its steps appear in Changes as they commit.");
     } catch (e) {
-      if (stalePlan(e)) toast("The data changed; the plan was updated.");
+      if (stalePlan(e)) toast((e as Error).message);
       else toast.error((e as Error).message);
     }
   };

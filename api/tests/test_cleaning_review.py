@@ -33,13 +33,21 @@ def issue(detector, column, severity=0.1):
 
 
 def test_likely_real_makes_it_worth_a_look_but_the_floor_holds_on_a_measure():
-    on_measure, on_category = issue("sentinels", "amount"), issue("whitespace_case", "outcome")
+    on_measure, on_category = issue("sentinels", "amount"), issue("near_duplicate_categories", "outcome")
     assert rated(on_measure, CARD, "cosmetic", "Pulls averages down.", False)["sev"] == "skews"  # floored
     assert rated(on_measure, CARD, "breaks", "Pulls averages down.", True)["sev"] == "skews"     # floor beats likely_real
     other = {**CARD, "target_candidates": [], "columns": [{"name": "outcome", "role": "dimension", "type": "category"}]}
     assert rated(on_category, other, "breaks", "Splits the groups.", True)["sev"] == "check"
     assert rated(on_category, other, "cosmetic", "Changes nothing.", False) == {
         "sev": "cosmetic", "sev_reason": "Changes nothing.", "sev_source": "model", "likely_real": False}
+
+
+@pytest.mark.parametrize("detector", ["whitespace_case", "numbers_as_text", "mixed_types", "ambiguous_dates"])
+def test_likely_real_doesnt_move_a_format_finding_to_worth_a_look(detector):
+    # "Berlin" and "berlin" both look real; the finding is that they're written two ways, so the fix stays ticked.
+    other = {**CARD, "target_candidates": [], "columns": [{"name": "outcome", "role": "dimension", "type": "category"}]}
+    got = rated(issue(detector, "outcome"), other, "splits", "Splits the groups.", True)
+    assert got["sev"] == "splits" and got["likely_real"] is True
 
 
 def test_a_reason_with_digits_or_causal_wording_is_dropped_but_the_level_stays():
