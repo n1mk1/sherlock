@@ -316,8 +316,10 @@ export interface Source {
 }
 
 export interface MessageAction {
-  kind: "open_rows" | "open_export" | "open_model_card" | "ask_period";
+  kind: "open_rows" | "open_export" | "open_model_card" | "ask_period" | "sort_grid";
   block_index?: number;
+  column?: string | null; // sort_grid: the column, or null for row order
+  dir?: "asc" | "desc";
   run_id?: string;
   selection_id?: string;
   options?: Partial<Record<"include_data" | "include_runs", boolean>>;
@@ -333,8 +335,13 @@ export interface Proposal {
   status: "pending" | "approved" | "rejected" | "expired" | "queued" | "failed";
   summary: string;
   edits?: { row_id: number; column: string; value: string | null; before: unknown }[];
+  new_rows?: Record<string, string | null>[]; // edit_cells: rows to add at the end, by column
   scope?: { kind?: "all" | "selection"; selection_id?: string | null; row_ids?: number[] | null };
-  impact: { cells_changed: number; rows_affected: number; quarantined?: number; columns_added?: string[] };
+  impact: {
+    cells_changed: number; rows_affected: number; quarantined?: number; columns_added?: string[]; rows_added?: number;
+    rows_deleted?: number; rows_restored?: number; columns_removed?: string[]; columns_renamed?: Record<string, string>;
+    columns_moved?: boolean;
+  };
   result_step_id?: string | null;
   code?: string;
   columns?: string[];

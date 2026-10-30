@@ -12,7 +12,9 @@ version that is current then: same effect, saved as one step (`created_by="chat"
 like the Cleaner's steps). A different effect refreshes the card for one more OK, with the new run kept. A kept file
 is removed on Cancel, on failure, after the commit, when OK finds the version moved, and at startup when its card
 isn't waiting. While a clean runs, OK queues the step, and the job applies it when it ends.
-Rows are never deleted: a request to delete rows sets them aside (`quarantine_rows`).
+A command may delete rows and delete, rename or reorder columns when the user asks: the card says so in code's
+words before OK, the checks run on what is left, and Undo brings it all back. It never adds rows (code has no
+`_row_id`s to give them): new rows go through `edit_cells`, as in the grid.
 """
 
 import json
@@ -53,8 +55,13 @@ from sherlock.storage import dataset_dir, sql_path
 
 log = logging.getLogger("sherlock.agent")
 KINDS = ("clean_step", "computed_column")
+# What a command can do besides changing cells or setting rows aside: each is an `impact` key when it happens.
+EFFECTS = ("columns_added", "columns_retyped", "rows_deleted", "rows_restored", "columns_removed", "columns_renamed",
+           "columns_moved")
 SYSTEM_COLUMNS = ("_row_id", "_quarantine_reason")
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,62}$")
+# A request to keep rows in the file but out of answers: code that deletes them instead is sent back.
+SET_ASIDE = re.compile(r"\b(set\s+(them\s+|it\s+|those\s+|these\s+)?aside|quarantin\w*|put\s+(them\s+)?aside)\b", re.I)
 THEN = re.compile(r"\s*[,;.]?\s+(?:and\s+)?then\s+", re.I)  # where "round fare, then count by sex" splits
 # The hard checks the card shows, in the user's words (all of them passed, or there's no card).
 CHECK_WORDS = {"row_ledger": "no rows lost", "nan_introduced": "no new blanks", "dtype": "column types kept",
@@ -65,8 +72,8 @@ CHECK_WORDS = {"row_ledger": "no rows lost", "nan_introduced": "no new blanks", 
 # What a refused check says to the user (all of it written here, never by the model): what the code would have done,
 # and what to say instead. `{n}` is a count from the report.
 REFUSED = {
-    "row_ledger": "The code would add or lose rows, and a command never does that. To get rows out of the way, say "
-                  "'delete the rows where …' and I'll set them aside.",
+    "row_ledger": "The code would change which rows the file holds in a way the card can't show. Try saying which rows "
+                  "to delete, for example 'delete the rows where …'.",
     "dtype": "The code would leave text mixed in with numbers or dates in one column. Say what the column should hold, "
              "for example 'make fare a number'.",
     "parse_quarantine": "The code leaves {n} values it couldn't read as the new type. Ask me to set the ones that don't "
@@ -74,12 +81,13 @@ REFUSED = {
     "pandera": "The code would break the file's structure (its row numbers or set-aside marks).",
 }
 SAID = {
-    "removed": "The code would remove {cols}, and a command never removes a column.",
+    "removed": "The code would delete {cols} without saying so. To delete a column, say 'delete the column …'.",
     "extra": "The code would add a column you didn't ask for ({cols}). To add one, say 'add a column …'.",
-    "empty": "The new column {col} would be empty in every row. Say how its values are worked out, for example "
-             "'add total = price * quantity'.",
+    "added_rows": "Code can't add rows. Say 'add a row with …' and the values, and I'll add it.",
+    "not_renamed": "The code didn't rename {col}. Say 'rename {col} to …'.",
     "name": "I can't add a column called {col}: the name is taken or isn't a plain name. Say what to call it, using "
             "letters, digits and underscores.",
+    "kept": "The code would delete the rows you asked to set aside. Try 'set aside the rows where …' again.",
     "nothing": "Nothing in this version matches that, so there's nothing to change.",
     "crash": "The code I wrote didn't run. Try naming the column and what to do with it.",
     "crash_column": "The code I wrote didn't run (it looked for a column that isn't there). Try naming the column.",
@@ -212,9 +220,12 @@ def _warned(report: verifiers.Report, before: pd.DataFrame, after: pd.DataFrame)
 
 
 def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[int] | None,
-            new_columns: list[str]) -> DryRun:
+            new_columns: list[str], removed_columns: list[str] = (), renamed: dict[str, str] | None = None) -> DryRun:
     """Run the code on a copy of `version` and check the result. The output file is the caller's to use or remove.
-    Each file is read once, into a throwaway DuckDB that the diff and the verifiers share."""
+    Each file is read once, into a throwaway DuckDB that the diff and the verifiers share. `removed_columns` and
+    `renamed` (old name → new) are the column changes the request asked for; any other is refused. Deleted rows are
+    allowed: the checks then compare the rows that are left, with renamed columns under their old names."""
+    renamed = renamed or {}
     src = version_path(env, dataset, version)
     out = kept_file(env.settings, dataset["user_id"], dataset["id"], uuid.uuid4().hex)  # where the startup sweep looks
     t0 = time.perf_counter()
@@ -234,19 +245,28 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
             for name, path in (("o", src), ("n", out)):
                 conn.execute(f"CREATE TABLE {name} AS SELECT * FROM read_parquet({sql_path(path)})")
             diff = diff_versions(src, out, conn)
-            if diff.added_row_ids or diff.deleted_row_ids:
-                raise StepFailed("it added or removed rows; rows are set aside with quarantine_rows, never removed",
-                                 REFUSED["row_ledger"])
-            if diff.columns_removed:
-                raise StepFailed(f"it removed columns ({', '.join(diff.columns_removed[:5])}); a command never removes columns",
-                                 SAID["removed"].format(cols=", ".join(diff.columns_removed[:5])))
-            unexpected = sorted(set(diff.columns_added) - set(new_columns))
+            if diff.added_row_ids:
+                raise StepFailed("it added rows; code can't add rows (they need new _row_ids)", SAID["added_rows"])
+            undone = [old for old, new in renamed.items() if old not in diff.columns_removed or new not in diff.columns_added]
+            if undone:
+                raise StepFailed(f"it didn't rename {undone[0]} to {renamed[undone[0]]}", SAID["not_renamed"].format(col=undone[0]))
+            unasked = sorted(set(diff.columns_removed) - set(removed_columns) - set(renamed))
+            if unasked:
+                raise StepFailed(f"it removed columns that removed_columns doesn't list ({', '.join(unasked[:5])})",
+                                 SAID["removed"].format(cols=", ".join(unasked[:5])))
+            unexpected = sorted(set(diff.columns_added) - set(new_columns) - set(renamed.values()))
             if unexpected:
                 raise StepFailed(f"it added columns that new_columns doesn't list ({', '.join(unexpected[:5])})",
                                  SAID["extra"].format(cols=", ".join(unexpected[:5])))
-            before, after = (conn.execute(f"SELECT * FROM {t} ORDER BY _row_id").df() for t in ("o", "n"))
-        report = verifiers.verify(before, after[[c for c in after.columns if c not in diff.columns_added]], None, None,
-                                  requested=True)
+            whole, result = (conn.execute(f"SELECT * FROM {t} ORDER BY _row_id").df() for t in ("o", "n"))
+        # Like with like: the rows still there, the columns kept, renamed ones under their old names.
+        kept = result.rename(columns={new: old for old, new in renamed.items()})
+        kept = kept[[c for c in kept.columns if c in whole.columns]]
+        before = whole.loc[whole["_row_id"].isin(kept["_row_id"]), [c for c in whole.columns if c in kept.columns]]
+        moved = ([c for c in kept.columns if c not in SYSTEM_COLUMNS]
+                 != [c for c in before.columns if c not in SYSTEM_COLUMNS])
+        after = kept[before.columns]
+        report = verifiers.verify(before, after, None, None, requested=True)
         # The user sees how many rows a command sets aside before pressing OK, so the Cleaner's cap (a fifth of
         # the rows) becomes a warning on the card instead of a refusal.
         wide = report.hard.get("quarantine_scope", "pass") != "pass"
@@ -256,11 +276,6 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
         said = _warned(report, before, after)
         if any(v != "pass" and k not in said for k, v in report.hard.items()):
             raise _refusal(report, list(said))
-        if new_columns:
-            added = after.reindex(columns=new_columns)  # a listed column the code didn't add is empty too
-            if added.isna().all().any():
-                empty = [c for c in new_columns if added[c].isna().all()]
-                raise StepFailed(f"the new column {empty[0]} is empty in every row", SAID["empty"].format(col=empty[0]))
     except Exception:
         out.unlink(missing_ok=True)
         raise
@@ -268,15 +283,29 @@ def dry_run(env: Env, dataset: sqlite3.Row, version: int, code: str, rows: list[
     changed_cols = list(dict.fromkeys(t[1] for t in cells if t[1] not in diff.columns_added))
     # A new type is an effect of its own: "make age a whole number" on 22.0, 30.0 changes no value, only the type.
     retyped = {c: holds(new) for c, (old, new) in diff.retyped.items() if holds(old) != holds(new)}
+    added = [c for c in diff.columns_added if c not in renamed.values()]
+    restored = sum(1 for t in diff.lineage if t[1] == "_row" and t[3] == "restored")
+    # The keys past the first four are there only when they happen, so a plain change's impact stays as it was.
     impact = {"cells_changed": len([t for t in cells if t[1] not in diff.columns_added]),
               "rows_affected": len({t[0] for t in diff.lineage}),
-              "quarantined": report.quarantined, "columns_added": list(diff.columns_added),
-              **({"columns_retyped": retyped} if retyped else {})}
-    if not (impact["cells_changed"] or impact["quarantined"] or impact["columns_added"] or retyped):
+              "quarantined": report.quarantined, "columns_added": added,
+              **({"columns_retyped": retyped} if retyped else {}),
+              **({"rows_deleted": len(diff.deleted_row_ids)} if diff.deleted_row_ids else {}),
+              **({"rows_restored": restored} if restored else {}),
+              **({"columns_removed": [c for c in diff.columns_removed if c not in renamed]} if set(diff.columns_removed) - set(renamed) else {}),
+              **({"columns_renamed": dict(renamed)} if renamed else {}),
+              **({"columns_moved": True} if moved else {})}
+    if not any(impact.get(k) for k in ("cells_changed", "quarantined", *EFFECTS)):
         out.unlink(missing_ok=True)
         raise StepFailed("it changes nothing in this version of the file", SAID["nothing"])
-    warnings = [f"This sets aside {report.quarantined:,} of {len(before):,} rows. Check that's what you meant before you "
+    warnings = [f"This sets aside {report.quarantined:,} of {len(whole):,} rows. Check that's what you meant before you "
                 "press OK."] if wide else []
+    if diff.deleted_row_ids and len(diff.deleted_row_ids) * 5 > len(whole):  # the same fifth as setting rows aside
+        warnings.append(f"This deletes {len(diff.deleted_row_ids):,} of {len(whole):,} rows. Check that's what you meant "
+                        "before you press OK; Undo brings them back.")
+    empty = [c for c in added if result[c].isna().all()]
+    if empty:  # "add a column notes" is a blank column, as in a spreadsheet; a formula that came out blank is a mistake
+        warnings.append(f"{', '.join(empty)} {'is' if len(empty) == 1 else 'are'} empty in every row.")
     for lines in said.values():
         warnings += lines[:5] + ([f"The same happens in {len(lines) - 5} more columns."] if len(lines) > 5 else [])
     seconds["checks"] = round(time.perf_counter() - t0, 3)
@@ -297,6 +326,13 @@ def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
     parts = []
     if impact["columns_added"]:
         parts.append(f"Add {'column' if len(impact['columns_added']) == 1 else 'columns'} {', '.join(impact['columns_added'])}")
+    for old, new in (impact.get("columns_renamed") or {}).items():
+        parts.append(f"Rename {old} to {new}")
+    gone = impact.get("columns_removed") or []
+    if gone:
+        parts.append(f"Delete {'column' if len(gone) == 1 else 'columns'} {', '.join(gone)}")
+    if impact.get("columns_moved"):
+        parts.append("Reorder the columns")
     retyped = impact.get("columns_retyped") or {}
     for words in dict.fromkeys(retyped.values()):  # "Make age whole numbers"
         parts.append(f"Make {', '.join(c for c, w in retyped.items() if w == words)} {words}")
@@ -306,18 +342,26 @@ def summary(impact: dict, changed: list[str], rows: list[int] | None) -> str:
     q = impact["quarantined"]
     if q:
         parts.append(f"Set aside {q:,} {'row' if q == 1 else 'rows'} (quarantined, not deleted)")
+    d = impact.get("rows_deleted") or 0
+    if d:
+        parts.append(f"Delete {d:,} {'row' if d == 1 else 'rows'}")
+    r = impact.get("rows_restored") or 0
+    if r:
+        parts.append(f"Bring back {r:,} set-aside {'row' if r == 1 else 'rows'}")
     text = " · ".join(parts)
     return text + (f" · on {len(rows):,} selected {'row' if len(rows) == 1 else 'rows'}" if rows is not None else "")
 
 
 def _payload(code: str, columns: list[str], new_columns: list[str], rows: list[int] | None, run: DryRun,
-             reading: str = "") -> dict:
+             reading: str = "", removed: list[str] = (), renamed: dict[str, str] | None = None) -> dict:
     """The card. `kept` is what OK needs to commit the kept dry run without running it again (not sent to the app)."""
+    deleting = bool(run.impact.get("rows_deleted"))  # "no rows lost" would be true only of the rows left
     return {"summary": summary(run.impact, run.columns_changed, rows), "reading": reading, "code": code, "columns": columns,
-            "new_columns": new_columns, "scope": {"row_ids": rows}, "impact": run.impact,
+            "new_columns": new_columns, **({"removed_columns": list(removed)} if removed else {}),
+            **({"renamed_columns": dict(renamed)} if renamed else {}), "scope": {"row_ids": rows}, "impact": run.impact,
             "before_after": run.before_after, "warnings": run.warnings,
             "checks": [CHECK_WORDS[k] for k, v in run.report.hard.items()
-                       if k in CHECK_WORDS and v == "pass" and k not in run.warned],
+                       if k in CHECK_WORDS and v == "pass" and k not in run.warned and not (deleting and k == "row_ledger")],
             "kept": {"columns_changed": run.columns_changed, "verifiers": run.report.as_json(),
                      "quarantined": run.report.quarantined}}
 
@@ -436,13 +480,16 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
             raise ValueError(f"reading must be one plain sentence saying what the code does, in the user's terms (for "
                              f"example 'Upper-case every value in sex'), with no number the request doesn't hold and no "
                              f"causal words: {bad}. Fix the reading.")
-        unknown = [c for c in d.columns if c not in types and c not in d.new_columns]
+        renames = {r.old: r.new for r in d.renamed_columns}
+        unknown = [c for c in [*d.columns, *d.removed_columns, *renames]
+                   if c not in types and c not in d.new_columns and c not in renames.values()]
         if unknown:
             raise refuse(f"{unknown[0]!r} is not a column of this file; use one of {', '.join(list(types)[:40])}",
                          no_column(unknown[0], list(types)))
-        for c in d.new_columns:
-            if c in types or c in SYSTEM_COLUMNS or not NAME.match(c):
-                raise refuse(f"{c!r} can't be a new column: it exists already or isn't a plain name", SAID["name"].format(col=c))
+        gone = set(d.removed_columns) | set(renames)
+        for c in [*d.new_columns, *renames.values()]:
+            if (c in types and c not in gone) or c in SYSTEM_COLUMNS or not NAME.match(c):
+                raise refuse(f"{c!r} can't be a new column name: it exists already or isn't a plain name", SAID["name"].format(col=c))
         d.code = plain(d.code)
         problems = static_check(d.code)
         if problems:
@@ -453,9 +500,15 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
             say("Fixing the code")
         say("Running it on a copy of the file")
         try:
-            got["run"] = dry_run(env, dataset, dataset["current_version"], d.code, rows, list(d.new_columns))
+            done = dry_run(env, dataset, dataset["current_version"], d.code, rows, list(d.new_columns),
+                           list(d.removed_columns), renames)
         except StepFailed as exc:
             raise refuse(f"When the code ran on the file, {exc}. Fix the code.", exc.user) from None
+        if done.impact.get("rows_deleted") and SET_ASIDE.search(question):  # asked to keep them in the file
+            done.out.unlink(missing_ok=True)
+            raise refuse("the code deleted rows the user asked to set aside: keep them with quarantine_rows. Fix the code.",
+                         SAID["kept"])
+        got["run"] = done
 
     where = (f"The request is about {len(rows):,} selected rows: write the code for every row, and code limits the "
              "change to the selection.\n") if rows is not None else ""
@@ -478,7 +531,8 @@ def propose(kit: Toolkit, question: str, context: dict, types: dict[str, str],
     log.info("command: model and checks %.1fs; dry run %s", time.monotonic() - started,
              {k: round(v, 2) for k, v in run.seconds.items()})
     try:  # the passing dry run stays as the card's file: OK commits it if the version hasn't moved
-        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run, draft.reading.strip()),
+        payload = {**_payload(draft.code, list(draft.columns), list(draft.new_columns), rows, run, draft.reading.strip(),
+                              list(draft.removed_columns), {r.old: r.new for r in draft.renamed_columns}),
                    "asked": question[:300]}
         run.out.replace(kept_file(env.settings, dataset["user_id"], dataset["id"], pid))
     finally:
@@ -512,9 +566,8 @@ def then(db: sqlite3.Connection, proposal: dict, questions: list[str], message: 
     return to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (proposal["id"],)).fetchone())
 
 
-def _same(a: dict, b: dict) -> bool:  # `or None`: `columns_retyped` is there only when a type changes
-    return all((a.get(k) or None) == (b.get(k) or None)
-               for k in ("cells_changed", "rows_affected", "quarantined", "columns_added", "columns_retyped"))
+def _same(a: dict, b: dict) -> bool:  # `or None`: the `EFFECTS` past `columns_added` are there only when they happen
+    return all((a.get(k) or None) == (b.get(k) or None) for k in ("cells_changed", "rows_affected", "quarantined", *EFFECTS))
 
 
 def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
@@ -529,6 +582,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
         return {"queued": to_proposal(db.execute("SELECT * FROM proposals WHERE id = ?", (row["id"],)).fetchone())}
     version = dataset["current_version"]
     rows = (payload.get("scope") or {}).get("row_ids")
+    removed, renamed = payload.get("removed_columns") or [], payload.get("renamed_columns") or {}
     kept = kept_file(env.settings, dataset["user_id"], dataset["id"], row["id"])
     k = payload.get("kept")
     try:
@@ -539,7 +593,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
             report_json = k["verifiers"]  # the dry run's report as it was, warned checks included
         else:
             kept.unlink(missing_ok=True)
-            dr = dry_run(env, dataset, version, payload["code"], rows, payload.get("new_columns") or [])
+            dr = dry_run(env, dataset, version, payload["code"], rows, payload.get("new_columns") or [], removed, renamed)
             report_json = dr.report.as_json()
     except StepFailed as exc:  # the card shows `error`: the user's sentence; the model's text stays in `why`
         db.execute("UPDATE proposals SET status = 'failed', resolved_at = ?, payload_json = ? WHERE id = ?",
@@ -548,7 +602,7 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
     try:
         if version != row["base_version"] and not _same(dr.impact, payload["impact"]):
             fresh = {**_payload(payload["code"], payload["columns"], payload.get("new_columns") or [], rows, dr,
-                                 payload.get("reading") or ""), "asked": payload.get("asked"), "rechecked_on": version,
+                                 payload.get("reading") or "", removed, renamed), "asked": payload.get("asked"), "rechecked_on": version,
                      **({"then": payload["then"]} if payload.get("then") else {})}
             db.execute("UPDATE proposals SET base_version = ?, payload_json = ?, status = 'pending' WHERE id = ?",
                        (version, json.dumps(fresh, default=str), row["id"]))
@@ -558,7 +612,8 @@ def run(env: Env, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
         reading = (payload.get("reading") or "").strip().rstrip(".")
         spec = StepSpec(kind=kind, summary=summary(dr.impact, dr.columns_changed, rows), created_by="chat",
                         notebook_code=notebook_code(payload["code"], rows), code=full_code(payload["code"], rows),
-                        column_targets=list(dict.fromkeys(list(payload["columns"]) + dr.impact["columns_added"])),
+                        column_targets=list(dict.fromkeys([*payload["columns"], *dr.impact["columns_added"], *removed,
+                                                           *renamed, *renamed.values()])),
                         gate="user", parse_failures=dr.report.quarantined, verifiers=report_json,
                         # Read as "**What does it do?** Upper-case every value in sex. You pressed OK in chat"
                         decisions=[{"question": "What does it do?", "chosen": reading or "It runs the code shown in chat",

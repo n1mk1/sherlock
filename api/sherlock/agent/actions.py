@@ -89,19 +89,23 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
             cells_text = ("The selected cells:\n" + fence("\n".join([f"{len(rows)} rows × {', '.join(cols)}", *lines])) + "\n")
 
         def check(d: EditsDraft) -> None:
-            for e in d.edits:
-                if e.column in SYSTEM_COLUMNS or e.column not in types:
-                    raise ValueError(f"{e.column!r} is not a column you can edit; use one of {', '.join(list(types)[:30])}")
+            if not d.edits and not d.new_rows:
+                raise ValueError("give at least one edit or one new row")
+            for column in [e.column for e in d.edits] + [c.column for r in d.new_rows for c in r.cells]:
+                if column in SYSTEM_COLUMNS or column not in types:
+                    raise ValueError(f"{column!r} is not a column you can edit; use one of {', '.join(list(types)[:30])}")
 
         messages = [{"role": "system", "content": prompts.SYSTEM},
                     {"role": "user", "content": prompts.EDITS.format(context=kit.context, cells=cells_text, message=fence(question))}]
         draft = kit.llm.structured("medium", messages, EditsDraft, purpose="edits", scope=kit.scope, validate=check).value
         edits = list({(e.row_id, e.column): e for e in draft.edits}.values())  # the last edit of a cell wins
+        new_rows = [{c.column: c.value for c in r.cells} for r in draft.new_rows]
         ids = sorted({e.row_id for e in edits})
         used = sorted({e.column for e in edits})
         found = {r[0]: dict(zip(used, r[1:], strict=True)) for r in conn.execute(
-            f"SELECT _row_id, {', '.join(ident(c) for c in used)} FROM t WHERE _row_id IN ({', '.join(map(str, ids))})").fetchall()}  # noqa: S608
-        numeric = [c for c in used if NUMERIC.match(types.get(c) or "")]
+            f"SELECT _row_id, {', '.join(ident(c) for c in used)} FROM t WHERE _row_id IN ({', '.join(map(str, ids))})").fetchall()  # noqa: S608
+        } if ids else {}
+        numeric = [c for c in sorted({*used, *(c for r in new_rows for c in r)}) if NUMERIC.match(types.get(c) or "")]
         ranges = {}
         if numeric:  # each number column's range in the usable rows, to flag a new value outside it
             got = conn.execute(f"SELECT {', '.join(f'min({ident(c)}), max({ident(c)})' for c in numeric)} "  # noqa: S608
@@ -112,16 +116,22 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
         raise CantAnswer(f"Row {missing[0]} isn't in this version of the file, so I can't change it.")
     out = [{"row_id": e.row_id, "column": e.column, "value": e.value, "before": found[e.row_id][e.column]} for e in edits]
     changed = [e for e in out if not _same(e["before"], e["value"])]
-    if not changed:
+    if not changed and not new_rows:
         raise CantAnswer("Those cells already hold those values, so there's nothing to change.")
     rows_hit = len({e["row_id"] for e in changed})
     cols_hit = sorted({e["column"] for e in changed})
     # Written by code: the model's own words could carry numbers the user never typed.
-    summary = (f"Change {len(changed):,} {'cell' if len(changed) == 1 else 'cells'} in {rows_hit:,} "
-               f"{'row' if rows_hit == 1 else 'rows'}: {', '.join(cols_hit)}")
-    payload = {"summary": summary, "edits": changed,
-               "impact": {"cells_changed": len(changed), "rows_affected": len({e["row_id"] for e in changed})}}
-    warnings = out_of_range(changed, ranges)
+    parts = [f"Change {len(changed):,} {'cell' if len(changed) == 1 else 'cells'} in {rows_hit:,} "
+             f"{'row' if rows_hit == 1 else 'rows'}: {', '.join(cols_hit)}"] if changed else []
+    if new_rows:
+        parts.append(f"Add {len(new_rows):,} {'row' if len(new_rows) == 1 else 'rows'} at the end")
+    payload = {"summary": " · ".join(parts), "edits": changed,
+               "impact": {"cells_changed": len(changed), "rows_affected": rows_hit,
+                          **({"rows_added": len(new_rows)} if new_rows else {})},
+               **({"new_rows": new_rows} if new_rows else {})}
+    # A new row's numbers are checked like an edit's.
+    warnings = out_of_range(changed + [{"row_id": "new", "column": c, "value": v} for r in new_rows for c, v in r.items()],
+                            ranges)
     if warnings:
         payload["warnings"] = warnings
     return _store(kit.env.db, kit.dataset, kit.scope.message_id, "edit_cells", payload)
@@ -139,7 +149,8 @@ def out_of_range(edits: list[dict], ranges: dict[str, tuple]) -> list[str]:
         except (TypeError, ValueError):
             continue
         if lo is not None and hi is not None and not lo <= v <= hi:
-            out.append(f"Check row {e['row_id']} before you approve: {e['value']} is outside the range {e['column']} holds "
+            which = "the new row" if e["row_id"] == "new" else f"row {e['row_id']}"
+            out.append(f"Check {which} before you approve: {e['value']} is outside the range {e['column']} holds "
                        f"in this version ({fmt(lo, fmt_kind(lo, e['column']))} to {fmt(hi, fmt_kind(hi, e['column']))}).")
     return out[:3] + ([f"{len(out) - 3} more new values are outside their column's range."] if len(out) > 3 else [])
 
@@ -246,7 +257,7 @@ def edit_plan(kit: Toolkit, question: str, context: dict) -> str:
 def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row) -> dict:
     """`POST /proposals/{id}/approve`: `{ step, version }` for edits; for a clean, the `CleanPlan` it
     opens with the proposal's scope (PRD CLEAN-1: nothing is cleaned without Start cleaning)."""
-    from sherlock.rows.edits import CellEdit, EditBatch, save
+    from sherlock.rows.edits import CellEdit, EditBatch, NewRow, save
     from sherlock.routers.cleaning import CleanScope, open_plan
     from sherlock.steps.commit import Context
 
@@ -261,8 +272,9 @@ def approve(app, db: sqlite3.Connection, dataset: sqlite3.Row, row: sqlite3.Row)
     payload = json.loads(row["payload_json"])
     if row["kind"] == "edit_cells":
         batch = EditBatch(base_version=row["base_version"],
-                          edits=[CellEdit(row_id=e["row_id"], column=e["column"], value=e["value"]) for e in payload["edits"]])
-        result = save(Context(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, batch)
+                          edits=[CellEdit(row_id=e["row_id"], column=e["column"], value=e["value"]) for e in payload["edits"]],
+                          new_rows=[NewRow(temp_id=f"chat{i}", cells=cells) for i, cells in enumerate(payload.get("new_rows") or [])])
+        result = save(Context(app.state.settings, db, app.state.duckdb, app.state.bus), dataset, batch, "from chat")
         db.execute("UPDATE proposals SET status = 'approved', result_step_id = ?, resolved_at = ? WHERE id = ?",
                    (result["step"]["id"], now_iso(), row["id"]))
         return {"step": result["step"], "version": result["version"]}

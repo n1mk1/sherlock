@@ -286,6 +286,9 @@ def keep_outside_scope(before: pd.DataFrame, after: pd.DataFrame, rows=None, cel
     if rows is not None:
         allowed = set(int(i) for i in rows)
         outside = [i for i in b.index if i not in allowed]
+        lost = [i for i in outside if i not in out.index]  # a delete asked of the selection keeps the other rows
+        if lost:
+            out = pd.concat([out, b.loc[lost, [c for c in b.columns if c in out.columns]]]).sort_index()
         for c in [c for c in b.columns if c in out.columns]:
             if outside:
                 out.loc[outside, c] = b.loc[outside, c]

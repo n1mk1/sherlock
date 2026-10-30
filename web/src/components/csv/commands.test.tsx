@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dataset, Proposal } from "@/api/types";
 import { ProposalView } from "@/components/shell/ChatBar";
 import { useEdits } from "@/state/edits";
+import { useUi } from "@/state/ui";
 import { mockApi, renderAt } from "@/test/render";
 import { CsvTab } from "./CsvTab";
 
@@ -173,5 +174,28 @@ describe("Undo and Redo in the toolbar", () => {
     await waitFor(() => expect(undo).toHaveAttribute("title", expect.stringContaining("up to 3 changes in a row")));
     expect(undo).toBeDisabled();
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+});
+
+describe("spreadsheet changes from chat", () => {
+  it("shows the new rows a cell-edit card would add", () => {
+    mockApi({});
+    const proposal: Proposal = {
+      id: "prp_2", kind: "edit_cells", base_version: 4, status: "pending", summary: "Add 1 row at the end", edits: [],
+      new_rows: [{ name: "Jane Doe", age: "30" }], impact: { cells_changed: 0, rows_affected: 0, rows_added: 1 },
+    };
+    renderAt(<ProposalView proposal={proposal} dataset={DS} />);
+    const table = screen.getByRole("table", { name: "New rows" });
+    expect(table).toHaveTextContent("Jane Doe");
+    expect(table).toHaveTextContent("new");
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+  });
+
+  it("sorts the grid when chat asks, as a header click would", async () => {
+    mockApi({ "GET /api/v1/datasets/ds_1/history": { version: 4, undo: null, redo: null, depth_left: 3 } });
+    renderAt(<CsvTab dataset={DS} />);
+    useUi.getState().sortGrid({ column: "fare", dir: "desc" });
+    expect(await screen.findByText(/sorted by fare ↓ \(view only\)/)).toBeInTheDocument();
+    expect(useUi.getState().gridSort).toBeNull(); // taken once
   });
 });

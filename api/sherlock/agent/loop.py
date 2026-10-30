@@ -87,20 +87,33 @@ HOW_TO = re.compile(r"^\W*(how|where)\s+(do|can|could|should)\s+(i|we)\b|^\W*how
 WHAT_IF = re.compile(r"^\W*(what\s+(would|will|might)\s+(happen|change)|what\s+if)\b", re.I)
 # An explicit web search: "search the web for what happened to <someone>" went to ask_history ("happened").
 WEB_ASK = re.compile(r"\b(search|look\s+up|google)\b[^.?!]*\b(web|internet|online)\b|\b(on|from)\s+the\s+(web|internet)\b", re.I)
-# A request to delete or remove something from the data is a cleaning command: rows are set aside (quarantined),
-# never deleted, and the user reads the code before it runs. Live, "delete all the <records> …" only listed them.
+# A request to delete or remove rows or columns is a command: the user reads the code and the count before it runs,
+# and Undo brings them back. Live, "delete all the <records> …" only listed them.
 DELETE_ASK = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(delete|remove|drop|erase|purge|wipe|get\s+rid\s+of)\b"
-                        r"(?![^.?!]*\b(filters?|charts?|notes?|steps?|selections?|columns?|plans?|fix(es)?|rules?)\b)", re.I)
+                        r"(?![^.?!]*\b(filters?|charts?|notes?|steps?|selections?|plans?|fix(es)?|rules?|sort(ing)?)\b)", re.I)
 # A cell edit names its rows by number; a change by rule ("make these empty", "fix the typo in <a value>") is a
 # cleaning command, which has no limit on how many cells it changes.
 ROW_NAMED = re.compile(r"\brows?\s*(#|no\.?|number)?\s*\d", re.I)
+# What a cell edit can't do to a numbered row: set it aside, bring it back, delete it. Code does those.
+ROW_OP = re.compile(r"\b(quarantin\w*|set\s+aside|restor\w*|bring\s+back|un-?quarantin\w*|delet\w*|remov\w*|drop)\b", re.I)
+# New rows go through the cell edits, as in the grid: code has no `_row_id`s to give them.
+ADD_ROW = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(add|insert|append|create|enter)\s+"
+                     r"(a\s+|an\s+|one\s+|another\s+|some\s+|\d+\s+|two\s+|three\s+|four\s+|five\s+|ten\s+)?"
+                     r"(new\s+|blank\s+|empty\s+|more\s+|extra\s+)?(rows?|records?|entr(y|ies)|lines?)\b", re.I)
+# "Sort by <a column>": the grid's view, as a click on its header would do (the file keeps its row order).
+SORT_ASK = re.compile(r"^\W*(please\s+)?((can|could|would)\s+you\s+)?(sort|order|arrange)\s+"
+                      r"((it|them|everything|the\s+(rows|data|table|file|grid|records|csv))\s+)?by\s+(?P<column>.+?)"
+                      r"(\s*[,(]?\s*(?:in\s+)?(?P<dir>asc\w*|desc\w*|reverse\w*|high\w*\s+(to\s+\w+|first)|low\w*\s+(to\s+\w+|first)|"
+                      r"largest\s+first|smallest\s+first|biggest\s+first|a\s*(-|to)\s*z|z\s*(-|to)\s*a)(\s+order)?\)?)?\W*$", re.I)
+UNSORT = re.compile(r"^\W*(please\s+)?(clear|remove|reset|undo|turn\s+off)\s+(the\s+)?sort(ing)?\W*$|^\W*unsort\b", re.I)
 # A message that starts by telling Sherlock to change the data is a cleaning command, whatever the router said:
 # live (Nemotron, 2026-10-27), "make <a column> a whole number by rounding" and "fill the missing <a column> values
 # with <a value>" went to ask_data, and "add <a name> = <a column> + <another>" to ask_code. Not a request for a
 # chart or a list ("make a chart of …"), and not a question.
 COMMAND_VERBS = (r"make|set|change|convert|turn|replace|rename|trim|strip|fill|impute|standardi[sz]e|normali[sz]e|fix|"
                  r"correct|round|cast|split|merge|combine|upper-?case|lower-?case|title-?case|capitali[sz]e|reformat|format|"
-                 r"parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|collapse|truncate")
+                 r"parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|collapse|truncate|move|reorder|"
+                 r"rearrange|restore|un-?quarantine|bring\s+back|de-?dupe|de-?duplicate")
 # Live (2026-10-27), "could you add a <name> column = …" went to ask_data and "collapse the repeated spaces in <a column>"
 # to ask_data: the column may carry its name before the word, and "collapse" is a change like the others.
 COMMAND = re.compile(
@@ -152,6 +165,25 @@ def names_group(question: str, resolved: dict, roles: dict) -> bool:
     if any(noun in t.lower().split() for t in resolved.get("columns") or {}):
         return True
     return any(role == "dimension" and (noun == c.lower() or stem_linked(noun, c)) for c, role in roles.items())
+
+
+def sort_of(question: str, columns: list[str]) -> dict | None:
+    """`{column, dir}` when the message asks to sort the grid by a column of this file (`column` None to clear the
+    sort), else None: a name that isn't a column goes on to the router ("order the classes by average fare")."""
+    if UNSORT.search(question):
+        return {"column": None, "dir": "asc"}
+    m = SORT_ASK.search(question)
+    if not m:
+        return None
+    said = re.sub(r"^(the\s+)?|\s+(column|field)$", "", m.group("column").strip(), flags=re.I).strip(" \"'`")
+    plain = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())  # noqa: E731
+    column = next((c for c in columns if c.lower() == said.lower()), None) or \
+        next((c for c in columns if plain(c) == plain(said)), None)
+    if column is None:
+        return None
+    way = (m.group("dir") or "").lower()
+    desc = way.startswith(("desc", "reverse", "high", "largest", "biggest")) or bool(re.match(r"z\s*(-|to)\s*a", way))
+    return {"column": column, "dir": "desc" if desc else "asc"}
 
 
 def swap(intents: list[str], old: tuple[str, ...], new: str) -> list[str]:
@@ -343,6 +375,9 @@ class Agent:
             return self._dictionary(mid, question, context, scope, columns)
         if FORECAST.search(question):
             return self._forecast(mid, question, context, card)
+        sort = sort_of(question, columns)
+        if sort is not None:
+            return self._sort(mid, question, context, sort)
         route = self._route(question, base_context, scope, tools)
         clar = checked_clarification(route)
         if route.ambiguous and clar and not clarified:
@@ -392,13 +427,17 @@ class Agent:
             intents = ["ask_code"]
         if command and not HOW_TO.search(question):
             plan_change = context.get("plan_id") and PLAN_WORDS.search(question)
-            target = "edit_plan" if plan_change else "edit_cells" if ROW_NAMED.search(question) else "clean_step"
+            numbered = ROW_NAMED.search(question) and not ROW_OP.search(question)
+            target = "edit_plan" if plan_change else "edit_cells" if numbered else "clean_step"
             intents = [target]
         elif context.get("plan_id") and "clean_step" in intents and PLAN_WORDS.search(question):
             intents = swap(intents, ("clean_step",), "edit_plan")
         elif context.get("plan_id") and "edit_plan" in intents and not PLAN_WORDS.search(question):
             intents = swap(intents, ("edit_plan",), "clean_step")
-        if "edit_cells" in intents and not ROW_NAMED.search(question):
+        adding = bool(ADD_ROW.search(question)) and not HOW_TO.search(question)
+        if adding:
+            intents = ["edit_cells"]
+        elif "edit_cells" in intents and not (ROW_NAMED.search(question) and not ROW_OP.search(question)):
             intents = swap(intents, ("edit_cells",), "clean_step")
         if WHAT_IF.search(question):
             intents = swap(intents, ("clean_step", "edit_cells", "clean_selection"), "ask_data")
@@ -406,7 +445,7 @@ class Agent:
         if deleting:
             intents = ["clean_step"]
         steps = [(i, question) for i in intents]
-        if route.multi_step and not deleting and not analysis_only:
+        if route.multi_step and not deleting and not adding and not analysis_only:
             steps = self._plan(question, ctx_text, scope, tools) or steps
         plan = [{"text": f"{STEP_LABELS.get(i, i)}: {q}" if q != question else STEP_LABELS.get(i, i), "status": "pending"}
                 for i, q in steps] if len(steps) > 1 else None
@@ -664,6 +703,20 @@ class Agent:
         out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], context=context,
                          focus={"question": question, "intents": ["open_export"],
                                 "actions": [{"kind": "open_export", "options": options}]})
+        self.emit("message", out)
+        return out
+
+    def _sort(self, mid: str, question: str, context: dict, sort: dict) -> dict:
+        """"Sort by <a column>" (`SORT_ASK`), without a model call: the grid sorts its view, as a click on the header
+        does. The file's rows keep their order, so answers, the export and the notebook don't change."""
+        if sort["column"] is None:
+            text = "The grid is back in row order."
+        else:
+            way = "largest first" if sort["dir"] == "desc" else "smallest first"
+            text = (f"The grid is sorted by {sort['column']}, {way}. Sorting changes the view, not the file; click the "
+                    "column's header to change it.")
+        out = self._save(mid, "assistant", text, blocks=[text_block([{"type": "text", "text": text}])], context=context,
+                         focus={"question": question, "intents": ["sort_grid"], "actions": [{"kind": "sort_grid", **sort}]})
         self.emit("message", out)
         return out
 

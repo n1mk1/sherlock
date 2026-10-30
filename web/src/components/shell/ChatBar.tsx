@@ -145,6 +145,8 @@ function LiveBar({ dataset, placeholder }: { dataset: Dataset; placeholder: stri
           // "Export a notebook": the dialog opens with the options the message asked for (App Flow §17.1).
           const exp = m.actions?.find((a) => a.kind === "open_export");
           if (exp) openExport(exp.options ?? null);
+          const sorted = m.actions?.find((a) => a.kind === "sort_grid");
+          if (sorted) useUi.getState().sortGrid(sorted.column ? { column: sorted.column, dir: sorted.dir ?? "asc" } : null);
         }
       });
     } catch (e) {
@@ -296,6 +298,7 @@ function MessageView({ message, dataset, onChoice, onSend }: {
   const [card, setCard] = useState<string | null>(null);
   if (message.role === "user") return <UserBubble text={message.text} />;
   const exportAction = (message.actions ?? []).find((a) => a.kind === "open_export");
+  const sortAction = (message.actions ?? []).find((a) => a.kind === "sort_grid");
   const modelCard = (message.actions ?? []).find((a) => a.kind === "open_model_card");
   return (
     <div className="flex flex-col gap-3">
@@ -322,6 +325,12 @@ function MessageView({ message, dataset, onChoice, onSend }: {
       {exportAction && (
         <Button size="sm" className="self-start" onClick={() => useUi.getState().openExport(exportAction.options ?? null)}>
           Export notebook
+        </Button>
+      )}
+      {sortAction?.column && (
+        <Button size="sm" className="self-start"
+          onClick={() => useUi.getState().sortGrid({ column: sortAction.column!, dir: sortAction.dir ?? "asc" })}>
+          Sort again
         </Button>
       )}
       {message.role === "assistant" && <Sources sources={message.sources} messageId={message.id} />}
@@ -385,6 +394,8 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
     }
   };
   const edits = proposal.edits ?? [];
+  const added = proposal.new_rows ?? [];
+  const addedColumns = [...new Set(added.flatMap((r) => Object.keys(r)))];
   const label = {
     pending: null, approved: "Approved", rejected: "Rejected", expired: "Expired: the data changed since", queued: null, failed: null,
   }[proposal.status];
@@ -408,6 +419,24 @@ function EditProposalView({ proposal, dataset }: { proposal: Proposal; dataset: 
         </table>
       )}
       {edits.length > 20 && <p className="text-muted-foreground">and {edits.length - 20} more</p>}
+      {added.length > 0 && (
+        <table aria-label="New rows" className="w-full text-left text-[12px]">
+          {addedColumns.length > 0 && (
+            <thead className="text-muted-foreground">
+              <tr><th className="font-normal">Row</th>{addedColumns.map((c) => <th key={c} className="font-normal">{c}</th>)}</tr>
+            </thead>
+          )}
+          <tbody className="font-mono">
+            {added.slice(0, 20).map((r, i) => (
+              <tr key={i}>
+                <td className="font-sans text-muted-foreground">new</td>
+                {addedColumns.map((c) => <td key={c}>{r[c] == null ? "empty" : r[c]}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {added.length > 20 && <p className="text-muted-foreground">and {added.length - 20} more new rows</p>}
       {proposal.status === "pending" ? (
         <div className="flex gap-2">
           <Button size="sm" variant="primary" loading={busy === "approve"} disabled={!!busy} onClick={() => void decide("approve")}>Approve</Button>

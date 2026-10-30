@@ -27,6 +27,12 @@ CREATORS = ("system", "cleaner", "user", "chat")
 ROW_PRESERVING = ("clean", "ml_column", "computed_column")
 
 
+def deletes(created_by: str) -> bool:
+    """Whether a code step by this author may delete rows: chat's may, when the user asked and saw the count before OK;
+    the Cleaner's never do (it quarantines instead)."""
+    return created_by == "chat"
+
+
 @dataclass
 class StepSpec:
     kind: str
@@ -118,7 +124,7 @@ def commit_step(
             produce(folder / parent["parquet_path"], out)
             rows, max_row_id = check_version_file(out)
             diff = diff_versions(folder / parent["parquet_path"], out)
-            if spec.kind in ROW_PRESERVING and (diff.added_row_ids or diff.deleted_row_ids):
+            if spec.kind in ROW_PRESERVING and (diff.added_row_ids or (diff.deleted_row_ids and not deletes(spec.created_by))):
                 raise ValueError("a cleaning step may not add or remove rows (quarantine them instead)")
             if diff.added_row_ids and min(diff.added_row_ids) < dataset["next_row_id"]:
                 raise ValueError("new rows must take fresh _row_ids from next_row_id")

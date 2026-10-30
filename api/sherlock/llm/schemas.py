@@ -172,19 +172,37 @@ class CellDraft(Strict):
     value: str | None = Field(description="the new value as text, or null to empty the cell")
 
 
+class CellValue(Strict):
+    column: str = Field(description="a column of the file, exactly as named")
+    value: str | None = Field(description="the value as text, or null to leave the cell empty")
+
+
+class NewRowDraft(Strict):
+    cells: list[CellValue] = Field(description="the new row's values; columns left out stay empty")
+
+
 class EditsDraft(Strict):
     reading: str = Field(description="which rows and columns the request means, and the new values, in a few words")
-    edits: list[CellDraft] = Field(min_length=1, max_length=200)
+    edits: list[CellDraft] = Field(default_factory=list, max_length=200, description="changes to existing cells")
+    new_rows: list[NewRowDraft] = Field(default_factory=list, max_length=50,
+                                        description="rows to add at the end of the file, when the request asks for new rows")
+
+
+class Rename(Strict):
+    old: str = Field(description="the column's name now, exactly as named")
+    new: str = Field(description="its new name")
 
 
 class StepDraft(Strict):
-    """A cleaning command typed in chat, as pandas code the user reads before pressing OK (`agent/commands.py`)."""
+    """A change typed in chat, as pandas code the user reads before pressing OK (`agent/commands.py`)."""
     reading: str = Field(description="one plain sentence, in the user's terms, of what the code does, for example 'Upper-case "
-                                     "every value in sex' or 'Set aside the rows where age is empty'; no number the "
+                                     "every value in sex' or 'Delete the rows where age is empty'; no number the "
                                      "request doesn't hold, in digits or words; when it can't be done, why")
     doable: bool = Field(description="false when no column fits the request or it isn't a change to the data")
     columns: list[str] = Field(description="the existing columns the code changes, exactly as named")
     new_columns: list[str] = Field(default_factory=list, description="the names of columns the code adds, if any")
+    removed_columns: list[str] = Field(default_factory=list, description="the existing columns the code deletes, if any")
+    renamed_columns: list[Rename] = Field(default_factory=list, description="the columns the code renames, if any")
     code: str = Field(description="pandas code that reads df and leaves the changed DataFrame in result")
 
 

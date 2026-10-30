@@ -25,6 +25,13 @@ export function CsvTab({ dataset }: { dataset: Dataset }) {
   const card = useDatacard(dataset.id);
   const grid = useRef<GridHandle>(null);
   const [sort, setSort] = useState<Sort | null>(null);
+  // "Sort by fare" in chat sorts this view, as a click on the header would; taken once, so a later visit starts unsorted.
+  const gridSort = useUi((s) => s.gridSort);
+  useEffect(() => {
+    if (!gridSort) return;
+    setSort(gridSort.sort);
+    useUi.setState({ gridSort: null });
+  }, [gridSort]);
   const [params, setParams] = useSearchParams();
   const urlSelection = params.get("rows");
   const [found, setFound] = useState<{ q: string; selection: string; count: number; rows: number; matches: Set<string> } | null>(null);

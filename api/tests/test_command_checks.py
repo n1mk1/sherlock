@@ -108,13 +108,15 @@ def refused(client, ds, ask):
     return msg["text"]
 
 
-def test_rows_added_or_removed_are_refused_with_the_way_to_set_them_aside(client, ready):  # noqa: F811
-    assert refused(client, ready["id"], "keep only the adults") == commands.REFUSED["row_ledger"]
+def test_rows_the_code_leaves_out_are_a_delete_the_card_counts(client, ready):  # noqa: F811
+    _, msg = send(client, ready["id"], "keep only the adults")
+    p = msg["proposal"]
+    assert p["summary"].startswith("Delete ") and p["impact"]["rows_deleted"] == number(p["summary"])
+    assert "no rows lost" not in p["checks"] and version(client, ready["id"]) == ready["current_version"]
 
 
-def test_a_removed_column_is_refused(client, ready):  # noqa: F811
-    assert refused(client, ready["id"], "get rid of the boat column") == \
-        "The code would remove boat, and a command never removes a column."
+def test_a_column_the_code_deletes_without_saying_so_is_refused(client, ready):  # noqa: F811
+    assert refused(client, ready["id"], "get rid of the boat column") == commands.SAID["removed"].format(cols="boat")
 
 
 def test_an_unexpected_new_column_is_refused(client, ready):  # noqa: F811
@@ -131,8 +133,10 @@ def test_a_changed_row_number_is_refused_as_a_broken_structure(client, ready):  
     assert refused(client, ready["id"], "number the rows from one") == commands.REFUSED["pandera"]
 
 
-def test_an_empty_new_column_is_refused(client, ready):  # noqa: F811
-    assert refused(client, ready["id"], "add a column flag") == commands.SAID["empty"].format(col="flag")
+def test_an_empty_new_column_is_a_blank_column_with_a_note(client, ready):  # noqa: F811
+    _, msg = send(client, ready["id"], "add a column flag")
+    p = msg["proposal"]
+    assert p["impact"]["columns_added"] == ["flag"] and "flag is empty in every row." in p["warnings"]
 
 
 def test_a_change_that_changes_nothing_says_so(client, ready):  # noqa: F811

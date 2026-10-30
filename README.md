@@ -39,7 +39,7 @@ It's for analysts, researchers, students and operations people who get a CSV fro
 | **Learns what columns mean** | Searches the web (Tavily) for the dataset's column definitions or a data dictionary you link, and shows each definition with the quote it came from. Your cell values are never sent. |
 | **Cleans it with an agent** | A plan you review and edit, then an agent that writes a fix for each issue, tests it in a sandbox, checks it, and keeps it only if it passes. Rows it can't fix are quarantined with a reason, never deleted. |
 | **Answers anything** | Numbers, tables, charts, matching rows, significance tests, "what drives this column?" (cross-validated models against baselines), what a column means, and questions about the outside world, with cited sources. |
-| **Changes data on request** | "Trim the spaces in name" or "add family_size = sibsp + parch + 1" arrives as a card with the code, the counts and a before-and-after preview. Nothing changes until you press OK. |
+| **Changes data on request, like a spreadsheet** | Anything you'd do by hand in Excel, asked in words: "delete row 5", "add a row with …", "delete the column cabin", "rename home.dest to destination", "trim the spaces in name", "add family_size = sibsp + parch + 1", "sort by fare". Each arrives as a card with the code, the counts and a before-and-after preview. Nothing changes until you press OK, and Undo takes it back. |
 | **Proves it** | **How do you know?** on every answer shows the SQL or code that ran and the data version it ran on. Every step can be undone. **Export notebook** gives you a `.ipynb` that rebuilds the current version from the raw CSV and checks that it matches. |
 
 ![The dataset view: the grid in the centre, the chat bar below, and every cleaning step in the Changes panel with Undo](docs/images/03-dataset-view.png)
@@ -202,12 +202,18 @@ A reference for every action in the app, grouped by where you find it.
 
 #### Chat: changing data
 
+Anything you can do to the file in the grid, or would do in a spreadsheet, you can ask for in words. Each change arrives as a card you read before it runs, and each is a step you can undo.
+
 | Action | How |
 |---|---|
-| Change data in your own words | "Trim the spaces in name", "make fare a number", "add family_size = sibsp + parch + 1". A card shows the code, the counts and a before-and-after preview. |
+| Change data in your own words | "Trim the spaces in name", "make fare a number", "replace S with Southampton in embarked", "fill missing age with the median". A card shows the code, the counts and a before-and-after preview. |
 | Set specific cells | "Set the fare of row 9 to 30", or select a cell and say "set this to …". |
 | Clean the selected rows | Select rows and ask "clean these rows"; the plan opens with them as its scope. |
-| Set rows aside | Asking to delete rows quarantines them instead; they can be restored. |
+| Delete rows | "Delete row 5", "delete these rows" (the selected ones), "delete the rows where age is empty", "remove the duplicates". The card shows how many go; Undo brings them back. |
+| Add rows | "Add a row with name Jane Doe, sex female and age 30", "add 3 blank rows". They go at the end, shown on the card before you approve. |
+| Change columns | "Add a column notes" (blank), "add total = price * quantity", "delete the column cabin", "rename home.dest to destination", "move fare to the front". |
+| Set rows aside or bring them back | "Set aside the rows where …" keeps them in the file but out of answers; "bring back the set-aside rows" restores them. |
+| Sort the grid | "Sort by fare descending", "clear the sort". Sorting changes the view, not the file. |
 | Approve or reject | **Approve** (or OK) saves it as a new version; **Reject** (or Cancel) drops it. Nothing changes before that. |
 
 #### Analysis and the model card
@@ -261,8 +267,8 @@ Sherlock runs two agents over one shared spine: the **Cleaner**, which turns a r
 
 1. **The model decides, code computes.** Detectors, verifiers, statistics, models and every number shown are code. Models choose, plan, and write code and words.
 2. **Structured everything.** Every model call uses a strict JSON schema (no extra fields). The reply is validated again in code, and a failure gets one repair round with the error sent back. A second failure goes to a code fallback, never to raw model text.
-3. **Code runs in a sandbox, data changes as versions.** Model-written pandas runs in an isolated subprocess with no network. A change becomes a new Parquet version plus a step you can undo. Nothing is edited in place, and rows are never deleted.
-4. **Proposals, not actions.** Chat never changes data by itself. It shows a card, and you approve it.
+3. **Code runs in a sandbox, data changes as versions.** Model-written pandas runs in an isolated subprocess with no network. A change becomes a new Parquet version plus a step you can undo. Nothing is edited in place. The Cleaner never deletes rows (it quarantines them); rows go only when you delete them, in the grid or by asking chat.
+4. **Proposals, not actions.** Chat never changes data by itself. It shows a card, and you approve it. Anything you can do to a spreadsheet by hand (delete or add rows, delete, rename or move columns, set cells) you can ask for, and every one is a step you can undo.
 5. **Everything is logged.** Every model call and web request is a row in `llm_calls`, and every sandbox run is a row in `sandbox_runs`. Each answer and each clean shows its calls under "How I worked it out": model, time, tokens, repairs.
 
 ![Architecture: the browser, one FastAPI process with the Cleaner, the Chat agent, the job runner, the sandbox, DuckDB and SQLite, and the Nemotron and Tavily services](docs/images/11-architecture.png)

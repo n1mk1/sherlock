@@ -19,8 +19,8 @@ INTENT_LINES = {
     "ask_meaning": "ask_meaning: what a column of this file, or a code in one of its columns, means (\"what does <a column> mean?\", \"what is <a code> in <a column>?\"). A term that is neither a column nor one of its values is web_context.",
     "web_context": "web_context: a question about the outside world that any file would get the same answer to: what a term, score or abbreviation means in general, how something works, typical values elsewhere, rules and standards, history, or recent events (\"what is <a term>?\", \"what does <an abbreviation> stand for?\", \"what is a typical <measure> for <a kind of business>?\", \"historically, what was <something>?\", \"what are the latest <topic> trends?\"). It searches the web. A question about this file's own numbers or rows is never web_context, and what a column of this file means is ask_meaning.",
     "app_help": "app_help: how to use the app (\"how do I undo a step?\", \"how do I undo a cleaning step?\", \"how do I export a notebook?\")",
-    "edit_cells": "edit_cells: change the values of particular rows named by their row number (\"set <a column> of row <n> to <a value>\"), as a proposal the user approves",
-    "clean_step": "clean_step: a request to change the data by a rule, as code the user reads and runs: fix, convert, replace, trim, rename values, fill, round, split or combine, in a column or in every row that matches a condition (\"trim the spaces in <a column>\", \"make <a column> a number\", \"replace <a value> with <another> in <a column>\", \"fill missing <a column> with <a value>\", \"title-case <a column>\", \"make these empty\"), add a computed column (\"add <a name> = <a column> + <another>\"), or set rows aside (\"delete the rows where …\"). Any wording counts when the user wants the data itself changed: a wish (\"I want <a column> in capitals\", \"I'd like the blanks in <a column> filled with <a value>\"), a terse note (\"<a column> → 2dp\", \"<a column>: single spaces only\", \"<a column> blanks → median\"), a problem with its fix (\"the <a column> has extra spaces, fix them\", \"the <records> with no <a column> are no use, get rid of them\", \"the <a column> should be whole numbers, convert it\") or \"<a change>, only for <a value>\". It is never a question (\"which <records> have extra spaces?\", \"what would happen if I rounded <a column>?\", \"how do I trim spaces?\") and never a chart or a list: those are ask_data, find_rows or app_help",
+    "edit_cells": "edit_cells: change the values of particular rows named by their row number (\"set <a column> of row <n> to <a value>\"), or add new rows (\"add a row with <a column> <a value> and <another> <a value>\", \"add <n> blank rows\"), as a proposal the user approves",
+    "clean_step": "clean_step: a request to change the data by a rule, as code the user reads and runs: fix, convert, replace, trim, rename values, fill, round, split or combine, in a column or in every row that matches a condition (\"trim the spaces in <a column>\", \"make <a column> a number\", \"replace <a value> with <another> in <a column>\", \"fill missing <a column> with <a value>\", \"title-case <a column>\", \"make these empty\"), add a computed or blank column (\"add <a name> = <a column> + <another>\", \"add a column <a name>\"), delete, rename or move columns (\"delete the column <a column>\", \"rename <a column> to <a name>\", \"move <a column> to the front\"), delete rows (\"delete the rows where …\", \"delete row <n>\", \"remove the duplicates\"), or set rows aside or bring them back (\"quarantine the rows where …\", \"restore the set-aside rows\"). Any wording counts when the user wants the data itself changed: a wish (\"I want <a column> in capitals\", \"I'd like the blanks in <a column> filled with <a value>\"), a terse note (\"<a column> → 2dp\", \"<a column>: single spaces only\", \"<a column> blanks → median\"), a problem with its fix (\"the <a column> has extra spaces, fix them\", \"the <records> with no <a column> are no use, get rid of them\", \"the <a column> should be whole numbers, convert it\") or \"<a change>, only for <a value>\". It is never a question (\"which <records> have extra spaces?\", \"what would happen if I rounded <a column>?\", \"how do I trim spaces?\") and never a chart or a list: those are ask_data, find_rows or app_help",
     "ask_code": "ask_code: a question a single SQL query can't answer: fit a regression or a trend line, cluster or segment the records, a custom statistic, fuzzy matching of near-duplicate spellings, or a calculation in several dependent steps. Plain counts, averages, rates, breakdowns and rankings are ask_data.",
     "clean_selection": "clean_selection: run the AI cleaning on the selected rows or the whole file, only when the message asks to clean and names no particular change (\"clean these rows\", \"clean up the selection\"); a named change (\"I want the extra spaces gone from <a column>\") is clean_step",
     "edit_plan": "edit_plan: change the open cleaning plan: leave fixes out or put them back, reword a fix, or add a step (\"don't touch outliers\", \"leave <a column> alone\", \"also trim spaces in <a column>\", \"fill <a column> by <a group> instead\")",
@@ -110,12 +110,13 @@ Rules:
 Question:
 {message}"""
 
-EDITS = """Turn the request into cell edits for this file. Nothing changes until the user approves them.
+EDITS = """Turn the request into cell edits and new rows for this file. Nothing changes until the user approves them.
 
 Rules:
 - Each edit names a row by its _row_id, an exact column name, and the new value as text (null empties the cell).
 - Use only rows and columns that exist. When the request is about the selected cells, edit exactly those.
-- Never edit _row_id or _quarantine_reason. At most two hundred edits.
+- When the request asks for new rows, put each in new_rows with the values it gives, by exact column name, as text; columns it doesn't give stay empty. A request for blank rows is new rows with no cells. New rows go at the end of the file.
+- Never edit _row_id or _quarantine_reason. At most two hundred edits and fifty new rows. Take every value from the request; never invent one.
 
 {context}
 {cells}
@@ -126,10 +127,14 @@ STEP = """Write pandas code that makes the change the user asks for to this file
 
 Rules:
 - People use their own words, not column names. Match each word to a column by the column's name and its example values: a column whose values fit the word's meaning beats one whose name merely looks similar.
-- reading is shown to the user above your code: one plain sentence, in the user's terms, saying what the code does (for example "Upper-case every value in sex" or "Set aside the rows where age is empty"). Not a mapping, no arrows, no number the request doesn't hold.
+- reading is shown to the user above your code: one plain sentence, in the user's terms, saying what the code does (for example "Upper-case every value in sex" or "Delete the rows where age is empty"). Not a mapping, no arrows, no number the request doesn't hold.
 - Change only what the request asks for, in the columns it names or clearly means. List those columns in columns.
-- Never delete rows. When the user asks to delete, remove or drop rows, set them aside instead: `result = quarantine_rows(result, <mask>, "<a few words why>")`. They stay in the file, out of the usable rows, and can be restored.
-- To add a column, assign it on result and list its name in new_columns. Never remove or rename columns.
+- Rows the user names by number ("row <n>") are the rows with that `_row_id`.
+- To delete, remove or drop rows (duplicates included), keep the others: `result = result[~<mask>]`. The user sees how many go before OK, and Undo brings them back.
+- Only when the user asks to set rows aside or quarantine them, keep them in the file instead: `result = quarantine_rows(result, <mask>, "<a few words why>")`. To bring set-aside rows back, set their `_quarantine_reason` to None.
+- Code never adds rows. When the user asks for new rows, set doable to false and say in reading to ask for "add a row with" the values.
+- To add a column, assign it on result and list its name in new_columns; a blank column is `result["<name>"] = pd.Series(pd.NA, index=result.index, dtype="string")`.
+- To delete columns: `result = result.drop(columns=[...])`, and list them in removed_columns. To rename: `result = result.rename(columns={{"<old>": "<new>"}})`, and list each in renamed_columns. To move columns, reorder result's columns with every column kept, `_row_id` and `_quarantine_reason` included. Only when the user asks for it.
 - Fill missing values only when the user asks for it, and never with a placeholder word such as "Unknown" unless the user names the value.
 - When you turn text into numbers or dates, set aside the rows whose values failed: `result = quarantine_rows(result, parse_failures(df[col], parsed), "parse: <column>")`.
 - Take every value and threshold from the request or the data; never invent one.
@@ -139,7 +144,7 @@ How the code runs:
 - `df` is a pandas DataFrame with every column of the file, plus `_row_id` (never change it) and `_quarantine_reason` (text; None for usable rows; set-aside rows are included).
 - `pd`, `np` and these helpers are already in scope (no imports needed; `re`, `math`, `datetime`, `rapidfuzz`, `dateparser` and `ftfy` may be imported):
 {helpers}
-- Start with `result = df.copy()`, assign whole columns (use `result.loc[<mask>, "<column>"]` for some rows), and leave the changed DataFrame in `result`, with the same rows.
+- Start with `result = df.copy()`, assign whole columns (use `result.loc[<mask>, "<column>"]` for some rows), and leave the changed DataFrame in `result`, with the same rows unless the user asked to delete some.
 - No file, network or system access; no `eval`, `exec`, `open`, `getattr`, dunder names, or `read_*`/`to_*` methods other than pd.to_datetime, pd.to_numeric and pd.to_timedelta.
 - Keep it short and plain: the user reads it before it runs. At most 15 lines. No row loops (`for`, `while`, `iterrows`, `itertuples`, `apply(axis=1)`): work on whole columns. A string method on a column: `result["name"] = result["name"].str.strip().str.title()`. Some rows only: `result.loc[result["fare"] > 500, "fare"] = 500`.
 

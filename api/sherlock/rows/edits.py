@@ -161,7 +161,7 @@ def produce_edit(settings: Settings, batch: EditBatch, prepared: Prepared, types
     return produce
 
 
-def summary_of(prepared: Prepared, batch: EditBatch) -> str:
+def summary_of(prepared: Prepared, batch: EditBatch, how: str = "by hand") -> str:
     parts = []
     if prepared.edits:
         n = len(prepared.edits)
@@ -176,7 +176,7 @@ def summary_of(prepared: Prepared, batch: EditBatch) -> str:
         n = len(set(batch.restore_row_ids))
         parts.append(f"restored {n} row{'s' if n != 1 else ''}")
     text = ", ".join(parts)
-    return text[0].upper() + text[1:] + " by hand"
+    return text[0].upper() + text[1:] + " " + how
 
 
 def conflicts(
@@ -209,7 +209,7 @@ def conflicts(
         conn.close()
 
 
-def save(ctx: Context, dataset: sqlite3.Row, batch: EditBatch) -> dict:
+def save(ctx: Context, dataset: sqlite3.Row, batch: EditBatch, how: str = "by hand") -> dict:
     """Commit the batch as one `edit` step. A stale `base_version` is `409` with the conflicts."""
     folder = dataset_dir(ctx.settings, dataset["user_id"], dataset["id"])
     current = current_version_row(ctx.db, dataset["id"])
@@ -245,7 +245,7 @@ def save(ctx: Context, dataset: sqlite3.Row, batch: EditBatch) -> dict:
         {"temp_id": r.temp_id, "row_id": prepared.temp_ids[str(r.temp_id)], "cells": r.cells} for r in batch.new_rows
     ]
     spec = StepSpec(
-        kind="edit", summary=summary_of(prepared, batch), created_by="user", notebook_code=code,
+        kind="edit", summary=summary_of(prepared, batch, how), created_by="user", notebook_code=code,
         column_targets=sorted({c for _, c, _ in prepared.edits}), edits=stored, gate="user",
         cell_overrides=overrides,
     )

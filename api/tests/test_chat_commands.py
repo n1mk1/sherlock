@@ -122,23 +122,24 @@ def test_a_command_on_selected_rows_changes_only_those_rows_and_replays_with_its
     assert cell(client, ds, 3, "sex") == "FEMALE" and cell(client, ds, 4, "sex") == "male"
 
 
-def test_delete_sets_rows_aside_after_a_repair_and_warns_when_it_is_many(client, ready):
+def test_delete_removes_the_rows_and_warns_when_it_is_many(client, ready):
     ds, v = ready["id"], ready["current_version"]
     _, msg = send(client, ds, "delete the passengers with no age")
-    p = msg["proposal"]  # the first code dropped rows; the repair quarantines them
-    assert p["impact"]["quarantined"] == 263 and p["impact"]["cells_changed"] == 0
-    assert p["summary"] == "Set aside 263 rows (quarantined, not deleted)"
-    assert "quarantine_rows" in p["code"]
-    assert any("sets aside 263 of 1,309 rows" in w for w in p["warnings"])
+    p = msg["proposal"]
+    assert p["impact"]["rows_deleted"] == 263 and p["impact"]["cells_changed"] == 0 and p["impact"]["quarantined"] == 0
+    assert p["summary"] == "Delete 263 rows"
+    assert any("deletes 263 of 1,309 rows" in w for w in p["warnings"])
     calls = db_rows("SELECT purpose, repaired FROM llm_calls WHERE dataset_id = ? AND purpose = 'step'", ds)
-    assert [c["repaired"] for c in calls] == [0, 1]
+    assert [c["repaired"] for c in calls] == [0]
     done = client.post(f"{API}/proposals/{p['id']}/approve", json={}).json()
-    assert done["step"]["impact"]["rows_out"] == 1309 and done["step"]["impact"]["quarantined"] == 263
+    assert done["step"]["impact"]["rows_out"] == 1046 and done["step"]["impact"]["rows_deleted"] == 263
     page = client.get(f"{API}/datasets/{ds}/rows", params={"filter": '{"and": [{"col": "age", "op": "empty"}]}', "limit": 5}).json()
-    assert page["total"] == 263 and all(r["quarantined"] for r in page["rows"])  # still in the file, set aside
+    assert page["total"] == 0
     assert loop.DELETE_ASK.search("please remove the rows with no age")
     assert not loop.DELETE_ASK.search("remove the filter") and not loop.DELETE_ASK.search("remove the fare fix from the plan")
     assert version(client, ds) == v + 1
+    client.post(f"{API}/datasets/{ds}/steps/{done['step']['id']}/undo", json={"base_version": v + 1})
+    assert client.get(f"{API}/datasets/{ds}/rows", params={"limit": 1}).json()["total"] == 1309
 
 
 def test_a_computed_column_is_added_and_undone(client, ready):

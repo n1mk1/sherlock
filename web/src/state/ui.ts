@@ -1,5 +1,6 @@
 // UI state (TRD §2 `state/`): panels, the file waiting in the import preview, live job progress.
 import { create } from "zustand";
+import type { Sort } from "@/api/csv";
 import type { JobProgressEvent } from "@/api/types";
 
 // Panel sizes and the library rail persist per browser (UI brief §3.1); storage may be unavailable.
@@ -44,6 +45,9 @@ interface UiState extends Panels {
   setPlanId: (id: string | null) => void;
   csvSelection: { row_ids: number[]; columns: string[] } | null; // the CSV grid's selection, the chat's context there
   setCsvSelection: (s: { row_ids: number[]; columns: string[] } | null) => void;
+  /** A sort chat asked for ("sort by fare"), for the grid to apply; `n` tells a repeat of the same sort apart. */
+  gridSort: { sort: Sort | null; n: number } | null;
+  sortGrid: (sort: Sort | null) => void;
   setChatOpen: (open: boolean) => void;
   setLeftOpen: (open: boolean) => void;
   setRightOpen: (open: boolean) => void;
@@ -76,6 +80,8 @@ export const useUi = create<UiState>((set, get) => ({
   setPlanId: (planId) => set({ planId }),
   csvSelection: null,
   setCsvSelection: (csvSelection) => set({ csvSelection }),
+  gridSort: null,
+  sortGrid: (sort) => set({ gridSort: { sort, n: (get().gridSort?.n ?? 0) + 1 } }),
   setChatOpen: (chatOpen) => set({ chatOpen }),
   setLeftOpen: (leftOpen) => set({ leftOpen }),
   setRightOpen: (rightOpen) => set({ rightOpen }),

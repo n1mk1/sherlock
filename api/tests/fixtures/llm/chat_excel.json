@@ -1,0 +1,364 @@
+[
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nset aside the passengers with no age\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "age",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\nset aside the passengers with no age\n</data>"
+    ],
+    "content": {
+      "reading": "Set aside the rows where age is empty",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df.copy()\nresult = quarantine_rows(result, result[\"age\"].isna(), \"asked to set aside: no age\")"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nbring back the set-aside rows\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": []
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\nbring back the set-aside rows\n</data>"
+    ],
+    "content": {
+      "reading": "Bring back every set-aside row",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df.copy()\nresult[\"_quarantine_reason\"] = None"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\ndelete the column body\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "body",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\ndelete the column body\n</data>"
+    ],
+    "content": {
+      "reading": "Delete the column body",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [
+        "body"
+      ],
+      "renamed_columns": [],
+      "code": "result = df.drop(columns=[\"body\"])"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\ndelete the column boat\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "boat",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\ndelete the column boat\n</data>"
+    ],
+    "content": {
+      "reading": "Delete the column boat",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [
+        "boat"
+      ],
+      "renamed_columns": [],
+      "code": "result = df.drop(columns=[\"boat\", \"cabin\"])"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nrename home.dest to destination\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "home.dest",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\nrename home.dest to destination\n</data>"
+    ],
+    "content": {
+      "reading": "Rename home.dest to destination",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [
+        {
+          "old": "home.dest",
+          "new": "destination"
+        }
+      ],
+      "code": "result = df.rename(columns={\"home.dest\": \"destination\"})"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nmove fare to the front\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "fare",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\nmove fare to the front\n</data>"
+    ],
+    "content": {
+      "reading": "Move fare to the front",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df[[\"fare\", *df.columns.drop(\"fare\")]].copy()"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nadd a column notes\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": []
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\nadd a column notes\n</data>"
+    ],
+    "content": {
+      "reading": "Add a blank column notes",
+      "doable": true,
+      "columns": [],
+      "new_columns": [
+        "notes"
+      ],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df.copy()\nresult[\"notes\"] = pd.Series(pd.NA, index=result.index, dtype=\"string\")"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\ndelete row 5\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "edit_cells"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": []
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\ndelete row 5\n</data>"
+    ],
+    "content": {
+      "reading": "Delete row five",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df[df[\"_row_id\"] != 5].copy()"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\ndelete these rows\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "clean_step"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": []
+    }
+  },
+  {
+    "purpose": "step",
+    "match": [
+      "<data>\ndelete these rows\n</data>"
+    ],
+    "content": {
+      "reading": "Delete the selected rows",
+      "doable": true,
+      "columns": [],
+      "new_columns": [],
+      "removed_columns": [],
+      "renamed_columns": [],
+      "code": "result = df[df[\"_row_id\"] < 0].copy()"
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nadd a row with name Jane Doe, sex female and age 30\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "ask_data"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": [
+        {
+          "text": "name",
+          "kind": "column"
+        },
+        {
+          "text": "sex",
+          "kind": "column"
+        },
+        {
+          "text": "age",
+          "kind": "column"
+        }
+      ]
+    }
+  },
+  {
+    "purpose": "edits",
+    "match": [
+      "add a row with name Jane Doe, sex female and age 30"
+    ],
+    "content": {
+      "reading": "a new row: name Jane Doe, sex female, age 30",
+      "edits": [],
+      "new_rows": [
+        {
+          "cells": [
+            {
+              "column": "name",
+              "value": "Jane Doe"
+            },
+            {
+              "column": "sex",
+              "value": "female"
+            },
+            {
+              "column": "age",
+              "value": "30"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

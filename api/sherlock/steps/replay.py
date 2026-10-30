@@ -23,7 +23,7 @@ import duckdb
 
 from sherlock.profile import typing as typing_step
 from sherlock.sandbox import runner as sandbox
-from sherlock.steps.commit import Context, StepSpec, _lineage_rows
+from sherlock.steps.commit import Context, StepSpec, _lineage_rows, deletes
 from sherlock.steps.diff import check_version_file, diff_versions
 from sherlock.storage import sql_path
 
@@ -134,7 +134,7 @@ def apply(ctx: Context, dataset: sqlite3.Row, step: sqlite3.Row, old: Path, out:
     except ValueError as exc:
         raise ReplayError(step, str(exc)) from exc
     diff = diff_versions(old, out)
-    if step["kind"] != "edit" and (diff.added_row_ids or diff.deleted_row_ids):
+    if step["kind"] != "edit" and (diff.added_row_ids or (diff.deleted_row_ids and not deletes(step["created_by"]))):
         raise ReplayError(step, "it added or removed rows when replayed")
     spec = StepSpec(kind=step["kind"], summary="", created_by=step["created_by"], notebook_code="-",
                     gate=step["gate"], cell_overrides=overrides)
