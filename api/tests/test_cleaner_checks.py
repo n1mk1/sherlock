@@ -65,6 +65,22 @@ def test_candidates_that_disagree_are_skipped_with_cells_shown_both_ways(client)
     assert "1,250" in amounts  # nothing changed
 
 
+def test_a_fix_the_user_worded_runs_its_first_reading_when_the_candidates_disagree(client):
+    # Live (2026-10-30), "fill the missing age with the median" was skipped: the median and a median by group
+    # disagreed. The user said how, so the first candidate that passes (the plainest reading) runs.
+    ds = wait_status(client, upload(client, AMOUNTS_CSV, "amounts.csv")["id"], "offer", "failed")
+    plan = client.post(f"{API}/datasets/{ds['id']}/clean/plan").json()
+    amount = next(i for i in plan["items"] if i["detector"] == "numbers_as_text" and i["column"] == "amount")
+    client.patch(f"{API}/clean-plans/{plan['id']}", json={"ops": [
+        {"op": "set_instruction", "item_id": amount["id"], "instruction": "the commas separate thousands"}]})
+    job = client.post(f"{API}/datasets/{ds['id']}/clean", json={"plan_id": plan["id"]}).json()
+    wait_for(lambda: client.get(f"{API}/jobs/{job['id']}").json()["status"] in ("done", "failed", "cancelled"))
+    report = client.get(f"{API}/datasets/{ds['id']}/report").json()
+    assert [s["summary"] for s in report["steps"]] == ["Thousands separator (amount)"]
+    amounts = {r["cells"]["amount"] for r in client.get(f"{API}/datasets/{ds['id']}/rows", params={"limit": 100}).json()["rows"]}
+    assert 1250 in amounts
+
+
 def test_dates_that_read_both_ways_stay_text_and_cost_no_model_call(client):
     ds, job = clean(client, DATES_CSV, "visits.csv")
     card = client.get(f"{API}/datasets/{ds['id']}/datacard").json()

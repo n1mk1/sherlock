@@ -5,7 +5,7 @@
 import { Check, Flag, Redo2 } from "lucide-react";
 import { useState } from "react";
 import { readDay, siteOf } from "@/api/columnNotes";
-import { useReport } from "@/api/queries";
+import { useDetectorLabel, useReport } from "@/api/queries";
 import type { CleaningReport, Level } from "@/api/types";
 import { Receipts } from "@/components/chat/Receipts";
 import { Button } from "@/components/ui/button";
@@ -122,14 +122,18 @@ function StepLine({ step }: { step: CleaningReport["steps"][number] }) {
   );
 }
 
+// Each line names its check: a column with several issues ("missing values", "leakage") otherwise
+// reads as the same line twice.
 function SkipList({ skips }: { skips: CleaningReport["skipped"] }) {
+  const label = useDetectorLabel();
   return (
     <ul className="mt-2 flex flex-col gap-1.5">
       {skips.map((s) => (
         <li key={s.issue_id} className="flex items-start gap-2">
           <Redo2 className="mt-1 size-4 text-muted-foreground" aria-hidden />
           <span>
-            <span className="font-mono text-[13px]">{s.column ?? "rows"}</span> · {s.reason}
+            <span className="font-mono text-[13px]">{s.column ?? "rows"}</span>
+            <span className="text-muted-foreground"> ({label(s.detector)})</span> · {s.reason}
             {s.level && <span className="text-[12.5px] text-muted-foreground"> · {LEVEL[s.level]}</span>}
           </span>
         </li>

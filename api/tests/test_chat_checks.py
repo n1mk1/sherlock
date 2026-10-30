@@ -220,3 +220,19 @@ def test_compose_prose_gets_the_wording_check():
     for words in ("Women survived about twice as often, at ", "Being a woman leads to survival at "):
         blocks, by_model = composed([{"text": words}, {"chip": "r1:0:1"}])
         assert not by_model and blocks[0]["type"] == "table"  # the fallback: the rows with their source
+
+
+def test_a_label_that_names_nothing_reads_as_words_unless_it_holds_a_number():
+    # Live (2026-10-30): "the most common port is [S]" failed the answer twice and fell back to a bare table.
+    res = result([("port", "VARCHAR"), ("cnt", "BIGINT")], [["S", 914]])
+
+    def composed(label):
+        prose = [{"text": "The most common port is "}, {"label": label}, {"text": ", with "}, {"chip": "r1:0:1"},
+                 {"text": " passengers"}]
+        llm = OneReply({"prose": prose, "shape": "table", "number": None, "label": None, "chart": None})
+        return comp.compose(llm, None, "most common port", [res], ["embarked"], 1, None)
+
+    blocks, by_model = composed("S")
+    assert by_model and blocks[0]["body"]["blocks"][0]["runs"][1] == {"type": "text", "text": "S"}
+    blocks, by_model = composed("value:fare:512")
+    assert not by_model  # a made-up number never shows as words

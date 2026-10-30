@@ -637,6 +637,14 @@ class Cleaner:
                 chips[best_i]["chosen"], chips[code_i]["chosen"] = False, True
                 best_i, apart = code_i, None
                 best, best_score, sample_report, _ = scored[best_i]
+        if apart and requested and rule is None:
+            # The user said how ("fill missing age with the median"): the candidates' disagreement is between
+            # the model's readings of it, not an open question in the data. The first that passes is the
+            # plainest reading (live, 2026-10-30, a median by group outvoted "the median" and nothing ran).
+            first = next((i for i, r in enumerate(results) if r is not None), best_i)
+            chips[best_i]["chosen"], chips[first]["chosen"] = False, True
+            best_i, apart = first, None
+            best, best_score, sample_report, _ = scored[best_i]
         if apart:
             one, other = (scored[i][0].label for i in compared.pair)
             shown = "; ".join(f"{b} → {x} vs {y}" for b, x, y in compared.examples)

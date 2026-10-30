@@ -115,7 +115,7 @@ EDITS = """Turn the request into cell edits and new rows for this file. Nothing 
 Rules:
 - Each edit names a row by its _row_id, an exact column name, and the new value as text (null empties the cell).
 - Use only rows and columns that exist. When the request is about the selected cells, edit exactly those.
-- When the request asks for new rows, put each in new_rows with the values it gives, by exact column name, as text; columns it doesn't give stay empty. A request for blank rows is new rows with no cells. New rows go at the end of the file.
+- When the request asks for new rows, set rows_to_add to how many, and put each value it gives in new_cells with its row (1 for the first new row), the exact column name and the value as text; columns it doesn't give stay empty. Blank rows have no new_cells. New rows go at the end of the file. With no new rows, rows_to_add is 0 and new_cells is empty.
 - Never edit _row_id or _quarantine_reason. At most two hundred edits and fifty new rows. Take every value from the request; never invent one.
 
 {context}

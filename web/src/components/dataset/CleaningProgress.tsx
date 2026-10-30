@@ -159,7 +159,8 @@ export function CleaningProgress({ dataset }: { dataset: Dataset }) {
             )}
           </ul>
           <p className="mt-2 text-[12px] text-muted-foreground tnum">
-            {report?.attempted ?? 0} of {maxSteps} issues tried · {mmss(elapsed)} of {mmss(maxSeconds)}
+            {/* Out of the issues found, or the step budget when it's smaller: "0 of 25" for 5 found read as 20 missing. */}
+            {report?.attempted ?? 0} of {Math.min(report?.counts.found || maxSteps, maxSteps)} issues tried · {mmss(elapsed)} of {mmss(maxSeconds)}
           </p>
         </aside>
       </div>

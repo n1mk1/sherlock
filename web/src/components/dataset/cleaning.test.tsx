@@ -125,6 +125,20 @@ describe("cleaning screens", () => {
     expect(summaryLines(old).map((x) => x.id)).toEqual(["b", "a"]);
   });
 
+  it("says how many issues the three lines leave out", async () => {
+    // Live (2026-10-30): "5 issues to look at" over three lines read as two missing.
+    const issue = (id: string, count: number) =>
+      ({ id, detector: "sentinels", column: "amount", count, severity: 0.5, proposal: "", examples: [], details: {} });
+    mockApi({
+      "GET /api/v1/me": ME,
+      "GET /api/v1/datasets/ds_1/datacard": { version: 2, row_count: 120, column_count: 4, quarantined: 0, columns: [],
+        issues: [1, 2, 3, 4, 5].map((n) => issue(`i${n}`, n)) },
+    });
+    renderAt(<CleaningOffer dataset={DS} />);
+    expect(await screen.findByRole("heading", { name: "5 issues to look at" })).toBeInTheDocument();
+    expect(screen.getByText("and 2 more, all listed in the plan")).toBeInTheDocument();
+  });
+
   it("shows only the issues down to the depth the slider picks", async () => {
     const issue = (id: string, detector: string, count: number) =>
       ({ id, detector, column: "amount", count, severity: 0.5, proposal: "", examples: [], details: {} });
@@ -142,6 +156,7 @@ describe("cleaning screens", () => {
     expect(screen.getByText("3 placeholder values in amount")).toBeInTheDocument();
     expect(screen.queryByText("4 duplicate rows in amount")).toBeNull();
     expect(screen.getByText("picked 1")).toBeInTheDocument();
+    expect(screen.queryByText(/more, all listed in the plan/)).toBeNull(); // every issue at this depth is shown
     expect(screen.getByText(/Looks at single values: .*placeholder values/)).toBeInTheDocument();
     fireEvent.change(slider, { target: { value: "3" } });
     expect(screen.getByRole("heading", { name: "2 issues to look at" })).toBeInTheDocument();
@@ -241,7 +256,7 @@ describe("cleaning screens", () => {
     expect(screen.getByText("9 found · 1 marked, not changed (leakage and ID columns) · no rows deleted")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "View full report" }));
     const kept = await screen.findByRole("heading", { name: "Checked and kept" });
-    expect(kept.parentElement).toHaveTextContent("cabin · Left as is: the values look legitimate · Worth a look");
+    expect(kept.parentElement).toHaveTextContent("cabin (missing) · Left as is: the values look legitimate · Worth a look");
     expect(screen.getByRole("heading", { name: "Couldn't fix" }).parentElement).toHaveTextContent("Breaks answers");
     expect(screen.getByRole("heading", { name: "Not attempted" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Marked, not changed" })).toBeInTheDocument();

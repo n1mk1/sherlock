@@ -341,24 +341,51 @@
     "content": {
       "reading": "a new row: name Jane Doe, sex female, age 30",
       "edits": [],
-      "new_rows": [
+      "rows_to_add": 1,
+      "new_cells": [
         {
-          "cells": [
-            {
-              "column": "name",
-              "value": "Jane Doe"
-            },
-            {
-              "column": "sex",
-              "value": "female"
-            },
-            {
-              "column": "age",
-              "value": "30"
-            }
-          ]
+          "row": 1,
+          "column": "name",
+          "value": "Jane Doe"
+        },
+        {
+          "row": 1,
+          "column": "sex",
+          "value": "female"
+        },
+        {
+          "row": 1,
+          "column": "age",
+          "value": "30"
         }
       ]
+    }
+  },
+  {
+    "purpose": "route",
+    "match": [
+      "<data>\nadd 3 blank rows\n</data>"
+    ],
+    "content": {
+      "intents": [
+        "ask_data"
+      ],
+      "ambiguous": false,
+      "clarification": null,
+      "multi_step": false,
+      "entities": []
+    }
+  },
+  {
+    "purpose": "edits",
+    "match": [
+      "add 3 blank rows"
+    ],
+    "content": {
+      "reading": "",
+      "edits": [],
+      "rows_to_add": 3,
+      "new_cells": []
     }
   }
 ]

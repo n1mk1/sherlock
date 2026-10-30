@@ -1,4 +1,4 @@
-# Secrets never enter the image (CLAUDE.md rule 6); env vars come from the endpoint.
+# Secrets never enter the image; env vars come from the endpoint.
 .env
 .env.*
 !.env.example

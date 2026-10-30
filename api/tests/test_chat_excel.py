@@ -156,6 +156,25 @@ def test_add_a_row_with_values(client, ready):
     assert last[0]["cells"]["name"] == "Jane Doe" and last[0]["cells"]["age"] == 30
 
 
+def test_add_blank_rows(client, ready):
+    ds = ready["id"]
+    _, msg = send(client, ds, "add 3 blank rows", context={"tab": "csv"})
+    p = msg["proposal"]
+    assert p["new_rows"] == [{}, {}, {}] and p["summary"] == "Add 3 rows at the end"
+    ok(client, p)
+    assert page(client, ds)["total"] == 1312
+
+
+def test_the_change_schemas_send_every_field_as_required():
+    # Optional lists in the schema came back missing from the real models, and with them the change.
+    from sherlock.llm.schemas import EditsDraft, StepDraft
+
+    for schema in (EditsDraft, StepDraft):
+        sent = schema.model_json_schema()
+        assert sent["required"] == list(sent["properties"])
+    assert EditsDraft.model_validate({"reading": "", "edits": []}).rows_to_add == 0
+
+
 def test_sort_by_a_column_sorts_the_grid_without_a_model_call(client, ready):
     ds = ready["id"]
     _, msg = send(client, ds, "sort by fare descending")
@@ -173,6 +192,8 @@ def test_the_guards_send_each_spreadsheet_request_where_it_belongs():
     assert loop.sort_of("order the classes by average fare", cols) is None  # not a column: a question
     assert loop.DELETE_ASK.search("delete the column cabin") and loop.DELETE_ASK.search("remove the duplicates")
     assert not loop.DELETE_ASK.search("remove the sort")
+    # Live (2026-10-30), the router sent "keep only the first class passengers" to ask_data.
+    assert loop.COMMAND.search("keep only the first class passengers") and loop.COMMAND.search("only keep the women")
     assert loop.ADD_ROW.search("add a row with name Bob") and loop.ADD_ROW.search("insert 3 blank rows")
     assert not loop.ADD_ROW.search("add a column total")
     assert loop.ROW_OP.search("restore row 12") and loop.ROW_OP.search("delete row 5")

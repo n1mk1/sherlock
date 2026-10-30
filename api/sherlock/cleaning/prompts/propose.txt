@@ -13,7 +13,7 @@ Detector details: {details}
 The user's instruction: {instruction}
 </data>
 
-When the user gave an instruction, the candidates follow it, within the rules you never break; otherwise they fix the issue as diagnosed.
+When the user gave an instruction, the candidates follow it, within the rules you never break, and the first is its plainest reading ("the median" is the column's median, not one by group); otherwise they fix the issue as diagnosed.
 When the detector details list pairs of values to merge, merge only those pairs. Never merge values that differ only in their numbers, or two values that are each common: they are categories of their own. Case and spacing variants of one value are the same value: giving them one spelling is not a merge.
 
 How the code runs:

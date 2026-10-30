@@ -15,6 +15,16 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _all_required(schema: dict) -> None:
+    schema["required"] = list(schema["properties"])
+
+
+class AllRequired(Strict):
+    """Every field is required in the schema sent to the model, defaults or not: given an optional
+    list, the models leave it out and stop. A reply that still omits one parses with its default."""
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_all_required)
+
+
 # --- Cleaner (TRD §7.2) -----------------------------------------------------------------------
 
 
@@ -172,20 +182,21 @@ class CellDraft(Strict):
     value: str | None = Field(description="the new value as text, or null to empty the cell")
 
 
-class CellValue(Strict):
+class NewCell(Strict):
+    row: int = Field(ge=1, description="which new row, counting from 1")
     column: str = Field(description="a column of the file, exactly as named")
-    value: str | None = Field(description="the value as text, or null to leave the cell empty")
+    value: str | None = Field(description="the value as text")
 
 
-class NewRowDraft(Strict):
-    cells: list[CellValue] = Field(description="the new row's values; columns left out stay empty")
-
-
-class EditsDraft(Strict):
+class EditsDraft(AllRequired):
+    # New rows are a count plus flat cells: given a list of rows each holding a list of cells, the
+    # models return one row with no cells whatever the request says.
     reading: str = Field(description="which rows and columns the request means, and the new values, in a few words")
-    edits: list[CellDraft] = Field(default_factory=list, max_length=200, description="changes to existing cells")
-    new_rows: list[NewRowDraft] = Field(default_factory=list, max_length=50,
-                                        description="rows to add at the end of the file, when the request asks for new rows")
+    edits: list[CellDraft] = Field(default_factory=list, max_length=200, description="changes to existing cells; empty when none")
+    rows_to_add: int = Field(default=0, ge=0, le=50,
+                             description="how many new rows the request adds at the end of the file; 0 when none")
+    new_cells: list[NewCell] = Field(default_factory=list, max_length=500,
+                                     description="the values the request gives for the new rows, one per cell; empty for blank rows")
 
 
 class Rename(Strict):
@@ -193,7 +204,7 @@ class Rename(Strict):
     new: str = Field(description="its new name")
 
 
-class StepDraft(Strict):
+class StepDraft(AllRequired):
     """A change typed in chat, as pandas code the user reads before pressing OK (`agent/commands.py`)."""
     reading: str = Field(description="one plain sentence, in the user's terms, of what the code does, for example 'Upper-case "
                                      "every value in sex' or 'Delete the rows where age is empty'; no number the "

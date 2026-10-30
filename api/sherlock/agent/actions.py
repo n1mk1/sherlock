@@ -89,17 +89,22 @@ def propose_edits(kit: Toolkit, question: str, context: dict, types: dict[str, s
             cells_text = ("The selected cells:\n" + fence("\n".join([f"{len(rows)} rows × {', '.join(cols)}", *lines])) + "\n")
 
         def check(d: EditsDraft) -> None:
-            if not d.edits and not d.new_rows:
+            if not d.edits and not d.rows_to_add:
                 raise ValueError("give at least one edit or one new row")
-            for column in [e.column for e in d.edits] + [c.column for r in d.new_rows for c in r.cells]:
+            for column in [e.column for e in d.edits] + [c.column for c in d.new_cells]:
                 if column in SYSTEM_COLUMNS or column not in types:
                     raise ValueError(f"{column!r} is not a column you can edit; use one of {', '.join(list(types)[:30])}")
+            beyond = [c.row for c in d.new_cells if c.row > d.rows_to_add]
+            if beyond:
+                raise ValueError(f"new_cells names new row {beyond[0]}, but rows_to_add is {d.rows_to_add}")
 
         messages = [{"role": "system", "content": prompts.SYSTEM},
                     {"role": "user", "content": prompts.EDITS.format(context=kit.context, cells=cells_text, message=fence(question))}]
         draft = kit.llm.structured("medium", messages, EditsDraft, purpose="edits", scope=kit.scope, validate=check).value
         edits = list({(e.row_id, e.column): e for e in draft.edits}.values())  # the last edit of a cell wins
-        new_rows = [{c.column: c.value for c in r.cells} for r in draft.new_rows]
+        new_rows: list[dict] = [{} for _ in range(draft.rows_to_add)]
+        for c in draft.new_cells:
+            new_rows[c.row - 1][c.column] = c.value
         ids = sorted({e.row_id for e in edits})
         used = sorted({e.column for e in edits})
         found = {r[0]: dict(zip(used, r[1:], strict=True)) for r in conn.execute(

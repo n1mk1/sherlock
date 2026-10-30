@@ -112,7 +112,18 @@ def to_runs(prose: list, results: dict[str, Result], columns: list[str], known: 
                 runs.append({"type": "text", "text": ", "})  # two chips in a row read as a list
             runs.append({"type": "chip", "id": f"c{i}", "key": run.chip, "value": shown, "raw": value, "unverified": False})
         elif isinstance(run, LabelRun):
-            runs.append({"type": "label", "ref": run.label, "text": label_text(run.label, columns, values)})
+            try:
+                runs.append({"type": "label", "ref": run.label, "text": label_text(run.label, columns, values)})
+            except ValueError:
+                # Live (2026-10-30), labels like "S" or "column:<a result's alias>" failed the answer twice over.
+                # A label is only a link: one that names no column of the file reads as the words a text run
+                # may hold, under a text run's checks. A value label of a real column must still be a value.
+                kind, _, rest = run.label.partition(":")
+                shown = run.label.rpartition(":")[2].strip()
+                if ((kind == "value" and rest.partition(":")[0] in columns) or not shown or has_digits(shown)
+                        or wording_problem(shown)):
+                    raise
+                runs.append({"type": "text", "text": shown})
         elif isinstance(run, TextRun):
             text = run.text
             prev = runs[-1] if runs else None

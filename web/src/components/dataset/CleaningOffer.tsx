@@ -58,6 +58,11 @@ export function CleaningOffer({ dataset, actions }: { dataset: Dataset; actions?
                 <span className="tnum">{issueLine(i, label)}</span>
               </li>
             ))}
+            {shown > top.length && (
+              <li className="pt-3 text-[14px] text-muted-foreground">
+                and {(shown - top.length).toLocaleString()} more, all listed in the plan
+              </li>
+            )}
           </ul>
         )}
         {card && !shown && deeper > 0 && <p className="mt-4 text-[14px] text-muted-foreground">Drag right to look deeper.</p>}

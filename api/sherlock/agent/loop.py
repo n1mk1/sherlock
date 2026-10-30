@@ -113,7 +113,7 @@ UNSORT = re.compile(r"^\W*(please\s+)?(clear|remove|reset|undo|turn\s+off)\s+(th
 COMMAND_VERBS = (r"make|set|change|convert|turn|replace|rename|trim|strip|fill|impute|standardi[sz]e|normali[sz]e|fix|"
                  r"correct|round|cast|split|merge|combine|upper-?case|lower-?case|title-?case|capitali[sz]e|reformat|format|"
                  r"parse|recode|map|swap|quarantine|set\s+aside|clear|blank\s+out|empty|collapse|truncate|move|reorder|"
-                 r"rearrange|restore|un-?quarantine|bring\s+back|de-?dupe|de-?duplicate")
+                 r"rearrange|restore|un-?quarantine|bring\s+back|de-?dupe|de-?duplicate|keep\s+only|only\s+keep")
 # Live (2026-10-27), "could you add a <name> column = …" went to ask_data and "collapse the repeated spaces in <a column>"
 # to ask_data: the column may carry its name before the word, and "collapse" is a change like the others.
 COMMAND = re.compile(
@@ -625,7 +625,8 @@ class Agent:
             if number:
                 text = f"{number['label']}: {number['formatted']}"
             elif results:
-                text = f"Here is the result ({results[0].row_count} rows)."
+                n = results[0].row_count
+                text = f"Here is the result ({n:,} {'row' if n == 1 else 'rows'})."
         if self.web.enabled:  # a dated answer with a clear jump offers "What happened around <period>?" (tavily.md §3.6)
             button = next((o for r in results if r.id not in computed and not r.extra.get("code")
                            for o in [period.offer(r)] if o), None)
