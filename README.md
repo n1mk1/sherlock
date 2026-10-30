@@ -12,7 +12,7 @@
 
 - [What it is](#what-it-is)
 - [What it does](#what-it-does)
-- [Using Sherlock](#using-sherlock)
+- [Using Sherlock](#using-sherlock) · [Everything you can do](#everything-you-can-do)
 - [How the agentic layer works](#how-the-agentic-layer-works)
 - [Tech stack](#tech-stack)
 - [Results](#results)
@@ -105,6 +105,151 @@ flowchart LR
 - **The CSV tab.** Edit cells, add rows, find and sort. Edits stay in your browser until **Save changes**, which makes a new version. After saving new rows, **Clean them** opens the plan for just those rows.
 - **Chat.** Answers apply to all rows, or only to the rows you selected (the chip on the left of the bar says which). An answer about rows links to them in the grid. Ambiguous questions get buttons to choose from rather than a guess.
 - **Changes panel.** Every cleaning step, saved edit and approved proposal, each with its code and **Undo**.
+
+### Everything you can do
+
+A reference for every action in the app, grouped by where you find it.
+
+#### Your files (the library on the left)
+
+| Action | How |
+|---|---|
+| Upload a CSV | **Upload CSV** in the library, or drop a file anywhere on the page. `.csv`, `.tsv` or `.txt`, up to 50 MB. Drop one file at a time. |
+| Try the sample | **Try a sample** opens the Titanic passenger list, already cleaned, with its steps and an analysis. |
+| Open a file | Click it in the library. Its badge shows its state: *Reading*, *N issues*, *Looks clean*, *Cleaning N%*, *Ready* or *Failed*. |
+| Rename a file | The row's menu (⋯) → **Rename**, or the dataset menu in the header. |
+| Download the original | The row's menu → **Download original** (the file exactly as you uploaded it). |
+| Delete a file | The row's menu or the dataset menu → **Delete**. It asks first, and **Undo** in the toast brings it back for 10 seconds. |
+| Collapse or resize the library | The `«` button shrinks it to a rail of icons; drag the divider to resize it. |
+
+#### Importing a file
+
+| Action | How |
+|---|---|
+| Fix how the file reads | In the import preview, change the **Delimiter**, **Encoding**, **Header row** or **Skip rows**. The preview updates before anything uploads. |
+| Link a data dictionary | Paste its address in **Data dictionary URL (optional)**. Column notes come from it first. |
+| Import or cancel | **Import** uploads it; **Cancel** drops it. |
+| Choose how to clean | After import: **Clean with AI** opens the cleaning plan, **Clean it myself** opens the grid. Tick **Remember my choice** to skip the question next time. |
+| Pick the cleaning depth | Drag the **Cleaning depth** slider: *Surface* (single values), *Columns*, *Records* (rows against rows), *Relationships* (columns against columns), *Meaning* (the whole dataset). Deeper layers find more issues. |
+
+#### The cleaning plan
+
+| Action | How |
+|---|---|
+| Open the plan | **Clean with AI** in the CSV toolbar, at any time. |
+| Choose the scope | **Whole dataset**, the rows you selected, or **Rows added since the last clean**. |
+| Leave a fix out | Untick it, or untick a whole group (*Breaks answers*, *Skews answers*, *Splits groups*, *Worth a look*, *Cosmetic*) from its header. |
+| Reword a fix | The pencil on a fix: say in your own words what to do instead. **Reset** puts Sherlock's wording back. |
+| Add your own step | **Add a step**: pick a column (or *Rows*) and write what to do. Its pencil rewords it, × removes it. Your steps run first. |
+| Add a check | **Add a check** adds a rule the data must meet (a range, allowed values, a pattern, not missing, unique…). |
+| Answer the date question | When dates read both ways, choose **Day first** or **Month first** from the examples shown. |
+| Change the plan from chat | With the plan open, ask "don't touch outliers" or "also trim spaces in name". |
+| Start or drop it | **Start cleaning** runs it; **Discard** closes it. Nothing changes before you start. |
+
+#### While it cleans, and after
+
+| Action | How |
+|---|---|
+| Watch the clean | The live log shows each issue as it's tried, with *So far* counts and the checks on the latest step. The grid is read-only meanwhile. |
+| Stop the clean | **Stop** in the log or in the Changes panel. Steps already committed are kept. |
+| Keep working | A clean runs in the background: open other files in the meantime. |
+| Read the report | **Cleaning report** in the Changes panel: what was fixed, flagged, kept or skipped, and why. **View full report** adds every step, the decisions, the sources and *How I worked it out* (each model call). |
+
+#### The CSV grid: editing
+
+| Action | How |
+|---|---|
+| Edit a cell | Double-click it, press Enter, or just start typing. |
+| Add a row | **Add row** adds an empty row at the top. |
+| Delete rows | Select cells in the rows, then **Delete row** (or **Delete N rows**). Press it again to unmark them. Deleting is undoable once saved. |
+| Restore set-aside rows | Quarantined rows are dimmed with their row number struck through. Select a cell in one and press **Restore row**. |
+| Save your edits | **Save changes (n)** makes a new version. Unsaved edits are kept in this browser until you save or discard. |
+| Discard your edits | **Discard** (it asks first), or × on a single edit under *Not saved yet* in the Changes panel. |
+| Resolve a save conflict | If the data changed while you edited, the save lists the cells both changed: pick **Keep** for yours or theirs, then **Rebase and save**. |
+| Clean new rows | After saving new rows, **Clean them** in the toast opens the plan for just those rows. |
+
+#### The CSV grid: viewing
+
+| Action | How |
+|---|---|
+| Find | **Find** searches every cell; the grid shows only matching rows with a count. Esc or × closes it. |
+| Sort | Click a column header: ascending, descending, off. Sorting only changes the view. |
+| Read a column's meaning | Hover a header with ⓘ to see its definition and the source it was quoted from. |
+| Read the marks | The legend shows *changed*, *flagged* and *unsaved* cells. |
+| Go back to all rows | **Show all rows** after opening a subset from chat or a model card. |
+| Download | **Download** → **CSV** (the current version) or **Notebook (.ipynb)**. |
+
+#### Undo, redo and history (the Changes panel)
+
+| Action | How |
+|---|---|
+| Undo or redo the latest changes | **Undo** / **Redo** in the toolbar (Ctrl+Z / Ctrl+Y), up to three in a row. |
+| Undo any older step | **Undo** on the step in the Changes panel. An earlier step asks first, then replays the later ones so nothing else is lost. |
+| See what a step did | Expand it: its code (or the list of edits), its impact and its decisions. |
+| Undo right after saving | **Undo** in the toast that confirms the save. |
+
+#### Chat: asking questions
+
+| Action | How |
+|---|---|
+| Ask anything | Type in the bar below the grid (`/` focuses it, Esc closes the thread). Numbers, tables, charts, matching rows, tests, "what drives X?", "what does X mean?", questions about the outside world. |
+| Ask about some rows only | Select cells in the grid first; the chip on the left of the bar says *All rows* or how many are selected. |
+| See where a number came from | Click the number, or **How do you know?** for the SQL or code and the data version it ran on. **How I worked it out** lists the model calls. |
+| Open rows from an answer | **Open all n rows in CSV** shows them in the grid. |
+| Pick when it's unsure | An ambiguous question gets buttons to choose from. |
+| Queue a follow-up | Send while an answer is running; it waits, and **Cancel** takes it back. |
+| Ask how to use the app | "How do I undo a step?" answers from the help pages. |
+
+#### Chat: changing data
+
+| Action | How |
+|---|---|
+| Change data in your own words | "Trim the spaces in name", "make fare a number", "add family_size = sibsp + parch + 1". A card shows the code, the counts and a before-and-after preview. |
+| Set specific cells | "Set the fare of row 9 to 30", or select a cell and say "set this to …". |
+| Clean the selected rows | Select rows and ask "clean these rows"; the plan opens with them as its scope. |
+| Set rows aside | Asking to delete rows quarantines them instead; they can be restored. |
+| Approve or reject | **Approve** (or OK) saves it as a new version; **Reject** (or Cancel) drops it. Nothing changes before that. |
+
+#### Analysis and the model card
+
+| Action | How |
+|---|---|
+| Find what drives a column | Ask "what drives survived?" (or any column). |
+| Open the model card | The answer's **Model card** link, or ask "tell me about the model". |
+| See who it got wrong | **Who did it get wrong?** opens those rows in the grid. |
+| See the reproduction code | **Show the code** in the model card. |
+| Re-run an outdated analysis | **Re-run** in the model card, or ask the question again. |
+| Run a significance test | "Is fare significantly different between men and women?" |
+
+#### Export
+
+| Action | How |
+|---|---|
+| Export a notebook | Dataset menu (⋯) → **Export notebook**, Ctrl+Shift+E, **Download** → **Notebook**, the Changes panel, or ask "export a notebook". |
+| Choose what goes in | **Include data** downloads the raw CSV beside the notebook; **Include ML runs** adds each analysis's code and tables. |
+| Download the cleaned CSV | Dataset menu → **Download CSV**, or **Download** → **CSV** in the grid. |
+
+#### Jobs, settings and layout
+
+| Action | How |
+|---|---|
+| Follow background work | The jobs icon in the header lists running jobs with progress. **Cancel** stops one; a failed one has **Retry** and **Dismiss**. |
+| Change appearance | The gear in the library → **Mode** (Light, Dark, System) and **Accent** colour. |
+| Show or hide the chat bar | Settings → **Chat bar**: Pinned, Auto-hide (shows when you point at it) or Hidden. |
+| Set what happens after upload | Settings → **After upload**: Ask me, Open the cleaning plan, or I'll clean it myself. |
+| Set the default cleaning depth | Settings → **Cleaning depth**. |
+| Resize the panels | Drag the dividers (or focus one and use ← →). Below 1024 px the side panels open from the header. |
+
+#### Keyboard shortcuts
+
+| Keys | Does |
+|---|---|
+| `/` | Focus the chat bar |
+| `Esc` | Close the chat thread, the find bar or a dialog |
+| `Enter` | Edit the selected cell; send a chat message |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` or `Ctrl+Shift+Z` | Redo |
+| `Ctrl+Shift+E` | Export a notebook |
 
 Fuller user docs are in [`docs/help/`](docs/help). The chat's "how do I…" answers come from these same pages.
 
